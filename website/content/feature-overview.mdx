@@ -83,7 +83,7 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     `pace(reserve=)` and `wait_for_reset()` let an overnight batch slow down
     instead of dying at 2am.
   </Card>
-  <Card title="Identity" href="/identity" icon="◐" badge="Offline-verified" badgeTone="neutral">
+  <Card title="Identity" href="/identity" icon="◐" badge="Live" badgeTone="live">
     **Purpose:** on-behalf-of user identity. **Goal:** per-user policy
     reaches the gateway. **Advantage:** requests never silently fall back to
     the service identity.
@@ -136,7 +136,8 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     **Advantage:** the PII branch is tested before production, not in it.
   </Card>
   <Card title="CLI & decorators" href="/cli" icon="⌘" badge="Live" badgeTone="live">
-    **Purpose:** `donkey init`, `doctor`, `mock`, `dev`, `test` and `scan`, plus
+    **Purpose:** `donkey init`, `doctor`, `mock`, `dev`, `test`, `scan`,
+    `publish`, `verify`, `preflight` and `expose`, plus
     `@donkey.governed`, `@donkey.tool` and `@donkey.agent`. **Advantage:** `doctor` tells wrong
     credentials from wrong URL from model-not-allowed; one decorator gives a
     function a run scope, span and typed refusals.
@@ -160,14 +161,16 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
   <Card title="A2A agents" href="/a2a" icon="⇄" badge="Offline-verified" badgeTone="neutral">
     **Purpose:** `donkey.serve()` makes your agent callable by other agents in
     one line, on the official `a2a-sdk`; `donkey expose` puts it behind a
-    gateway instance with its policies; `dev` is on the Roadmap. **Advantage:** the agent card is generated from your code, and
-    inbound tasks are to be governed with the same correlation, spans and
+    gateway instance with its policies; `donkey dev` puts a simulated gateway in
+    front of it on your laptop. **Advantage:** the agent card is generated from your code, and
+    inbound tasks are governed with the same correlation, spans and
     refusals.
   </Card>
-  <Card title="Scan & publish" href="/publishing" icon="⇧" badge="Roadmap" badgeTone="roadmap">
-    **Purpose:** `donkey scan` (live) derives a model of your agents, tools and
-    MCP servers from code; publishing registers it in the Agent Fabric
-    registry. **Advantage:** the catalog stays in sync from CI, not by hand.
+  <Card title="Scan & publish" href="/publishing" icon="⇧" badge="Live" badgeTone="live">
+    **Purpose:** `donkey scan` derives a model of your agents, tools and
+    MCP servers from code; `donkey publish` registers it in Exchange, and
+    `donkey verify` checks the live servers and agents against what was
+    published. **Advantage:** the catalog stays in sync from CI, not by hand.
   </Card>
 </CardGrid>
 

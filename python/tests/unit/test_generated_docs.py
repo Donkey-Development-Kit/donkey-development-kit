@@ -137,6 +137,15 @@ def test_signatures_show_private_type_variables_without_the_underscore() -> None
     assert "_Callable" not in page and "_P," not in page
 
 
+def test_cli_reference_shows_both_sides_of_a_flag_pair() -> None:
+    pytest.importorskip("typer")
+    rows = [line for line in gen.cli_reference().splitlines() if "`--if-changed`" in line]
+    assert rows == [
+        "| `--if-changed` / `--always` | on | Skip an asset whose latest published version "
+        "has the same digest. |"
+    ]
+
+
 def test_settings_index_shows_built_in_header_names() -> None:
     rows = {
         line.split("|")[1].strip(): line.split("|")[4].strip()

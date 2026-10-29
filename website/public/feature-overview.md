@@ -117,7 +117,8 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     **Advantage:** the PII branch is tested before production, not in it.
   
   
-    **Purpose:** `donkey init`, `doctor`, `mock`, `dev`, `test` and `scan`, plus
+    **Purpose:** `donkey init`, `doctor`, `mock`, `dev`, `test`, `scan`,
+    `publish`, `verify`, `preflight` and `expose`, plus
     `@donkey.governed`, `@donkey.tool` and `@donkey.agent`. **Advantage:** `doctor` tells wrong
     credentials from wrong URL from model-not-allowed; one decorator gives a
     function a run scope, span and typed refusals.
@@ -139,14 +140,16 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
   
     **Purpose:** `donkey.serve()` makes your agent callable by other agents in
     one line, on the official `a2a-sdk`; `donkey expose` puts it behind a
-    gateway instance with its policies; `dev` is on the Roadmap. **Advantage:** the agent card is generated from your code, and
-    inbound tasks are to be governed with the same correlation, spans and
+    gateway instance with its policies; `donkey dev` puts a simulated gateway in
+    front of it on your laptop. **Advantage:** the agent card is generated from your code, and
+    inbound tasks are governed with the same correlation, spans and
     refusals.
   
   
-    **Purpose:** `donkey scan` (live) derives a model of your agents, tools and
-    MCP servers from code; publishing registers it in the Agent Fabric
-    registry. **Advantage:** the catalog stays in sync from CI, not by hand.
+    **Purpose:** `donkey scan` derives a model of your agents, tools and
+    MCP servers from code; `donkey publish` registers it in Exchange, and
+    `donkey verify` checks the live servers and agents against what was
+    published. **Advantage:** the catalog stays in sync from CI, not by hand.
   
 
 ## What DDK leaves to the platform

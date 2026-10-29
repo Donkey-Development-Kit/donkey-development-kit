@@ -1,11 +1,12 @@
 # Scan & publish
 
-Status: Roadmap. Planned design; not shipped yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
-`donkey scan` is live, and so is `donkey publish`: it plans a publish
+`donkey scan`, `donkey publish` and `donkey verify` are live: publish plans
 (`--dry-run` sends nothing) and registers each MCP server and agent in Exchange
-from CI. The sections from [Scope: code-first assets](#scope-code-first-assets)
-on are on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and show their planned design.
+from CI, and verify checks the live side against what was published. The
+collision check and `descriptor="auto"` derivation are on the
+[Roadmap](https://docs.donkey-kit.dev/roadmap.md); their sections are badged and show the planned design.
 
 `donkey scan` walks your repository and finds every
 [`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus
@@ -21,9 +22,9 @@ Action, every merge updates it.
   **This complements MuleSoft's Agent Scanners.** Agent Scanners discover agents
   from Agentforce, Bedrock, Vertex AI, and Copilot Studio at **runtime**. Scan is
   the **design-time / CI** source for the agents you build in plain Python,
-  which no cloud scanner can see. Its model is planned to feed both direct
-  Exchange publishing and the platform's self-managed scanner, so the platform
-  stays the system of record.
+  which no cloud scanner can see. Its model feeds direct Exchange publishing
+  today, and is planned to feed the platform's self-managed scanner too, so the
+  platform stays the system of record.
 
 ## `donkey scan` — the model of your code Live
 
@@ -468,18 +469,20 @@ It is not for assets the platform already owns. An MCP server created by MCP
 Bridge from an existing API is already in Exchange; publishing a second,
 code-derived descriptor would create two catalog entries for one capability.
 
-### Collision check
+### Collision check Roadmap
 
-Before publishing, the SDK searches Exchange for an existing asset with the
-same endpoint, name, or derived tool signature. On a probable match it
-**refuses** and prints the existing asset's coordinates. Override with an
-explicit `--allow-duplicate`, which logs at `WARNING`.
+`donkey publish` doesn't run this check yet. As planned, before publishing the
+SDK will search Exchange for an existing asset with the same endpoint, name, or
+derived tool signature. On a probable match it will **refuse** and print the
+existing asset's coordinates, and a planned `--allow-duplicate` flag will
+override it with a `WARNING`.
 
 ## The `Publication` object
 
 The publication types are in `donkey_kit.experimental`, not `donkey_kit`, until
-the Exchange publication API is verified. They may change in any release until
-then.
+descriptor derivation (`preview()` and `export()`) is verified. They may change
+in any release until then. [`verify()`](#verifying-at-runtime-verify) works
+today; `preview()` and `export()` raise `NotImplementedError`.
 
 ```python
 from donkey_kit.experimental import Contact, Publication, PublicationAssetType
@@ -511,7 +514,8 @@ pub = Publication(
 )
 ```
 
-`asset_type` determines which descriptor is required and how it is generated:
+As planned, `asset_type` will determine which descriptor is required and how it
+is generated Roadmap:
 
 | `asset_type` | Descriptor | Generated from |
 |---|---|---|
@@ -520,9 +524,10 @@ pub = Publication(
 | `AGENT` | agent descriptor (no A2A surface) | framework introspection, best-effort |
 | `API` | OpenAPI / AsyncAPI | user-supplied file; no generation |
 
-## `descriptor="auto"` — deriving the spec from code
+## `descriptor="auto"` — deriving the spec from code Roadmap
 
-Hand-maintained catalog descriptors go stale within a sprint, so generation is
+This section is the planned design: a `Publication` doesn't derive its
+descriptor yet. Hand-maintained catalog descriptors go stale within a sprint, so generation is
 the core of this feature.
 
 Every supported framework already derives JSON Schema from function signatures,
@@ -547,6 +552,7 @@ descriptor="auto:check"    # generate, diff against committed file, fail on mism
 - **`auto`** (the default) imports your module, locates the tool and agent
   objects, and reads their already-computed schemas. No server, no network,
   works in CI. Importing user code executes it, so tool definitions must be
+  packages, in a planned table such as:
 
   ```toml
   [publication.entrypoints]
@@ -561,15 +567,15 @@ There is no AST-only mode. Parsing source can name a tool but cannot produce
 its schema without re-deriving it. Where importing your code is not acceptable,
 `donkey scan` (above) is the static, no-execution view.
 
-`donkey publish --cross-check` runs `auto` and `auto:live` and diffs them. A
-disagreement means either dynamic registration the object graph does not
-reflect, or a broken framework adapter.
+A planned `donkey publish --cross-check` will run `auto` and `auto:live` and diff
+them. A disagreement will mean either dynamic registration the object graph does
+not reflect, or a broken framework adapter.
 
   Type hints give the **shape**, not the **meaning** — `department: str` becomes
   `{"type": "string"}` and says nothing about which departments are valid, or
-  when to use this tool over a similar one. `auto` fails publication on a
-  description that is tautological or missing, and `preview()` reports
-  description quality.
+  when to use this tool over a similar one. `auto` will fail publication on a
+  description that is tautological or missing, and `preview()` will report
+  description quality. Today `donkey scan` already fails on such a description.
 
 ## Verifying at runtime: `verify()`
 

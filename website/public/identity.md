@@ -1,6 +1,6 @@
 # Identity
 
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 By default the gateway sees your **service**, not the person the agent is
 acting for. That is fine until policy depends on who is asking.
