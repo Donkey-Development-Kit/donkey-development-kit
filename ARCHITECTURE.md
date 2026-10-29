@@ -62,7 +62,9 @@ layer may import a higher one.**
 
 ```
 integrations/   per-framework adapters — return NATIVE framework objects, never wrappers
-      ↓         (langgraph · adk · strands · agent_framework · openai_agents · anthropic · crewai · llamaindex)
+      |         (langgraph · adk · strands · agent_framework · openai_agents · anthropic · crewai · llamaindex)
+a2a/            beside integrations, independent of it: the donkey.serve() listener over the official a2a-sdk (ADR 0014)
+      ↓
 tools/          MCP session management, tool discovery/filtering — resolves registry handles
       ↓
 registry/       Exchange discovery, typed governed-state assets
@@ -77,11 +79,12 @@ linear stack:
 
 - **The `donkey` CLI** lives in `donkey_kit/cli/` (console script
   `donkey = "donkey_kit.cli:main"`), one module per command: `init`, `doctor`,
-  `mock`, `test`. It is a front end over the library: it may import any layer,
-  and an import-linter contract forbids every library module from importing it
-  back, so typer (the `[cli]` extra) never reaches the base `import donkey_kit`
-  path. `scan`, `publish` and `verify` (BG §2.5) are visible commands too. One hidden
-  command, `status`, is `_verify.blocked` and exits 3.
+  `mock`, `dev`, `test`, `scan`, `publish`, `verify` and `expose` (whose module
+  also registers `preflight`). It is a front end over the library: it may import
+  any layer, and an import-linter contract forbids every library module from
+  importing it back, so typer (the `[cli]` extra) never reaches the base
+  `import donkey_kit` path. One hidden command, `status`, is `_verify.blocked`
+  and exits 3.
 - **`donkey_kit.experimental`** re-exports the types that exist only for a
   verification-blocked surface (`AssetRef`, `Publication`, `GovernanceCriteria`,
   `STRICT`, `RegistryError`, …). They are importable, but they are not in
@@ -468,9 +471,9 @@ is the single home for every value that the verification discipline says must be
 Anypoint sandbox before it can be trusted, and it offers exactly two mechanisms:
 
 - **`blocked("…")`** returns a `NotImplementedError("blocked on verification: …")`.
-  It is used where there is no defensible placeholder at all — e.g. the Exchange
-  publication endpoints and the CrewAI MCP binding. The SDK raises
-  rather than guesses. **Do not replace a `blocked(...)` guard with a guess.**
+  It is used where there is no defensible placeholder at all — e.g. a
+  `Publication`'s descriptor derivation and the lockfile's resolution API. The
+  SDK raises rather than guesses. **Do not replace a `blocked(...)` guard with a guess.**
 - **`Unverified(...)`** placeholder constants hold a documented best-guess that is
   fully overridable via config/env, and emit a one-time `UnverifiedValueWarning`
   the first time they are read — so a value can be *used* without ever being
@@ -488,14 +491,20 @@ status or a date; `scripts/check_verification_claims.py` enforces that in CI.
 
 What is verified today: the LLM-proxy data plane (its base-URL shape — note there
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,
-and the live rejection shapes), the OAuth2 control-plane token path, and the
-CLI-plugin REST contract (from static analysis). Exchange→MCP tool discovery and
-the `ToolSet` bindings are verified against a local MCP server, not yet through
-the governed gateway (§9). Still blocked: Exchange publication (BG §2.5). The framework adapters are not
+and the live rejection shapes), the OAuth2 control-plane token path, the
+CLI-plugin REST contract (from static analysis), Exchange search and the
+publication of scanned MCP servers and agents with `donkey publish` and
+`donkey verify` (`docs/verified-apis.md` §7), MCP tool discovery and the
+`ToolSet` bindings through the governed gateway (`docs/verified-apis.md` §9),
+and the `as_user()` user-token header (`docs/verified-apis.md` §13). Still
+blocked: a `Publication`'s descriptor derivation (`preview()`, `export()`,
+BG §2.5), the lockfile (`donkey.tools.lock()`, `discover(locked=True)`,
+BG §2.7), the governed-state search filters (`search(governed=, environment=,
+domain=)`) and the hidden `donkey status`. The framework adapters are not
 blocked. They build their native object directly, and an adapter refuses with
 `blocked(...)` only when the installed framework version lacks the class or
-field it depends on. Their status, generated from the ledger's §8 rows (§8.4
-maps each factory to its row):
+field it depends on. Their status, generated from the ledger's §8 rows (the
+ledger's §8.4 maps each factory to its row):
 
 <!-- BEGIN GENERATED: framework-status-summary (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
 LangGraph and OpenAI Agents SDK are conformance-tested against the simulator in CI.
@@ -731,12 +740,16 @@ keeps the table and each adapter's `AdapterCapabilities` equal:
 `typed_refusal_bridged` when `typed_refusals` is false, and `jwt_token_refreshed`
 when `transport` is `"framework"`.
 
-The three tool-binding scenarios (`single_tool_call`, `multi_tool_multi_server`,
-`tool_filtering`, #991) run every `ToolSet` binding against two local MCP
-servers (`tests/conformance/test_tool_binding.py`). They record one exemption
-that is not about the transport: the whole-server bindings (ADK, Strands, the
-OpenAI Agents SDK, Agent Framework, CrewAI) cannot rename one tool, so
-`multi_tool_multi_server` is asserted as a `ConfigError` refusal for them.
+The four tool-binding scenarios (`single_tool_call`, `multi_tool_multi_server`,
+`tool_filtering`, #991, and `tool_access_denied_typed`, #312) run every
+`ToolSet` binding against two local MCP servers
+(`tests/conformance/test_tool_binding.py`). They record two exemptions that are
+not about the transport, both for the whole-server bindings (ADK, Strands, the
+OpenAI Agents SDK, Agent Framework, CrewAI). Those bindings cannot rename one
+tool, so `multi_tool_multi_server` is asserted as a `ConfigError` refusal for
+them. They also leave each tool call to the framework, so the gateway's
+tool-access denial never reaches the SDK as `ToolNotInProfile`, and
+`tool_access_denied_typed` records what each framework does with it instead.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to the deep adapters, and the deliverable becomes the **customer-facing
