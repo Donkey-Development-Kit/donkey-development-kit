@@ -448,10 +448,23 @@ Registers each MCP server and agent that `donkey scan` finds as an Exchange
 asset, in the group and at the version declared in `[donkey.publication]`. An
 asset whose latest published version has the same digest is left unchanged;
 one changed without a version bump is refused before anything is published. It reads
-the `ANYPOINT_*` control-plane credentials, and exits `0` when everything was
-published or left unchanged, `1` on an issue or a refused publish, and `2` on a
-missing path, invalid config or missing credentials. See
-[Scan & publish](/publishing#planning-a-publish).
+the `ANYPOINT_*` control-plane credentials.
+
+With `--json`, each asset in the plan carries a `status` and a `detail`, also
+when the publish fails:
+
+| `status` | Meaning |
+|---|---|
+| `published` | A new version was published, or a rerun finished an `incomplete` one. |
+| `unchanged` | The latest version already has this digest, and its publish is complete. |
+| `incomplete` | The version is published, but its endpoint, page, or name and description were refused. A rerun finishes it. |
+| `failed` | Exchange refused the asset, and nothing was published for it. The detail ends with the fix. |
+| `not_attempted` | An earlier asset failed, so this one was not tried. |
+
+It exits `0` when every asset is `published` or `unchanged`, `1` on an issue
+or when an asset is `failed` or `incomplete` (what was published before stays
+published), and `2` on a missing path, invalid config or missing credentials.
+See [Scan & publish](/publishing#when-a-publish-fails).
 
 ### `donkey verify`
 

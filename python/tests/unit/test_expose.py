@@ -281,6 +281,22 @@ async def test_a_dry_run_fails_a_version_published_with_other_content(
     assert not report.ok
 
 
+async def test_a_refused_publish_fails_the_registry_step_with_its_remediation(
+    build: Build, anypoint: FakeAnypoint, http: httpx.AsyncClient
+) -> None:
+    """publish_plan reports a refusal as the outcome's error, not a raise (#1426)."""
+    anypoint.exchange.publish(ORG, MCP, "1.0.0", "sha256:" + "0" * 64)
+
+    report = await _run(build(), http)
+
+    registry = report.steps[2]
+    assert (registry.name, registry.status) == ("registry", "failed")
+    assert "is already published with other content" in registry.detail
+    assert "Bump the version" in (registry.remediation or "")
+    assert [s.status for s in report.steps[3:]] == ["skipped"] * 3
+    assert not report.ok
+
+
 # -- the platform's resources are never created --------------------------------
 
 

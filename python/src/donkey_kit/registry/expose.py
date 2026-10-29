@@ -342,6 +342,8 @@ class _Run:
             org_id=org_id,
             source=self.source,
         )
+        if outcome.error is not None:
+            return self.add("registry", "failed", outcome.detail, outcome.error.remediation)
         status: StepStatus = "created" if outcome.status == "published" else "present"
         return self.add("registry", status, f"{asset.asset_id}: {outcome.detail}")
 

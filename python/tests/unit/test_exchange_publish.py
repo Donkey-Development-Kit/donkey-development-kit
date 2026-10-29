@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from _fake_exchange import BASE_URL, ORG, FakeExchange
+from _fake_exchange import BASE_URL, ORG, FakeExchange, fixture
 
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.config import DonkeyConfig
@@ -100,6 +100,13 @@ async def _publish(
         plan, result, http, base_url=BASE_URL, org_id=ORG, if_changed=if_changed, source=source
     )
     return {o.asset.service_id: o for o in outcomes}
+
+
+def _refused(outcome: PublishOutcome, status: str = "failed") -> DonkeyError:
+    """The refusal ``outcome`` reports, checking it has ``status``."""
+    assert outcome.status == status, outcome
+    assert outcome.error is not None
+    return outcome.error
 
 
 def _publishes(exchange: FakeExchange, asset: str = ASSET) -> list[httpx.Request]:
@@ -245,10 +252,12 @@ async def test_a_published_version_with_other_content_fails_before_sending(
     exchange.publish(ORG, ASSET, "0.9.0", "sha256:" + "0" * 64)
     await _publish(http, repo())
 
-    with pytest.raises(RegistryError, match=f"{ASSET}:{version} is already published") as err:
-        await _publish(http, repo(version=version, description="Look up a SKU's stock."))
+    outcomes = await _publish(http, repo(version=version, description="Look up a SKU's stock."))
 
-    assert "Bump the version" in err.value.remediation
+    error = _refused(outcomes[ASSET])
+    assert isinstance(error, RegistryError)
+    assert f"{ASSET}:{version} is already published" in outcomes[ASSET].detail
+    assert "Bump the version" in error.remediation
     assert len(_publishes(exchange)) == 1
 
 
@@ -286,11 +295,12 @@ async def test_a_409_is_fine_only_when_the_version_has_this_digest(
 
     monkeypatch.setattr(exchange, "handle", racing)
 
+    outcome = (await _publish(http, built))[ASSET]
+
     if published:
-        assert (await _publish(http, built))[ASSET].status == "published"
+        assert outcome.status == "published"
     else:
-        with pytest.raises(RegistryError, match="already published"):
-            await _publish(http, built)
+        assert "already published" in str(_refused(outcome))
 
 
 def _named(name: str, description: str | None = None) -> str:
@@ -354,16 +364,19 @@ async def test_an_unchanged_name_and_an_undeclared_description_are_left_alone(
     assert _detail_patches(exchange) == []
 
 
-async def test_a_refused_name_update_is_a_registry_error(
+async def test_a_refused_name_update_leaves_the_version_incomplete(
     repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
 ) -> None:
     await _publish(http, repo())
     exchange.fail_details = True
 
-    with pytest.raises(RegistryError, match="updating the name and description of") as err:
-        await _publish(http, repo(version="1.1.0", publication=_named("SKU Lookup")))
+    outcomes = await _publish(http, repo(version="1.1.0", publication=_named("SKU Lookup")))
 
-    assert "re-run donkey publish" in err.value.remediation
+    error = _refused(outcomes[ASSET], "incomplete")
+    assert isinstance(error, RegistryError)
+    assert "updating the name and description of" in str(error)
+    assert outcomes[ASSET].detail.startswith("1.1.0 is published, but its publish did not finish")
+    assert "re-run donkey publish" in error.remediation
 
 
 async def test_a_new_version_gets_its_page(
@@ -385,11 +398,15 @@ async def test_an_unchanged_asset_keeps_its_page(
     repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
 ) -> None:
     await _publish(http, repo())
+    page = exchange.pages[(ORG, ASSET, "1.0.0")]
     before = len(exchange.requests)
 
     await _publish(http, repo())
 
-    assert not any("/portal/" in r.url.path for r in exchange.requests[before:])
+    portal = [r for r in exchange.requests[before:] if "/portal/" in r.url.path]
+    assert portal and all(r.method == "GET" for r in portal)  # it reads the draft, writes nothing
+    assert not any(r.method == "PATCH" for r in exchange.requests[before:])
+    assert exchange.pages[(ORG, ASSET, "1.0.0")] == page
 
 
 async def test_a_page_that_exists_already_is_rewritten(
@@ -404,13 +421,15 @@ async def test_a_page_that_exists_already_is_rewritten(
     assert exchange.pages[(ORG, ASSET, "1.0.0")].startswith(f"# {ASSET}\n")
 
 
-async def test_a_refused_page_is_a_registry_error(
+async def test_a_refused_page_leaves_the_version_incomplete(
     repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
 ) -> None:
     exchange.fail_pages = True
 
-    with pytest.raises(RegistryError, match="writing the page of"):
-        await _publish(http, repo())
+    outcomes = await _publish(http, repo())
+
+    assert "writing the page of" in str(_refused(outcomes[AGENT], "incomplete"))
+    assert outcomes[ASSET].status == "not_attempted"
 
 
 async def test_a_first_publish_has_no_changes_section(
@@ -504,10 +523,11 @@ async def test_a_rerun_publishes_no_agent_and_new_agent_content_needs_a_bump(
 
     rerun = await _publish(http, repo())
     assert rerun[AGENT].status == "unchanged"
-    with pytest.raises(RegistryError, match=f"{AGENT}:1.0.0 is already published") as err:
-        await _publish(http, repo(agent='protocol = "other"\n'))
+    changed = await _publish(http, repo(agent='protocol = "other"\n'))
 
-    assert "Bump the version" in err.value.remediation
+    error = _refused(changed[AGENT])
+    assert f"{AGENT}:1.0.0 is already published" in str(error)
+    assert "Bump the version" in error.remediation
     assert len(_publishes(exchange, AGENT)) == 1
 
 
@@ -625,10 +645,12 @@ async def test_a_refused_publish_names_the_scope_or_the_fix(
 
     monkeypatch.setattr(exchange, "handle", refusing)
 
-    with pytest.raises(error, match=f"HTTP {status}") as err:
-        await _publish(http, repo())
+    outcomes = await _publish(http, repo())
 
-    assert remediation in err.value.remediation
+    refusal = _refused(outcomes[AGENT])
+    assert isinstance(refusal, error) and f"HTTP {status}" in str(refusal)
+    assert remediation in refusal.remediation
+    assert outcomes[ASSET].status == "not_attempted"
 
 
 async def test_an_endpoint_refused_with_404_names_manage_exchange(
@@ -645,10 +667,156 @@ async def test_an_endpoint_refused_with_404_names_manage_exchange(
 
     monkeypatch.setattr(exchange, "handle", refusing)
 
-    with pytest.raises(RegistryError, match="registering the endpoint") as err:
-        await _publish(http, repo())
+    outcomes = await _publish(http, repo())
 
-    assert "'manage:exchange'" in err.value.remediation
+    error = _refused(outcomes[AGENT], "incomplete")
+    assert "registering the endpoint" in str(error)
+    assert "'manage:exchange'" in error.remediation
+
+
+async def test_a_failure_keeps_what_was_published_and_stops(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1426: the agent, first in the plan, is published; the MCP server is refused."""
+    handle = exchange.handle
+
+    def refusing(request: httpx.Request) -> httpx.Response:
+        if "/organizations/" in request.url.path and f"/{ASSET}/" in request.url.path:
+            return httpx.Response(400, json={"message": "no"})
+        return handle(request)
+
+    monkeypatch.setattr(exchange, "handle", refusing)
+
+    outcomes = await _publish(http, repo())
+
+    assert list(outcomes) == [AGENT, ASSET]
+    assert outcomes[AGENT].status == "published" and outcomes[AGENT].error is None
+    assert isinstance(_refused(outcomes[ASSET]), RegistryError)
+    assert outcomes[ASSET].detail.startswith(f"Exchange refused publishing {ORG}:{ASSET}:1.0.0")
+    assert list(exchange.assets) == [(ORG, AGENT)]
+
+
+async def test_the_assets_after_a_failure_are_not_attempted(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    exchange.fail_instances = True
+
+    outcomes = await _publish(http, repo())
+
+    assert _refused(outcomes[AGENT], "incomplete")
+    assert (outcomes[ASSET].status, outcomes[ASSET].error) == ("not_attempted", None)
+    assert outcomes[ASSET].detail == "not attempted: an earlier asset failed"
+    assert (ORG, ASSET) not in exchange.assets
+
+
+async def test_a_rerun_registers_the_endpoint_an_earlier_run_could_not(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    """#1426: the 404 remediation says to re-run; the rerun finishes the publish."""
+    exchange.fail_instances = True
+    await _publish(http, repo())
+    exchange.fail_instances = False
+
+    rerun = await _publish(http, repo())
+    again = await _publish(http, repo())
+
+    assert (rerun[AGENT].status, rerun[AGENT].detail) == (
+        "published",
+        "finished publishing 1.0.0: registered its endpoint, published its page",
+    )
+    assert rerun[ASSET].status == "published"
+    assert exchange.instances[(ORG, AGENT, "v1.0")] == [AGENT_ENDPOINT]
+    assert "## Skills" in exchange.pages[(ORG, AGENT, "1.0.0")]
+    assert len(_publishes(exchange, AGENT)) == 1
+    assert {o.status for o in again.values()} == {"unchanged"}
+
+
+async def test_a_rerun_publishes_the_page_an_earlier_run_could_not(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    source = PageSource(repository_url="https://github.example.invalid/acme/sku", commit="a" * 40)
+    exchange.fail_pages = True
+    await _publish(http, repo(), source=source)
+    exchange.fail_pages = False
+
+    rerun = await _publish(http, repo(), source=source)
+
+    assert rerun[AGENT].detail == "finished publishing 1.0.0: published its page"
+    page = exchange.pages[(ORG, AGENT, "1.0.0")]
+    assert page.startswith(f"# {AGENT}\n") and "a" * 40 in page
+    assert exchange.instances[(ORG, AGENT, "v1.0")] == [AGENT_ENDPOINT]  # registered once
+
+
+async def test_a_rerun_sets_the_name_an_earlier_run_could_not(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    await _publish(http, repo())
+    exchange.fail_details = True
+    renamed = repo(version="1.1.0", publication=_named("SKU Lookup"))
+    await _publish(http, renamed)
+    exchange.fail_details = False
+
+    rerun = await _publish(http, renamed)
+
+    assert rerun[ASSET].detail == "finished publishing 1.1.0: updated the asset's name"
+    assert exchange.details[(ORG, ASSET)]["name"] == "SKU Lookup"
+    assert list(exchange.assets[(ORG, ASSET)]) == ["1.0.0", "1.1.0"]
+
+
+async def test_a_version_bump_alone_finishes_the_latest_versions_publish(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    exchange.fail_pages = True
+    await _publish(http, repo())
+    exchange.fail_pages = False
+
+    bumped = await _publish(http, repo(version="1.0.1"))
+
+    assert bumped[AGENT].detail == "finished publishing 1.0.0: published its page"
+    assert f"- **Asset:** {AGENT} 1.0.0" in exchange.pages[(ORG, AGENT, "1.0.0")]
+    assert list(exchange.assets[(ORG, AGENT)]) == ["1.0.0"]
+
+
+_HOME = [{"name": "home", "path": "home"}]
+
+
+@pytest.mark.parametrize(
+    ("draft", "has_page"),
+    [
+        (json.loads(fixture("portal-draft.200.json")), True),
+        ({"draftStatus": "PUBLISHED", "pages": []}, False),
+        ({"draftStatus": "SOMETHING-ELSE", "pages": _HOME}, False),
+        ({"pages": _HOME}, False),
+        ([], False),
+    ],
+    ids=["captured", "no-page", "other-status", "no-status", "not-an-object"],
+)
+async def test_only_the_captured_published_draft_counts_as_a_page(
+    repo: Repo,
+    exchange: FakeExchange,
+    http: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    draft: object,
+    has_page: bool,
+) -> None:
+    """A version's page is complete only in the captured shape of a published
+    one (docs/verified-apis.md §12.3); anything else is written again."""
+    await _publish(http, repo())
+    handle = exchange.handle
+
+    def drafting(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path.endswith(f"/{AGENT}/1.0.0/portal/draft"):
+            handle(request)  # opens the draft, as Exchange does
+            return httpx.Response(200, json=draft)
+        return handle(request)
+
+    monkeypatch.setattr(exchange, "handle", drafting)
+
+    rerun = await _publish(http, repo())
+
+    expected = "unchanged" if has_page else "published"
+    assert rerun[AGENT].status == expected
+    assert rerun[ASSET].status == "unchanged"
 
 
 async def test_a_graphql_error_other_than_not_found_is_raised(

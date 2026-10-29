@@ -6,12 +6,18 @@ the ``ANYPOINT_*`` credentials from the ones that are not empty (so a job that
 sets them in its own ``env:`` still works), and runs
 ``donkey --json publish``. Then it writes:
 
-* a table of the assets to the job summary (``GITHUB_STEP_SUMMARY``);
-* the ``published``, ``unchanged`` and ``skipped`` counts (``skipped`` is always
-  0 now that agents are published, #1260), and the path of the JSON result, to
-  the step's outputs (``GITHUB_OUTPUT``);
+* a table of the assets to the job summary (``GITHUB_STEP_SUMMARY``), and,
+  when the publish did not finish, how many assets failed, are incomplete or
+  were not attempted;
+* the ``published``, ``unchanged``, ``incomplete``, ``failed``,
+  ``not_attempted`` and ``skipped`` counts (``skipped`` is always 0 now that
+  agents are published, #1260), and the path of the JSON result, to the step's
+  outputs (``GITHUB_OUTPUT``);
 * each error line donkey printed as an ``::error::`` annotation when it fails,
   or each issue in the JSON when it printed none.
+
+donkey prints the JSON when a publish fails too (#1426), so the summary and
+the outputs say what was published before the failure.
 
 It exits with donkey's exit code. Standard library only: it runs before
 anything but donkey-kit is installed.
@@ -33,7 +39,9 @@ CREDENTIALS = {
     "INPUT_CLIENT_SECRET": "ANYPOINT_CLIENT_SECRET",
     "INPUT_ORG_ID": "ANYPOINT_ORG_ID",
 }
-STATUSES = ("published", "unchanged", "skipped")
+STATUSES = ("published", "unchanged", "incomplete", "failed", "not_attempted", "skipped")
+# The statuses of a publish that did not finish.
+UNFINISHED = ("incomplete", "failed", "not_attempted")
 
 
 def main() -> int:
@@ -107,6 +115,17 @@ def summary(data: Mapping[str, Any], *, dry_run: bool) -> str:
                 f"| {a.get('status', '')} | {a['type']} | `{_gav(a)}` | {_cell(a.get('detail'))} |"
                 for a in assets
             ]
+            counts = [(s, sum(a.get("status") == s for a in assets)) for s in UNFINISHED]
+            if any(n for _, n in counts):
+                told = ", ".join(f"{n} {s.replace('_', ' ')}" for s, n in counts if n)
+                lines += [
+                    "",
+                    (
+                        f"**The publish did not finish** ({told}). What was published stays "
+                        "published; fix the error and re-run, and the rerun finishes where "
+                        "this one stopped."
+                    ),
+                ]
     else:
         lines.append("No MCP server or agent was found.")
     issues = data.get("issues") or []

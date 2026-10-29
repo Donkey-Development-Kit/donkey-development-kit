@@ -87,12 +87,47 @@ def test_a_publish_writes_the_summary_and_the_outputs(
     assert "ANYPOINT_ORG_ID" not in call["env"]
     summary = github["summary"].read_text()
     assert "| published | mcp | `org-1:sku-manager:1.0.0` | published 1.0.0 |" in summary
-    assert github["output"].read_text().splitlines()[:3] == [
+    *counts, result = github["output"].read_text().splitlines()
+    assert counts == [
         "published=1",
         "unchanged=1",
+        "incomplete=0",
+        "failed=0",
+        "not_attempted=0",
         "skipped=0",
     ]
-    assert json.loads(Path(github["output"].read_text().splitlines()[3][7:]).read_text()) == body
+    assert json.loads(Path(result.removeprefix("result=")).read_text()) == body
+    assert "did not finish" not in summary
+
+
+def test_a_failed_publish_still_writes_the_summary_and_the_outputs(
+    github: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#1426: donkey prints the outcome JSON when an asset fails, and exits 1."""
+    body = {
+        "assets": [
+            {**ASSET, "asset_id": "pricing", "status": "published", "detail": "published 1.0.0"},
+            {**ASSET, "status": "failed", "detail": "Exchange refused | publishing. Fix it."},
+            {**ASSET, "asset_id": "hr", "status": "not_attempted", "detail": "not attempted"},
+        ],
+        "issues": [],
+    }
+    stderr = "Exchange refused publishing\nFix it.\n"
+    _donkey(monkeypatch, json.dumps(body), stderr=stderr, code=1)
+
+    assert run.main() == 1
+
+    summary = github["summary"].read_text()
+    assert (
+        "| failed | mcp | `org-1:sku-manager:1.0.0` | Exchange refused \\| publishing." in summary
+    )
+    assert "**The publish did not finish** (1 failed, 1 not attempted)." in summary
+    counts = github["output"].read_text().splitlines()[:5]
+    assert counts == ["published=1", "unchanged=0", "incomplete=0", "failed=1", "not_attempted=1"]
+    assert capsys.readouterr().out.splitlines() == [
+        "::error title=donkey publish::Exchange refused publishing",
+        "::error title=donkey publish::Fix it.",
+    ]
 
 
 def test_an_empty_input_keeps_the_jobs_own_credential(
