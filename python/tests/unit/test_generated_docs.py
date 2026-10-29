@@ -201,6 +201,7 @@ def test_ledger_status_labels_are_never_invented() -> None:
     assert gen.verification_of("UNVERIFIED (signature confirmed; pending …)") == (
         "signature-confirmed"
     )
+    assert gen.verification_of("VERIFIED (POLICY SOURCE)") == "policy-source"
     for status in ("VERIFIED (plugin)", "VERIFIED-SHAPE-ONLY", "UNVERIFIED", "VERIFIED"):
         with pytest.raises(gen.GenerationError):
             gen.verification_of(status)
@@ -218,6 +219,17 @@ def test_flipping_a_ledger_row_flips_the_docs() -> None:
     strands = next(s for s in rows if s.attr == "strands")
     assert strands.verification == "live-verified"
     assert gen.page_statuses(rows)["/frameworks/strands"] == "live"
+
+
+def test_a_policy_source_row_never_reads_live() -> None:
+    # ADR 0016: a shape read from the gateway policy's source was never observed
+    # on a live gateway, so its page is offline-verified with its own badge.
+    rows = gen.framework_statuses(_with_status(_LEDGER, _STRANDS_ROW, "VERIFIED (POLICY SOURCE)"))
+    strands = next(s for s in rows if s.attr == "strands")
+    assert strands.verification == "policy-source"
+    assert gen.page_statuses(rows)["/frameworks/strands"] == "offline-verified"
+    assert gen.page_statuses(rows)["/frameworks"] == "offline-verified"
+    assert gen._badge("policy-source") == '<Badge tone="neutral">Policy-source</Badge>'
 
 
 def test_an_unknown_ledger_status_fails_generation() -> None:

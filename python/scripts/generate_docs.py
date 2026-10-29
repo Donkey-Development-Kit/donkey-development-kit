@@ -397,6 +397,8 @@ FRAMEWORK_PAGES = REPO / "website" / "content" / "frameworks"
 _LEDGER_STATUSES: tuple[tuple[str, str], ...] = (
     ("VERIFIED (LIVE)", "live-verified"),
     ("VERIFIED (CLI)", "live-verified"),
+    # Read from the gateway policy's source, never observed live (ADR 0016): not `live`.
+    ("VERIFIED (POLICY SOURCE)", "policy-source"),
     ("UNVERIFIED (signature confirmed", "signature-confirmed"),
 )
 
@@ -404,13 +406,18 @@ _LEDGER_STATUSES: tuple[tuple[str, str], ...] = (
 _LABELS = {
     "conformance-tested": ("Conformance-tested", "accent", "conformance-tested"),
     "live-verified": ("Live-verified", "live", "live-verified"),
+    "policy-source": ("Policy-source", "neutral", "policy-source"),
     "signature-confirmed": ("Signature-confirmed", "neutral", "signature-confirmed offline"),
 }
-_PAGE_STATUS = {"live-verified": "live", "signature-confirmed": "offline-verified"}
+_PAGE_STATUS = {
+    "live-verified": "live",
+    "policy-source": "offline-verified",
+    "signature-confirmed": "offline-verified",
+}
 #: The page badge of each frontmatter status (``STATUSES`` in ``website/lib/status.mjs``).
 _PAGE_BADGE = {"live": ("Live", "live"), "offline-verified": ("Offline-verified", "neutral")}
 #: Strongest first. A page that covers several factories is rated by its weakest.
-_VERIFICATION_ORDER = ("live-verified", "signature-confirmed")
+_VERIFICATION_ORDER = ("live-verified", "policy-source", "signature-confirmed")
 
 _PIPE = re.compile(r"(?<!\\)\|")
 _FACTORY_CELL = re.compile(r"^`donkey\.(\w+)\.(\w+)\(\)`$")
@@ -471,7 +478,7 @@ class FactoryStatus:
     factory: str
     route: str
     ledger_row: str
-    #: ``live-verified`` or ``signature-confirmed``, from the §8 Status column.
+    #: ``live-verified``, ``policy-source`` or ``signature-confirmed``, from the §8 Status column.
     verification: str
     #: ``AdapterSpec.conformance_tested`` of the factory's adapter.
     conformance_tested: bool

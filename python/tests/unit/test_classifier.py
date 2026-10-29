@@ -26,6 +26,7 @@ from donkey_kit.core._refusal_body import code_str
 from donkey_kit.core.classifier import PolicyRegistration, classify
 from donkey_kit.core.errors import (
     AgentKilled,
+    ContentSafetyBlocked,
     ModelNotRoutable,
     PIIDetected,
     UpstreamRequestError,
@@ -236,18 +237,16 @@ def test_a_built_in_shape_still_wins() -> None:
     assert type(classify(pii)) is PIIDetected
 
 
-def test_an_uncaptured_vendor_header_can_be_registered() -> None:
-    # #1429: CrowdStrike AIDR is not a built-in rule until its shape is captured
-    # (#1184), so a caller who has seen it on their own proxy can type it.
-    class AidrBlocked(PolicyViolation):
-        remediation = "CrowdStrike AIDR blocked this request."
-        policy = "acme_aidr"
-
+def test_a_policy_source_built_in_shape_refuses_a_shadowed_registration() -> None:
+    # #1429, ADR 0016: CrowdStrike AIDR is typed from its policy source, so it is a
+    # built-in rule like the captured vendors: a registration on its header could
+    # never match, and register() refuses it as it does for any shadowed spec.
     headers = {"x-llm-proxy-crowdstrike-aidr-action": "reject"}
-    response = _resp(403, {"error": "Content blocked"}, headers=headers)
-    assert type(classify(response)) is PolicyViolation
-    classify.register(match={"status": 403, "headers": headers}, raises=AidrBlocked)
-    assert type(classify(response)) is AidrBlocked
+    with pytest.raises(ValueError, match="built-in content_safety rule"):
+        classify.register(match={"status": 403, "headers": headers}, raises=SalaryLeakBlocked)
+    err = classify(_resp(403, {"error": "Content blocked"}, headers=headers))
+    assert type(err) is ContentSafetyBlocked
+    assert err.provider == "crowdstrike-aidr"
 
 
 def test_model_not_routable_and_upstream_request_stay_disjoint() -> None:

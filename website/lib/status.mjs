@@ -10,7 +10,9 @@
 //   offline-verified  ships and is proven offline (conformance suite against the
 //                     simulator, or verify_frameworks.py signature checks), but
 //                     has had no real round-trip through a governed proxy yet;
-//                     the ledger row still reads UNVERIFIED (signature confirmed).
+//                     the ledger row still reads UNVERIFIED (signature confirmed),
+//                     or VERIFIED (POLICY SOURCE) for a shape read from the
+//                     gateway policy's source (ADR 0016).
 //   roadmap           planned design: the API is not shipped, or it raises
 //                     `_verify.blocked(...)` until its ledger row is confirmed.
 //

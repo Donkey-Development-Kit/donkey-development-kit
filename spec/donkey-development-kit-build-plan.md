@@ -118,6 +118,12 @@ whole package. Two mechanisms in `core/_verify.py` enforce it:
 When you confirm a value: flip its row there **and** replace its placeholder
 in `_verify.py` with a plain constant. The `Verification` milestone is the worklist.
 
+Amended by ADR 0016 (#1429): a gateway rejection shape that no proxy can
+produce may be typed by `classify()` at `VERIFIED (POLICY SOURCE)`, read from
+the policy's own source at a named version, under the three conditions the
+ledger's legend states. The class never lifts a `blocked(...)` guard or flips an
+`Unverified(...)` value.
+
 ### Layered architecture (`§1.1`) — enforced by `lint-imports`
 
 Lower layers must never import higher ones; violating it fails CI.
