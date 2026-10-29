@@ -27,7 +27,8 @@ Files:
   `tests/fixtures/mcp_binding/denial-<VENV>.json`. Run it in each venv, since
   the frameworks' `mcp` pins conflict.
 - `bind_toolset.py` - the SDK's `ToolSet.<framework>()` bindings against two
-  local servers: filter, collision rename and approval gate (ledger §9).
+  local servers: filter, collision rename, approval gate, and a cross-origin
+  redirect that must not carry the credential (ledger §9).
 - `bind_live.py` - the same bindings through a live gateway:
   `discover(governed=True)` from the org in `ANYPOINT_*`, then
   `--bind FRAMEWORK=ASSET` per pair, `--call TOOL JSON --want TEXT`. With
@@ -87,6 +88,12 @@ write_fixture("<framework>", fixture)  # tests/fixtures/mcp_binding/<framework>.
 - `read_requests(record) -> list[dict]` - every recorded request.
 - `headers_seen(record) -> {"client_id": ..., "client_secret": ...}` - values
   the server actually received (`None` if never sent).
+- `cross_origin_redirect(target) -> Redirect(url, seen)` - context manager
+  for a server on its own port that answers every request with a `307` to the
+  same path on `target`, another origin; `seen` holds the `client_id` and
+  `client_secret` of each request it received (#1415).
+- `credentials_seen(record) -> list[dict]` - the recorded requests that
+  carried `client_id` or `client_secret`.
 - `distributions(*names) -> {name: version}` - installed versions; `mcp` is
   always included. Pass the framework's distribution name(s).
 - `write_fixture(name, data) -> Path` - sorted keys, indent 2.

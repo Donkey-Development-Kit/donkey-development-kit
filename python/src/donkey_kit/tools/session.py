@@ -12,6 +12,13 @@ else (#1150, ADR 0013): the governed transport attaches the consumer's gateway
 credentials to every request, so they must never reach a server the gateway
 does not front. There is no opt-out.
 
+Nor does a bound server's redirect send them elsewhere (#1415): every binding
+whose framework takes an HTTP client, a client factory or a transport gets one
+from ``tools/mcp.py`` that strips the credential on a request to another origin
+than the server's. Agent Framework's ``static_headers`` are removed on a
+cross-origin redirect by the framework itself, and the Anthropic binding's
+session does not follow redirects.
+
 Every binding logs the tool count and :meth:`ToolSet.descriptor_tokens` at
 debug level, and warns when either passes ``tool_warn_count`` or
 ``tool_warn_tokens`` (#1257; the defaults' sources are on :func:`_report_cost`).
@@ -61,7 +68,7 @@ from .filter import (
     descriptor_tokens,
     resolve_collisions,
 )
-from .mcp import list_tools, open_session
+from .mcp import client_factory, list_tools, open_session, open_transport
 
 __all__ = ["ToolSet", "UngovernedMcpServer"]
 
@@ -608,6 +615,7 @@ class ToolSet:
                     "transport": "streamable_http",
                     "url": server.endpoint_url,
                     "headers": dict(headers),
+                    "httpx_client_factory": client_factory(server.endpoint_url, headers),
                 }
                 for server, _ in plan
             }
@@ -643,7 +651,9 @@ class ToolSet:
         plan, headers = await self._plan("llamaindex()", per_tool=True)
         bound: list[Any] = []
         for server, names in plan:
-            client = BasicMCPClient(server.endpoint_url, headers=dict(headers))
+            # BasicMCPClient sends through a passed client and ignores headers= then.
+            http = client_factory(server.endpoint_url, headers)(headers=headers)
+            client = BasicMCPClient(server.endpoint_url, http_client=http)
             spec = McpToolSpec(client, allowed_tools=sorted(names))
             for tool in await spec.to_tool_list_async():
                 plan_tool = names[tool.metadata.name]
@@ -721,7 +731,9 @@ class ToolSet:
         return [
             McpToolset(
                 connection_params=StreamableHTTPConnectionParams(
-                    url=server.endpoint_url, headers=dict(headers)
+                    url=server.endpoint_url,
+                    headers=dict(headers),
+                    httpx_client_factory=client_factory(server.endpoint_url, headers),
                 ),
                 tool_filter=sorted(names),
             )
@@ -748,8 +760,10 @@ class ToolSet:
         plan, headers = await self._plan("strands()", per_tool=False)
         return [
             MCPClient(
-                url=server.endpoint_url,
-                headers=dict(headers),
+                # The url= form builds its own client; the transport form takes ours.
+                transport_callable=functools.partial(
+                    open_transport, server.endpoint_url, dict(headers)
+                ),
                 tool_filters={"allowed": sorted(names)},
             )
             for server, names in plan
@@ -775,7 +789,11 @@ class ToolSet:
         plan, headers = await self._plan("openai()", per_tool=False)
         return [
             MCPServerStreamableHttp(
-                params={"url": server.endpoint_url, "headers": dict(headers)},
+                params={
+                    "url": server.endpoint_url,
+                    "headers": dict(headers),
+                    "httpx_client_factory": client_factory(server.endpoint_url, headers),
+                },
                 name=server.ref.asset_id,
                 tool_filter=create_static_tool_filter(allowed_tool_names=sorted(names)),
             )
@@ -788,7 +806,8 @@ class ToolSet:
         agent's ``tools=``.
 
         The credential goes in ``static_headers`` (the class has no
-        ``headers=``), and the tools left after ``filter()`` in ``allowed_tools``.
+        ``headers=``), which the framework removes on a redirect to another
+        origin, and the tools left after ``filter()`` in ``allowed_tools``.
 
         Raises:
             UngovernedMcpServer: A server in the set is not governed (ADR 0013).
@@ -845,6 +864,7 @@ class ToolSet:
                     "url": server.endpoint_url,
                     "transport": "streamable-http",
                     "headers": dict(headers),
+                    "httpx_client_factory": client_factory(server.endpoint_url, headers),
                 }
                 # The adapter connects in its constructor, on its own thread and loop.
                 adapters.append(await asyncio.to_thread(MCPServerAdapter, params, *sorted(names)))
