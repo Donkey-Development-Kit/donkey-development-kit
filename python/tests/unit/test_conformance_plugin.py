@@ -160,9 +160,12 @@ def test_agent_alias_yields_when_another_plugin_owns_it(pytester: pytest.Pyteste
     result.stderr.fnmatch_lines(["*requires --donkey-agent*"])
 
 
-def test_options_are_registered(pytester: pytest.Pytester) -> None:
+def test_options_are_registered(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> None:
     # The plugin auto-loads via its entry point, so its options appear in --help
     # even though it stays inert. Proves the plugin is present in the subprocess.
+    # The subprocess inherits the environment, and FORCE_COLOR colours the help.
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setenv("NO_COLOR", "1")
     result = pytester.runpytest_subprocess("--help")
     result.stdout.fnmatch_lines(["*--donkey-conformance*"])
     result.stdout.fnmatch_lines(["*--donkey-agent=MODULE:FACTORY*"])
