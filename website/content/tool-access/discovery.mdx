@@ -239,6 +239,18 @@ It reads the asset version's API Manager instances in the environment set by
   when you bind, or call `describe()`.
 - **Bounded fan-out.** The `explain()` and `resolve_mcp()` reads for each asset
   run at most eight at a time.
+- **Warm the cache at startup.** `await donkey.tools.warm(...)` takes the same
+  `domain`, `tags` and `governed` arguments as `discover()`, does the same reads
+  and fills the same cache entry, so the first matching `discover()` does not
+  wait on the registry. It always reads, and returns how many servers it cached.
+  Anypoint has no bulk read of applied policies, so the cost grows with the
+  catalog: one search, then one `explain()` per MCP asset. Measured at about 20
+  policy reads a second, 200 servers take roughly 10 seconds cold.
+
+```python
+await donkey.tools.warm(tags=["erp"], governed=True)
+tools = await donkey.tools.discover(tags=["erp"], governed=True)  # cache hit
+```
 
 ## Related
 
