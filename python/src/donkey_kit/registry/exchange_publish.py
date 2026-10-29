@@ -20,7 +20,9 @@ ledger (docs/verified-apis.md §7, §12.3) with the fixtures it was captured as:
 * an endpoint is registered as an external instance of the version group,
   once per endpoint URI;
 * a new version's page (:mod:`~donkey_kit.registry.exchange_page`) is written
-  to its portal draft as Markdown and the draft published (#1269);
+  to its portal draft as Markdown and the draft published (#1269). A new
+  version of an MCP server says what changed since the latest one, read from
+  that version's ``mcp-metadata`` file before anything is sent (#1271);
 * Exchange takes an asset's name and description from its first version and
   ignores them on later ones, so a new version of an existing asset whose
   declared name or description differs sets them with the version-less asset
@@ -44,7 +46,7 @@ import httpx
 
 from ..core.errors import RegistryError
 from . import _scopes
-from .exchange_page import PageSource, documentation_page
+from .exchange_page import Changes, PageSource, documentation_page, tool_changes
 from .publish_plan import PlannedAsset, PublishPlan
 from .scan import ScanResult
 
@@ -216,6 +218,17 @@ async def _publish_one(
             return PublishOutcome(
                 asset, "unchanged", f"the latest version, {latest.version}, has this digest"
             )
+    changes = None
+    if latest is not None and asset.type == "mcp":
+        # Read before the publish, so a failed read sends nothing. A version
+        # with no mcp-metadata file (published by hand) has nothing to diff.
+        before = await exchange.tools(
+            group, asset_id, latest.version, missing_ok=True, scope=_scopes.EXCHANGE_PUBLISH
+        )
+        if before is not None:
+            changes = Changes(
+                latest.version, tool_changes(before, mcp_metadata(asset, result)["tools"])
+            )
     data, files = _content(asset, result)
     response = await exchange.post(
         _PUBLISH_PATH.format(org=org_id, group=group, asset=asset_id, version=version),
@@ -240,13 +253,16 @@ async def _publish_one(
     if asset.endpoint:
         await exchange.register_endpoint(asset, group, asset_id, version)
     await exchange.publish_page(
-        group, asset_id, version, documentation_page(asset, result, source=source)
+        group,
+        asset_id,
+        version,
+        documentation_page(asset, result, source=source, changes=changes),
     )
     detail = f"published {version}"
-    changes = _changed_details(asset, latest)
-    if changes:
-        await exchange.update_details(group, asset_id, changes)
-        detail += f"; updated the asset's {' and '.join(changes)}"
+    details = _changed_details(asset, latest)
+    if details:
+        await exchange.update_details(group, asset_id, details)
+        detail += f"; updated the asset's {' and '.join(details)}"
     return PublishOutcome(asset, "published", detail)
 
 
@@ -476,14 +492,27 @@ class _Exchange:
         )
 
     async def tools(
-        self, group_id: str, asset_id: str, version: str
+        self,
+        group_id: str,
+        asset_id: str,
+        version: str,
+        *,
+        missing_ok: bool = False,
+        scope: str = _scopes.EXCHANGE_READ,
     ) -> list[dict[str, Any]] | None:
+        """The version's ``mcp-metadata`` tools, or ``None`` when Exchange has no
+        such version or, with ``missing_ok``, the version has no such file or
+        the file no tools list. ``scope`` is the one a ``401``/``403`` names."""
         coordinates = f"{group_id}:{asset_id}:{version}"
-        body = await self._file(group_id, asset_id, version, ("mcp-metadata",))
+        body = await self._file(
+            group_id, asset_id, version, ("mcp-metadata",), missing_ok=missing_ok, scope=scope
+        )
         if body is None:
             return None
         tools = body.get("tools")
         if not isinstance(tools, list):
+            if missing_ok:
+                return None
             raise RegistryError(f"The mcp-metadata of {coordinates} has no tools list")
         return [t for t in tools if isinstance(t, dict)]
 
@@ -491,16 +520,23 @@ class _Exchange:
         return await self._file(group_id, asset_id, version, _READ_CARD_CLASSIFIERS)
 
     async def _file(
-        self, group_id: str, asset_id: str, version: str, classifiers: tuple[str, ...]
+        self,
+        group_id: str,
+        asset_id: str,
+        version: str,
+        classifiers: tuple[str, ...],
+        *,
+        missing_ok: bool = False,
+        scope: str = _scopes.EXCHANGE_READ,
     ) -> dict[str, Any] | None:
         """The JSON body of the version's first ``json`` file among
         ``classifiers``, downloaded from its pre-signed link, or ``None`` when
-        Exchange has no such version."""
+        Exchange has no such version or, with ``missing_ok``, no such file."""
         coordinates = f"{group_id}:{asset_id}:{version}"
         data = await self._asset(
             _FILES_QUERY,
             {"groupId": group_id, "assetId": asset_id, "version": version},
-            scope=_scopes.EXCHANGE_READ,
+            scope=scope,
         )
         if data is None:
             return None
@@ -511,6 +547,8 @@ class _Exchange:
         }
         found = next(((c, links[c]) for c in classifiers if c in links), None)
         if found is None:
+            if missing_ok:
+                return None
             raise RegistryError(f"{coordinates} has no {' or '.join(classifiers)} file in Exchange")
         classifier, link = found
         if urlsplit(link).scheme != "https":

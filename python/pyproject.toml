@@ -222,6 +222,21 @@ lock = [
     # 0.6.7: the first release whose `uv pip compile` takes `--group`.
     "uv>=0.6.7",
 ]
+# The adapter-contract leg's MCP binding packages (#1318), one group per matrix
+# extra: ci.yml's adapter-contract job, the nightly framework legs and
+# framework-release-watch.yml install `--group "contract-<extra>"`, so the leg's
+# lock pins the binding and test_tool_binding.py fails, not skips, on it.
+# The binding packages stay out of the published extras (binding.mdx lists them
+# as the user's own install). ADK, Strands, OpenAI Agents and Agent Framework
+# bind through `mcp`, which their extras already pull in, so theirs are empty.
+contract-langgraph = ["langchain-mcp-adapters>=0.3.2", "mcp>=1.24"]
+contract-llamaindex = ["llama-index-tools-mcp>=0.6", "mcp>=1.24"]
+contract-anthropic = ["mcp>=1.24"]
+contract-crewai = ["crewai-tools[mcp]>=1.15.32", "mcp>=1.24"]
+contract-adk = []
+contract-strands = []
+contract-agent_framework = []
+contract-openai-agents = []
 
 [project.scripts]
 donkey = "donkey_kit.cli:main"

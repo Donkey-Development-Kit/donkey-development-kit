@@ -227,7 +227,10 @@ Each asset is published with:
   Documentation section. Every page has the same sections: an Overview with
   the description (or "No description is declared.") followed by your
   `documentation` file; the tools, each with its description, the `approval`
-  and `risk` it declares, and a table of its parameters; how to connect
+  and `risk` it declares, and a table of its parameters; on a new version of
+  an existing asset, "Changes since" the latest published version (tools
+  added or removed, a description changed, a parameter added, removed or given
+  another type), which a first publish leaves out; how to connect
   (transport, endpoint, protocol version); and provenance: the asset ID and version, the content digest and, when the
   publish runs in GitHub Actions, the repository, the commit and a link to the
   run. It never includes credentials or your org ID. Only a new version gets a
@@ -329,6 +332,90 @@ workflows (always `0`), and `result`, the path of the
 JSON that `donkey publish --json` printed. A failed publish fails the step with
 `donkey`'s exit code, and each line `donkey` printed to stderr becomes an error
 annotation, so the fix shows on the run's page.
+
+## From GitLab CI
+
+There is no GitLab component yet, so run `donkey publish` in a job of your
+own. This one plans on merge requests and publishes from the default branch:
+
+```yaml
+# .gitlab-ci.yml
+donkey-publish:
+  image: python:3.12-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      variables:
+        DONKEY_ARGS: "--dry-run"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      variables:
+        DONKEY_ARGS: ""
+  script:
+    - pip install "donkey-kit[cli]==X.Y.Z"
+    - donkey publish . $DONKEY_ARGS --json > donkey-publish.json
+  artifacts:
+    when: always
+    paths:
+      - donkey-publish.json
+```
+
+Add `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID` as
+CI/CD variables under **Settings > CI/CD > Variables**. Mask the secret and
+protect all three: a protected variable reaches only pipelines on protected
+branches, so the default branch gets the credentials and a merge request
+doesn't. The dry run needs none; set `group_id` in `[donkey.publication]` so
+it doesn't need the org ID either.
+
+`donkey publish` prints the JSON on stdout, which the job keeps as the
+`donkey-publish.json` artifact, even when the job fails. Any issue or refusal
+goes to stderr, so it shows in the job log, and the exit code fails the job.
+
+## From Bitbucket Pipelines
+
+There is no Bitbucket Pipe yet, so run `donkey publish` in a step of your
+own. This one plans on pull requests and publishes from `main`:
+
+```yaml
+# bitbucket-pipelines.yml
+image: python:3.12-slim
+
+definitions:
+  steps:
+    - step: &donkey-plan
+        name: donkey publish (plan)
+        script:
+          - pip install "donkey-kit[cli]==X.Y.Z"
+          - donkey publish . --dry-run --json > donkey-publish.json
+        artifacts:
+          - donkey-publish.json
+
+pipelines:
+  pull-requests:
+    "**":
+      - step: *donkey-plan
+  branches:
+    main:
+      - step:
+          name: donkey publish
+          deployment: production
+          script:
+            - pip install "donkey-kit[cli]==X.Y.Z"
+            - donkey publish . --json > donkey-publish.json
+          artifacts:
+            - donkey-publish.json
+```
+
+Add `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID` as
+secured variables of the `production` deployment environment under
+**Repository settings > Deployments**. Deployment variables reach only steps
+that name that environment, so the `main` step gets the credentials and the
+pull-request step doesn't. The dry run needs none; set `group_id` in
+`[donkey.publication]` so it doesn't need the org ID either.
+
+As on GitLab, the JSON goes to the artifact, any issue or refusal to the step
+log, and the exit code fails the step.
+
+On GitLab and Bitbucket, the generated Home page leaves out the commit and
+run links: `donkey publish` reads them only from GitHub Actions.
 
 ## Scope: code-first assets
 

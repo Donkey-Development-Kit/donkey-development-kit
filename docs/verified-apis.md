@@ -771,7 +771,7 @@ decision resolves as out of scope rather than answered.
 | Can arbitrary metadata/tags be attached (content digest)? | BG §2.5, `donkey publish --if-changed` | VERIFIED (LIVE) 2026-10-26 | Yes, as a `properties.{key}` multipart field. Exchange keeps it only in the version's generated POM `<properties>` (not in GraphQL `attributes`, `labels` or `customFields`), so `donkey publish` sends `properties.ddkDigest` and reads it back from the POM, downloaded without credentials from the pre-signed `externalLink` the GraphQL `asset` query returns. A republish of an existing version is `409` `ASSET_PRE_CONDITIONS_FAILED` and leaves the version as it was, so a digest is never overwritten (#218) | 2026-10-26 sandbox publish; `tests/fixtures/anypoint/exchange_publish/` (`pom.xml`, `publish.409.json`, `graphql.latest.json`) |
 | Asset lifecycle states (draft/published/deprecated) via API? | `require_lifecycle`, BG §2.5 | PARTIAL | `Deprecated` + `Public` flags on instances; A2D showed `status: draft\|published`. 2026-10-27 (#53): every asset has a `status`, and the v2 GraphQL `assets` query filters by the `Status` enum (`status: published` and `status: deprecated` were accepted live; the group has no deprecated asset). [Searching the Graph API](https://docs.mulesoft.com/exchange/to-search-with-graph-api) documents `development`, `published` and `deprecated` | 2026-08-28; 2026-10-27 |
 | Native descriptor formats (MCP manifest, A2A card) vs file attach? | BG §2.5 output | VERIFIED (plugin) | typed Exchange files w/ fixed classifiers (`agent-metadata`, `mcp-metadata`, `llm-metadata`, `a2a-card`, `schema`, `mule-application`) attached to `agent-network` root asset. VERIFIED (LIVE) 2026-10-27 for a standalone `agent` asset (#1260): `files.agent-metadata.json` (`{protocol, platform, kind, name, description, connections, provenance}`) and, for protocol `a2a_v1`, `files.a2a-v1-card.json` (an A2A 1.0 card) are stored as sent, each under its classifier as `json`, `zip`, `fat-*` and `original-*`. 2026-10-28 (#226): the agent-metadata `protocol` of an `a2a_v1` agent is `a2a`, with the version carried by the `a2a-v1-card` file; Exchange then records `protocol: a2a, protocol-version: v1`. Stored as `protocol: a2a_v1`, the asset publishes, but API Manager refuses it an `a2a` instance (§12.5) | 2026-08-28; 2026-10-27; 2026-10-28 | §12.7; `tests/fixtures/anypoint/exchange_publish/agent.*` |
-| Read back a published version's `mcp-metadata` tools (#991) | `ExchangeRegistry.published_tools()`, `Publication.verify()` | VERIFIED (LIVE) 2026-10-29 | Yes. The GraphQL `asset(groupId, assetId, version)` query on `/graph/api/v2/graphql` returns the version's `files { classifier packaging externalLink }`; the `mcp-metadata` `json` file's pre-signed https `externalLink` downloads, without credentials, the file as `donkey publish` sent it: `{transport, tools, capabilities, provenance, protocolVersion, provider}`, each tool `{name, description, inputSchema}`. A version Exchange does not have is a `200` whose error carries `extensions.status` `404`, as for the latest-version query. Read-only, with a `client_credentials` app holding `read:exchange`, on the two published MCP assets of the sandbox group | 2026-10-29 sandbox; `tests/fixtures/anypoint/exchange_publish/graphql.files.json`, `mcp-metadata.stored.json` |
+| Read back a published version's `mcp-metadata` tools (#991) | `ExchangeRegistry.published_tools()`, `Publication.verify()`; `donkey publish`, for the latest version's tools on a new version's "Changes since" section (#1271) | VERIFIED (LIVE) 2026-10-29 | Yes. The GraphQL `asset(groupId, assetId, version)` query on `/graph/api/v2/graphql` returns the version's `files { classifier packaging externalLink }`; the `mcp-metadata` `json` file's pre-signed https `externalLink` downloads, without credentials, the file as `donkey publish` sent it: `{transport, tools, capabilities, provenance, protocolVersion, provider}`, each tool `{name, description, inputSchema}`. A version Exchange does not have is a `200` whose error carries `extensions.status` `404`, as for the latest-version query. Read-only, with a `client_credentials` app holding `read:exchange`, on the two published MCP assets of the sandbox group. `donkey publish` makes the same two calls before it sends a new version; that use was tested offline against these fixtures only, not run live (#1271) | 2026-10-29 sandbox; `tests/fixtures/anypoint/exchange_publish/graphql.files.json`, `mcp-metadata.stored.json` |
 | Read back a published version's agent card (#1354) | `ExchangeRegistry.published_card()`, `Publication.verify()` | VERIFIED (LIVE) 2026-10-29 | Yes, by the same `asset(groupId, assetId, version)` files query as the MCP tools above. An A2A agent's version carries its card as a `json` file: `a2a-v1-card` for one `donkey publish` publishes now, `a2a-card` (A2A 0.3) for one published before #1212, as `ddk-langgraph-agent` `0.1.0` is. The pre-signed https link downloads it without credentials, as stored. `published_card()` reads `a2a-v1-card`, else `a2a-card`. Read-only, `read:exchange` | 2026-10-29 sandbox; `tests/fixtures/anypoint/a2a_card/graphql.files.json`, `a2a-card.stored.json` |
 | The live card through the agent's gateway instance (#1354) | `Discovery.agent_card()`, `Publication.verify()`, `donkey verify` | VERIFIED (LIVE) 2026-10-29 | `GET <endpoint>.well-known/agent-card.json`, `<endpoint>` from `resolve_agent()`. With no policy the gateway returns the upstream's card unchanged, `url` included. Under Client ID Enforcement 1.3.3: no credentials is `401` `Client ID is not present` (`WWW-Authenticate: Client-ID-Enforcement`), an uncontracted client id `401` `Authentication Attempt Failed`, a contracted app's `client_id`/`client_secret` headers `200`. The SDK reads it with the gateway credential, only once `explain()` finds the instance governed. The live card differs from the published one in fields that describe the deployment, not the agent: `url`, `supportedInterfaces`, `preferredTransport`, `protocolVersion`, `version` (the agent's code: `0.2.0` live against the asset's `0.1.0`) and the upstream's `securitySchemes`/`security`/`securityRequirements`. `card_drift()` ignores those and compares the description, the default input/output modes and the skills by id (each one's description). A throwaway instance, `ddk-verify1354-agent` on the shared gateway, deleted afterwards | 2026-10-29 sandbox, shared-omni-gateway; `tests/fixtures/anypoint/a2a_card/traffic.card.*.json` |
 
@@ -1121,6 +1121,80 @@ listing the tools and passed on two reruns. Three findings from it:
   `list_tools` reads it from there. On `mcp` 1.x the status is on the
   `httpx.HTTPStatusError` inside the `ExceptionGroup`.
 
+**A Mule-hosted MCP server through the governed gateway: `VERIFIED (LIVE)`,
+2026-10-29, #1312.** #221 asks that discovery and binding behave the same for a
+Mule-hosted server and a framework-built one. The server here is a Mule 4.13
+app (`ddk-mule-mcp` 1.0.1) with MCP Connector 1.7.0: a `streamable-http-server-connection`
+at `/mcp` and one `mcp:tool-listener` flow per tool (`current_time`, `calculate`,
+`convert_units`, `lookup_proxy`, the same four as the agent MCP servers), deployed
+to CloudHub 2.0 (`Cloudhub-US-East-2`, runtime 4.13.0 on the EDGE channel, 0.1 vCore).
+It is published as the `mcp` asset `ddk-mulehosted-mcp:1.0.0` (the Exchange
+`app` asset `ddk-mule-mcp` holds the code; an asset ID holds one type), with an
+instance on `shared-omni-gateway` behind MCP Support 1.1.1 and Client ID
+Enforcement 1.3.3, and one consumer app with an approved contract. Run with
+`bind_live.py --bind FRAMEWORK=ddk-mulehosted-mcp --call calculate '{"expression": "6*7"}' --want 42`
+and the default `gateway_auth`: `discover(governed=True)` found the instance,
+`filter(servers=["ddk-mulehosted-mcp"])` listed all four tools, and `calculate`
+returned `42` through the framework's own tool object for all eight
+frameworks. A wrong client secret raised
+`AuthError` (HTTP 401, `{"error":"Authentication Attempt Failed"}`). Frameworks
+and `mcp`, in four venvs because their pins conflict: `mcp` 2.1.1 with
+`google-adk` 2.13.0, `strands-agents` 1.62.0, `openai-agents` 0.20.0,
+`anthropic` 2.3.0 and `llama-index-tools-mcp` 0.6.0; `agent-framework` 1.23.0 on
+`mcp` 2.3.0 (strands needs `mcp<2.2`, agent-framework 1.23 needs `>=2.2`);
+`langchain-mcp-adapters` 0.3.2 on `mcp` 1.30.0; `crewai` 1.15.33 on `mcp` 1.30.0.
+No SDK code changed: nothing on the discovery or binding path reads where a
+server comes from. Differences in shape against the framework-built servers, as
+findings:
+
+- **A tool's error text carries the Java stack.** `calculate("1/0")` returned
+  `isError: true` whose text is DataWeave's "An exception occurred while trying
+  to execute function `io.ddk.DdkTools.calculate(java.lang.String)`" plus the
+  Java frames. A binding should not parse it.
+- **Closing a session answers `202`.** The `mcp` client logs "Session
+  termination failed: 202" after every `DELETE` on the way out; the calls
+  themselves succeed.
+- **Tool schemas are what the flow declares.** `parameters-schema` is a free JSON
+  Schema string, so `required` and `default` are as the author wrote them; here
+  only `current_time` has an empty `required`.
+
+**The gateway's tool-access denial: `VERIFIED (LIVE)`, 2026-10-29, #303.** MCP
+Global Access (`mcp-global-access-policy` 1.0.1) and MCP Attribute-Based Access
+Control (`mcp-access-control` 1.0.2) were each attached to two instances and
+removed after the capture. One instance fronts the framework-built
+`ddk-langgraph-mcp` (MCP Support 1.1.1, JWT Validation, OAuth2 OBO); the other
+fronts the Mule-hosted server above (MCP Support 1.1.1, Client ID Enforcement).
+Both were on Omni Gateway 1.14.4 and spoke MCP `2025-06-18`. Global Access
+blocked `current_time`. ABAC used two Cedar rules, one permitting everything
+except `tools/call` on `Tool::"lookup_proxy"`, the other permitting that call
+for one caller. It matched on `principal.properties.claims.azp` behind JWT
+Validation (`authType: "Other"`) and on `principal.client_name` behind Client
+ID Enforcement (`authType: "ClientId"`). Fixtures are in
+`python/tests/fixtures/anypoint/mcp_access/`; the raw captures are on #303.
+
+| Question | Answer |
+|---|---|
+| Is discovery scoped? | Yes, by the server's `tools/list`. Both policies drop the denied tool from an ordinary HTTP 200 `result.tools`. ABAC does it per caller: 4 tools for the permitted caller, 3 for another. Nothing in the registry or Exchange query changes. |
+| A denied `tools/call` | **HTTP 200**, `content-type: application/json`, no `WWW-Authenticate`, and a JSON-RPC `error` instead of a `result`: `code` `-32008`, `message` `"Unable to access"`. |
+| Does it name the tool or the profile? | The tool, in `data` and nowhere else. Global Access sends `Access denied to: current_time`; ABAC sends `Access denied to: "lookup_proxy".` (quoted, with a period). No profile, rule or policy id appears. |
+| Same for both server origins? | Yes, byte-identical. The gateway answers and the server never sees the call. |
+
+The discriminator is `error.code == -32008` with `error.message == "Unable to
+access"`. `data` differs by policy and is informational. Three findings:
+
+- **It is not an HTTP error.** A check on the status sees a success, and the
+  `open_session` status hook above records nothing. These captures were raw
+  HTTP. How the `mcp` client and each framework binding surface the error is
+  not verified (#312).
+- **The order depends on the instance's auth.** On the framework-built
+  instance, JWT Validation runs only when `Authorization` is present, so Global
+  Access also denied an unauthenticated call. On the Client ID Enforcement
+  instance, a call without credentials gets `401` `{"error":"Client ID is not
+  present"}` first.
+- **A server's own tool failure looks different.** It comes back as
+  `result.isError: true`, never as `error`. The Mule server puts a Java stack
+  in the text.
+
 Collision renaming and the approval gate run in the SDK before any call. They
 were not repeated through the gateway.
 
@@ -1362,7 +1436,7 @@ scrubbed, are in `python/tests/fixtures/anypoint/mcp_instance/`.
 
 Not verified by this run: traffic through the deployed instance (its upstream
 was not reachable, and no call went through the gateway), how the gateway
-answers an MCP call a policy refuses (#303), and the run with a connected
+answers an MCP call a policy refuses (since verified, §9, #303), and the run with a connected
 app's token, which the `donkey expose` run below made. The scopes in §1 were
 isolated with an MCP instance (#23).
 

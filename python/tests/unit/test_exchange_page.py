@@ -1,13 +1,15 @@
 """The Exchange page ``donkey publish`` writes for an MCP asset (#1269, #1273):
 the same sections for every asset, the declared documentation, each tool's
-governance, plain table cells, and provenance with no group ID.
+governance, plain table cells, provenance with no group ID, and what changed
+since the previous version (#1271).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-from donkey_kit.registry.exchange_page import PageSource, documentation_page
+from donkey_kit.registry.exchange_page import Changes, PageSource, documentation_page, tool_changes
 from donkey_kit.registry.publish_plan import plan_publication
 from donkey_kit.registry.scan import scan
 
@@ -107,3 +109,55 @@ def test_a_missing_description_is_said_so(tmp_path: Path) -> None:
     page = documentation_page(plan.assets[0], result)
 
     assert "## Overview\n\nNo description is declared.\n" in page
+
+
+def _tool(name: str, description: str = "Does a thing well.", **params: str) -> dict[str, Any]:
+    properties = {p: ({"type": t} if t else {}) for p, t in params.items()}
+    return {
+        "name": name,
+        "description": description,
+        "inputSchema": {"type": "object", "properties": properties},
+    }
+
+
+def test_tool_changes_lists_each_difference_by_tool_name() -> None:
+    before = [_tool("ping"), _tool("lookup", sku="string", limit="integer", mode="string")]
+    after = [
+        _tool("lookup", sku="string", limit="number", region=""),
+        _tool("add", a="integer"),
+        _tool("ping", "Checks that the server answers."),
+    ]
+
+    assert tool_changes(before, after) == (
+        "Added the tool `add`.",
+        "`lookup`: the parameter `limit` changed from integer to number.",
+        "`lookup`: removed the parameter `mode`.",
+        "`lookup`: added the parameter `region`.",
+        "`ping`: the description changed.",
+    )
+
+
+def test_tool_changes_ignores_surrounding_whitespace_and_a_missing_description() -> None:
+    before = [_tool("ping", "  Checks.  "), {"name": "add"}]
+    after = [_tool("ping", "Checks."), {"name": "add", "description": ""}]
+
+    assert tool_changes(before, after) == ()
+    assert tool_changes([_tool("gone")], []) == ("Removed the tool `gone`.",)
+
+
+def test_the_changes_section_comes_after_the_tools(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text(SOURCE, encoding="utf-8")
+    (tmp_path / ".donkey-kit.toml").write_text(TOML, encoding="utf-8")
+    (tmp_path / "README.md").write_text("Docs.\n", encoding="utf-8")
+    result = scan(tmp_path)
+    plan = plan_publication(result, tmp_path, default_group_id=GROUP)
+
+    page = documentation_page(
+        plan.assets[0], result, changes=Changes("1.0.0", ("Added the tool `ping`.",))
+    )
+    unchanged = documentation_page(plan.assets[0], result, changes=Changes("1.0.0", ()))
+
+    sections = [line for line in page.splitlines() if line.startswith("## ")]
+    assert sections[-3:] == ["## Changes since 1.0.0", "## Connecting", "## Provenance"]
+    assert "## Changes since 1.0.0\n\n- Added the tool `ping`.\n\n## Connecting" in page
+    assert "## Changes since 1.0.0\n\nNo tool changed.\n\n## Connecting" in unchanged

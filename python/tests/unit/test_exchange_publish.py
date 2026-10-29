@@ -413,6 +413,54 @@ async def test_a_refused_page_is_a_registry_error(
         await _publish(http, repo())
 
 
+async def test_a_first_publish_has_no_changes_section(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    await _publish(http, repo())
+
+    assert "## Changes since" not in exchange.pages[(ORG, ASSET, "1.0.0")]
+    assert exchange.metadata_reads == []
+
+
+async def test_a_new_version_says_what_changed_since_the_latest(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    await _publish(http, repo())
+
+    await _publish(http, repo(version="1.1.0", description="Look up a SKU's stock."))
+
+    page = exchange.pages[(ORG, ASSET, "1.1.0")]
+    assert "## Changes since 1.0.0\n\n- `lookup_sku`: the description changed.\n" in page
+    assert exchange.metadata_reads == [(ORG, ASSET, "1.0.0")]
+    mcp_reads = [r for r in exchange.requests if "c=mcp-metadata" in str(r.url)]
+    assert all("authorization" not in r.headers for r in mcp_reads)
+
+
+async def test_the_previous_tools_are_read_before_anything_is_sent(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    await _publish(http, repo())
+    before = len(exchange.requests)
+
+    await _publish(http, repo(version="1.1.0", description="Look up a SKU's stock."))
+
+    calls = exchange.requests[before:]
+    read = next(i for i, r in enumerate(calls) if "c=mcp-metadata" in str(r.url))
+    sent = next(i for i, r in enumerate(calls) if "/organizations/" in r.url.path)
+    assert read < sent
+
+
+async def test_a_latest_version_without_tools_has_no_changes_section(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
+) -> None:
+    exchange.publish(ORG, ASSET, "0.9.0", None)  # by hand: its mcp-metadata has no tools
+
+    outcomes = await _publish(http, repo())
+
+    assert outcomes[ASSET].status == "published"
+    assert "## Changes since" not in exchange.pages[(ORG, ASSET, "1.0.0")]
+
+
 async def test_an_a2a_agent_is_published_with_its_metadata_card_and_endpoint(
     repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient
 ) -> None:
