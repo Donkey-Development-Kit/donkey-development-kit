@@ -529,7 +529,7 @@ verified `www-authenticate` auth shape is excluded. The fall-through is a
 standing catch-all, not a pending contract: no capture can verify "any
 unrecognised shape", so it closes nothing and blocks nothing. A specific
 vendor verdict that turns up is captured and typed on its own issue; the
-federated guardrails (Akamai, CrowdStrike, Google Armor) are tracked in #305.
+federated guardrails (CrowdStrike, Google Armor) are tracked in #305.
 
 **Budget window emission — two forms, keyed on outcome not status class
 (LIVE-VERIFIED).** The gateway signals its token-rate-limit window in two
