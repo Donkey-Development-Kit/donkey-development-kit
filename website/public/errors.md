@@ -105,8 +105,8 @@ answers is never reported as expired: the policy starts a new approval flow and
 keeps answering "pending", so keep your own deadline. After a deny, the gateway
 caches the decision; on OBO policy 1.1.3 it does so per user, not per
 conversation, for up to an hour. The policy's initiation failure (`502`,
-`ciba_initiation_failed`) has not been captured and stays an
-`UpstreamModelError`.
+`ciba_initiation_failed`) has no type of its own and is an
+`UpstreamModelError`, like any other `5xx`.
 
 The SDK does not retry a pending approval on its own. To wait for one while listing an
 MCP server's tools, use `toolset.wait_for_gateway_approval("2m")`: it re-sends the
@@ -115,7 +115,8 @@ MCP server's tools, use `toolset.wait_for_gateway_approval("2m")`: it re-sends t
 `GatewayApprovalPending` when the timeout passes. A tool *call* is not retried: the
 framework MCP clients lose the response body that tells a pending approval from a bad
 credential, so handle `GatewayApprovalPending` where your framework lets you. `donkey mock
---scenario ciba:pending=2` plays the sequence offline.
+--scenario ciba:pending=2` plays the sequence offline. [Gateway step-up](https://docs.donkey-kit.dev/hitl.md#gateway-step-up)
+covers the whole flow.
 
 The Injection Protection shape is live-verified against a deployed proxy
 (#669); `classify()` keys on the header discriminator alone for it, not the
