@@ -30,7 +30,12 @@ scenarios against). `main()` then runs the full Scenario A:
   `OTEL_EXPORTER_OTLP_ENDPOINT` at it lights up the SDK's zero-config export
   (#194) — every governed call's span (refusals included) flows over the wire
   and is counted. The Agents SDK's own tracing is off (`RunConfig(
-  tracing_disabled=True)`): its default exporter posts to OpenAI, not the proxy.
+  tracing_disabled=True)` on every run). It is on by default, and its default
+  exporter posts each run's prompts and outputs to OpenAI's trace ingest
+  endpoint whenever an OpenAI API key is set, bypassing the proxy and its PII
+  policy. Do the same in your own agent, or call
+  `agents.set_tracing_disabled(True)` once at startup, or set
+  `OPENAI_AGENTS_DISABLE_TRACING=1`.
 - **Correlation reaches the agent for free.** The agent's dynamic
   `instructions` log `current_correlation_id()` without it being passed through
   the run context: `Runner.run` resolves instructions and runs `function_tool`s

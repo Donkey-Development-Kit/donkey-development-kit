@@ -870,6 +870,32 @@ the `strands.tool` surface in `tests/conformance/test_typed_refusal_bridge.py`
 the bridge-disabled control). No live gateway check or verification-status
 promotion is implied.
 
+#### OpenAI Agents SDK tracing opt-out (#1434)
+
+The adapter, `frameworks/openai.mdx` and `examples/openai_agents` tell callers
+to turn off the Agents SDK's own tracing. Read from installed source on
+2026-10-29 at `openai-agents==0.20.0` (floor) and `0.24.0`:
+
+- `agents.tracing.processors.BackendSpanExporter` posts to
+  `_OPENAI_TRACING_INGEST_ENDPOINT = "https://api.openai.com/v1/traces/ingest"`.
+  It uses a key from `set_tracing_export_api_key`, from `set_default_openai_key`
+  or `set_default_openai_client` (both default `use_for_tracing=True`), or from
+  `OPENAI_API_KEY`. With no key it logs a warning and skips the export.
+- `RunConfig.trace_include_sensitive_data` defaults to
+  `OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA`, which is `"true"` when unset. With
+  it on, `OpenAIChatCompletionsModel` records the input messages and the output
+  on its generation span.
+- There are three opt-outs, all public. `agents.set_tracing_disabled(disabled)`
+  (also `agents.tracing.set_tracing_disabled`) works process-wide.
+  `agents.RunConfig(tracing_disabled=True)` works per run. The
+  `OPENAI_AGENTS_DISABLE_TRACING` env var (`true`/`1`, case-insensitive) is read by
+  `DefaultTraceProvider` on its first use, and a `set_tracing_disabled` call
+  takes precedence over it.
+
+Neither version has a public getter for the effective state, so the adapter
+does not check or log it. It does not change the setting either (ADR 0010).
+This is an offline source read; no live export was observed.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always

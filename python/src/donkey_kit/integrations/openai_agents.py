@@ -22,6 +22,14 @@ accepts a pre-built OpenAI client (BG §1.8).
 Point the SDK's *model* at the proxy per-agent rather than mutating the global
 default client, so one process can mix governed and ungoverned models.
 
+The Agents SDK's own tracing is on by default, and its exporter posts each run's
+traces, model inputs and outputs included, to OpenAI's trace ingest endpoint
+whenever an OpenAI API key is available. That bypasses the gateway's policies.
+The adapter leaves it alone, because a hidden global side effect is forbidden
+(ADR 0010). Callers turn it off with ``agents.set_tracing_disabled(True)``,
+``RunConfig(tracing_disabled=True)`` or ``OPENAI_AGENTS_DISABLE_TRACING=1``
+(#1434).
+
 Correlation IDs reach every tool for free: ``Runner.run`` runs dynamic
 instructions and ``function_tool`` bodies inside the caller's context, so a run
 id bound with ``donkey.run(id=…)`` is visible via ``current_correlation_id()``
@@ -123,7 +131,12 @@ class OpenAIAgentsAdapter(Adapter):
 
     def model(self, model: str, **kw: Any) -> OpenAIChatCompletionsModel:
         """Return a native ``OpenAIChatCompletionsModel`` pointed at the proxy,
-        ready to pass into ``agents.Agent(model=...)`` (BG §1.8)."""
+        ready to pass into ``agents.Agent(model=...)`` (BG §1.8).
+
+        The model's calls are governed, but the Agents SDK's own tracing still
+        exports prompts and outputs to OpenAI unless you disable it
+        (``agents.set_tracing_disabled(True)`` or
+        ``RunConfig(tracing_disabled=True)``)."""
         with self._native_import():
             from agents import (
                 OpenAIChatCompletionsModel,  # VERIFY name/path: docs/verified-apis.md §8
@@ -135,7 +148,8 @@ class OpenAIAgentsAdapter(Adapter):
 def model(model: str, **kw: Any) -> OpenAIChatCompletionsModel:
     """Module-level convenience: a native ``OpenAIChatCompletionsModel`` at the
     proxy using a cached default env-configured Donkey. Equivalent to
-    ``Donkey.from_env().openai_agents.model(model, **kw)``."""
+    ``Donkey.from_env().openai_agents.model(model, **kw)``, including its note on
+    disabling the Agents SDK's own tracing."""
     return default_adapter(OpenAIAgentsAdapter).model(model, **kw)
 
 
