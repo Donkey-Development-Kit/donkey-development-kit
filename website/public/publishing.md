@@ -569,7 +569,8 @@ published with (its `a2a-v1-card` file, or the `a2a-card` of a version published
 before A2A 1.0) and the card the agent serves at
 `.well-known/agent-card.json` through its gateway instance, with the same
 governance check and gateway credential: an ungoverned agent raises
-`RegistryError` and is sent nothing. A changed card description, a changed set
+`RegistryError` and is sent nothing, and so does one whose gateway URL is not
+[`https://`](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-mcp-server). A changed card description, a changed set
 of default input or output modes, a skill added or removed, or a skill whose
 description changed is drift. The fields that say where and how this deployment
 serves the agent are not compared: `url`, `supportedInterfaces`,

@@ -32,6 +32,12 @@ carrying `a2a-sdk` exists today for the server side,
   available today: it resolves the agent's gateway URL the way `resolve_mcp()`
   resolves an MCP server's. Only `as_tool()` is on the Roadmap. See
   [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent).
+- The resolved URL follows the
+  [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https) of the
+  URLs you configure, because the gateway credential is sent to it. A gateway
+  public URL that uses plain `http://` to a non-loopback host (without
+  `DONKEY_ALLOW_HTTP=1`), or that carries a user name or password, raises
+  `RegistryError`, and nothing is sent to the agent.
 - `as_tool()` returns a framework-native callable, following the same
   conventions as [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
 - To make *your* agent callable by others over A2A, see [A2A agents](https://docs.donkey-kit.dev/a2a.md).
