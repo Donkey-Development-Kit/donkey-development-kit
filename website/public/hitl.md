@@ -633,6 +633,20 @@ be a positive duration, and the view keeps it through `filter()` and
 band, the gateway lets the same request through, and the gateway keeps the
 audit trail.
 
+A set with several MCP servers lists them all at once. The first server to fail
+stops the rest: when one server's approval is denied, its wait times out, or the
+gateway refuses the credential, DDK cancels the other servers' waits first. Then
+it raises that error, or, for a refused gateway credential, lists every server
+once more with a fresh one. No server keeps re-sending a request the user would
+have to answer. Cancelling the `describe()` call, or the binding that runs it,
+cancels every server's wait the same way.
+
+Keep the timeout at `"2m"` or less. The policy's approval request expires after
+about two minutes, and the gateway then starts a new one, which asks the user
+again. A longer timeout can therefore prompt the user more than once for the
+same listing, so `wait_for_gateway_approval()` emits a `ConfigWarning`
+(`donkey_kit.core.errors.ConfigWarning`) when you pass one.
+
 A tool *call* is neither typed nor retried. The framework MCP clients DDK binds
 to drop the response body, so a pending approval on `tools/call` reaches your
 code as the framework's own error, or as an error result, and looks the same as
