@@ -200,8 +200,8 @@ async def _strands_tool(donkey: Donkey) -> None:
     agent = strands.Agent(
         model=ToolModel(), tools=[strands.tool(ask)], hooks=[ApprovalHook()], callback_handler=None
     )
-    (interrupt,) = pending_approvals(await agent.invoke_async("hi"))
-    await agent.invoke_async([approve(interrupt, by="reviewer")])
+    (approval,) = pending_approvals(await agent.invoke_async("hi"))
+    await agent.invoke_async([approve(approval, by="reviewer").native])
 
 
 async def _agent_framework(donkey: Donkey) -> None:

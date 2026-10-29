@@ -8,6 +8,7 @@ The approval is advisory and never overrides a gateway refusal.
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import logging
 from datetime import timedelta
@@ -438,3 +439,21 @@ def test_approval_is_a_frozen_value_object() -> None:
     )
     with pytest.raises(AttributeError):
         approval.tool = "other"  # type: ignore[misc]
+
+
+def test_native_defaults_to_none_and_is_left_out_of_equality_and_the_repr() -> None:
+    approval = Approval(
+        id="a-1",
+        tool="t",
+        arguments={},
+        risk=None,
+        correlation_id="run-1",
+        requested_at=0.0,
+        expires_at=1.0,
+    )
+    assert approval.native is None
+    paused = dataclasses.replace(approval, native=SimpleNamespace(secret="resume-token"))
+    assert paused == approval
+    assert "native" not in repr(paused) and "resume-token" not in repr(paused)
+    with pytest.raises(AttributeError):
+        paused.native = None  # type: ignore[misc]

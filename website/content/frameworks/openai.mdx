@@ -175,8 +175,9 @@ The SDK's internal conformance matrix records no exemption for the Agents SDK,
 with `donkey_kit.integrations.openai_agents.function_tool` sets the Agents SDK's
 own `needs_approval`, so `Runner.run` pauses with the call in
 `result.interruptions`. `pending_approvals`, `approve` and `reject` record the
-decision on the `RunState`, and `Runner.run(agent, state)` resumes (#213). See
-[Human approval](/hitl#in-an-openai-agents-sdk-run).
+decision on the `RunState`, and `Runner.run(agent, state)` resumes (#213). Each
+helper returns an `Approval`; `approve` and `reject` return it with the
+`RunState` on `native`. See [Human approval](/hitl#in-an-openai-agents-sdk-run).
 
 ## Notes
 

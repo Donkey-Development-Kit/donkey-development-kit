@@ -133,6 +133,7 @@ def test_pending_approvals_reads_a_result_and_records_each_gated_call(
     assert dict(approval.arguments) == {"ticket_id": "T-1", "amount": 140.0}
     assert (approval.risk, approval.correlation_id) == ("financial", "run-9")
     assert approval.expires_at == math.inf
+    assert approval.native is state.items[0]  # the SDK's ToolApprovalItem
     assert recorded == [("pending", approval)]
 
 
@@ -220,6 +221,8 @@ def test_approve_hands_the_item_to_the_state_and_records_the_approver(
 
     assert state.approved == state.items
     assert decided.id == approval.id
+    # The uniform return (#1422): the state to resume the run on.
+    assert decided.native is state
     assert recorded[-1] == ("approved", (decided, "m.keller"))
 
 
@@ -228,8 +231,9 @@ def test_reject_sends_a_default_message_without_the_rejecter(
 ) -> None:
     state = _state()
     (approval,) = ddk_agents.pending_approvals(state)  # type: ignore[arg-type]
-    ddk_agents.reject(state, approval, by="a.ops")  # type: ignore[arg-type]
+    rejected = ddk_agents.reject(state, approval, by="a.ops")  # type: ignore[arg-type]
 
+    assert rejected == approval and rejected.native is state
     ((item, told),) = state.rejected
     assert item is state.items[0]
     assert told is not None and "issue_refund" in told and approval.id not in told
@@ -333,7 +337,7 @@ def test_a_decision_outside_the_run_keeps_the_pauses_correlation(
         (approval,) = ddk_agents.pending_approvals(state)  # type: ignore[arg-type]
     decided = decide(state, approval, by="alice")
 
-    assert decided is approval
+    assert decided == approval and decided.native is state
     assert (decided.correlation_id, decided.requested_at) == ("run-X", approval.requested_at)
     assert recorded[-1][1][0].correlation_id == "run-X"
 

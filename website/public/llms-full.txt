@@ -1260,9 +1260,13 @@ model node still surfaces as its typed exception.
 
 A [`@donkey.tool(approval="required")`](https://docs.donkey-kit.dev/hitl.md#in-a-langgraph-graph) tool uses
 this pause: inside a graph with a checkpointer it calls `interrupt()` instead of
-raising `ApprovalRequired`, and `Command(resume={"approved": True, "by":
-"<approver>"})` records the approver and runs it. A refusal from the approved
-tool's model call still leaves the graph typed.
+raising `ApprovalRequired`. `pending_approvals(result)` from
+`donkey_kit.integrations.langgraph` returns each paused call as an `Approval`,
+and `graph.invoke(approve(approval, by="<approver>").native, config)` records
+the approver and runs it; `reject(...)` refuses it. Each helper returns an
+`Approval` whose `native` is the `Command` to resume on, or you can resume on
+`Command(resume={"approved": True, "by": "<approver>"})` yourself. A refusal
+from the approved tool's model call still leaves the graph typed.
 
 On Python 3.10, `interrupt()` only works when the graph runs with
 `graph.invoke()`. Under `graph.ainvoke()` it raises `RuntimeError: Called
@@ -1680,8 +1684,10 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
 - **Approval-gated tools pause the run.** Add `approval_plugin()` from
   `donkey_kit.integrations.adk` to the `App`'s `plugins`, and a
   `@donkey.tool(approval="required")` call pauses with ADK's own tool
-  confirmation. Resume it with `approve(...)` or `reject(...)`. See
-  [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-google-adk-app).
+  confirmation. `pending_approvals(events)` returns each paused call as an
+  `Approval`; resume the run on a user message whose parts are
+  `approve(...).native` or `reject(...).native`, the `types.Part` each helper
+  returns on the `Approval`. See [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-google-adk-app).
 - **`gemini()` needs the `adk` extra's minimum `google-adk`** (see
   [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)), the first release whose
   `Gemini` accepts `client_kwargs`. On an older
@@ -1837,8 +1843,10 @@ Strands forwards to its internal OpenAI client.
 - **Approval-gated tools pause the agent.** Add
   `ApprovalHook()` from `donkey_kit.integrations.strands` to the agent's
   `hooks`, and a `@donkey.tool(approval="required")` call stops the agent with
-  Strands' own interrupt. Resume it with `approve(...)` or `reject(...)`. See
-  [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-strands-agent).
+  Strands' own interrupt. `pending_approvals(result)` returns each paused call
+  as an `Approval`; resume the agent on `approve(...).native` or
+  `reject(...).native`, the interrupt response each helper returns on the
+  `Approval`. See [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-strands-agent).
 - **Refusals inside tools stop the agent.** With `ApprovalHook()` installed,
   a governed refusal inside an approved or ungated tool leaves the tool loop
   before a retry or another model turn. Use `donkey.run()` or `@donkey.governed`
@@ -2245,8 +2253,9 @@ The SDK's internal conformance matrix records no exemption for the Agents SDK,
 with `donkey_kit.integrations.openai_agents.function_tool` sets the Agents SDK's
 own `needs_approval`, so `Runner.run` pauses with the call in
 `result.interruptions`. `pending_approvals`, `approve` and `reject` record the
-decision on the `RunState`, and `Runner.run(agent, state)` resumes (#213). See
-[Human approval](https://docs.donkey-kit.dev/hitl.md#in-an-openai-agents-sdk-run).
+decision on the `RunState`, and `Runner.run(agent, state)` resumes (#213). Each
+helper returns an `Approval`; `approve` and `reject` return it with the
+`RunState` on `native`. See [Human approval](https://docs.donkey-kit.dev/hitl.md#in-an-openai-agents-sdk-run).
 
 ## Notes
 
@@ -4512,6 +4521,34 @@ and resolving one after a restart raises `KeyError`. When a pause has to
 survive a restart, use a framework's own durable pause, such as LangGraph's
 checkpointer or the OpenAI Agents SDK's serialised `RunState` (see below).
 
+## The framework approval helpers
+
+LangGraph, the OpenAI Agents SDK, Strands and Google ADK each pause a gated
+tool in their own way, as the sections below describe. Each adapter module has
+the same three helpers for its pause, and they all speak `Approval`:
+
+| Helper | Returns |
+|---|---|
+| `pending_approvals(...)` | A tuple of `Approval`, one for each paused call, in order. `native` is the framework's own pause object. |
+| `approve(..., by=...)` | The `Approval`, with `native` set to the object you resume the framework on. |
+| `reject(..., by=...)` | The same as `approve`. |
+
+`Approval.native` is a frozen field that defaults to `None`. It is left out of
+equality and `repr`, so an `Approval` compares and prints the same whatever
+object it carries. For each framework, `native` holds:
+
+| Framework | On a pending approval | On a decided approval |
+|---|---|---|
+| LangGraph | The `Interrupt` | The `Command` to `graph.invoke(...)` |
+| OpenAI Agents SDK | The `ToolApprovalItem` | The `RunState` to `Runner.run(agent, ...)` |
+| Strands | The `Interrupt` | The `interruptResponse` dict for `agent.invoke_async([...])` |
+| Google ADK | The `adk_request_confirmation` `FunctionCall` | The `types.Part` for the resuming user message |
+
+The helpers all return `Approval`, never a framework object, so a reviewer
+queue is written once. It reads the same fields for every framework, and only
+the step that resumes the agent touches `native`. An approval from
+`donkey.approvals` (the raise-and-resume form above) has `native=None`.
+
 ## In a LangGraph graph
 
 Inside a LangGraph graph that runs with a checkpointer and a `thread_id`, a
@@ -4521,9 +4558,9 @@ gated tool does not raise `ApprovalRequired`. It pauses with LangGraph's own
 
 ```python
 from donkey_kit import Donkey
+from donkey_kit.integrations.langgraph import approve, pending_approvals, reject
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command
 
 donkey = Donkey()
 
@@ -4543,12 +4580,26 @@ graph = builder.compile(checkpointer=MemorySaver())
 thread = {"configurable": {"thread_id": "ticket-T-1"}}
 
 paused = graph.invoke({"ticket_id": "T-1", "amount": 140.0}, thread)
-request = paused["__interrupt__"][0].value  # show this to a reviewer
+(approval,) = pending_approvals(paused)  # show this to a reviewer
 
-done = graph.invoke(Command(resume={"approved": True, "by": "m.keller"}), thread)
+done = graph.invoke(approve(approval, by="m.keller").native, thread)
 ```
 
-The interrupt's value describes the call:
+`pending_approvals` takes what `graph.invoke()` returned on the pause, or
+`graph.get_state(thread)`. It returns an `Approval` for each DDK interrupt and
+leaves your own interrupts out. It records nothing, because the pending
+approval was recorded when the graph paused.
+
+`approve(approval, by=...)` returns the `Approval` with `native` set to the
+`Command` that resumes the graph. Its resume value is keyed by the interrupt's
+id, so when several gated calls pause at once, merge their `native.resume`
+mappings into one `Command(resume={...})`. `reject(approval, by=...)` builds a
+refusing `Command` the same way. There is no `message`, because the refused
+tool raises `ApprovalRejected` (see below). Both raise `ValueError` for an
+`Approval` that `pending_approvals` did not return, or for an empty `by`.
+
+The interrupt's value describes the call. This is what `pending_approvals`
+reads, and what you would read without it:
 
 | Key | What it holds |
 |---|---|
@@ -4556,13 +4607,15 @@ The interrupt's value describes the call:
 | `approval_id` | The approval's id, the same one on its span events. |
 | `tool`, `arguments`, `risk` | As on an `Approval`. `arguments` is a plain `dict`. |
 | `correlation_id` | The enclosing `donkey.run()` id, or a fresh one outside a run. |
+| `requested_at` | When the call paused, as on an `Approval`. |
 
-Resume with `{"approved": True, "by": "<approver>"}` to record the approver and
-run the tool, or `{"approved": False, "by": "<approver>"}` to refuse it. A
-refused call raises `ApprovalRejected` from the tool, which carries the
-`Approval`; a `ToolNode(handle_tool_errors=True)` turns it into a tool message
-for the model. Any other resume value raises `ValueError`. `by` must be a
-non-empty string, and DDK records it without authenticating it.
+You can also resume without the helpers. Resume on
+`Command(resume={"approved": True, "by": "<approver>"})` to record the approver
+and run the tool, or on `{"approved": False, "by": "<approver>"}` to refuse it.
+A refused call raises `ApprovalRejected` from the tool, which carries the
+`Approval`. A `ToolNode(handle_tool_errors=True)` turns that error into a tool
+message for the model. Any other resume value raises `ValueError`. `by` must be
+a non-empty string, and DDK records it without authenticating it.
 
 The pause lives in your checkpointer, not in `donkey.approvals`: `pending()`
 does not list it, and `resolve` and `reject` do not apply to it. A durable
@@ -4625,15 +4678,17 @@ async with donkey.run(id="ticket-T-1"):
 
 state = result.to_state()
 async with donkey.run(id=approval.correlation_id):
-    openai_agents.approve(state, approval, by="m.keller")
-    done = await Runner.run(agent, state)
+    decided = openai_agents.approve(state, approval, by="m.keller")
+    done = await Runner.run(agent, decided.native)  # decided.native is state
 ```
 
 `pending_approvals(result)` returns an `Approval` for each paused call to a
-gated tool and records its pending span event. It skips interruptions it did
-not gate, so your own `needs_approval` tools are left to you. `approve(state,
-approval, by=...)` records the approver and approves the call on the
-`RunState`, and the next `Runner.run(agent, state)` runs the tool once.
+gated tool, with the SDK's `ToolApprovalItem` on `native`, and records its
+pending span event. It skips interruptions it did not gate, so your own
+`needs_approval` tools are left to you. `approve(state, approval, by=...)`
+records the approver and approves the call on the `RunState`. It returns the
+`Approval` with `native` set to that `RunState`, and the next
+`Runner.run(agent, state)` runs the tool once.
 `approve` and `reject` also take the approval's id, and raise `KeyError` for an
 id with no paused call in the state. A call is decided once: a second `approve`
 or `reject` of it on the same `RunState` raises `KeyError` and records nothing.
@@ -4643,8 +4698,10 @@ the decision keeps its correlation id, so it joins the pending event even when
 you decide outside the `donkey.run()` that paused. `by` must be a non-empty
 string, and DDK records it without authenticating it.
 
-`reject(state, approval, by=..., message=None)` records the rejecter and
-rejects the call. The tool does not run, and the run goes on: the Agents SDK
+`reject(state, approval, by=..., message=None)` records the rejecter, rejects
+the call and returns the `Approval` as `approve` does. The Agents SDK helpers
+take the state as well as the approval because the SDK records the decision on
+the `RunState`. The tool does not run, and the run goes on: the Agents SDK
 hands the model `message`, or a default that names the tool, as the tool's
 result. It does not raise `ApprovalRejected`, and the rejecter's name never
 reaches the model.
@@ -4706,39 +4763,34 @@ agent = Agent(
 
 result = await agent.invoke_async("Refund ticket T-1, 140 euros")
 if result.stop_reason == "interrupt":
-    requests = pending_approvals(result)  # show each one's .reason to a reviewer
-    result = await agent.invoke_async([approve(r, by="m.keller") for r in requests])
+    approvals = pending_approvals(result)  # show these to a reviewer
+    decided = [approve(a, by="m.keller") for a in approvals]
+    result = await agent.invoke_async([a.native for a in decided])
 ```
 
-`pending_approvals(result)` returns the paused calls, which are Strands' own
-`Interrupt` objects named `"donkey.approval"`. Each one's `reason` describes the
-call:
+`pending_approvals(result)` returns an `Approval` for each paused call, with
+Strands' own `Interrupt`, named `"donkey.approval"`, on `native`. The
+interrupt's `reason` describes the call:
 
 | Key | What it holds |
 |---|---|
 | `approval_id` | The approval's id, the same one on its span events. |
 | `tool`, `arguments`, `risk` | As on an `Approval`. `arguments` is a plain `dict`. |
 | `correlation_id` | The enclosing `donkey.run()` id, or a fresh one outside a run. |
+| `requested_at` | When the call paused, as on an `Approval`. |
 
-Resume the agent on a list of responses, one for each paused call:
+Resume the agent on a list of responses, one for each paused call. Each helper
+returns the `Approval` with the Strands `interruptResponse` on `native`:
 
-- `approve(request, by=...)` records the approver and runs the tool once,
+- `approve(approval, by=...)` records the approver and runs the tool once,
   under the approval's correlation id, wherever and whenever you resume.
-- `reject(request, by=..., message=...)` records who refused, and the tool is
+- `reject(approval, by=..., message=...)` records who refused, and the tool is
   not run. Strands sends the model `message` as an error tool result, or a
   default that names the tool, never the rejecter. Nothing raises `ApprovalRejected`:
   the model reads the rejection and carries on.
 
-The plugin checks each answer against the request the agent stored in the
-session, not against what the answer carries. It refuses, without running the
-tool, an answer to a request the agent never made, one that is not `approve()`
-or `reject()`'s (such as a plain ADK confirmation), and a second answer for a
-call already answered; the model gets the refusal as the tool's error result.
-So the tool runs once per approval, even on `google-adk` 2.4.0, which would
-otherwise resume on a confirmation a user message forges and run a call again
-when the same answer is sent twice.
-
-`by` must be a non-empty string, and DDK records it without authenticating it.
+Both raise `ValueError` for an `Approval` that `pending_approvals` did not
+return. `by` must be a non-empty string, and DDK records it without authenticating it.
 Each paused call is decided once, even if another hook retries the tool. When
 the model asks for several gated calls in one turn, Strands' default concurrent
 executor pauses them together, and a `SequentialToolExecutor` pauses on each in
@@ -4750,10 +4802,6 @@ tool-use id, the tool and the arguments. To resume a call in a fresh process
 that restored the agent from a Strands session, give the restored agent a new
 `ApprovalHook`. The decision is then recorded under the same approval id, with
 the resume's time and correlation id.
-
-On `google-adk` releases before 2.13, the pause's last event also carries
-each paused call's placeholder result, `{"status": "awaiting approval",
-"approval_id": ...}`, as text. Don't show it as the agent's answer.
 
 A model call the approved tool makes is judged by the gateway as usual.
 `ApprovalHook` re-raises a governed refusal from inside a tool before Strands
@@ -4802,19 +4850,19 @@ async def send(message: types.Content) -> list:
     return [event async for event in run]
 
 events = await send(types.Content(role="user", parts=[types.Part(text="Refund T-1, 140 euros")]))
-requests = pending_approvals(events)  # show each one's payload to a reviewer
-if requests:
-    answer = types.Content(role="user", parts=[approve(r, by="m.keller") for r in requests])
-    events = await send(answer)
+approvals = pending_approvals(events)  # show these to a reviewer
+if approvals:
+    decided = [approve(a, by="m.keller") for a in approvals]
+    events = await send(types.Content(role="user", parts=[a.native for a in decided]))
 ```
 
-`pending_approvals(events)` returns the unanswered requests among the events
-you pass it. Pass the latest run's events, or the session's `events`. The
-runner does not yield the user message that answers a request, so the events
-of several runs put together still list a request you already answered. Each
-is ADK's own
-`adk_request_confirmation` function call. Its
-`args["toolConfirmation"]["payload"]` describes the call:
+`pending_approvals(events)` returns an `Approval` for each unanswered request
+among the events you pass it. Pass the latest run's events, or the session's
+`events`. The runner does not yield the user message that answers a request,
+so the events of several runs put together still list a request you already
+answered. Each approval's `native` is ADK's own `adk_request_confirmation`
+function call. The call's `args["toolConfirmation"]["payload"]` describes the
+tool call:
 
 | Key | What it holds |
 |---|---|
@@ -4822,19 +4870,35 @@ is ADK's own
 | `approval_id` | The approval's id, the same one on its span events. |
 | `tool`, `arguments`, `risk` | As on an `Approval`. `arguments` holds the arguments as the model sent them. |
 | `correlation_id` | The enclosing `donkey.run()` id, or a fresh one outside a run. |
+| `requested_at` | When the call paused, as on an `Approval`. |
 
-Resume the run with one user message whose parts answer the requests:
+Resume the run with one user message whose parts answer the requests. Each
+helper returns the `Approval` with that part, a `types.Part`, on `native`:
 
-- `approve(request, by=...)` records the approver and runs the tool under the
+- `approve(approval, by=...)` records the approver and runs the tool under the
   pause's correlation id, in this process or another.
-- `reject(request, by=..., message=...)` records who refused, and the tool is
+- `reject(approval, by=..., message=...)` records who refused, and the tool is
   not run. The model gets `message` as the tool's error result, or a default
   that names the tool, never the rejecter. Nothing raises `ApprovalRejected`:
   the model reads the rejection and carries on.
 
-`by` must be a non-empty string, and DDK records it without authenticating it.
-ADK keeps the confirmation calls and their answers out of the model's context,
-so the approver's name never reaches the model.
+Both raise `ValueError` for an `Approval` that `pending_approvals` did not
+return. `by` must be a non-empty string, and DDK records it without
+authenticating it. ADK keeps the confirmation calls and their answers out of
+the model's context, so the approver's name never reaches the model.
+
+The plugin checks each answer against the request the agent stored in the
+session, not against what the answer carries. It refuses, without running the
+tool, an answer to a request the agent never made, one that is not `approve()`
+or `reject()`'s (such as a plain ADK confirmation), and a second answer for a
+call already answered; the model gets the refusal as the tool's error result.
+So the tool runs once per approval, even on `google-adk` 2.4.0, which would
+otherwise resume on a confirmation a user message forges and run a call again
+when the same answer is sent twice.
+
+On `google-adk` releases before 2.13, the pause's last event also carries
+each paused call's placeholder result, `{"status": "awaiting approval",
+"approval_id": ...}`, as text. Don't show it as the agent's answer.
 
 ADK holds the pause, not `donkey.approvals`: `pending()` does not list it, and
 `approval_timeout` does not apply. The pause lives in the session's events, so
@@ -15631,7 +15695,7 @@ is raised.
 | `A2AResult` | class | What a handler returns when a plain string is not enough. |
 | `A2ATask` | class | One A2A task handed to a `donkey.serve()` handler. |
 | `AgentSpec` | class | An introspectable record of a `@donkey.agent`-marked entry point. |
-| `Approval` | class | One call of an approval-gated tool, waiting for a human. |
+| `Approval` | class | One call of an approval-gated tool, waiting for a human. A framework adapter's approval helpers carry the framework's own object on `native`. |
 | `Approvals` | class | `donkey.approvals`: this process's pending tool approvals. |
 | `AttributionScope` | class | A **dual sync/async** context manager that attributes the governed calls in its block to a business group and cost tags, without starting a run. |
 | `Budget` | class | The token-budget window for one `Donkey`, updated in-band from each response's budget headers (numeric `x-token-*` or the prose `x-llm-proxy-ratelimit` fallback). Its request-count sibling is `requests`. |

@@ -332,9 +332,11 @@ async def test_approve_records_the_approver_and_resumes_the_tool_once(spans: Any
             result = await refunds.pause()
             (approval,) = ddk_agents.pending_approvals(result)
         state = result.to_state()
+        assert type(approval.native).__name__ == "ToolApprovalItem"
         async with donkey.run(id=approval.correlation_id):
             decided = ddk_agents.approve(state, approval, by=" m.keller ")
-            done = await refunds.resume(state)
+            assert decided.native is state
+            done = await refunds.resume(decided.native)
 
     assert done.final_output == "done"
     assert refunds.ran == [("T-1", 140.0, "run-9")]

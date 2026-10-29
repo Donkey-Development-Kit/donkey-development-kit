@@ -1055,12 +1055,13 @@ class Donkey:
                 await donkey.approvals.resolve(err.approval.id, approved_by="m.keller")
 
         Inside a LangGraph graph run with a checkpointer, the call pauses the
-        graph with LangGraph's own ``interrupt()`` instead, and
-        ``Command(resume={"approved": True, "by": "m.keller"})`` resumes it (see
-        :func:`donkey_kit.integrations.langgraph.approval_interrupt`). Under the
-        OpenAI Agents SDK, build the tool with
+        graph with LangGraph's own ``interrupt()`` instead. Under the OpenAI
+        Agents SDK, build the tool with
         :func:`donkey_kit.integrations.openai_agents.function_tool`: the run
-        stops on the SDK's own ``needs_approval``, and ``RunState`` approves it.
+        stops on the SDK's own ``needs_approval``. Strands and ADK pause with
+        their own interrupt and tool confirmation. Each of the four adapters'
+        ``pending_approvals`` / ``approve`` / ``reject`` (for LangGraph,
+        :func:`donkey_kit.integrations.langgraph.approve`) speaks ``Approval``.
 
         The approval is client-side and advisory: calling the undecorated
         function bypasses it, and the gateway never learns of it. The gateway's
