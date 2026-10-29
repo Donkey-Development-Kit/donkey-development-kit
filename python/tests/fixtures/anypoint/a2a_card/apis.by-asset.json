@@ -1,0 +1,85 @@
+{
+  "total": 43,
+  "assets": [
+    {
+      "audit": {
+        "created": {
+          "date": "2026-09-29T19:23:41.946Z"
+        },
+        "updated": {}
+      },
+      "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+      "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+      "id": 213884940,
+      "name": "groupId:00000000-0000-4000-8000-4256cc8e6f68:assetId:ddk-langgraph-agent",
+      "exchangeAssetName": "ddk-langgraph-agent",
+      "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+      "assetId": "ddk-langgraph-agent",
+      "apis": [
+        {
+          "audit": {
+            "created": {
+              "date": "2026-09-29T19:23:41.946Z"
+            },
+            "updated": {
+              "date": "2026-10-28T15:36:54.201Z"
+            }
+          },
+          "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+          "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+          "id": 21206128,
+          "instanceLabel": "ddk-langgraph-agent",
+          "environmentInstanceId": "instance_21206128",
+          "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+          "assetId": "ddk-langgraph-agent",
+          "assetVersion": "0.1.0",
+          "productVersion": "v0.1",
+          "description": null,
+          "tags": [],
+          "order": 1,
+          "providerId": null,
+          "deprecated": false,
+          "lastActiveDate": null,
+          "endpointUri": null,
+          "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+          "isPublic": false,
+          "stage": "release",
+          "technology": "flexGateway",
+          "status": "active",
+          "approvalMethod": null,
+          "deployment": {
+            "audit": {
+              "created": {},
+              "updated": {}
+            },
+            "applicationId": "00000000-0000-4000-8000-1354a0000001",
+            "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+            "targetId": "00000000-0000-4000-8000-d4b0d8dad526",
+            "expectedStatus": "deployed"
+          },
+          "routing": [
+            {
+              "upstreams": [
+                {
+                  "id": "00000000-0000-4000-8000-1354a0000002",
+                  "weight": 100
+                }
+              ]
+            }
+          ],
+          "metadata": {
+            "assetType": "agent",
+            "assetPlatform": "LangGraph"
+          },
+          "semanticServiceConfigId": null,
+          "pinned": false,
+          "activeContractsCount": 0,
+          "endpointType": "a2a",
+          "autodiscoveryInstanceName": "v0.1:21206128"
+        }
+      ],
+      "totalApis": 1,
+      "autodiscoveryApiName": "groupId:00000000-0000-4000-8000-4256cc8e6f68:assetId:ddk-langgraph-agent"
+    }
+  ]
+}

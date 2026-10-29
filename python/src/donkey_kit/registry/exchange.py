@@ -274,24 +274,33 @@ class ExchangeRegistry:
         cached = self._index_cache.get(key)
         if isinstance(cached, McpServerHandle):
             return cached
+        url = await self._endpoint(asset, "mcp", "MCP", "resolve_mcp()")
+        handle = McpServerHandle(ref=asset, endpoint_url=url)
+        self._index_cache.set(key, handle)
+        return handle
 
+    async def _endpoint(self, asset: AssetRef, endpoint_type: str, kind: str, verb: str) -> str:
+        """The gateway URL of ``asset``'s one deployed ``endpoint_type`` instance in
+        the configured environment: the gateway's public URL joined with the
+        instance's path, with a trailing slash (docs/verified-apis.md §6)."""
+        cfg = self._cfg
         env_id = await self._environment_id()
         base = f"/apimanager/api/v1/organizations/{cfg.org_id}/environments/{env_id}"
         instances = [
             api
             for api in await self._instances(base, asset)
-            if api.get("endpointType") == "mcp" and _deployed(api)
+            if api.get("endpointType") == endpoint_type and _deployed(api)
         ]
         where = f"environment {cfg.environment!r}"
         if not instances:
             raise RegistryError(
-                f"{asset.coordinates} has no MCP instance deployed to a gateway in {where}."
+                f"{asset.coordinates} has no {kind} instance deployed to a gateway in {where}."
             )
         if len(instances) > 1:
             labels = ", ".join(sorted(str(api.get("instanceLabel")) for api in instances))
             raise RegistryError(
-                f"{asset.coordinates} has {len(instances)} deployed MCP instances in "
-                f"{where} ({labels}); resolve_mcp() needs exactly one."
+                f"{asset.coordinates} has {len(instances)} deployed {kind} instances in "
+                f"{where} ({labels}); {verb} needs exactly one."
             )
         api = await self._get(
             f"{base}/apis/{instances[0]['id']}",
@@ -311,10 +320,7 @@ class ExchangeRegistry:
         # The gateway routes the instance's path only with a trailing slash; without
         # one it answers an empty 404 (docs/verified-apis.md §6, #1297).
         path = urlsplit(str((api.get("endpoint") or {}).get("proxyUri") or "")).path.strip("/")
-        url = str(public).rstrip("/") + "/" + (f"{path}/" if path else "")
-        handle = McpServerHandle(ref=asset, endpoint_url=url)
-        self._index_cache.set(key, handle)
-        return handle
+        return str(public).rstrip("/") + "/" + (f"{path}/" if path else "")
 
     async def published_tools(self, ref: AssetRef | str) -> list[dict[str, Any]]:
         """The tools an MCP server asset version was published with: the
@@ -344,17 +350,62 @@ class ExchangeRegistry:
             raise RegistryError(f"Exchange has no asset version {asset.coordinates}.")
         return tools
 
-    async def resolve_agent(self, ref: AssetRef | str) -> AgentHandle:
-        """Resolve an A2A agent asset to a handle.
+    async def published_card(self, ref: AssetRef | str) -> dict[str, Any]:
+        """The A2A agent card an agent asset version was published with: its
+        ``a2a-v1-card`` file, or the ``a2a-card`` file of an older publish, as
+        Exchange stores it (docs/verified-apis.md §7, #1354). Not cached: this is
+        the read ``Publication.verify()`` compares the live card against.
 
         Raises:
+            ConfigError: The control-plane settings are missing.
             ValueError: ``ref`` is not ``group_id/asset_id/version``.
-            NotImplementedError: Otherwise, for now; see docs/verified-apis.md §7.
+            RegistryError: Exchange has no such version, or it has no card file
+                (an agent with protocol ``other`` has none), or a read failed.
+            AuthError: Exchange refused the read (``401``/``403``).
         """
-        AssetRef.parse(ref)
-        raise _verify.blocked(
-            "Exchange asset-resolution API for A2A agents (docs/verified-apis.md §7)."
+        from .exchange_publish import published_card
+
+        cfg = self._cfg.validated(need="control_plane")
+        asset = AssetRef.parse(ref)
+        card = await published_card(
+            self._http,
+            asset.group_id,
+            asset.asset_id,
+            asset.version,
+            base_url=cfg.control_plane_url,
         )
+        if card is None:
+            raise RegistryError(f"Exchange has no asset version {asset.coordinates}.")
+        return card
+
+    async def resolve_agent(self, ref: AssetRef | str) -> AgentHandle:
+        """Resolve an A2A agent asset to its governed gateway endpoint (#1354).
+
+        The reads ``resolve_mcp()`` makes, for the asset version's deployed
+        ``a2a`` instance: the agent card is at
+        ``endpoint_url + ".well-known/agent-card.json"``. The handle opens no
+        connection and has no ``skills``: those are on the card. Results are
+        cached for ``registry_cache_ttl_s`` seconds.
+
+        Raises:
+            ConfigError: The control-plane settings are missing.
+            ValueError: ``ref`` is not ``group_id/asset_id/version``.
+            RegistryError: The environment does not exist, the asset version has
+                no deployed A2A instance there or has several, or an Anypoint
+                read failed.
+            AuthError: Anypoint refused a read (``401``/``403``); its
+                ``remediation`` names the connected-app scope the read needs.
+        """
+        cfg = self._cfg.validated(need="control_plane")
+        asset = AssetRef.parse(ref)
+        key = f"resolve_agent:{cfg.environment}:{asset.coordinates}"
+        cached = self._index_cache.get(key)
+        if isinstance(cached, AgentHandle):
+            return cached
+        url = await self._endpoint(asset, "a2a", "A2A", "resolve_agent()")
+        handle = AgentHandle(ref=asset, endpoint_url=url)
+        self._index_cache.set(key, handle)
+        return handle
 
     async def explain(
         self, ref: AssetRef | str, *, criteria: GovernanceCriteria

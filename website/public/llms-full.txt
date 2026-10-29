@@ -6246,7 +6246,7 @@ donkey dev my:agent  # serves an @donkey.agent behind a simulated A2A ingress
 donkey test          # a thin front end to pytest --donkey-conformance
 donkey scan          # finds your agents, tools and MCP servers, without running your code
 donkey publish       # registers them in Exchange; --dry-run prints the plan and sends nothing
-donkey verify        # checks each published MCP server against its live tools; reads only
+donkey verify        # checks published MCP servers and agents against their live side; reads only
 donkey preflight     # checks, read-only, that a service can be put behind its gateway
 donkey expose        # puts one MCP server or A2A agent behind an existing gateway
 ```
@@ -6369,7 +6369,7 @@ Global options go before the command (`donkey --json init`):
 |---|---|---|
 | `--agent` | none | Import path to your agent factory, e.g. my.pkg:make_agent. |
 
-`donkey verify`: Check published MCP servers against their live tools.
+`donkey verify`: Check published MCP servers and A2A agents against their live side.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -6598,19 +6598,21 @@ missing path, invalid config or missing credentials. See
 ### `donkey verify`
 
 ```bash
-donkey verify .          # each published MCP server against its live tools
+donkey verify .          # each published MCP server and A2A agent against its live side
 donkey --json verify .   # the same, with each asset's outcome as JSON
 ```
 
 Runs [`Publication.verify()`](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify) on each
-MCP server `donkey publish` would register, at the version declared in
-`[donkey.publication]`: the tools that version was published with against the
-tools the server lists through its gateway. It writes nothing. Each server is
-reported as `match`, `drift` (with each difference) or `error`; an agent is
-`skipped`, since only an MCP server's published tools are verified.
+MCP server and `a2a_v1` agent `donkey publish` would register, at the version
+declared in `[donkey.publication]`: the tools an MCP server's version was
+published with against the tools it lists through its gateway, and the card an
+agent's version was published with against the card it serves there. It writes
+nothing. Each asset is reported as `match`, `drift` (with each difference) or
+`error`; an agent with protocol `other` or none declared is `skipped`, since it
+has no card to compare.
 
 It reads the `ANYPOINT_*` control-plane credentials for Exchange and the
-gateway credential for the live tools, and exits `0` when every server matches,
+gateway credential for the live side, and exits `0` when every verified asset matches,
 `1` on drift, a failed read or a declaration issue (nothing is read then), and
 `2` on a missing path, invalid config or missing control-plane credentials.
 Run it in CI after a deploy to catch a server that changed without a new
@@ -7072,6 +7074,22 @@ routes the path only with the trailing slash.
   governed comes from [`explain()`](#explain--why-a-tool-was-included-or-excluded).
 - Results are cached like the other registry lookups; see
   [Registry caching](https://docs.donkey-kit.dev/tool-access/lockfile.md#registry-caching).
+
+## Resolving an A2A agent
+
+`donkey.registry.resolve_agent()` is Live. It does
+for an A2A agent asset what `resolve_mcp()` does for an MCP server, with the
+same reads, and finds the version's deployed A2A instance:
+
+```python
+agent = await donkey.registry.resolve_agent("<group-id>/claims-triage-agent/1.0.0")
+print(agent.endpoint_url)   # https://<gateway-host>/<instance-path>/
+```
+
+The agent's card is at `endpoint_url` + `.well-known/agent-card.json`. It raises
+`RegistryError` in the same cases as `resolve_mcp()`, and like it sends no
+gateway credential. Calling the agent as a tool, `AgentHandle.as_tool()`, is on
+the [Roadmap](https://docs.donkey-kit.dev/tool-access/a2a.md).
 
 ## "Governed" is a computed predicate
 
@@ -7603,9 +7621,10 @@ carrying `a2a-sdk` exists today for the server side,
 
 ## Where this fits
 
-- `AgentHandle` comes from `ExchangeRegistry.resolve_agent()` — the same
-  registry surface that resolves MCP servers into `McpServerHandle`s. See
-  [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md).
+- `AgentHandle` comes from `ExchangeRegistry.resolve_agent()`, which is
+  available today: it resolves the agent's gateway URL the way `resolve_mcp()`
+  resolves an MCP server's. Only `as_tool()` is on the Roadmap. See
+  [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent).
 - `as_tool()` returns a framework-native callable, following the same
   conventions as [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
 - To make *your* agent callable by others over A2A, see [A2A agents](https://docs.donkey-kit.dev/a2a.md).
@@ -8426,8 +8445,8 @@ reflect, or a broken framework adapter.
 
 ## Verifying at runtime: `verify()`
 
-`Publication.verify(donkey)` is the read-only runtime check that the live MCP
-server still matches what its version was published with. It writes nothing:
+`Publication.verify(donkey)` is the read-only runtime check that a live MCP
+server or A2A agent still matches what its version was published with. It writes nothing:
 there is no runtime publish.
 
 ```python
@@ -8456,14 +8475,27 @@ added or removed, a changed description, or a changed set of parameter names
 is drift. Parameter types are not compared, because `donkey publish` records
 only the plain annotations it reads without running your code.
 
+For an `AGENT` (or `A2A_AGENT`) publication it reads the card the version was
+published with (its `a2a-v1-card` file, or the `a2a-card` of a version published
+before A2A 1.0) and the card the agent serves at
+`.well-known/agent-card.json` through its gateway instance, with the same
+governance check and gateway credential: an ungoverned agent raises
+`RegistryError` and is sent nothing. A changed card description, a changed set
+of default input or output modes, a skill added or removed, or a skill whose
+description changed is drift. The fields that say where and how this deployment
+serves the agent are not compared: `url`, `supportedInterfaces`,
+`preferredTransport`, `protocolVersion`, `version` (your code's version, not the
+asset's) and the security fields (`securitySchemes`, `security`,
+`securityRequirements`), which the upstream declares and the gateway enforces.
+
 By default each difference is logged at `WARNING` and returned, so a drifted
 catalog is loud without taking down production traffic. With
 `raise_on_drift=True` it raises `PublicationDrift`, whose message
-lists every difference. Only `MCP_SERVER` publications are verified; the other
-types raise `NotImplementedError`.
+lists every difference. `API` publications are not verified and raise
+`NotImplementedError`.
 
 [`donkey verify`](https://docs.donkey-kit.dev/cli.md#donkey-verify) runs the same check from CI, for every MCP
-server in the repository.
+server and `a2a_v1` agent in the repository.
 
 ## Related
 
@@ -13987,15 +14019,16 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Registry search: `donkey.registry.search()` | Token request, then Exchange Graph API reads | Available. Its `domain`, `environment` and `governed` filters raise `NotImplementedError` before sending. See [Registry search](https://docs.donkey-kit.dev/tool-access/discovery.md#registry-search). |
 | Registry: `resolve_mcp()` | Token request, then Access Management, API Manager and Omni Gateway Manager reads | Available. See [Resolving an MCP server](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-mcp-server). |
 | Registry: `explain()` | Token request, then Access Management, API Manager, Exchange and API Governance reads, only those the criteria need | Available. See [`explain()`](https://docs.donkey-kit.dev/tool-access/discovery.md#explain--why-a-tool-was-included-or-excluded). |
-| Registry: `resolve_agent()`, `donkey.registry.warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
+| Registry: `resolve_agent()` | Token request, then the `resolve_mcp()` reads, for the agent's A2A instance | Available. See [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent). |
+| Registry: `donkey.registry.warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()` | Token request, then the `search()`, `explain()` and `resolve_mcp()` reads | Available. Its `domain` filter and `locked=True` raise `NotImplementedError` before sending. `donkey.tools.warm()` does the same reads ahead of time. See [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md). |
 | Tool pinning: `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
-| Publication: `Publication.verify()` | Token request, then the Exchange version read and its `mcp-metadata` download, the `explain()` and `resolve_mcp()` reads, and the server's `tools/list` through the gateway | Available for MCP servers; other asset types raise `NotImplementedError` before sending. See [Verifying at runtime](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify). |
+| Publication: `Publication.verify()` | Token request, then the Exchange version read and its `mcp-metadata` or card download, the `explain()` and `resolve_mcp()` or `resolve_agent()` reads, and the server's `tools/list` or the agent's card through the gateway | Available for MCP servers and agents; `API` raises `NotImplementedError` before sending. See [Verifying at runtime](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify). |
 | Publication: `Publication.preview()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |
 | `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose). |
 | `donkey preflight`, `donkey expose --dry-run` | Token request, then the same reads, and no writes | Available |
-| `donkey verify` | Token request, then the `Publication.verify()` reads for each MCP server | Available for MCP servers; agents are skipped. See [`donkey verify`](https://docs.donkey-kit.dev/cli.md#donkey-verify). |
+| `donkey verify` | Token request, then the `Publication.verify()` reads for each MCP server and `a2a_v1` agent | Available for MCP servers and `a2a_v1` agents; other agents are skipped. See [`donkey verify`](https://docs.donkey-kit.dev/cli.md#donkey-verify). |
 | Hidden command `donkey status` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 

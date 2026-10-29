@@ -268,8 +268,8 @@ async def test_an_ungoverned_server_is_never_sent_the_credential(
     assert seen == []
 
 
-async def test_only_an_mcp_server_is_verified(runtime: Runtime) -> None:
+async def test_an_api_asset_is_not_verified(runtime: Runtime) -> None:
     donkey, _ = _donkey(runtime, _Exchange())
 
-    with pytest.raises(NotImplementedError, match=r"^blocked on verification:.*'agent'"):
-        await _publication(PublicationAssetType.AGENT).verify(donkey)
+    with pytest.raises(NotImplementedError, match=r"^blocked on verification:.*'api'"):
+        await _publication(PublicationAssetType.API).verify(donkey)

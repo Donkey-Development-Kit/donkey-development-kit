@@ -83,9 +83,10 @@ _LATEST_QUERY = (
     "{ version name description files { classifier packaging externalLink } "
     "otherVersions { version } } }"
 )
-# One version's files: its ``mcp-metadata`` is read back by Publication.verify()
-# (docs/verified-apis.md §7, #991). A version Exchange does not have is a ``200``
-# whose error carries ``extensions.status`` ``404``, as for the latest query.
+# One version's files: its ``mcp-metadata`` or agent card is read back by
+# Publication.verify() (docs/verified-apis.md §7, #991, #1354). A version
+# Exchange does not have is a ``200`` whose error carries
+# ``extensions.status`` ``404``, as for the latest query.
 _FILES_QUERY = (
     "query($groupId: String!, $assetId: String!, $version: String!) "
     "{ asset(groupId: $groupId, assetId: $assetId, version: $version) "
@@ -99,6 +100,10 @@ _VERSION_QUERY = (
 # The agent card file's classifier per protocol: the agent-fabric plugin's
 # (docs/verified-apis.md §7). An ``other`` agent has no card.
 _CARD_CLASSIFIERS = {"a2a_v1": "a2a-v1-card"}
+# The card classifiers read back, newest first: an agent published before the
+# SDK's ``a2a_v1`` cards (the agent-fabric plugin's A2A 0.3 card) has an
+# ``a2a-card`` file instead (docs/verified-apis.md §7, #1354).
+_READ_CARD_CLASSIFIERS = ("a2a-v1-card", "a2a-card")
 # The agent-metadata ``protocol`` per declared protocol. Exchange accepts
 # ``a2a_v1`` there, but API Manager then refuses the agent an ``a2a`` instance
 # ("must have an A2A protocol"); with ``a2a`` and the ``a2a-v1-card`` file,
@@ -296,6 +301,22 @@ async def published_tools(
     return await _Exchange(http, base_url).tools(group_id, asset_id, version)
 
 
+async def published_card(
+    http: httpx.AsyncClient, group_id: str, asset_id: str, version: str, *, base_url: str
+) -> dict[str, Any] | None:
+    """The A2A agent card published with ``group_id:asset_id:version``: its
+    ``a2a-v1-card`` file, else its ``a2a-card`` one, as Exchange stores it, or
+    ``None`` when Exchange has no such version. A version with neither file
+    (an agent with protocol ``other``, or not an agent) is a :class:`RegistryError`.
+
+    Raises:
+        RegistryError: Exchange refused the query or the download, or the
+            version has no card file.
+        AuthError: Exchange refused the query with ``401``/``403``.
+    """
+    return await _Exchange(http, base_url).card(group_id, asset_id, version)
+
+
 def mcp_metadata(asset: PlannedAsset, result: ScanResult) -> dict[str, Any]:
     """The ``mcp-metadata`` file published with ``asset``: its transport, its
     tools with their descriptions and an input schema derived from the scanned
@@ -458,6 +479,24 @@ class _Exchange:
         self, group_id: str, asset_id: str, version: str
     ) -> list[dict[str, Any]] | None:
         coordinates = f"{group_id}:{asset_id}:{version}"
+        body = await self._file(group_id, asset_id, version, ("mcp-metadata",))
+        if body is None:
+            return None
+        tools = body.get("tools")
+        if not isinstance(tools, list):
+            raise RegistryError(f"The mcp-metadata of {coordinates} has no tools list")
+        return [t for t in tools if isinstance(t, dict)]
+
+    async def card(self, group_id: str, asset_id: str, version: str) -> dict[str, Any] | None:
+        return await self._file(group_id, asset_id, version, _READ_CARD_CLASSIFIERS)
+
+    async def _file(
+        self, group_id: str, asset_id: str, version: str, classifiers: tuple[str, ...]
+    ) -> dict[str, Any] | None:
+        """The JSON body of the version's first ``json`` file among
+        ``classifiers``, downloaded from its pre-signed link, or ``None`` when
+        Exchange has no such version."""
+        coordinates = f"{group_id}:{asset_id}:{version}"
         data = await self._asset(
             _FILES_QUERY,
             {"groupId": group_id, "assetId": asset_id, "version": version},
@@ -465,29 +504,26 @@ class _Exchange:
         )
         if data is None:
             return None
-        link = next(
-            (
-                f["externalLink"]
-                for f in data.get("files") or ()
-                if f.get("classifier") == "mcp-metadata"
-                and f.get("packaging") == "json"
-                and f.get("externalLink")
-            ),
-            None,
-        )
-        if link is None:
-            raise RegistryError(f"{coordinates} has no mcp-metadata file in Exchange")
+        links = {
+            f.get("classifier"): f["externalLink"]
+            for f in data.get("files") or ()
+            if f.get("packaging") == "json" and f.get("externalLink")
+        }
+        found = next(((c, links[c]) for c in classifiers if c in links), None)
+        if found is None:
+            raise RegistryError(f"{coordinates} has no {' or '.join(classifiers)} file in Exchange")
+        classifier, link = found
         if urlsplit(link).scheme != "https":
             raise RegistryError(
-                f"Exchange returned a non-https mcp-metadata link for {coordinates}"
+                f"Exchange returned a non-https {classifier} link for {coordinates}"
             )
         # A pre-signed link, like the POM's: no credential goes to this host.
         response = await self._http.get(link)
-        _check(response, f"downloading the mcp-metadata of {coordinates}", scope=None)
-        tools = response.json().get("tools")
-        if not isinstance(tools, list):
-            raise RegistryError(f"The mcp-metadata of {coordinates} has no tools list")
-        return [t for t in tools if isinstance(t, dict)]
+        _check(response, f"downloading the {classifier} of {coordinates}", scope=None)
+        body = response.json()
+        if not isinstance(body, dict):
+            raise RegistryError(f"The {classifier} of {coordinates} is not a JSON object")
+        return body
 
     async def register_endpoint(
         self, asset: PlannedAsset, group: str, asset_id: str, version: str

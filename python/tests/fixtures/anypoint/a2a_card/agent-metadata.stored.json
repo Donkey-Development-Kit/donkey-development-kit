@@ -1,0 +1,6 @@
+{
+  "protocol": "a2a",
+  "platform": "LangGraph",
+  "description": "ddk-langgraph-agent — LangGraph A2A agent from the donkey-development-kit-provisioning demo harness. Chats through Donkey-governed LLM proxies (DONKEY_LLM_PROXY_* client-id credentials); the proxy to call is selected per-message via metadata.proxy (default ddk-openai-model-routing).",
+  "connections": []
+}

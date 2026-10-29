@@ -228,6 +228,12 @@ class ToolsFacade:
         ``Publication.verify()`` lists the live tools through (#991)."""
         return await self._discovery.resolve(ref, auth=None)
 
+    async def _agent_card(self, ref: str) -> dict[str, Any]:
+        """The card A2A agent ``ref`` serves through its gateway instance, read
+        with the governance check and credential a binding uses. What
+        ``Publication.verify()`` compares an agent's published card against (#1354)."""
+        return await self._discovery.agent_card(ref)
+
     async def warm(
         self,
         *,

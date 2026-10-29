@@ -1,9 +1,10 @@
-"""``donkey verify`` CLI wiring (#1352): it plans the repository's assets as
-``donkey publish`` does and runs ``Publication.verify()`` on each MCP server.
+"""``donkey verify`` CLI wiring (#1352, #1354): it plans the repository's assets
+as ``donkey publish`` does and runs ``Publication.verify()`` on each MCP server
+and ``a2a_v1`` agent.
 
 ``Publication.verify()`` itself is tested against the Exchange captures in
 ``test_publication_verify.py``; here the ``Donkey`` is a stand-in whose
-published and live tools are set per test.
+published and live tools and cards are set per test.
 """
 
 from __future__ import annotations
@@ -58,20 +59,39 @@ _TOOL = {
     "description": "Look up a SKU's price and stock level by its code.",
     "inputSchema": {"type": "object", "properties": {"sku": {"type": "string"}}},
 }
+AGENT_REF = f"{ORG}/triage/1.0.0"
+_CARD = {
+    "name": "triage",
+    "description": "Triage a support question.",
+    "defaultInputModes": ["text/plain", "application/json"],
+    "defaultOutputModes": ["text/plain", "application/json"],
+    "skills": [{"id": "triage", "name": "triage", "description": "triage"}],
+}
 _GOVERNED = GovernanceReport(governed=True, checks=[Check("deployed", True, "ok")])
 
 
 @dataclass
 class _Donkey:
-    """``registry.published_tools`` and ``tools._resolve``, recording the refs read."""
+    """``registry.published_tools``/``published_card`` and ``tools._resolve``/
+    ``_agent_card``, recording the refs read."""
 
     published: list[dict[str, Any]] = field(default_factory=lambda: [_TOOL])
     refused: bool = False
+    live_card: dict[str, Any] = field(default_factory=lambda: dict(_CARD))
     read: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        self.registry = SimpleNamespace(published_tools=self._published_tools)
-        self.tools = SimpleNamespace(_resolve=self._resolve)
+        self.registry = SimpleNamespace(
+            published_tools=self._published_tools, published_card=self._published_card
+        )
+        self.tools = SimpleNamespace(_resolve=self._resolve, _agent_card=self._agent_card)
+
+    async def _published_card(self, ref: str) -> dict[str, Any]:
+        self.read.append(ref)
+        return dict(_CARD)
+
+    async def _agent_card(self, ref: str) -> dict[str, Any]:
+        return self.live_card
 
     async def _published_tools(self, ref: str) -> list[dict[str, Any]]:
         self.read.append(ref)
@@ -133,7 +153,7 @@ def test_a_matching_server_exits_zero(repo: Path, monkeypatch: pytest.MonkeyPatc
     assert result.exit_code == 0, result.output
     assert donkey.read == [REF]
     assert f"match   mcp    {ORG}:sku-manager:1.0.0" in result.output
-    assert "verified 1 MCP server: all match" in result.output
+    assert "verified 1 asset: all match" in result.output
 
 
 def test_an_added_live_tool_is_drift_and_exits_one(
@@ -146,7 +166,7 @@ def test_an_added_live_tool_is_drift_and_exits_one(
     assert result.exit_code == 1, result.output
     assert "drift   mcp" in result.output
     assert "tool delete_sku is live but was not published" in result.output
-    assert "verified 1 MCP server: 1 did not" in result.output
+    assert "verified 1 asset: 1 did not" in result.output
 
 
 def test_json_carries_each_outcome(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -173,8 +193,48 @@ def test_a_failed_read_is_reported_and_exits_one(
     assert "no asset version" in asset["detail"]
 
 
-def test_an_agent_is_skipped_not_failed(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _with_agent(repo: Path, protocol: str) -> None:
     (repo / "agent.py").write_text(AGENT, encoding="utf-8")
+    table = f'[donkey.agents.triage]\nprotocol = "{protocol}"\n'
+    if protocol == "a2a_v1":
+        table += 'endpoint = "https://agents.example.invalid/triage/"\n'
+    with (repo / ".donkey-kit.toml").open("a", encoding="utf-8") as toml:
+        toml.write(table)
+
+
+def test_an_a2a_agent_is_verified_against_its_live_card(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _with_agent(repo, "a2a_v1")
+    donkey = _serve(monkeypatch, [_TOOL])
+
+    result = runner.invoke(app, ["verify", str(repo)])
+
+    assert result.exit_code == 0, result.output
+    assert sorted(donkey.read) == sorted([REF, AGENT_REF])
+    assert "the live card matches the published version" in result.output
+    assert "verified 2 assets: all match" in result.output
+
+
+def test_an_added_skill_on_the_live_card_is_drift(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _with_agent(repo, "a2a_v1")
+    skills = [*_CARD["skills"], {"id": "refund", "description": "Refunds an order."}]
+    _serve(monkeypatch, [_TOOL], live_card={**_CARD, "skills": skills})
+
+    result = runner.invoke(app, ["--json", "verify", str(repo)])
+
+    assert result.exit_code == 1, result.output
+    outcomes = {a["type"]: a for a in json.loads(result.output)["assets"]}
+    assert outcomes["agent"]["status"] == "drift"
+    assert outcomes["agent"]["differences"] == ["skill refund is live but was not published"]
+
+
+def test_an_agent_without_a_card_is_skipped_not_failed(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _with_agent(repo, "other")
     donkey = _serve(monkeypatch, [_TOOL])
 
     result = runner.invoke(app, ["--json", "verify", str(repo)])
