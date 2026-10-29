@@ -179,19 +179,24 @@ jobs:
           fi
           export GH_TOKEN="$DISPATCH_TOKEN"
           status pending "Dispatching the offline groups for $VERSION" "$RUN_URL"
+          # Taken before the dispatch, with 30 seconds' slack for clock skew, so
+          # the lookup below can tell this run from an earlier one for the same
+          # commit and version, which a re-run of this job leaves in the list (#1370).
+          dispatched_at="$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%SZ)"
           if ! gh workflow run published-gate.yml -R "$ACCEPTANCE_REPO" --ref develop \
               -f version="$VERSION" -f index=testpypi -f sdk_sha="$SHA"; then
             status error "Could not dispatch the acceptance run" "$RUN_URL"
             exit 1
           fi
           # The dispatch API returns no run id. The acceptance run-name carries
-          # this commit's SHA and the version, so find the run by its title.
+          # this commit's SHA and the version, so find the run by its title,
+          # among the runs created since the dispatch.
           run_id=""
           for _ in $(seq 1 24); do
             sleep 5
             run_id="$(gh run list -R "$ACCEPTANCE_REPO" -w published-gate.yml -e workflow_dispatch -L 20 \
-              --json databaseId,displayTitle \
-              --jq "[.[] | select((.displayTitle | contains(\"$SHA\")) and (.displayTitle | contains(\"$VERSION \")))][0].databaseId // empty")"
+              --json databaseId,displayTitle,createdAt \
+              --jq "[.[] | select((.createdAt >= \"$dispatched_at\") and (.displayTitle | contains(\"$SHA\")) and (.displayTitle | contains(\"$VERSION \")))][0].databaseId // empty")"
             [ -n "$run_id" ] && break
           done
           if [ -z "$run_id" ]; then
