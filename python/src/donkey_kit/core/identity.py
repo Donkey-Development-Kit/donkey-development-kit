@@ -8,6 +8,8 @@ gateway sees the user, not the service identity::
     async with donkey.as_user(token=request.access_token):
         await agent.run(task)        # every governed model call is the user's
 
+Sync code uses a plain ``with`` on the same object (#1436).
+
 The SDK runs no token exchange: the gateway's OBO policy trades the user token
 at the identity provider (docs/verified-apis.md §13, #1350). So the SDK makes
 no control-plane request for the user and needs no connected-app credentials.
@@ -117,7 +119,11 @@ def current_user() -> _UserBinding | None:
 
 
 class UserScope:
-    """The async context manager ``donkey.as_user(...)`` returns (BG §2.4).
+    """The **dual sync/async** context manager ``donkey.as_user(...)`` returns (BG §2.4).
+
+    Binding a contextvar needs no ``await``, so ``with`` and ``async with``
+    share one implementation, as in ``donkey.run(...)``: blocking code binds
+    the user for the sync client (#1436).
 
     Construction refuses a missing token with
     :class:`~donkey_kit.core.errors.AuthError`, and an LLM proxy URL the token
@@ -169,13 +175,25 @@ class UserScope:
         self._binding = _UserBinding(token)
         self._reset: Token[_UserBinding | None] | None = None
 
-    async def __aenter__(self) -> None:
+    def _bind(self) -> None:
         self._reset = _current_user.set(self._binding)
 
-    async def __aexit__(self, *exc: object) -> None:
+    def _unbind(self) -> None:
         if self._reset is not None:
             _current_user.reset(self._reset)
             self._reset = None
+
+    def __enter__(self) -> None:
+        self._bind()
+
+    def __exit__(self, *exc: object) -> None:
+        self._unbind()
+
+    async def __aenter__(self) -> None:
+        self._bind()
+
+    async def __aexit__(self, *exc: object) -> None:
+        self._unbind()
 
 
 @dataclass(frozen=True)

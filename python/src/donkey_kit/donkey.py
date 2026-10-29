@@ -856,6 +856,12 @@ class Donkey:
             async with donkey.as_user(token=request.access_token):
                 await agent.run(task)
 
+        Sync code (the sync client, a Flask or Django handler) uses a plain
+        ``with`` on the same object (#1436)::
+
+            with donkey.as_user(token=request.access_token):
+                graph.invoke(state)
+
         The SDK runs no token exchange and makes no control-plane request for
         the user: the gateway's OBO policy trades the token at the identity
         provider (docs/verified-apis.md §13, #1350), so no connected-app
@@ -864,9 +870,9 @@ class Donkey:
         error.
 
         The binding is a contextvar like :meth:`run`: it reaches the ``asyncio``
-        tasks the block spawns and never leaks into a concurrent task, and a
-        nested block restores the outer user on exit. Control-plane calls stay
-        the service's own.
+        tasks the block spawns and never leaks into a concurrent task or
+        another thread, and a nested block restores the outer user on exit.
+        Control-plane calls stay the service's own.
 
         The token rides as ``Authorization: Bearer <token>``
         (docs/verified-apis.md §13); set ``user_token_header`` if your gateway

@@ -2,7 +2,8 @@
 
 The user's token is forwarded unchanged: no token exchange, no control-plane
 request, no connected-app credentials needed (the gateway's OBO policy runs
-the exchange). Covers the contextvar scope (task isolation, nesting), where the
+the exchange). Covers the contextvar scope under ``async with`` and the blocking
+``with`` (#1436) (task and thread isolation, nesting), where the
 token rides (data-plane sends on both clients, never the control plane or an
 unchecked origin), and the hard failure (#216): a missing user token is an
 ``AuthError``, never a request sent as the service identity.
@@ -14,6 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 import pytest
@@ -24,6 +27,7 @@ from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import AuthError, ConfigError
 from donkey_kit.core.header_names import user_token_header_problem
 from donkey_kit.core.identity import UserScope, current_user
+from donkey_kit.core.transport import DonkeyClient
 from donkey_kit.core.transport.headers import PROXY_API_KEY_SENTINEL
 
 _PROXY = "https://gw.example.internal/openai-sdk/"
@@ -225,6 +229,149 @@ async def test_the_blocking_client_stamps_the_user_token() -> None:
     inside, after = proxy.requests
     assert inside.headers["Authorization"] == f"Bearer {_TOKEN}"
     assert after.headers["Authorization"] == _SENTINEL
+
+
+# --- the blocking ``with`` (#1436) --------------------------------------------
+
+
+def _sync_wire(donkey: Donkey) -> tuple[DonkeyClient, _Recorder]:
+    """The blocking client, pointed at a recorder."""
+    sync = donkey._sync_http_client()
+    proxy = _Recorder()
+    sync.governed_transport.replace_inner(httpx.MockTransport(proxy))
+    return sync, proxy
+
+
+def _sync_model_call(sync: DonkeyClient, who: str = "-") -> None:
+    sync.post(
+        f"{_PROXY}chat", json={"model": "m"}, headers={"Authorization": _SENTINEL, "X-Who": who}
+    )
+
+
+def test_a_sync_with_block_runs_the_blocking_client_as_the_user() -> None:
+    """Sync code (a Flask or Django handler, LangGraph ``invoke``) binds the
+    user with a plain ``with``: no event loop is needed."""
+    with Donkey(_cfg()) as donkey:
+        sync, proxy = _sync_wire(donkey)
+        _sync_model_call(sync)
+        with donkey.as_user(token=_TOKEN) as bound:
+            assert bound is None
+            assert current_user() is not None
+            _sync_model_call(sync)
+        assert current_user() is None
+        _sync_model_call(sync)
+    before, inside, after = proxy.requests
+    assert before.headers["Authorization"] == _SENTINEL
+    assert inside.headers["Authorization"] == f"Bearer {_TOKEN}"
+    assert after.headers["Authorization"] == _SENTINEL
+
+
+def test_the_sync_openai_client_sends_as_the_user_in_a_sync_block() -> None:
+    pytest.importorskip("openai")
+
+    with Donkey(_cfg()) as donkey:
+        _, proxy = _sync_wire(donkey)
+        openai_sync = donkey.llm.client(sync=True)
+        with donkey.as_user(token=_TOKEN):
+            openai_sync.chat.completions.create(
+                model="m",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+    (request,) = proxy.requests
+    assert request.headers["Authorization"] == f"Bearer {_TOKEN}"
+
+
+def test_nested_sync_scopes_restore_the_outer_user() -> None:
+    with Donkey(_cfg()) as donkey:
+        sync, proxy = _sync_wire(donkey)
+        with donkey.as_user(token="id-outer"):
+            with donkey.as_user(token="id-inner"):
+                _sync_model_call(sync)
+            _sync_model_call(sync)
+        assert current_user() is None
+    assert [r.headers["Authorization"] for r in proxy.requests] == [
+        "Bearer id-inner",
+        "Bearer id-outer",
+    ]
+
+
+async def test_sync_and_async_blocks_nest_inside_each_other() -> None:
+    """Both protocols bind the same contextvar, so they shadow and restore
+    each other like two blocks of one kind."""
+    async with Donkey(_cfg()) as donkey:
+        proxy = _wire(donkey)
+        async with donkey.as_user(token="id-outer"):
+            with donkey.as_user(token="id-inner"):
+                await _model_call(donkey)
+            await _model_call(donkey)
+        with donkey.as_user(token="id-outer"):
+            async with donkey.as_user(token="id-inner"):
+                await _model_call(donkey)
+            await _model_call(donkey)
+        assert current_user() is None
+    assert [r.headers["Authorization"] for r in proxy.requests] == [
+        "Bearer id-inner",
+        "Bearer id-outer",
+    ] * 2
+
+
+def test_an_error_in_a_sync_block_propagates_and_unbinds_the_user() -> None:
+    with Donkey(_cfg()) as donkey:
+        sync, proxy = _sync_wire(donkey)
+        with pytest.raises(RuntimeError, match="handler failed"):
+            with donkey.as_user(token=_TOKEN):
+                raise RuntimeError("handler failed")
+        assert current_user() is None
+        _sync_model_call(sync)
+    assert proxy.requests[0].headers["Authorization"] == _SENTINEL
+
+
+def test_one_scope_object_can_be_entered_again_after_it_exits() -> None:
+    with Donkey(_cfg()) as donkey:
+        scope = donkey.as_user(token=_TOKEN)
+        for _ in range(2):
+            with scope:
+                assert current_user() is not None
+            assert current_user() is None
+
+
+def test_concurrent_threads_never_see_each_others_user() -> None:
+    """Each thread of a threaded server binds its own user: a thread starts
+    in a fresh context, so it never inherits another request's binding."""
+    with Donkey(_cfg()) as donkey:
+        sync, proxy = _sync_wire(donkey)
+        inside = threading.Barrier(2)
+
+        def handler(token: str) -> None:
+            with donkey.as_user(token=token):
+                # Both threads are inside their blocks at once.
+                inside.wait(timeout=5)
+                _sync_model_call(sync, who=token)
+                inside.wait(timeout=5)
+            _sync_model_call(sync, who=f"{token}-after")
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            for done in [pool.submit(handler, t) for t in ("id-a", "id-b")]:
+                done.result()
+        _sync_model_call(sync)
+    seen = {r.headers["X-Who"]: r.headers["Authorization"] for r in proxy.requests}
+    assert seen == {
+        "id-a": "Bearer id-a",
+        "id-b": "Bearer id-b",
+        "id-a-after": _SENTINEL,
+        "id-b-after": _SENTINEL,
+        "-": _SENTINEL,
+    }
+
+
+def test_a_missing_token_in_a_sync_block_sends_nothing() -> None:
+    with Donkey(_cfg()) as donkey:
+        sync, proxy = _sync_wire(donkey)
+        with pytest.raises(AuthError):
+            with donkey.as_user(token=""):
+                _sync_model_call(sync)  # pragma: no cover - never reached
+        assert current_user() is None
+    assert proxy.requests == []
 
 
 # --- no silent fallback to the service identity (#216) ------------------------
