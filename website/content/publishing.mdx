@@ -381,8 +381,7 @@ input left empty keeps the `ANYPOINT_*` variable your job already sets.
 The job summary shows a table of the assets: each one's digest on a dry run,
 and each one's status and detail after a publish, including one that failed
 partway. The step's outputs are the `published`, `unchanged`, `incomplete`,
-`failed` and `not-attempted` counts, a `skipped` count kept for older
-workflows (always `0`), and `result`, the path of the
+`failed` and `not-attempted` counts, and `result`, the path of the
 JSON that `donkey publish --json` printed. A failed publish fails the step with
 `donkey`'s exit code, and each line `donkey` printed to stderr becomes an error
 annotation, so the fix shows on the run's page. Re-running the failed job

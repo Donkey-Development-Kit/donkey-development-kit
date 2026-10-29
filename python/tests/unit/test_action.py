@@ -12,9 +12,10 @@ import json
 import subprocess
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, get_args
 
 import pytest
+import yaml
 
 ACTION = Path(__file__).resolve().parents[3] / "action"
 
@@ -95,7 +96,6 @@ def test_a_publish_writes_the_summary_and_the_outputs(
         "incomplete=0",
         "failed=0",
         "not_attempted=0",
-        "skipped=0",
     ]
     assert json.loads(Path(result.removeprefix("result=")).read_text()) == body
     assert "did not finish" not in summary
@@ -302,6 +302,21 @@ def test_the_formats_are_donkey_kits() -> None:
     assert run.FORMATS == {
         True: ("plan_format", PLAN_FORMAT),
         False: ("publish_format", PUBLISH_FORMAT),
+    }
+
+
+def test_the_outputs_are_one_count_per_publish_status_and_the_result() -> None:
+    """#1428: a count per status donkey-kit reports, and no other (no ``skipped``)."""
+    from donkey_kit.registry.exchange_publish import PublishStatus
+
+    assert run.STATUSES == get_args(PublishStatus)
+    action = yaml.safe_load((ACTION / "action.yml").read_text(encoding="utf-8"))
+    assert {name: output["value"] for name, output in action["outputs"].items()} == {
+        **{
+            status.replace("_", "-"): f"${{{{ steps.publish.outputs.{status} }}}}"
+            for status in run.STATUSES
+        },
+        "result": "${{ steps.publish.outputs.result }}",
     }
 
 

@@ -99,9 +99,10 @@ donkey expose        # puts one MCP server or A2A agent behind an existing gatew
 
 ### Global flags
 
-Three global flags precede the subcommand:
+Four global flags precede the subcommand:
 
 ```bash
+donkey --version                  # print the donkey-kit version and exit
 donkey --config ./cfg.toml init   # write the generated config file to a non-default path
 donkey --config ./cfg.toml doctor # diagnose against this project config file
 donkey --env Sandbox init         # write this Anypoint environment into the generated file
@@ -114,6 +115,11 @@ calling the config loader in code), environment variables, the named file's
 local overlay, the named file, user config, then defaults. `--env` applies to
 `init` only; set `ANYPOINT_ENV` for `doctor`. Other commands reject these flags
 with exit `2` rather than silently ignore them.
+
+`--version` prints the version alone, such as `0.2.0`, and exits `0` without
+running a command. It prints the same plain line with `--json`, since it is not
+one of the [JSON documents](#json-output). The card version of `donkey dev` is
+its own flag, `--agent-version`.
 
 ### Exit codes
 
@@ -159,6 +165,7 @@ Global options go before the command (`donkey --json init`):
 
 | Option | Default | Meaning |
 |---|---|---|
+| `--version` | off | Print the donkey-kit version and exit. |
 | `--config` | none | Where `init` writes .donkey-kit.toml, or the project config file `doctor` reads. |
 | `--env` | none | Anypoint environment `init` writes (e.g. Sandbox). init only. |
 | `--json` | off | Emit machine-readable JSON where the command supports it. |
@@ -170,7 +177,7 @@ Global options go before the command (`donkey --json init`):
 | `target` | none | The @donkey.agent handler, as module:attribute. |
 | `--port` | `8000` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
-| `--version` | `0.0.0` | The agent version the card advertises. |
+| `--agent-version` | `0.0.0` | The agent version the card advertises. |
 | `--scenario` | none | Inbound rejection rule, repeatable. e.g. 'pii_block:every=5', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
 
 `donkey doctor`: Diagnose governed access: config, credentials, gateway, model, budget.

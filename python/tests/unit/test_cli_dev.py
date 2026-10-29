@@ -64,6 +64,37 @@ def test_dev_serves_the_target_behind_the_ingress(project: dict[str, Any]) -> No
     assert "x-donkey-simulator: true" in result.stdout
 
 
+@pytest.mark.parametrize(
+    ("argv", "expected"), [([], "0.0.0"), (["--agent-version", "1.4.0"], "1.4.0")]
+)
+def test_agent_version_sets_the_cards_version(
+    project: dict[str, Any], monkeypatch: pytest.MonkeyPatch, argv: list[str], expected: str
+) -> None:
+    import donkey_kit.a2a
+
+    seen: dict[str, Any] = {}
+    build_app = donkey_kit.a2a.build_app
+
+    def _build_app(handler: Any, **kwargs: Any) -> Any:
+        seen.update(kwargs)
+        return build_app(handler, **kwargs)
+
+    monkeypatch.setattr("donkey_kit.a2a.build_app", _build_app)
+    result = runner.invoke(app, ["dev", "dev_agent_1284:handle", *argv])
+
+    assert result.exit_code == 0, _combined(result)
+    assert seen["version"] == expected
+
+
+def test_dev_version_is_no_longer_an_option(project: dict[str, Any]) -> None:
+    """#1428: the card's version is ``--agent-version``; ``--version`` has no alias."""
+    result = runner.invoke(app, ["dev", "dev_agent_1284:handle", "--version", "1.4.0"])
+
+    assert result.exit_code == 2
+    assert "No such option" in _combined(result)
+    assert "app" not in project
+
+
 def test_a_loopback_bind_prints_no_warning(project: dict[str, Any]) -> None:
     result = runner.invoke(app, ["dev", "dev_agent_1284:handle"])
     assert result.exit_code == 0, _combined(result)

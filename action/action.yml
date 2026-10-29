@@ -60,9 +60,6 @@ outputs:
   not-attempted:
     description: How many assets were not tried because an earlier one failed.
     value: ${{ steps.publish.outputs.not_attempted }}
-  skipped:
-    description: "Always 0: every asset is published or left unchanged since agents are published too (#1260). Kept so workflows that read it keep working."
-    value: ${{ steps.publish.outputs.skipped }}
   result:
     description: The path of the JSON that donkey publish --json printed.
     value: ${{ steps.publish.outputs.result }}

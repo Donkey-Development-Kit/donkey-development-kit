@@ -1,5 +1,6 @@
-"""The ``donkey`` entry point and global flags (#811, #952): ``--env`` applies
-to ``init`` only, while ``--config`` also selects the file for ``doctor``. The console script
+"""The ``donkey`` entry point and global flags (#811, #952, #1428): ``--env`` applies
+to ``init`` only, while ``--config`` also selects the file for ``doctor``, and
+``--version`` prints the package version. The console script
 runs ``main()`` so a ``DonkeyError`` exits 1 without a traceback, and importing
 the CLI without typer raises a curated ``ImportError`` instead of ``SystemExit``.
 """
@@ -123,6 +124,18 @@ def test_init_honours_env_flag(isolated: Path) -> None:
     assert result.exit_code == 0, _combined(result)
     table = tomllib.loads((isolated / ".donkey-kit.toml").read_text())["donkey"]
     assert table["environment"] == "Production"
+
+
+@pytest.mark.parametrize("argv", [["--version"], ["--json", "--version"], ["--version", "init"]])
+def test_version_prints_the_package_version_and_exits_0(isolated: Path, argv: list[str]) -> None:
+    """#1428: an eager flag, plain text with --json too, and no command runs after it."""
+    import donkey_kit
+
+    result = runner.invoke(app, argv)
+
+    assert result.exit_code == 0, _combined(result)
+    assert result.stdout == f"{donkey_kit.__version__}\n"
+    assert not (isolated / ".donkey-kit.toml").exists()
 
 
 def test_console_script_targets_main() -> None:

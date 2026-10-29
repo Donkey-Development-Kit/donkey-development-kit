@@ -45,7 +45,9 @@ def dev(
     ),
     port: int = typer.Option(8000, "--port", help="TCP port to bind"),
     host: str = typer.Option("127.0.0.1", "--host", help="host/interface to bind"),
-    version: str = typer.Option("0.0.0", "--version", help="The agent version the card advertises"),
+    agent_version: str = typer.Option(
+        "0.0.0", "--agent-version", help="The agent version the card advertises"
+    ),
     scenario: list[str] = typer.Option(
         [],
         "--scenario",
@@ -100,7 +102,7 @@ def dev(
         agent = build_app(
             handler,
             url=url,
-            version=version,
+            version=agent_version,
             telemetry=donkey.config.telemetry,
             correlation_header=donkey.config.correlation_header,
             refusals=typed_refusals(),

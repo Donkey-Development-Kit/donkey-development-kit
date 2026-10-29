@@ -88,7 +88,7 @@ no second description of your agent to keep in sync:
 | `name` | `@donkey.agent(name=...)`, the agent's service ID |
 | `description` | the handler's docstring, which `@donkey.agent` requires |
 | `skills` | `@donkey.agent(skills=...)` |
-| `version` | `donkey.serve(version=...)`, `"0.0.0"` by default |
+| `version` | `donkey.serve(version=...)` or `donkey dev --agent-version`, `"0.0.0"` by default |
 | `supportedInterfaces[0].url` | `donkey.serve(url=...)`, or `http://{host}:{port}/` |
 
 [`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan) reads the same marker, which is why the two
