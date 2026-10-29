@@ -9,9 +9,8 @@ sets them in its own ``env:`` still works), and runs
 * a table of the assets to the job summary (``GITHUB_STEP_SUMMARY``), and,
   when the publish did not finish, how many assets failed, are incomplete or
   were not attempted;
-* the ``published``, ``unchanged``, ``incomplete``, ``failed``,
-  ``not_attempted`` and ``skipped`` counts (``skipped`` is always 0 now that
-  agents are published, #1260), and the path of the JSON result, to the step's
+* the ``published``, ``unchanged``, ``incomplete``, ``failed`` and
+  ``not_attempted`` counts, and the path of the JSON result, to the step's
   outputs (``GITHUB_OUTPUT``);
 * each error line donkey printed as an ``::error::`` annotation when it fails,
   or each issue in the JSON when it printed none.
@@ -43,7 +42,8 @@ CREDENTIALS = {
     "INPUT_CLIENT_SECRET": "ANYPOINT_CLIENT_SECRET",
     "INPUT_ORG_ID": "ANYPOINT_ORG_ID",
 }
-STATUSES = ("published", "unchanged", "incomplete", "failed", "not_attempted", "skipped")
+# The statuses donkey publish --json reports: PublishStatus in donkey-kit.
+STATUSES = ("published", "unchanged", "incomplete", "failed", "not_attempted")
 # The statuses of a publish that did not finish.
 UNFINISHED = ("incomplete", "failed", "not_attempted")
 # The document donkey publish --json prints, as (format key, version), for a dry

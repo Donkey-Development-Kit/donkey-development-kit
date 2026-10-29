@@ -17,6 +17,7 @@ except ImportError as exc:
         'The donkey CLI needs the [cli] extra. Install it with:\n    pip install "donkey-kit[cli]"'
     ) from exc
 
+from .. import __version__
 from ..core.config import TOML_NAME
 from ..core.errors import DonkeyError
 
@@ -28,9 +29,24 @@ app = typer.Typer(
 )
 
 
+def _print_version(value: bool) -> None:
+    """Print the package version and exit 0 (#1428). Plain text even with
+    ``--json``: it is not one of the command documents that carry a format key."""
+    if value:
+        typer.echo(__version__)
+        raise typer.Exit()
+
+
 @app.callback()
 def _global(
     ctx: typer.Context,
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_print_version,
+        is_eager=True,
+        help="Print the donkey-kit version and exit.",
+    ),
     config: Path | None = typer.Option(
         None,
         "--config",
