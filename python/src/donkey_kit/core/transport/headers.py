@@ -419,7 +419,7 @@ def _apply_user_token(cfg: DonkeyConfig, request: httpx.Request, token: str) -> 
     """Stamp the ``donkey.as_user(...)`` token (BG §2.4, #215) on a data-plane
     request already cleared by the checked-endpoint guard, after :func:`_apply_auth`.
 
-    In ``Authorization`` (the placeholder default, docs/verified-apis.md §13) it
+    In ``Authorization`` (the default, docs/verified-apis.md §13) it
     rides as a bearer and OVERRIDES what is there: in client-id mode that is the
     OpenAI SDK's ``api_key`` sentinel, and yielding to it would send the call as
     the service identity. A ``user_token_header`` override carries the raw token."""

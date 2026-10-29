@@ -263,9 +263,9 @@ def settings_index() -> str:
     # ``None`` on a header field means "send the built-in name", not "unset".
     defaults.update((key, f"`{name}`") for key, name in config._HEADER_KEYS)  # noqa: SLF001
     defaults["base_url"] = "from `region`"
-    # The ``as_user()`` placeholder (docs/verified-apis.md §13), read without warning.
+    # The ``as_user()`` header (docs/verified-apis.md §13).
     defaults["token_exchange_path"] = "deprecated, ignored"
-    defaults["user_token_header"] = f"`{_verify.USER_TOKEN_HEADER.placeholder}`"
+    defaults["user_token_header"] = f"`{_verify.USER_TOKEN_HEADER}`"
     rows = [
         (
             f"`{spec.env}`",

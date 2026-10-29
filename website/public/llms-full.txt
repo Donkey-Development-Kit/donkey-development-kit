@@ -4174,13 +4174,17 @@ platform request and needs no connected-app credentials.
 
 ## Configuring the header
 
-  The header the gateway reads the user token from is **not confirmed**
-  against a live gateway yet. It is a placeholder that warns once when used,
-  and you can override it:
+The token rides as `Authorization: Bearer <token>`, the header the gateway's
+JWT Validation and on-behalf-of policies read. You can override it:
 
 | Env var | `DonkeyConfig` field | Default | Meaning |
 |---|---|---|---|
 | `DONKEY_USER_TOKEN_HEADER` | `user_token_header` | `Authorization` | The request header the user token rides in. `Authorization` carries it as `Bearer <token>`; any other header carries the raw token. |
+
+  `as_user()` forwards the token you pass, unchanged. JWT Validation accepts it
+  only if its audience names the gateway API. A user's login token usually
+  names your app instead: exchange it at your identity provider for one issued
+  to the gateway's audience before you pass it in.
 
 `token_exchange_path` (`DONKEY_TOKEN_EXCHANGE_PATH`) is deprecated and ignored:
 setting it makes `as_user()` emit a `DeprecationWarning`.

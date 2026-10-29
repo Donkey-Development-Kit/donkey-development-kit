@@ -1594,17 +1594,44 @@ guard is removed. Ordered by confidence:
 `donkey.as_user(id_token=...)` (#215) stamps the user's token, unchanged, on
 every data-plane request in the block. The SDK runs no token exchange: the
 gateway's OBO policy runs it (#1350, from the evidence below), so there is no
-SDK exchange endpoint left to verify. The header has not been observed through
-`as_user()` against a live gateway; confirming it is #255. Until then it is an
-`Unverified` placeholder in `core/_verify.py`, warns once when read, and is
-overridable in config.
+SDK exchange endpoint left to verify. The header is verified live (#255): a
+plain constant in `core/_verify.py`, still overridable in config. What it was
+verified with, and what `as_user()` still does not cover, is below the table.
 
 | Item | Where used | Status | Verified value | Date | Source |
 |---|---|---|---|---|---|
-| User-token request header | `core/transport/headers.py` `_apply_user_token`, `core/_verify.py` `USER_TOKEN_HEADER`; override `user_token_header` / `DONKEY_USER_TOKEN_HEADER` | UNVERIFIED | — (placeholder: `Authorization: Bearer <token>`, the header the Omni Gateway [OAuth 2.0 OBO Credential Injection policy](https://docs.mulesoft.com/gateway/latest/policies-outbound-oauth-obo) reads the incoming bearer from; a custom header carries the raw token) | — | — |
+| User-token request header | `core/transport/headers.py` `_apply_user_token`, `core/_verify.py` `USER_TOKEN_HEADER`; override `user_token_header` / `DONKEY_USER_TOKEN_HEADER` | VERIFIED (LIVE) | `Authorization: Bearer <token>`. JWT Validation and OAuth2 OBO Credential Injection on the eight `ddk-<key>-mcp` instances read the user token from it and accepted it (`calculate("6*7")` → `42` on all eight); the gateway's OBO exchange event names the user and the agent. A custom header carries the raw token | 2026-10-29 | raw HTTP, not `as_user()`; provisioning #81, #255 |
 
-**Evidence so far (2026-10-29, #255).** None of the captures below flips the
-header row.
+**The header capture (LIVE, 2026-10-29, #255, provisioning #81).** The eight
+`ddk-<key>-mcp` instances on Omni Gateway run MCP Support, then JWT Validation
+only when `Authorization` is present, then OAuth2 OBO Credential Injection. The
+client was raw HTTP, not `as_user()`, which only stamps model calls today.
+
+| Request | Gateway answer |
+|---|---|
+| No `Authorization` | `tools/list` reaches the server; no exchange runs |
+| `Authorization: Bearer` with an invalid or expired token | `401` `Invalid token.` |
+| `Authorization: Bearer` with the agent's own token | accepted |
+| `Authorization: Bearer` with a user token the agent exchanged | accepted; `calculate("6*7")` → `42` on all eight. The policy's exchange event records the user (`userId`) and the agent (`subject_token_client_id`) |
+
+Two findings bound what `as_user()`'s forward-unchanged design covers:
+
+- **The user's login token was not the one accepted.** JWT Validation requires
+  `aud` to hold the instance (`ddk-<key>-mcp`). The user's own token names the
+  agent clients instead, so the agent first runs an RFC 8693 exchange at the
+  IdP realm's token endpoint (`/protocol/openid-connect/token`,
+  `subject_token_type=urn:ietf:params:oauth:token-type:access_token`,
+  `audience=ddk-<key>-mcp`, the agent's own client credentials). The IdP
+  refuses an `id_token` subject, and refuses to exchange a token whose `aud`
+  does not name the requesting agent. The exchanged token has `sub` = the
+  user, `azp` = the agent and `act.sub` = the agent instance. `as_user()`
+  forwards what it is given, so it works only with a token already issued for
+  the gateway's audience.
+- **`as_user()` does not reach MCP calls.** It stamps data-plane model
+  requests; the `ToolSet` bindings send their own `McpAuth` headers. No LLM
+  proxy reading a user token has been captured yet.
+
+**Earlier evidence (2026-10-28 and 2026-10-29).**
 
 - **User-token header, partial.** On 2026-10-28 a Keycloak user token sent as
   `Authorization: Bearer` straight to an A2A instance was accepted and
