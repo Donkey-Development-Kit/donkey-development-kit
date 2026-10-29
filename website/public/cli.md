@@ -361,6 +361,11 @@ ingress, the rules it takes and where its rejection shapes come from are in
 isn't marked with `@donkey.agent`, and an invalid `--scenario` (including
 `budget`), exit with code `2`.
 
+`--host` defaults to `127.0.0.1`. A host that isn't loopback, such as
+`0.0.0.0`, still binds, but `donkey dev` prints a warning on stderr. Nothing
+authenticates the caller, so anyone who can reach the port can call the agent.
+The ingress answers a request body over 4 MiB with a `413`.
+
 ### `donkey test`
 
 A thin front end to `pytest --donkey-conformance` — it does not re-implement the
