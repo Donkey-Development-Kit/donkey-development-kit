@@ -26,6 +26,7 @@ from donkey_kit.simulator.fixtures import (
 )
 from donkey_kit.simulator.scenarios import (
     BudgetScenario,
+    CibaScenario,
     InjectionScenario,
     PiiBlockScenario,
     RequestLimitScenario,
@@ -43,6 +44,33 @@ from donkey_kit.simulator.scenarios import (
 def test_parse_pii_block() -> None:
     s = parse_scenario("pii_block:every=5")
     assert isinstance(s, PiiBlockScenario)
+
+
+def test_parse_ciba() -> None:
+    s = parse_scenario("ciba:pending=2,then=deny")
+    assert isinstance(s, CibaScenario)
+    assert isinstance(parse_scenario("ciba:pending=0"), CibaScenario)
+
+
+@pytest.mark.parametrize(
+    "spec",
+    ["ciba:then=approve", "ciba:pending=-1", "ciba:pending=x", "ciba:pending=1,then=maybe"],
+)
+def test_parse_ciba_rejects_bad_params(spec: str) -> None:
+    with pytest.raises(ScenarioError):
+        parse_scenario(spec)
+
+
+def test_ciba_pending_then_approve_passes_every_later_call() -> None:
+    s = CibaScenario(pending=2)
+    shapes = [h.shape if (h := s.on_call("x")) else None for _ in range(4)]
+    assert shapes == ["ciba-pending", "ciba-pending", None, None]
+
+
+def test_ciba_pending_then_deny_serves_the_403_from_then_on() -> None:
+    s = CibaScenario(pending=1, then="deny")
+    shapes = [h.shape if (h := s.on_call("x")) else None for _ in range(3)]
+    assert shapes == ["ciba-pending", "ciba-denied", "ciba-denied"]
 
 
 def test_parse_injection() -> None:

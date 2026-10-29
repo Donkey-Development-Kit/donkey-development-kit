@@ -48,6 +48,7 @@ from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, ConfigError, DonkeyError
 from ..core.identity import current_user
 from ..core.reactions import Duration
+from ..core.step_up import wait_for_approval
 from ..core.tool_access import tool_access_denial
 from ..registry.models import McpServerHandle
 from .approval import ApprovalRule, check_rules, gated_tool, rule_for
@@ -136,6 +137,7 @@ class ToolSet:
         _discovered: tuple[datetime, float, float] | None = None,
         _limits: tuple[int, int] | None = None,
         _user_header: str | None = None,
+        _step_up_wait: float = 0.0,
     ) -> None:
         self._servers = list(servers)
         # Every filter() call so far: a tool is exposed only if all accept it,
@@ -155,6 +157,8 @@ class ToolSet:
         self._limits = _limits or (DonkeyConfig.tool_warn_count, DonkeyConfig.tool_warn_tokens)
         # The header a donkey.as_user() token rides in (core.identity.user_token_header).
         self._user_header = _user_header or _verify.USER_TOKEN_HEADER
+        # How long listing waits for a gateway step-up (CIBA) approval; 0 raises at once (#214).
+        self._step_up_wait = _step_up_wait
 
     def _with(
         self,
@@ -162,6 +166,7 @@ class ToolSet:
         _servers: list[McpServerHandle] | None = None,
         _filters: tuple[ToolFilter, ...] | None = None,
         _approvals: tuple[ApprovalRule, ...] | None = None,
+        _step_up_wait: float | None = None,
     ) -> ToolSet:
         return ToolSet(
             _servers if _servers is not None else self._servers,
@@ -172,6 +177,7 @@ class ToolSet:
             _discovered=self._discovered,
             _limits=self._limits,
             _user_header=self._user_header,
+            _step_up_wait=self._step_up_wait if _step_up_wait is None else _step_up_wait,
         )
 
     @property
@@ -265,6 +271,33 @@ class ToolSet:
         return descriptor_tokens(exposed)
 
     # ---- approval (pure, implemented; applied by binding, #1153) ------------
+    def wait_for_gateway_approval(self, timeout: Duration = "2m") -> ToolSet:
+        """Return a view that waits for the gateway's step-up approval when it lists tools
+        (BG §2.3, #214).
+
+        When the OAuth2 OBO policy asks the user to approve a call on another device (CIBA),
+        the gateway answers ``401`` until they do. With this view, :meth:`describe` re-sends
+        the ``tools/list`` after each :class:`~donkey_kit.core.step_up.GatewayApprovalPending`'s
+        ``retry_after`` until it goes through, the user denies it
+        (:class:`~donkey_kit.core.step_up.GatewayApprovalDenied`, never retried), or ``timeout``
+        passes (the last pending error is raised). Without it, the first pending answer is
+        raised at once.
+
+        The gateway decides when step-up applies and keeps the audit trail; this only waits.
+        It covers listing. A tool *call* behind the policy is not retried by the bindings: what
+        each framework's MCP class does with the ``401`` is recorded in docs/verified-apis.md
+        §9, and most of them lose the response body that tells a pending approval from a bad
+        credential.
+
+        Args:
+            timeout: How long to wait for the user, such as ``"2m"``. The live policy's
+                request expires after about two minutes and silently starts a new one.
+
+        Raises:
+            ValueError: ``timeout`` is not a positive duration.
+        """
+        return self._with(_step_up_wait=parse_timeout(timeout))
+
     def require_approval(
         self,
         *,
@@ -402,7 +435,8 @@ class ToolSet:
                 ``donkey.as_user(...)`` block, or a ``filter()`` or
                 ``require_approval()`` name matches no tool.
             GatewayApprovalPending: The gateway is waiting for the user's CIBA
-                approval; re-run after ``retry_after`` seconds.
+                approval; re-run after ``retry_after`` seconds, or build the set with
+                :meth:`wait_for_gateway_approval` to wait for it here.
             GatewayApprovalDenied: The user denied that approval.
             AuthError: The gateway refused the credential or the user's token.
             ToolInvocationError: A server could not list its tools.
@@ -428,10 +462,14 @@ class ToolSet:
                 return list(
                     await asyncio.gather(
                         *(
-                            list_tools(
-                                self._servers[i].endpoint_url,
-                                headers,
-                                server=self._servers[i].ref.coordinates,
+                            wait_for_approval(
+                                functools.partial(
+                                    list_tools,
+                                    self._servers[i].endpoint_url,
+                                    headers,
+                                    server=self._servers[i].ref.coordinates,
+                                ),
+                                timeout=self._step_up_wait,
                             )
                             for i in indexes
                         )

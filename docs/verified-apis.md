@@ -1227,6 +1227,42 @@ holds each binding to this in the venvs above.
 Collision renaming and the approval gate run in the SDK before any call. They
 were not repeated through the gateway.
 
+**How each framework surfaces the OBO policy's CIBA step-up on `tools/call`:
+`VERIFIED (local round-trip)`, 2026-10-29, #214.** The live CIBA captures (§4 item 8)
+are on an A2A `message/send`. Whether an MCP client sees the same answers is a separate
+question, because the `401` is an HTTP error, not a JSON-RPC one. `python/scripts/mcp_binding/server.py
+--ciba add=pending` (or `denied`) answers a `tools/call` of `add` with the captured shapes:
+`401` + `Retry-After` + `authorization_pending`, and `403` + `access_denied`. This is the
+live shape replayed locally, not a live MCP capture. `probe_ciba.py` calls it through each
+framework's own tool object; fixtures `mcp_binding/ciba-<venv>.json`, Python 3.12.16.
+Nothing here is live: an OBO + CIBA MCP instance was not available (provisioning #97 is the
+runbook).
+
+| Framework | Surfaces the `401` / `403` as |
+|---|---|
+| MCP Python SDK 1.30.0 | raises `httpx.HTTPStatusError` (`401` / `403` on `.response`) inside an `ExceptionGroup`; the response body is **unread**, so `authorization_pending` is not visible |
+| MCP Python SDK 2.1.1, 2.3.0 | raises `MCPError` code `-32603` "Server returned an error response", inside nested `ExceptionGroup`s; **no status, no body** |
+| LangGraph (`mcp` 1.30.0) | raises the 1.x `HTTPStatusError` from `coroutine`, `ainvoke` and the tool-call path; body unread |
+| LlamaIndex, Anthropic SDK, OpenAI Agents SDK (`mcp` 2.3.0) | raise `MCPError` `-32603`; no status, no body |
+| MS Agent Framework (`mcp` 2.3.0) | raises `ToolExecutionException` with that `MCPError` |
+| Google ADK (`mcp` 2.3.0) | **returns** `{'error': 'MCP tool execution failed: Server returned an error response'}` |
+| Strands (`mcp` 2.1.1) | **returns** `status: error`, text `Tool execution failed: Server returned an error response` |
+| CrewAI (`mcp` 1.30.0) | **hangs**: the adapter's thread dies on the `401` and the call never returns, so there was no fixture. Its wrapper thread was stopped by hand |
+
+The `CIBA` body (`authorization_pending` / `access_denied`) was not visible in any of them
+(`body_visible: false` in every fixture). On `mcp` 1.x the `401` or `403` status survives, but
+a plain `401` looks identical, so a framework's `tools/call` error cannot tell a pending user
+approval from a bad credential. So:
+
+- **The bindings do not retry or type a `tools/call` step-up.** A wrapper in `_invoker` would be
+  guessing from a bare status. It would need the SDK to read the response body itself, which
+  needs its own HTTP hook per framework, or a live capture showing the gateway sends a
+  discriminating header (it sends none: no `www-authenticate`, §4 item 8).
+- **`tools/list` is typed.** `open_session`'s response hook reads the body, so
+  `GatewayApprovalPending` / `GatewayApprovalDenied` arrive there. `ToolSet.wait_for_gateway_approval()`
+  waits on that path (#214).
+- `tools/call` through an OBO + CIBA instance stays `DOCUMENTED` until a live capture.
+
 Which MCP transports Omni Gateway can front (streamable HTTP, SSE, stdio) is
 UNVERIFIED (#1150). §5 verifies only the shape of a gateway MCP endpoint. The
 binding guard (ADR 0013) does not depend on the answer: it binds a server only
@@ -1667,5 +1703,6 @@ Two findings bound what `as_user()`'s forward-unchanged design covers:
   ignored.
 - **Step-up MFA** (`BG §2.3`). The OBO policy's CIBA step-up shapes are
   `VERIFIED (LIVE)` in §4 item 8 and typed as `GatewayApprovalPending` /
-  `GatewayApprovalDenied` (#1320). The `502` `ciba_initiation_failed` shape is
+  `GatewayApprovalDenied` (#1320). `ToolSet.wait_for_gateway_approval()` waits on
+  `tools/list` (#214); how each framework surfaces the same answers on `tools/call` is in §9. The `502` `ciba_initiation_failed` shape is
   still uncaptured.

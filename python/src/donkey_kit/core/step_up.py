@@ -26,13 +26,23 @@ package imports it, so every :func:`~donkey_kit.core.errors.classify` call sees 
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+import time
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar
 
 from . import errors
 from ._refusal_body import retry_after, str_or_none
 from .errors import DonkeyError, PolicyViolation
 
-__all__ = ["GatewayApprovalDenied", "GatewayApprovalPending"]
+__all__ = ["GatewayApprovalDenied", "GatewayApprovalPending", "wait_for_approval"]
+
+_T = TypeVar("_T")
+
+#: The shortest and longest pause between two sends while the gateway waits for the user.
+#: The gateway's own ``Retry-After`` was 5s to 8s live; a missing one waits the short end.
+_MIN_WAIT = 1.0
+_MAX_WAIT = 30.0
 
 
 class GatewayApprovalPending(DonkeyError):
@@ -41,8 +51,8 @@ class GatewayApprovalPending(DonkeyError):
     Not a :class:`~donkey_kit.core.errors.PolicyViolation`: nothing has been refused yet. The
     same request succeeds once the user approves it. ``retry_after`` is the wait, in seconds,
     that the gateway asked for (``Retry-After``), or ``None`` when it sent none. Retrying
-    sooner only returns this error again. The SDK does not retry it itself; carrying it
-    through a pause is #214.
+    sooner only returns this error again. The SDK retries it only where the caller asks:
+    :func:`wait_for_approval` (#214).
     """
 
     remediation: str = (
@@ -73,6 +83,37 @@ class GatewayApprovalDenied(PolicyViolation):
         "was NOT retried. Tell the user the action was not authorized; the gateway keeps "
         "answering with this denial until its cached decision expires."
     )
+
+
+async def wait_for_approval(
+    send: Callable[[], Awaitable[_T]],
+    *,
+    timeout: float,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> _T:
+    """Await ``send()``, re-sending it while the gateway waits for the user (#214, BG §2.3).
+
+    Each :class:`GatewayApprovalPending` makes the loop sleep what the gateway asked
+    (``retry_after``, kept between 1s and 30s) and send again, until the call goes through,
+    ``timeout`` seconds have passed, or the user denies it. A denial raises
+    :class:`GatewayApprovalDenied` as it is. When the next pause would pass ``timeout``, the
+    last pending error is raised, so the caller sees that the user had not answered yet. A
+    ``timeout`` of 0 sends once, like a bare call.
+
+    The gateway, not this loop, owns the approval and its audit trail: the user approves on
+    their own device and the policy lets the same request through. The loop decides nothing.
+    ``sleep`` and ``clock`` are injectable for tests.
+    """
+    started = clock()
+    while True:
+        try:
+            return await send()
+        except GatewayApprovalPending as pending:
+            wait = min(max(pending.retry_after or _MIN_WAIT, _MIN_WAIT), _MAX_WAIT)
+            if clock() - started + wait > timeout:
+                raise
+            await sleep(wait)
 
 
 def _flat_error(s: errors._Shape) -> str | None:

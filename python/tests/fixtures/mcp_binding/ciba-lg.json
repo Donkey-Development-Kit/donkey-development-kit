@@ -1,0 +1,230 @@
+{
+  "ciba": "HTTP 401 authorization_pending (Retry-After) / 403 access_denied on tools/call",
+  "distributions": {
+    "langchain-mcp-adapters": "0.3.2",
+    "mcp": "1.30.0"
+  },
+  "observed": {
+    "langgraph": {
+      "denied": {
+        "ainvoke": {
+          "raised": [
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": null,
+              "data": null,
+              "http_status": 403,
+              "message": "Client error '403 Forbidden' for url 'http://127.0.0.1:58477/mcp/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
+              "type": "httpx.HTTPStatusError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b51fd90",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b51fd90",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "",
+              "type": "anyio._core._exceptions.WouldBlock"
+            }
+          ]
+        },
+        "ainvoke_tool_call": {
+          "raised": [
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": null,
+              "data": null,
+              "http_status": 403,
+              "message": "Client error '403 Forbidden' for url 'http://127.0.0.1:58477/mcp/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
+              "type": "httpx.HTTPStatusError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b5294f0",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b5294f0",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "",
+              "type": "anyio._core._exceptions.WouldBlock"
+            }
+          ]
+        },
+        "body_visible": false,
+        "coroutine": {
+          "raised": [
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": null,
+              "data": null,
+              "http_status": 403,
+              "message": "Client error '403 Forbidden' for url 'http://127.0.0.1:58477/mcp/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
+              "type": "httpx.HTTPStatusError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b51fed0",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b51fed0",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "",
+              "type": "anyio._core._exceptions.WouldBlock"
+            }
+          ]
+        }
+      },
+      "pending": {
+        "ainvoke": {
+          "raised": [
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": null,
+              "data": null,
+              "http_status": 401,
+              "message": "Client error '401 Unauthorized' for url 'http://127.0.0.1:56586/mcp/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401",
+              "type": "httpx.HTTPStatusError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b5aec10",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b5aec10",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "",
+              "type": "anyio._core._exceptions.WouldBlock"
+            }
+          ]
+        },
+        "ainvoke_tool_call": {
+          "raised": [
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": null,
+              "data": null,
+              "http_status": 401,
+              "message": "Client error '401 Unauthorized' for url 'http://127.0.0.1:56586/mcp/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401",
+              "type": "httpx.HTTPStatusError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b66c550",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b66c550",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "",
+              "type": "anyio._core._exceptions.WouldBlock"
+            }
+          ]
+        },
+        "body_visible": false,
+        "coroutine": {
+          "raised": [
+            {
+              "code": null,
+              "data": null,
+              "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+              "type": "builtins.ExceptionGroup"
+            },
+            {
+              "code": null,
+              "data": null,
+              "http_status": 401,
+              "message": "Client error '401 Unauthorized' for url 'http://127.0.0.1:56586/mcp/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401",
+              "type": "httpx.HTTPStatusError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b4874d0",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "Cancelled via cancel scope 10b4874d0",
+              "type": "asyncio.exceptions.CancelledError"
+            },
+            {
+              "code": null,
+              "data": null,
+              "message": "",
+              "type": "anyio._core._exceptions.WouldBlock"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "probe": "probe_ciba.py",
+  "python": "3.12.16",
+  "recorded": "2026-10-29"
+}

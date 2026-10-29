@@ -1,0 +1,60 @@
+{
+  "ciba": "HTTP 401 authorization_pending (Retry-After) / 403 access_denied on tools/call",
+  "distributions": {
+    "mcp": "2.3.0",
+    "openai-agents": "0.24.0"
+  },
+  "observed": {
+    "openai_agents": {
+      "denied": {
+        "body_visible": false,
+        "call_tool": {
+          "raised": [
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        },
+        "invoke_mcp_tool": {
+          "raised": [
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        }
+      },
+      "pending": {
+        "body_visible": false,
+        "call_tool": {
+          "raised": [
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        },
+        "invoke_mcp_tool": {
+          "raised": [
+            {
+              "code": -32603,
+              "data": null,
+              "message": "Server returned an error response",
+              "type": "mcp.shared.exceptions.MCPError"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "probe": "probe_ciba.py",
+  "python": "3.12.16",
+  "recorded": "2026-10-29"
+}
