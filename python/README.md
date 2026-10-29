@@ -183,8 +183,8 @@ search filters (`search(governed=, environment=, domain=)`) and the hidden
 `donkey status` command. Exchange search and the publication of scanned MCP
 servers and agents (`donkey publish`, `donkey verify`) are verified against a
 live sandbox, and MCP tool discovery and every framework's MCP binding are
-verified through the governed gateway; their
-governance types live in `donkey_kit.experimental`, outside the stable namespace. The SDK
+verified through the governed gateway, and their types (`ToolSet`,
+`GovernanceCriteria`, `UngovernedMcpServer`, …) are exported from `donkey_kit`. The SDK
 does not ship a provisioning control plane (ADR 0008 in `docs/adr/`). The adapters build their framework's native object directly; they
 refuse only when the installed framework version lacks the class or field the
 adapter depends on.

@@ -50,8 +50,8 @@ if TYPE_CHECKING:  # keep the heavy import out of the auto-loaded module body
     from .harness import AgentFactory
 
 __all__ = [
-    "classify_registry",
     "donkey",
+    "donkey_classify_registry",
     "gateway",
     "pytest_addoption",
     "pytest_collection",
@@ -326,7 +326,7 @@ def donkey() -> Any:
     connection unless a real request is made (which ``simulate()`` intercepts).
 
     A ``classify.register()`` made during the test is dropped at teardown, as
-    with :func:`classify_registry`; registrations made at import time stay."""
+    with :func:`donkey_classify_registry`; registrations made at import time stay."""
     from .._testing import isolated_classify
     from ..donkey import Donkey
     from .harness import offline_config
@@ -340,13 +340,13 @@ def donkey() -> Any:
 
 
 @pytest.fixture
-def classify_registry() -> Any:
+def donkey_classify_registry() -> Any:
     """The process-wide ``donkey_kit.classify``, with any registration the test
     makes dropped at teardown, so a custom policy type registered in one test
     never leaks into the next (#210)::
 
-        def test_salary_block_is_typed(classify_registry):
-            classify_registry.register(
+        def test_salary_block_is_typed(donkey_classify_registry):
+            donkey_classify_registry.register(
                 match={"status": 403, "error_type": "acme_salary_block"},
                 raises=SalaryLeakBlocked,
             )

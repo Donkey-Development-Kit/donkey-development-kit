@@ -7,6 +7,23 @@ signatures and docstrings. Each entry shows the first paragraph of the
 docstring; `help()` on the object prints the rest. Everything listed here is
 importable from `donkey_kit`.
 
+## Stability
+
+Every name on this page is **stable**: the names in `donkey_kit.__all__`,
+and the public methods and properties of `Donkey`. During 0.x a stable name
+is removed or renamed only in a minor release, and only after an earlier
+minor release shipped it as a working alias that emits a
+`DeprecationWarning`. A patch release never breaks one.
+
+`donkey_kit.core` and the other public submodules are **provisional**: they
+are documented and may change in a minor release, with a migration note.
+Some types you meet through a stable object live there, such as
+`RefusalContext` (what a [refusal handler](https://docs.donkey-kit.dev/refusal-handlers.md) receives),
+`RunUsage` (`RunLedger.usage`) and `PolicyRegistration` (what
+`classify.registered()` returns); import them from `donkey_kit.core`.
+`donkey_kit.experimental` holds types for surfaces that are still blocked
+on verification, and they may change in any release.
+
 ## `Donkey`
 
 The SDK entry point: one governed handle on Agent Fabric.
@@ -603,6 +620,8 @@ is raised.
 | `PromptInjectionBlocked` | `PolicyViolation` | The prompt-injection-protection policy flagged the request as an injection attempt. |
 | `RequestRateLimitExceeded` | `PolicyViolation` | A request-rate-limit policy refused the request: the window's request count is spent. |
 | `TokenBudgetExceeded` | `PolicyViolation` | A token-rate-limit policy refused the request: the budget window is spent. |
+| `ToolNotInProfile` | `PolicyViolation` | The gateway refused an MCP tool call: the tool is outside this consumer's access profile. |
+| `UngovernedMcpServer` | `DonkeyError` | A `ToolSet` binding was refused because a server in it is not governed. |
 | `UpstreamModelError` | `DonkeyError` | Provider-side failure (5xx). Retryable. |
 | `UpstreamRequestError` | `DonkeyError` | The upstream provider rejected the request (4xx), passed through the gateway verbatim (e.g. OpenAI `model_not_found`). This is a client-side mistake, NOT a gateway policy refusal and NOT a provider outage, so it is terminal (never retried) but distinct from `PolicyViolation`. |
 
@@ -627,18 +646,18 @@ is raised.
 | `DonkeyClientView` | class | The blocking twin of `DonkeyAsyncClientView`, over a shared `DonkeyClient`. Get one from `DonkeyClient.view`. |
 | `DonkeyConfig` | class | Everything the SDK needs to reach Agent Fabric, resolved once and immutable. |
 | `ExchangeRegistry` | class | The Exchange client behind `donkey.registry`: search, resolve and explain assets. |
+| `GovernanceCriteria` | class | Definition of 'governed'. Every field is a separate, independently checkable condition. Defaults are deliberately moderate; orgs override. |
 | `LLMClient` | class | The framework-free proxy client factory. |
 | `LastCall` | class | What the gateway said about the most recent governed model call. |
 | `LastCallStatus` | class | Why `LastCall` fields are (or are not) populated — so a `None` is never ambiguous between "the gateway said nothing" and "the SDK never saw the response". `str`-valued so it prints and logs cleanly. |
+| `McpAuth` | class | Where a binding's gateway credential headers come from. |
 | `OnRefusal` | class | Returned by `donkey.on(refusal)`: pick exactly one reaction. |
-| `PolicyRegistration` | class | One `classify.register()` entry, as `Classifier.registered` returns it. Every given condition must hold on a response with `status`. |
-| `RefusalContext` | class | What a `OnRefusal.call` handler is given: the refusal, a copy of the refused request's JSON body, and `resend`. |
 | `Region` | type alias | One of `us`, `eu`, `ca`, `jp`. |
 | `RequestWindow` | class | The gateway's request-count window, `donkey.budget.requests`. |
 | `RunLedger` | class | A snapshot of one run's ledger: every governed model call, every refusal, and the token totals, as of when it was read. |
 | `RunRefusal` | class | One refusal in a run's ledger: what refused the call and how to find it, with none of the response content. |
 | `RunScope` | class | A **dual sync/async** context manager that sets the run correlation id for the governed calls made in its block. |
-| `RunUsage` | class | Token totals across every call in a run, summed from each call's `usage`. A call that reported no count adds nothing, so a total is `0` both when nothing was used and when nothing was reported; `calls_with_usage` tells the two apart. |
+| `ToolSet` | class | A governed set of MCP tools, from `donkey.tools.discover()`. |
 | `ToolSpec` | class | An introspectable record of a `@donkey.tool`-marked callable. |
 | `ToolsFacade` | class | `donkey.tools` — discovery + lock. |
 | `TypedRefusals` | class | Re-raise a refusal from the block as its typed `DonkeyError`. |

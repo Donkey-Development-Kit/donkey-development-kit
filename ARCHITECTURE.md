@@ -86,10 +86,12 @@ linear stack:
   `import donkey_kit` path. One hidden command, `status`, is `_verify.blocked`
   and exits 3.
 - **`donkey_kit.experimental`** re-exports the types that exist only for a
-  verification-blocked surface (`AssetRef`, `Publication`, `GovernanceCriteria`,
-  `STRICT`, `RegistryError`, …). They are importable, but they are not in
+  verification-blocked surface (`AssetRef`, `Publication`, `STRICT`,
+  `RegistryError`, …). They are importable, but they are not in
   `donkey_kit.__all__` and carry no stability promise until their surface is
-  verified.
+  verified. A name that moves up to `donkey_kit` keeps a deprecated
+  `experimental` alias (`GovernanceCriteria`, `ToolNotInProfile` and
+  `UngovernedMcpServer`, #1425).
 
 The refused declarative control plane (the old `provisioning/` package:
 specs, plan/diff/apply, drift, governance lint, and `governance.py`) is on the

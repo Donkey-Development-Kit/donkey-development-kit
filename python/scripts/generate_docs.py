@@ -1043,6 +1043,23 @@ def api_reference() -> str:
         "signatures and docstrings. Each entry shows the first paragraph of the",
         "docstring; `help()` on the object prints the rest. Everything listed here is",
         "importable from `donkey_kit`.",
+        "",
+        "## Stability",
+        "",
+        "Every name on this page is **stable**: the names in `donkey_kit.__all__`,",
+        "and the public methods and properties of `Donkey`. During 0.x a stable name",
+        "is removed or renamed only in a minor release, and only after an earlier",
+        "minor release shipped it as a working alias that emits a",
+        "`DeprecationWarning`. A patch release never breaks one.",
+        "",
+        "`donkey_kit.core` and the other public submodules are **provisional**: they",
+        "are documented and may change in a minor release, with a migration note.",
+        "Some types you meet through a stable object live there, such as",
+        "`RefusalContext` (what a [refusal handler](/refusal-handlers) receives),",
+        "`RunUsage` (`RunLedger.usage`) and `PolicyRegistration` (what",
+        "`classify.registered()` returns); import them from `donkey_kit.core`.",
+        "`donkey_kit.experimental` holds types for surfaces that are still blocked",
+        "on verification, and they may change in any release.",
     ]
     for doc in docs:
         lines += _class_section(doc)

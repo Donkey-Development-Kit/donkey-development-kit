@@ -1,6 +1,7 @@
 # ADR 0014: `donkey.serve()` wraps the official a2a-sdk, in a top-level `a2a` package beside `integrations`
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-29, #1425, so `donkey_kit.a2a` and the
+  `A2ATask`/`A2AResult` exports ship in 0.2.0 on a settled decision)
 - **Date:** 2026-10-24
 - **Issue:** #224 (BG §2.9.1). Governed inbound is #225, `donkey expose` #226,
   `donkey dev` #227.

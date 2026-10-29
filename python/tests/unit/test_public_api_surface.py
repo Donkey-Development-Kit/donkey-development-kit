@@ -1,9 +1,11 @@
 """The public API surface rule (#719).
 
 Three parts: every public module declares a sorted ``__all__`` (ruff RUF022
-checks the sorting); every ``donkey_kit`` type in a public ``Donkey`` signature
-is importable from ``donkey_kit``; and no class name means two different types
-across the package's ``__all__`` lists. Submodule paths are not API.
+checks the sorting); every ``donkey_kit`` type in a public ``Donkey`` or
+``ToolsFacade`` signature is importable from ``donkey_kit``, and every one in a
+``ToolSet`` signature is too or has a recorded provisional tier (#1425); and no
+class name means two different types across the package's ``__all__`` lists.
+Submodule paths are not API. ``test_public_api_snapshot.py`` pins the names.
 """
 
 from __future__ import annotations
@@ -115,10 +117,10 @@ def _donkey_kit_types(hint: object) -> Iterator[type]:
             yield from _donkey_kit_types(arg)
 
 
-def _public_member_hints() -> Iterator[tuple[str, object]]:
-    module_globals = vars(importlib.import_module(Donkey.__module__))
+def _public_member_hints(owner: type = Donkey) -> Iterator[tuple[str, object]]:
+    module_globals = vars(importlib.import_module(owner.__module__))
     stand_ins: dict[str, Any] = {}
-    for attr, member in inspect.getmembers(Donkey):
+    for attr, member in inspect.getmembers(owner):
         if attr.startswith("_"):
             continue
         func = member.fget if isinstance(member, property) else member
@@ -128,25 +130,75 @@ def _public_member_hints() -> Iterator[tuple[str, object]]:
         hints = _type_hints(func, module_globals, stand_ins)
         for hint in hints.values():
             yield attr, hint
-    # The lazily resolved adapter attributes are framework-specific and come
+    # Donkey's lazily resolved adapter attributes are framework-specific and come
     # from their own extras, so they are documented per adapter, not here.
 
 
-def test_donkey_signature_types_are_importable_from_donkey_kit() -> None:
+def _exported_from_root(cls: type) -> bool:
+    # __all__, not getattr: a deprecated alias resolves but is not an export.
+    return cls.__name__ in donkey_kit.__all__ and getattr(donkey_kit, cls.__name__) is cls
+
+
+# The stable classes whose public members must only take and return names from
+# donkey_kit.__all__ (#719, and #1425 for the tool surface).
+_ROOT_TYPED = (Donkey, donkey_kit.ToolsFacade)
+
+# Types that a stable class's public signature uses but that are in the
+# provisional tier (ADR 0006 rule 1): exported from the named public module, not
+# from donkey_kit. Each one is a recorded tier decision (#1425), so a new type
+# in these signatures fails until it is exported from donkey_kit or listed here.
+_PROVISIONAL_SIGNATURE_TYPES = {
+    "McpServerHandle": "donkey_kit.registry",
+    "ToolDescriptor": "donkey_kit.tools",
+    "ToolExclusion": "donkey_kit.tools",
+}
+
+
+@pytest.mark.parametrize("owner", _ROOT_TYPED, ids=lambda c: c.__name__)
+def test_signature_types_are_importable_from_donkey_kit(owner: type) -> None:
     missing = {
-        f"Donkey.{attr} -> {cls.__module__}.{cls.__qualname__}"
-        for attr, hint in _public_member_hints()
+        f"{owner.__name__}.{attr} -> {cls.__module__}.{cls.__qualname__}"
+        for attr, hint in _public_member_hints(owner)
         for cls in _donkey_kit_types(hint)
-        # __all__, not getattr: a deprecated alias resolves but is not an export.
-        if cls.__name__ not in donkey_kit.__all__ or getattr(donkey_kit, cls.__name__) is not cls
+        if not _exported_from_root(cls)
     }
     assert not missing, "not exported from donkey_kit:\n" + "\n".join(sorted(missing))
+
+
+def test_toolset_signature_types_have_a_recorded_tier() -> None:
+    unrecorded: set[str] = set()
+    for attr, hint in _public_member_hints(donkey_kit.ToolSet):
+        for cls in _donkey_kit_types(hint):
+            if _exported_from_root(cls):
+                continue
+            home = _PROVISIONAL_SIGNATURE_TYPES.get(cls.__name__)
+            module = importlib.import_module(home) if home else None
+            if module is None or cls.__name__ not in module.__all__:
+                unrecorded.add(f"ToolSet.{attr} -> {cls.__module__}.{cls.__qualname__}")
+            elif getattr(module, cls.__name__) is not cls:
+                unrecorded.add(f"ToolSet.{attr} -> {cls.__qualname__} is not {home}'s")
+    assert not unrecorded, (
+        "export these from donkey_kit, or record them in _PROVISIONAL_SIGNATURE_TYPES:\n"
+        + "\n".join(sorted(unrecorded))
+    )
 
 
 def test_the_check_sees_the_types_it_must() -> None:
     """Guard the check itself: it must see the types the issue named."""
     seen = {cls for _, hint in _public_member_hints() for cls in _donkey_kit_types(hint)}
     assert {donkey_kit.LastCall, donkey_kit.RunScope, donkey_kit.ToolsFacade} <= seen
+    tools = {
+        cls
+        for _, hint in _public_member_hints(donkey_kit.ToolsFacade)
+        for cls in _donkey_kit_types(hint)
+    }
+    assert {donkey_kit.GovernanceCriteria, donkey_kit.McpAuth, donkey_kit.ToolSet} <= tools
+    toolset = {
+        cls.__name__
+        for _, hint in _public_member_hints(donkey_kit.ToolSet)
+        for cls in _donkey_kit_types(hint)
+    }
+    assert set(_PROVISIONAL_SIGNATURE_TYPES) | {"ToolSet"} <= toolset
 
 
 def test_renamed_names_keep_deprecated_aliases() -> None:
@@ -168,7 +220,6 @@ _BLOCKED_ONLY = {
     "AssetRef",
     "AssetType",
     "Contact",
-    "GovernanceCriteria",
     "Publication",
     "PublicationAssetType",
     "PublicationDrift",
@@ -176,9 +227,17 @@ _BLOCKED_ONLY = {
     "ToolInvocationError",
 }
 
-# Blocked-only types added to donkey_kit.experimental after #730. They were never
+# Blocked-only names added to donkey_kit.experimental after #730. They were never
 # in the stable namespace, so they have no deprecated top-level alias.
-_NEW_IN_EXPERIMENTAL = {"ToolNotInProfile", "UngovernedMcpServer", "tool_access_denial"}
+_NEW_IN_EXPERIMENTAL = {"tool_access_denial"}
+
+# Names that moved up from donkey_kit.experimental once the surfaces that take
+# and raise them were verified (#1425). experimental keeps a deprecated alias.
+_PROMOTED_FROM_EXPERIMENTAL = {"GovernanceCriteria", "ToolNotInProfile", "UngovernedMcpServer"}
+
+# New in 0.2.0 and kept out of donkey_kit.__all__ (#1425): provisional, from
+# donkey_kit.core (ADR 0006 rule 1).
+_PROVISIONAL_IN_CORE = {"PolicyRegistration", "RefusalContext", "RunUsage"}
 
 # Names of the refused provisioning control plane, deleted in #730.
 _REFUSED = {
@@ -213,3 +272,35 @@ def test_experimental_is_exactly_the_blocked_only_types() -> None:
     assert set(experimental.__all__) == _BLOCKED_ONLY | _NEW_IN_EXPERIMENTAL
     for name in experimental.__all__:
         assert getattr(experimental, name) is not None
+
+
+@pytest.mark.parametrize("name", sorted(_PROMOTED_FROM_EXPERIMENTAL))
+def test_promoted_names_are_stable_and_keep_an_experimental_alias(name: str) -> None:
+    import warnings
+
+    from donkey_kit import experimental
+
+    assert name in donkey_kit.__all__
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        promoted = getattr(donkey_kit, name)
+    with pytest.warns(
+        DeprecationWarning, match=rf"donkey_kit\.experimental\.{name} .*import it from donkey_kit"
+    ):
+        assert getattr(experimental, name) is promoted
+
+
+def test_experimental_still_refuses_an_unknown_name() -> None:
+    from donkey_kit import experimental
+
+    with pytest.raises(AttributeError, match="no attribute 'Nope'"):
+        _ = experimental.Nope
+
+
+@pytest.mark.parametrize("name", sorted(_PROVISIONAL_IN_CORE))
+def test_provisional_names_are_out_of_root_and_in_core(name: str) -> None:
+    import donkey_kit.core
+
+    assert name not in donkey_kit.__all__
+    assert not hasattr(donkey_kit, name)
+    assert name in donkey_kit.core.__all__

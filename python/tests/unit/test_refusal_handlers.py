@@ -29,10 +29,10 @@ from donkey_kit import (
     OnRefusal,
     PIIDetected,
     PolicyViolation,
-    RefusalContext,
     TokenBudgetExceeded,
 )
 from donkey_kit._testing import http_clients, swap_transport
+from donkey_kit.core import RefusalContext
 from donkey_kit.core.reactions import RefusalHandlers, _seconds
 from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient, async_client, sync_client
 from donkey_kit.simulator.fixtures import replay_headers

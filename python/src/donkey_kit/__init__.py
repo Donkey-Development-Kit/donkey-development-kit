@@ -16,10 +16,12 @@ names are UNVERIFIED. Those code paths raise
 docs/verified-apis.md.
 
 Types that exist only for those blocked surfaces (``AssetRef``, ``Publication``,
-``GovernanceCriteria``, ``STRICT``, ``RegistryError``, …) live in
-:mod:`donkey_kit.experimental`, not here (#730, ADR 0008 in docs/adr/). Their old
-``donkey_kit.<name>`` spelling still resolves, with a ``DeprecationWarning``,
-until a later release removes it.
+``STRICT``, ``RegistryError``, …) live in :mod:`donkey_kit.experimental`, not here
+(#730, ADR 0008 in docs/adr/). Their old ``donkey_kit.<name>`` spelling still
+resolves, with a ``DeprecationWarning``, until a later release removes it.
+
+Every name in ``__all__`` is in the stable tier (ADR 0006), and
+``tests/unit/test_public_api_snapshot.py`` holds the list.
 """
 
 from __future__ import annotations
@@ -40,7 +42,7 @@ if TYPE_CHECKING:
     )
     from .core.budget import Budget, RequestWindow, UpstreamQuota, UpstreamWindow
     from .core.cachecontrol import CacheControls, CacheScope
-    from .core.classifier import Classifier, PolicyRegistration, classify
+    from .core.classifier import Classifier, classify
     from .core.config import ConfigOverrides, DonkeyConfig, Region
     from .core.correlation import AttributionScope
     from .core.cost import CostTags
@@ -64,17 +66,20 @@ if TYPE_CHECKING:
     )
     from .core.identity import UserScope
     from .core.lastcall import LastCall, LastCallStatus
-    from .core.reactions import OnRefusal, RefusalContext
+    from .core.reactions import OnRefusal
     from .core.refusals import TypedRefusals
-    from .core.runledger import RunLedger, RunRefusal, RunUsage
+    from .core.runledger import RunLedger, RunRefusal
     from .core.step_up import GatewayApprovalDenied, GatewayApprovalPending
     from .core.telemetry import RunScope
+    from .core.tool_access import ToolNotInProfile
     from .core.toolspec import AgentSpec, ToolSpec, registered_agents, registered_tools
     from .core.transport import DonkeyAsyncClientView, DonkeyClientView
     from .donkey import Donkey, ToolsFacade
     from .integrations import typed_refusals
     from .llm.client import LLMClient
-    from .registry import ExchangeRegistry
+    from .registry import ExchangeRegistry, GovernanceCriteria
+    from .tools.auth import McpAuth
+    from .tools.session import ToolSet, UngovernedMcpServer
 
 # The public names resolve lazily (PEP 562): ``import donkey_kit`` loads no
 # submodule until a name is first used. The conformance plugin auto-loads on
@@ -113,28 +118,30 @@ _LAZY = {
     "GatewayApprovalDenied": ".core.step_up",
     "GatewayApprovalPending": ".core.step_up",
     "GatewayUnavailable": ".core.errors",
+    "GovernanceCriteria": ".registry",
     "LLMClient": ".llm.client",
     "LastCall": ".core.lastcall",
     "LastCallStatus": ".core.lastcall",
+    "McpAuth": ".tools.auth",
     "ModelNotRoutable": ".core.errors",
     "ModelSubstituted": ".core.errors",
     "OnRefusal": ".core.reactions",
     "PIIDetected": ".core.errors",
-    "PolicyRegistration": ".core.classifier",
     "PolicyViolation": ".core.errors",
     "PromptInjectionBlocked": ".core.errors",
-    "RefusalContext": ".core.reactions",
     "RunLedger": ".core.runledger",
     "RunRefusal": ".core.runledger",
-    "RunUsage": ".core.runledger",
     "Region": ".core.config",
     "RequestRateLimitExceeded": ".core.errors",
     "RunScope": ".core.telemetry",
     "TokenBudgetExceeded": ".core.errors",
+    "ToolNotInProfile": ".core.tool_access",
+    "ToolSet": ".tools.session",
     "ToolSpec": ".core.toolspec",
     "AgentSpec": ".core.toolspec",
     "ToolsFacade": ".donkey",
     "TypedRefusals": ".core.refusals",
+    "UngovernedMcpServer": ".tools.session",
     "UpstreamModelError": ".core.errors",
     "UpstreamRequestError": ".core.errors",
     "classify": ".core.classifier",
@@ -154,7 +161,6 @@ _MOVED_TO_EXPERIMENTAL = frozenset(
         "AssetRef",
         "AssetType",
         "Contact",
-        "GovernanceCriteria",
         "Publication",
         "PublicationAssetType",
         "PublicationDrift",
@@ -230,28 +236,30 @@ __all__ = [
     "GatewayApprovalDenied",
     "GatewayApprovalPending",
     "GatewayUnavailable",
+    "GovernanceCriteria",
     "LLMClient",
     "LastCall",
     "LastCallStatus",
+    "McpAuth",
     "ModelNotRoutable",
     "ModelSubstituted",
     "OnRefusal",
     "PIIDetected",
-    "PolicyRegistration",
     "PolicyViolation",
     "PromptInjectionBlocked",
-    "RefusalContext",
     "Region",
     "RequestRateLimitExceeded",
     "RequestWindow",
     "RunLedger",
     "RunRefusal",
     "RunScope",
-    "RunUsage",
     "TokenBudgetExceeded",
+    "ToolNotInProfile",
+    "ToolSet",
     "ToolSpec",
     "ToolsFacade",
     "TypedRefusals",
+    "UngovernedMcpServer",
     "UpstreamModelError",
     "UpstreamQuota",
     "UpstreamRequestError",

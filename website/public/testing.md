@@ -140,12 +140,13 @@ reason fails the run before any scenario executes.
 
 [`classify.register()`](https://docs.donkey-kit.dev/custom-policies.md) is process-wide, so a registration
 made in one test would leak into the next. The plugin's `donkey` fixture drops
-any registration made during the test at teardown, and the `classify_registry`
-fixture does the same while yielding the registry itself:
+any registration made during the test at teardown, and the
+`donkey_classify_registry` fixture does the same while yielding the registry
+itself:
 
 ```python
-def test_salary_block_is_typed(classify_registry):
-    classify_registry.register(
+def test_salary_block_is_typed(donkey_classify_registry):
+    donkey_classify_registry.register(
         match=dict(status=403, error_type="acme_salary_block"),
         raises=SalaryLeakBlocked,
     )
