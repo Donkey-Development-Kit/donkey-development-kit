@@ -605,7 +605,8 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](/publishing#publishing-mcp-servers) and [Publishing agents](/publishing#publishing-agents). |
 | `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](/cli#donkey-expose). |
 | `donkey preflight`, `donkey expose --dry-run` | Token request, then the same reads, and no writes | Available |
-| Hidden commands `donkey status`, `verify` | Token request, then platform calls | <Badge tone="roadmap">Roadmap</Badge>: exits with "blocked on verification" before sending |
+| `donkey verify` | Token request, then the `Publication.verify()` reads for each MCP server | Available for MCP servers; agents are skipped. See [`donkey verify`](/cli#donkey-verify). |
+| Hidden command `donkey status` | Token request, then platform calls | <Badge tone="roadmap">Roadmap</Badge>: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 
 So in this release the SDK sends the `ANYPOINT_*` credentials only for the

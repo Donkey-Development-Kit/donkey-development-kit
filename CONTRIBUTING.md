@@ -1034,7 +1034,7 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 | `registry/criteria.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
 | `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |
 | `tools/session.py` | `tool-access/binding.mdx` |
-| `cli/*` (`init`, `doctor`, `mock`, `test`, the blocked `status`/`publish`/`verify`) | `cli.mdx` (the site has no provisioning section; don't add one, the control plane is refused, ADR 0008 in `docs/adr/`) |
+| `cli/*` (`init`, `doctor`, `mock`, `test`, `scan`, `publish`, `verify`, `expose`, `preflight`, the blocked `status`) | `cli.mdx` (the site has no provisioning section; don't add one, the control plane is refused, ADR 0008 in `docs/adr/`) |
 | `experimental.py` | `reference/unsupported-boundary.mdx`, plus the page of the surface whose types moved (`publishing.mdx`, `tool-access/discovery.mdx`) |
 | `README.md` (install/status/extras) | `quickstart.mdx`, `index.mdx` |
 
