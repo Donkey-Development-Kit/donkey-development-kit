@@ -43,6 +43,13 @@ def _installed(key: str) -> str:
     return version
 
 
+def _dedents_docstrings(python: str) -> bool:
+    """Python 3.13 strips docstring indentation at compile time, so a description
+    captured on one side of it never equals one derived on the other."""
+    major, minor = (int(part) for part in python.split("."))
+    return (major, minor) >= (3, 13)
+
+
 def _entrypoint(key: str) -> str:
     return f"capture_descriptor_fixtures:build_{key}"
 
@@ -74,6 +81,12 @@ async def test_derivation_matches_the_fixture_at_the_captured_version(key: str) 
     fixture = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
     if fixture is None or fixture["version"] != version:
         pytest.skip(f"no fixture captured at {key} {version}; the shape tests above still ran")
+    running = f"{sys.version_info.major}.{sys.version_info.minor}"
+    if _dedents_docstrings(fixture["python"]) != _dedents_docstrings(running):
+        pytest.skip(
+            f"{path.name} was captured on Python {fixture['python']}, and docstring "
+            f"indentation differs on {running}; the shape tests above still ran"
+        )
 
     assert await derive_descriptor(_entrypoint(key)) == fixture["descriptor"]
     assert (await capture.capture(key))["reads"] == fixture["reads"]
