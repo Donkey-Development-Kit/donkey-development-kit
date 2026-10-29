@@ -194,6 +194,38 @@ def test_gateway_fixture_is_registered(pytester: pytest.Pytester) -> None:
     result.stdout.fnmatch_lines(["*ephemeral port*"])
 
 
+def test_classify_registry_fixture_is_donkey_prefixed_and_isolates(
+    pytester: pytest.Pytester,
+) -> None:
+    # The plugin loads on every run, so its registry fixture is namespaced like
+    # its options (#1425); the unprefixed name never shipped, so it has no alias.
+    # A registration made through the fixture is gone in the next test.
+    pytester.makepyfile(
+        test_registry=(
+            "import pytest\n"
+            "import donkey_kit\n"
+            "from donkey_kit import PolicyViolation\n"
+            "class SalaryLeakBlocked(PolicyViolation):\n"
+            "    policy = 'acme-salary-block'\n"
+            "    remediation = 'Remove the salary figures.'\n"
+            "def test_registers(donkey_classify_registry):\n"
+            "    assert donkey_classify_registry is donkey_kit.classify\n"
+            "    donkey_classify_registry.register(\n"
+            "        match={'status': 403, 'error_type': 'acme_salary_block'},\n"
+            "        raises=SalaryLeakBlocked,\n"
+            "    )\n"
+            "    assert len(donkey_kit.classify.registered()) == 1\n"
+            "def test_did_not_leak():\n"
+            "    assert donkey_kit.classify.registered() == ()\n"
+            "def test_old_name_is_gone(request):\n"
+            "    with pytest.raises(pytest.FixtureLookupError):\n"
+            "        request.getfixturevalue('classify_registry')\n"
+        )
+    )
+    result = pytester.runpytest_subprocess("-p", "no:randomly")
+    result.assert_outcomes(passed=3)
+
+
 def test_conformance_without_agent_is_a_usage_error(pytester: pytest.Pytester) -> None:
     # --donkey-conformance with no --donkey-agent is a misuse: a clean UsageError
     # (exit 4), not a traceback and not a silently-empty run.

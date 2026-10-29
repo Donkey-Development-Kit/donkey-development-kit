@@ -222,7 +222,7 @@ for the sources and how to change or turn off each threshold.
 ## Only governed servers are bound
 
 Binding refuses a set that holds any MCP server the gateway does not govern,
-with `UngovernedMcpServer` (in `donkey_kit.experimental`). That covers a server
+with `UngovernedMcpServer`. That covers a server
 registered in Exchange but not fronted by the gateway, and one whose governance
 was never evaluated, and one that does not resolve to exactly one deployed MCP
 instance. The refusal happens before any connection opens, so:
@@ -236,7 +236,7 @@ The error names each refused server (`.servers`) and each governance check it
 failed (`.reasons`, from [`explain()`](/tool-access/discovery)):
 
 ```python
-from donkey_kit.experimental import UngovernedMcpServer
+from donkey_kit import UngovernedMcpServer
 
 ts = await donkey.tools.discover(tags=["crm"])  # unfiltered: lists everything
 try:
@@ -341,8 +341,8 @@ places:
   and the JSON-RPC error `-32008` `"Unable to access"`. It names the tool but not
   the profile or rule that refused it.
 
-The LangGraph, LlamaIndex and Anthropic bindings raise `ToolNotInProfile` (in
-`donkey_kit.experimental`, a `PolicyViolation`) from that call, with
+The LangGraph, LlamaIndex and Anthropic bindings raise `ToolNotInProfile` (a
+`PolicyViolation`) from that call, with
 `.tool_name` and the server's coordinates in `.server`. It is a configuration
 problem, so it is never retried. The whole-server bindings leave the call to
 the framework. The OpenAI Agents SDK and CrewAI raise the `mcp` package's
@@ -350,7 +350,8 @@ the framework. The OpenAI Agents SDK and CrewAI raise the `mcp` package's
 `tool_access_denial()` turns any of them into the typed error:
 
 ```python
-from donkey_kit.experimental import ToolNotInProfile, tool_access_denial
+from donkey_kit import ToolNotInProfile
+from donkey_kit.experimental import tool_access_denial
 
 try:
     result = await server.call_tool("lookup_proxy", {"name": "orders"})

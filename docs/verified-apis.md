@@ -1305,7 +1305,7 @@ through each framework's own tool object. Fixtures
 | Strands | **returns** `status: error`, text `Tool execution failed: Unable to access`; the code and `data` are gone (`strands-agents` 1.62.0, `mcp` 2.1.1) |
 
 The `ToolSet` LangGraph, LlamaIndex and Anthropic bindings wrap each tool's call
-and raise `ToolNotInProfile` (`donkey_kit.experimental`) from it, naming the
+and raise `ToolNotInProfile` (`donkey_kit`, from 0.2.0) from it, naming the
 tool from `data` and the server's coordinates. The whole-server bindings leave
 the call to the framework, so they surface what the table says; for the ones
 that raise, `tool_access_denial(exc)` converts the error. ADK and Strands keep

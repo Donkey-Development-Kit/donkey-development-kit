@@ -1,16 +1,21 @@
-"""Types for surfaces that are still blocked on verification (§0.3).
+"""Types outside the stable namespace, most of them for surfaces still blocked
+on verification (§0.3).
 
-Every name here belongs to a surface whose platform API is not yet confirmed
-against a real sandbox: Exchange discovery and governed-state checks (BG §2.7),
-code-first publication (BG §2.5), and MCP tool calls and binding. Each surface currently
-raises ``NotImplementedError("blocked on verification: …")``. The types are
-importable so code can be written against them, but they are not part of the
-stable ``donkey_kit`` namespace. A name moves up to ``donkey_kit`` when its
-surface is verified, and until then it may change in any release.
+The lockfile and the governed-state search join (BG §2.7) and ``Publication``'s
+descriptor derivation (BG §2.5) raise ``NotImplementedError("blocked on
+verification: …")``; the registry and tool-call types those surfaces share have
+no settled tier yet. The types are importable so code can be written against
+them, but they are not part of the stable ``donkey_kit`` namespace, and they may
+change in any release (ADR 0006).
 
-Moved out of the ``donkey_kit`` namespace in #730 (ADR 0008 in ``docs/adr/``),
-so that ``donkey_kit.__all__`` exports nothing that only a blocked or refused
-surface uses.
+Moved out of the ``donkey_kit`` namespace in #730 (ADR 0008 in ``docs/adr/``).
+A name moves up to ``donkey_kit`` when its tier is settled.
+``GovernanceCriteria``, ``ToolNotInProfile`` and ``UngovernedMcpServer`` moved
+up in 0.2.0 (#1425), because the surfaces that take and raise them, tool
+discovery and binding, are confirmed against a live gateway
+(``docs/verified-apis.md`` §9). Their
+``donkey_kit.experimental.<name>`` spelling still resolves, with a
+``DeprecationWarning``, until a later release removes it.
 
     from donkey_kit.experimental import STRICT, AssetRef
 
@@ -19,31 +24,59 @@ surface uses.
 
 from __future__ import annotations
 
+import warnings as _warnings
+from importlib import import_module as _import_module
+from typing import TYPE_CHECKING
+
 from .core.errors import PublicationDrift, RegistryError, ToolInvocationError
-from .core.tool_access import ToolNotInProfile, tool_access_denial
+from .core.tool_access import tool_access_denial
 from .registry import (
     STRICT,
     AssetRef,
     AssetType,
     Contact,
-    GovernanceCriteria,
     Publication,
     PublicationAssetType,
 )
-from .tools.session import UngovernedMcpServer
+
+if TYPE_CHECKING:
+    # The redundant ``as`` marks an explicit re-export, so a type checker still
+    # accepts the deprecated spelling.
+    from .core.tool_access import ToolNotInProfile as ToolNotInProfile
+    from .registry import GovernanceCriteria as GovernanceCriteria
+    from .tools.session import UngovernedMcpServer as UngovernedMcpServer
+
+# Names promoted to donkey_kit in #1425, with the module each one resolves from.
+_PROMOTED = {
+    "GovernanceCriteria": ".registry",
+    "ToolNotInProfile": ".core.tool_access",
+    "UngovernedMcpServer": ".tools.session",
+}
+
+if not TYPE_CHECKING:
+
+    def __getattr__(name: str) -> object:
+        module = _PROMOTED.get(name)
+        if module is None:
+            raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        _warnings.warn(
+            f"donkey_kit.experimental.{name} is deprecated; import it from donkey_kit "
+            "(its surface is verified, #1425).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return getattr(_import_module(module, "donkey_kit"), name)
+
 
 __all__ = [
     "STRICT",
     "AssetRef",
     "AssetType",
     "Contact",
-    "GovernanceCriteria",
     "Publication",
     "PublicationAssetType",
     "PublicationDrift",
     "RegistryError",
     "ToolInvocationError",
-    "ToolNotInProfile",
-    "UngovernedMcpServer",
     "tool_access_denial",
 ]

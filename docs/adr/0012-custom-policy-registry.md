@@ -54,8 +54,9 @@ in it.
    Enforced by `lint-imports`.
 5. **Tests isolate the registry.** `donkey_kit._testing.isolated_classify()`
    snapshots and restores it. The conformance plugin's `donkey` and
-   `classify_registry` fixtures use it, and this repo's `tests/conftest.py`
-   empties it around every test.
+   `donkey_classify_registry` fixtures use it (the second was named
+   `classify_registry` until #1425 renamed it before it shipped), and this
+   repo's `tests/conftest.py` empties it around every test.
 6. **A registered slug is recorded verbatim.** The class's `policy` (or the
    `error_type` / `error_code` value) is `donkey.policy.type` on the span. It
    may not be a built-in slug or `.policy` value, and one slug names one class.

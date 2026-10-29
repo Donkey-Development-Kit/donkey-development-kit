@@ -805,10 +805,16 @@ build plan has the rationale behind each rule:
   [ADR 0001](docs/adr/0001-value-objects.md). The package ships `py.typed`
   (PEP 561) — keep the public API fully annotated so downstream users get types.
 - **Public API surface.** Every public module (no `_` in its path) declares a
-  sorted `__all__` (ruff `RUF022`). Every SDK type in a public `Donkey`
-  signature is exported from `donkey_kit` (or `donkey_kit.core`), and no class
-  name means two different types across those `__all__` lists
-  (`tests/unit/test_public_api_surface.py`). A type that exists only for a
+  sorted `__all__` (ruff `RUF022`). Every SDK type in a public `Donkey` or
+  `ToolsFacade` signature is exported from `donkey_kit`. Every one in a
+  `ToolSet` signature is exported from `donkey_kit` too, or is listed as
+  provisional with the public module that exports it. No class name means two
+  different types across those `__all__` lists
+  (`tests/unit/test_public_api_surface.py`). The stable surface, which is
+  `donkey_kit.__all__` plus the public members of `Donkey`, `ToolsFacade` and
+  `ToolSet`, is snapshotted in `tests/unit/test_public_api_snapshot.py`
+  (ADR 0006 rule 4). A PR that changes that surface updates the snapshot in
+  the same diff, using the command in the test's failure message. A type that exists only for a
   verification-blocked surface goes in `donkey_kit.experimental`, not
   `donkey_kit.__all__` (#730); a name moved there keeps a deprecated
   `donkey_kit.<name>` alias for a release. Submodule paths are not API. Don't
@@ -936,7 +942,7 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | No tenant identifiers in tracked files or built dists (#821) | `scripts/scrub_fixtures.py --check` (UUIDs outside `ALLOWED_UUIDS`, platform hosts, provider account headers) | `typecheck-and-lint`, `base-only` (wheel), publish workflows (wheel + sdist) |
 | No dead parameters or stale suppressions | ruff `ARG`, `RUF100`, `TRY203` | `ruff check .` |
 | Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |
-| Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py`; `tests/unit/test_architecture.py` (no cross-package private import, #729) | `ruff check .`, `pytest` |
+| Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py`; `tests/unit/test_public_api_snapshot.py` (the stable surface, #1425); `tests/unit/test_architecture.py` (no cross-package private import, #729) | `ruff check .`, `pytest` |
 | Docstrings on public symbols (#722) | ruff `D101`-`D103` on `src/`; `tests/unit/test_public_docstrings.py` (summary + docs link on the headline entry points) | `ruff check .`, `pytest` |
 | Error contract (#715) | `tests/unit/test_error_taxonomy.py` (every `DonkeyError` exported from `donkey_kit` or `donkey_kit.experimental`, own non-empty overridable remediation; `classify` exported); "never a builtin exception" is review-only | `pytest` |
 | One source of truth, no dead code (#720) | `tests/unit/test_wire_names.py` (no gateway header literal outside `core/_wire.py`); `vulture` with `vulture_whitelist.py`; deprecate-before-remove is review-only | `pytest`, `typecheck-and-lint`: `vulture` |

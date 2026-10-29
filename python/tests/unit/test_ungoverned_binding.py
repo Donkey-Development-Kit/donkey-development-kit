@@ -11,8 +11,8 @@ import inspect
 import httpx
 import pytest
 
+from donkey_kit import UngovernedMcpServer
 from donkey_kit.core.errors import ConfigError
-from donkey_kit.experimental import UngovernedMcpServer
 from donkey_kit.registry.criteria import Check, GovernanceReport
 from donkey_kit.registry.models import AssetRef, McpServerHandle
 from donkey_kit.tools.session import ToolSet

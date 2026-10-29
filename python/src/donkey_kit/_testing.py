@@ -77,8 +77,8 @@ def isolated_classify() -> Iterator[classifier.Classifier]:
     Registrations made before entry (e.g. at import time by the module that
     defines the custom types) stay; registrations made inside are dropped on
     exit, including on failure. Yields the process-wide ``classify``. The
-    conformance plugin's ``donkey`` and ``classify_registry`` fixtures wrap a
-    test in this."""
+    conformance plugin's ``donkey`` and ``donkey_classify_registry`` fixtures
+    wrap a test in this."""
     snapshot = classifier.classify.registered()
     try:
         yield classifier.classify

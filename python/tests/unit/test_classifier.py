@@ -19,9 +19,9 @@ import httpx
 import pytest
 
 import donkey_kit
-from donkey_kit import Donkey, DonkeyConfig, PolicyViolation, RefusalContext
+from donkey_kit import Donkey, DonkeyConfig, PolicyViolation
 from donkey_kit._testing import isolated_classify
-from donkey_kit.core import _policy_spec, classifier, errors, telemetry
+from donkey_kit.core import RefusalContext, _policy_spec, classifier, errors, telemetry
 from donkey_kit.core._refusal_body import code_str
 from donkey_kit.core.classifier import PolicyRegistration, classify
 from donkey_kit.core.errors import (

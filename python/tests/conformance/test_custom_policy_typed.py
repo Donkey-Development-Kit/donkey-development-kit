@@ -21,8 +21,8 @@ import pytest
 # Sibling data module (tests/conformance/ is not a package).
 from suite import CONFORMANCE_SCENARIOS, KNOWN_LIMITATIONS
 
-from donkey_kit import Donkey, DonkeyConfig, PolicyViolation, RefusalContext, classify
-from donkey_kit.core import telemetry
+from donkey_kit import Donkey, DonkeyConfig, PolicyViolation, classify
+from donkey_kit.core import RefusalContext, telemetry
 
 _SCENARIO = "custom_policy_typed"
 Call = Callable[[Donkey], Awaitable[None]]

@@ -27,8 +27,9 @@ import pytest
 # Sibling data module (tests/conformance/ is not a package).
 from suite import CONFORMANCE_SCENARIOS, KNOWN_LIMITATIONS
 
-from donkey_kit import Donkey, DonkeyConfig, PIIDetected, RefusalContext
+from donkey_kit import Donkey, DonkeyConfig, PIIDetected
 from donkey_kit._testing import http_clients, swap_transport
+from donkey_kit.core import RefusalContext
 
 _SCENARIO = "refusal_handler_cannot_unrefuse"
 Call = Callable[[Donkey], Awaitable[None]]

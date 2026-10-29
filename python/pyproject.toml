@@ -507,6 +507,9 @@ ignore-variadic-names = true
 # their side effects and write doubles that mirror third-party signatures, so
 # unused and `Any`-typed arguments are expected there.
 "tests/**" = ["SLF001", "D101", "D102", "D103", "ARG", "ANN401"]
+# The surface snapshot holds one signature per string so a change reads as a
+# one-line diff, and some signatures are longer than a line (#1425).
+"tests/unit/test_public_api_snapshot.py" = ["E501"]
 "examples/**" = ["D101", "D102", "D103"]
 "scripts/**" = ["D101", "D102", "D103"]
 # The §10 capture reads framework objects the way a user would, private ADK

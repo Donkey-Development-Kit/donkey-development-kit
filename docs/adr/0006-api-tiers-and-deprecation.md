@@ -1,6 +1,8 @@
 # ADR 0006: Three API stability tiers, and a one-minor-release deprecation window during 0.x
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-29, #1425: rules 1, 2, 4 and 6 are in effect,
+  and `tests/unit/test_public_api_snapshot.py` is rule 4's snapshot. Rule 3's
+  `_deprecated()` helper and rule 5's `docs/api-stability.md` are still #236's.)
 - **Date:** 2026-10-03
 - **Issue:** #236 (the public API contract and deprecation policy; the
   architecture review's tiers proposal was folded into it rather than filed

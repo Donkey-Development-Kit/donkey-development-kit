@@ -2898,7 +2898,7 @@ body.
 
 ## The exception tree
 
-All importable from `donkey_kit`, along with `classify`, except the Roadmap-surface errors (`ToolNotInProfile` and the last line), which are in `donkey_kit.experimental`:
+All importable from `donkey_kit`, along with `classify`, except the Roadmap-surface errors on the last line, which are in `donkey_kit.experimental`:
 
 ```
 DonkeyError                     # base of the whole tree
@@ -2912,7 +2912,7 @@ DonkeyError                     # base of the whole tree
 │  ├─ RequestRateLimitExceeded  # 429, rate-limiting policy; .retry_after (seconds); sibling of TokenBudgetExceeded
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
 │  ├─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR (policy source) 403 reject header; .provider, .categories
-│  └─ ToolNotInProfile          # MCP tools/call refused: JSON-RPC -32008 "Unable to access"; .tool_name, .server (experimental)
+│  └─ ToolNotInProfile          # MCP tools/call refused: JSON-RPC -32008 "Unable to access"; .tool_name, .server
 ├─ GatewayApprovalPending       # 401, error=authorization_pending — waiting for the user's CIBA approval; .retry_after
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
@@ -2923,8 +2923,9 @@ DonkeyError                     # base of the whole tree
 ├─ ApprovalRequired             # client-side: an approval-gated tool was called, not run; .approval
 ├─ ApprovalRejected             # client-side: a reviewer refused a LangGraph-paused tool; .approval
 ├─ ApprovalTimedOut             # client-side: nobody decided before approval_timeout; .approval
-└─ ToolInvocationError, UngovernedMcpServer, RegistryError, PublicationDrift
-                                # tool access, registry and publishing (Roadmap surfaces;
+├─ UngovernedMcpServer          # client-side: a ToolSet binding refused an ungoverned server; .servers, .reasons
+└─ ToolInvocationError, RegistryError, PublicationDrift
+                                # tool calls, registry and publishing (Roadmap surfaces;
                                 # import them from donkey_kit.experimental)
 ```
 
@@ -3323,9 +3324,9 @@ from donkey_kit import (
     Donkey,
     PIIDetected,
     PolicyViolation,
-    RefusalContext,
     TokenBudgetExceeded,
 )
+from donkey_kit.core import RefusalContext
 
 donkey = Donkey()
 hitl_queue: asyncio.Queue[PolicyViolation] = asyncio.Queue()
@@ -3860,9 +3861,9 @@ your type.
 
 Registrations are process-wide, so a registration made in one test would leak
 into the next. The plugin's `donkey` fixture drops any registration made during
-the test at teardown, and so does the `classify_registry` fixture, which yields
-the registry itself. Registrations made at import time, by the module that
-defines your types, are kept.
+the test at teardown, and so does the `donkey_classify_registry` fixture, which
+yields the registry itself. Registrations made at import time, by the module
+that defines your types, are kept.
 
 ```python
 import pytest
@@ -3880,8 +3881,8 @@ def test_salary_block_is_typed(donkey):
             )
     assert exc.value.policy == "acme_salary_block"
 
-def test_a_registration_made_here_does_not_leak(classify_registry):
-    classify_registry.register(
+def test_a_registration_made_here_does_not_leak(donkey_classify_registry):
+    donkey_classify_registry.register(
         match=dict(status=403, headers={"x-acme-policy": "salary-block"}),
         raises=SalaryLeakBlocked,
     )
@@ -6346,12 +6347,13 @@ reason fails the run before any scenario executes.
 
 [`classify.register()`](https://docs.donkey-kit.dev/custom-policies.md) is process-wide, so a registration
 made in one test would leak into the next. The plugin's `donkey` fixture drops
-any registration made during the test at teardown, and the `classify_registry`
-fixture does the same while yielding the registry itself:
+any registration made during the test at teardown, and the
+`donkey_classify_registry` fixture does the same while yielding the registry
+itself:
 
 ```python
-def test_salary_block_is_typed(classify_registry):
-    classify_registry.register(
+def test_salary_block_is_typed(donkey_classify_registry):
+    donkey_classify_registry.register(
         match=dict(status=403, error_type="acme_salary_block"),
         raises=SalaryLeakBlocked,
     )
@@ -7408,11 +7410,12 @@ Publication to Exchange says nothing about whether an asset is fronted by a
 gateway, has policies applied, or passes the org's rulesets — there is no single
 boolean to query. "Governed" is **computed** by joining state across systems,
 and it is **environment-scoped**: an asset governed in Production may be
-ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit. It
-and `STRICT` are in `donkey_kit.experimental` until discovery is verified:
+ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit. The
+stricter preset, `STRICT`, is in `donkey_kit.experimental`:
 
 ```python
-from donkey_kit.experimental import STRICT, GovernanceCriteria
+from donkey_kit import GovernanceCriteria
+from donkey_kit.experimental import STRICT
 
 @dataclass(frozen=True)
 class GovernanceCriteria:
@@ -7763,7 +7766,7 @@ for the sources and how to change or turn off each threshold.
 ## Only governed servers are bound
 
 Binding refuses a set that holds any MCP server the gateway does not govern,
-with `UngovernedMcpServer` (in `donkey_kit.experimental`). That covers a server
+with `UngovernedMcpServer`. That covers a server
 registered in Exchange but not fronted by the gateway, and one whose governance
 was never evaluated, and one that does not resolve to exactly one deployed MCP
 instance. The refusal happens before any connection opens, so:
@@ -7777,7 +7780,7 @@ The error names each refused server (`.servers`) and each governance check it
 failed (`.reasons`, from [`explain()`](https://docs.donkey-kit.dev/tool-access/discovery.md)):
 
 ```python
-from donkey_kit.experimental import UngovernedMcpServer
+from donkey_kit import UngovernedMcpServer
 
 ts = await donkey.tools.discover(tags=["crm"])  # unfiltered: lists everything
 try:
@@ -7882,8 +7885,8 @@ places:
   and the JSON-RPC error `-32008` `"Unable to access"`. It names the tool but not
   the profile or rule that refused it.
 
-The LangGraph, LlamaIndex and Anthropic bindings raise `ToolNotInProfile` (in
-`donkey_kit.experimental`, a `PolicyViolation`) from that call, with
+The LangGraph, LlamaIndex and Anthropic bindings raise `ToolNotInProfile` (a
+`PolicyViolation`) from that call, with
 `.tool_name` and the server's coordinates in `.server`. It is a configuration
 problem, so it is never retried. The whole-server bindings leave the call to
 the framework. The OpenAI Agents SDK and CrewAI raise the `mcp` package's
@@ -7891,7 +7894,8 @@ the framework. The OpenAI Agents SDK and CrewAI raise the `mcp` package's
 `tool_access_denial()` turns any of them into the typed error:
 
 ```python
-from donkey_kit.experimental import ToolNotInProfile, tool_access_denial
+from donkey_kit import ToolNotInProfile
+from donkey_kit.experimental import tool_access_denial
 
 try:
     result = await server.call_tool("lookup_proxy", {"name": "orders"})
@@ -15002,6 +15006,23 @@ signatures and docstrings. Each entry shows the first paragraph of the
 docstring; `help()` on the object prints the rest. Everything listed here is
 importable from `donkey_kit`.
 
+## Stability
+
+Every name on this page is **stable**: the names in `donkey_kit.__all__`,
+and the public methods and properties of `Donkey`. During 0.x a stable name
+is removed or renamed only in a minor release, and only after an earlier
+minor release shipped it as a working alias that emits a
+`DeprecationWarning`. A patch release never breaks one.
+
+`donkey_kit.core` and the other public submodules are **provisional**: they
+are documented and may change in a minor release, with a migration note.
+Some types you meet through a stable object live there, such as
+`RefusalContext` (what a [refusal handler](https://docs.donkey-kit.dev/refusal-handlers.md) receives),
+`RunUsage` (`RunLedger.usage`) and `PolicyRegistration` (what
+`classify.registered()` returns); import them from `donkey_kit.core`.
+`donkey_kit.experimental` holds types for surfaces that are still blocked
+on verification, and they may change in any release.
+
 ## `Donkey`
 
 The SDK entry point: one governed handle on Agent Fabric.
@@ -15598,6 +15619,8 @@ is raised.
 | `PromptInjectionBlocked` | `PolicyViolation` | The prompt-injection-protection policy flagged the request as an injection attempt. |
 | `RequestRateLimitExceeded` | `PolicyViolation` | A request-rate-limit policy refused the request: the window's request count is spent. |
 | `TokenBudgetExceeded` | `PolicyViolation` | A token-rate-limit policy refused the request: the budget window is spent. |
+| `ToolNotInProfile` | `PolicyViolation` | The gateway refused an MCP tool call: the tool is outside this consumer's access profile. |
+| `UngovernedMcpServer` | `DonkeyError` | A `ToolSet` binding was refused because a server in it is not governed. |
 | `UpstreamModelError` | `DonkeyError` | Provider-side failure (5xx). Retryable. |
 | `UpstreamRequestError` | `DonkeyError` | The upstream provider rejected the request (4xx), passed through the gateway verbatim (e.g. OpenAI `model_not_found`). This is a client-side mistake, NOT a gateway policy refusal and NOT a provider outage, so it is terminal (never retried) but distinct from `PolicyViolation`. |
 
@@ -15622,18 +15645,18 @@ is raised.
 | `DonkeyClientView` | class | The blocking twin of `DonkeyAsyncClientView`, over a shared `DonkeyClient`. Get one from `DonkeyClient.view`. |
 | `DonkeyConfig` | class | Everything the SDK needs to reach Agent Fabric, resolved once and immutable. |
 | `ExchangeRegistry` | class | The Exchange client behind `donkey.registry`: search, resolve and explain assets. |
+| `GovernanceCriteria` | class | Definition of 'governed'. Every field is a separate, independently checkable condition. Defaults are deliberately moderate; orgs override. |
 | `LLMClient` | class | The framework-free proxy client factory. |
 | `LastCall` | class | What the gateway said about the most recent governed model call. |
 | `LastCallStatus` | class | Why `LastCall` fields are (or are not) populated — so a `None` is never ambiguous between "the gateway said nothing" and "the SDK never saw the response". `str`-valued so it prints and logs cleanly. |
+| `McpAuth` | class | Where a binding's gateway credential headers come from. |
 | `OnRefusal` | class | Returned by `donkey.on(refusal)`: pick exactly one reaction. |
-| `PolicyRegistration` | class | One `classify.register()` entry, as `Classifier.registered` returns it. Every given condition must hold on a response with `status`. |
-| `RefusalContext` | class | What a `OnRefusal.call` handler is given: the refusal, a copy of the refused request's JSON body, and `resend`. |
 | `Region` | type alias | One of `us`, `eu`, `ca`, `jp`. |
 | `RequestWindow` | class | The gateway's request-count window, `donkey.budget.requests`. |
 | `RunLedger` | class | A snapshot of one run's ledger: every governed model call, every refusal, and the token totals, as of when it was read. |
 | `RunRefusal` | class | One refusal in a run's ledger: what refused the call and how to find it, with none of the response content. |
 | `RunScope` | class | A **dual sync/async** context manager that sets the run correlation id for the governed calls made in its block. |
-| `RunUsage` | class | Token totals across every call in a run, summed from each call's `usage`. A call that reported no count adds nothing, so a total is `0` both when nothing was used and when nothing was reported; `calls_with_usage` tells the two apart. |
+| `ToolSet` | class | A governed set of MCP tools, from `donkey.tools.discover()`. |
 | `ToolSpec` | class | An introspectable record of a `@donkey.tool`-marked callable. |
 | `ToolsFacade` | class | `donkey.tools` — discovery + lock. |
 | `TypedRefusals` | class | Re-raise a refusal from the block as its typed `DonkeyError`. |
