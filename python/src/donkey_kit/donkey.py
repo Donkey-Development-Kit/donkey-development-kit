@@ -176,7 +176,7 @@ class ToolsFacade:
         *,
         domain: str | None = None,
         tags: list[str] | None = None,
-        governed: bool | GovernanceCriteria | None = None,
+        governed: bool | GovernanceCriteria | None = True,
         locked: bool = False,
         auth: McpAuth | None = None,
     ) -> ToolSet:
@@ -189,22 +189,21 @@ class ToolsFacade:
         ``ToolSet.discovered_at`` and ``ToolSet.is_stale`` say how old it is,
         and :meth:`refresh` drops it.
 
-        ``governed`` defaults to ``None`` (no filtering) in v1, with a log line
-        stating discovery is unfiltered (governed-only discovery). Flipping the
-        default to ``True`` is a breaking change reserved for a later major
-        version. Unfiltered discovery still *lists* an ungoverned server, with
-        its verdict on ``McpServerHandle.governance``, but the ``ToolSet``
-        binding methods refuse it with ``UngovernedMcpServer`` (ADR 0013).
-        ``governed=True`` leaves those out, logging each one's reasons. When
-        nothing is left the set is empty, with a log line saying why, not an
-        error.
+        ``governed`` defaults to ``True`` (ADR 0017): the set holds only the
+        servers that pass the default ``GovernanceCriteria``, and each one left
+        out is logged with its reasons, so the default set binds. When nothing
+        is left the set is empty, with a log line saying why, not an error.
+        ``governed=None`` lists every server, with a log line stating discovery
+        is unfiltered, and each verdict on ``McpServerHandle.governance``; the
+        ``ToolSet`` binding methods still refuse a set holding an ungoverned
+        server with ``UngovernedMcpServer`` (ADR 0013, rules kept by ADR 0017).
 
         Args:
             domain: Catalog domain. Not supported yet.
             tags: Keep the assets that carry every tag, ignoring case.
-            governed: ``True`` keeps the servers the default ``GovernanceCriteria``
-                passes; a ``GovernanceCriteria`` (such as ``STRICT``) sets the
-                rules; ``None`` keeps every server.
+            governed: ``True`` (the default) keeps the servers the default
+                ``GovernanceCriteria`` passes; a ``GovernanceCriteria`` (such as
+                ``STRICT``) sets the rules; ``None`` keeps every server.
             locked: Resolve only what ``donkey.lock`` pins. Not supported yet.
             auth: The gateway credential bindings send. ``None`` uses the
                 data-plane consumer credential (``llm_proxy_auth``).
@@ -240,7 +239,7 @@ class ToolsFacade:
         *,
         domain: str | None = None,
         tags: list[str] | None = None,
-        governed: bool | GovernanceCriteria | None = None,
+        governed: bool | GovernanceCriteria | None = True,
     ) -> int:
         """Read the registry now, so the next matching :meth:`discover` is a cache hit.
 
@@ -259,7 +258,7 @@ class ToolsFacade:
         Args:
             domain: As for :meth:`discover`. Not supported yet.
             tags: As for :meth:`discover`.
-            governed: As for :meth:`discover`.
+            governed: As for :meth:`discover`, and with the same default.
 
         Raises:
             ConfigError: The control-plane settings are missing.

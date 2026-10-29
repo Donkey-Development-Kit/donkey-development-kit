@@ -19,11 +19,11 @@ tool objects. Name search and asset type are filters on the lower-level
 ## The two most common calls
 
 ```python
-# 1. Every governed MCP server:
-tools = await donkey.tools.discover(governed=True)
+# 1. Every governed MCP server (governed=True is the default):
+tools = await donkey.tools.discover()
 
 # 2. Governed MCP servers that carry a tag:
-tools = await donkey.tools.discover(tags=["approved"], governed=True)
+tools = await donkey.tools.discover(tags=["approved"])
 ```
 
 ## Filter reference
@@ -34,7 +34,7 @@ semantics:
 ```python
 tools = await donkey.tools.discover(
     tags=["approved"],       # all tags must be present
-    governed=True,           # True = default criteria; or an explicit GovernanceCriteria
+    governed=True,           # the default: default criteria; or an explicit GovernanceCriteria
     auth=None,               # None = the data-plane consumer credential
 )
 ```
@@ -43,7 +43,7 @@ tools = await donkey.tools.discover(
 |---|---|---|
 | `domain` | `str \| None` | Catalog domain. Raises `NotImplementedError` for now: Exchange has no domain filter. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
-| `governed` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered (the default). |
+| `governed` | `bool \| GovernanceCriteria \| None` | `True` (the default) applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered. |
 | `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md)). Raises `NotImplementedError` for now. Default `False`. |
 | `auth` | `McpAuth \| None` | The gateway credential bindings send. `None` uses the data-plane consumer credential; see [Auth](https://docs.donkey-kit.dev/tool-access/binding.md#auth). |
 
@@ -234,15 +234,15 @@ It reads the asset version's API Manager instances in the environment set by
 
 ## Defaults and performance
 
-- **Unfiltered by default.** `governed` defaults to `None`, and the first
-  unfiltered call logs that discovery is unfiltered. Changing the default to
-  `True` is reserved for a future major version.
-- **Listed is not bindable.** Unfiltered discovery still lists a server the
-  gateway does not govern, and attaches its `explain()` report to the handle
-  (`McpServerHandle.governance`). Binding refuses it with
-  `UngovernedMcpServer` (see [Only governed servers are bound](https://docs.donkey-kit.dev/tool-access/binding.md#only-governed-servers-are-bound)).
-  Pass `governed=True` to get a set you can bind as a whole; each server it
-  leaves out is logged with its failed checks.
+- **Governed by default.** `governed` defaults to `True`, so the set holds
+  only the servers that pass the default `GovernanceCriteria`, and you can bind
+  it as a whole. Each server it leaves out is logged with its failed checks.
+- **Unfiltered is listed, not bindable.** `governed=None` lists every MCP
+  server, and the first unfiltered call logs that discovery is unfiltered. It
+  still lists a server the gateway does not govern, with its `explain()` report
+  on the handle (`McpServerHandle.governance`), so you can audit the catalog.
+  Binding refuses such a set with `UngovernedMcpServer` (see
+  [Only governed servers are bound](https://docs.donkey-kit.dev/tool-access/binding.md#only-governed-servers-are-bound)).
 - **Nothing found is not an error.** When no server is left, `discover()`
   returns an empty `ToolSet` and logs why: no MCP asset matched, or none was
   governed.
@@ -271,8 +271,8 @@ It reads the asset version's API Manager instances in the environment set by
   policy reads a second, 200 servers take roughly 10 seconds cold.
 
 ```python
-await donkey.tools.warm(tags=["erp"], governed=True)
-tools = await donkey.tools.discover(tags=["erp"], governed=True)  # cache hit
+await donkey.tools.warm(tags=["erp"])
+tools = await donkey.tools.discover(tags=["erp"])  # cache hit
 ```
 
 ## Related

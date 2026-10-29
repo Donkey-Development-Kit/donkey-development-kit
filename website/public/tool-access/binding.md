@@ -235,7 +235,7 @@ failed (`.reasons`, from [`explain()`](https://docs.donkey-kit.dev/tool-access/d
 ```python
 from donkey_kit import UngovernedMcpServer
 
-ts = await donkey.tools.discover(tags=["crm"])  # unfiltered: lists everything
+ts = await donkey.tools.discover(tags=["crm"], governed=None)  # unfiltered: lists everything
 try:
     tools = await ts.langgraph()
 except UngovernedMcpServer as e:
@@ -243,8 +243,9 @@ except UngovernedMcpServer as e:
     print(e.reasons)  # ('com.acme/fastmcp-crm/1.0.0: deployed: no gateway in Sandbox',)
 ```
 
-To fix it, front the server with the gateway, or leave it out with
-`discover(governed=True)` or drop it with `filter(servers=[...])`. A tool
+To fix it, front the server with the gateway, or leave it out: the default
+`discover()` (`governed=True`) does, so drop `governed=None`, or drop the
+server with `filter(servers=[...])`. A tool
 filter (`allow`, `deny`, `predicate`) does not get you past the check: the
 server is still in the set. There is no opt-out: to call an ungoverned server, use
 the framework's own MCP client, without the SDK and without your gateway

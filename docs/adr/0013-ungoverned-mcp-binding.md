@@ -1,6 +1,6 @@
 # ADR 0013: Binding refuses an MCP server that is not governed, with no opt-out
 
-- **Status:** Accepted
+- **Status:** Superseded by [0017](0017-governed-discovery-default.md)
 - **Date:** 2026-10-22
 - **Issue:** #1150 (BG §2.7). Discovery itself is wired in #221.
 

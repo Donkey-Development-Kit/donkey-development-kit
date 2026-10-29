@@ -106,8 +106,9 @@ class UngovernedMcpServer(DonkeyError):
 
     remediation: str = (
         "Front the server with the gateway so its policies apply, or leave it out "
-        "of the set with donkey.tools.discover(governed=True). Run "
-        "donkey.registry.explain(ref) to see which governance check failed."
+        "of the set: donkey.tools.discover() does by default (governed=True), so "
+        "drop governed=None, or narrow the set with ToolSet.filter(servers=[...]). "
+        "Run donkey.registry.explain(ref) to see which governance check failed."
     )
 
     def __init__(
