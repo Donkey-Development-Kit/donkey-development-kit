@@ -19,6 +19,7 @@ import httpx
 import pytest
 
 from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit.core import telemetry
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.errors import AuthError, ConfigError, RegistryError, ToolInvocationError
 from donkey_kit.core.step_up import GatewayApprovalPending
@@ -28,10 +29,19 @@ from donkey_kit.tools import discovery as discovery_module
 from donkey_kit.tools import mcp as mcp_module
 from donkey_kit.tools import session as session_module
 from donkey_kit.tools.auth import BearerAuth, ClientIdAuth, gateway_auth
-from donkey_kit.tools.discovery import DISCOVER_LIMIT, Discovery
+from donkey_kit.tools.discovery import (
+    DISCOVER_LIMIT,
+    DONKEY_DISCOVER_CACHE,
+    DONKEY_DISCOVER_LEFT_OUT,
+    DONKEY_DISCOVER_SERVERS,
+    SPAN_DISCOVER,
+    SPAN_WARM,
+    Discovery,
+)
 from donkey_kit.tools.session import ToolSet, UngovernedMcpServer
 
 _CFG = DonkeyConfig(telemetry=False)
+_TRACED = DonkeyConfig(telemetry=True)
 _AUTH = ClientIdAuth("cid", "secret")
 _GOVERNED = GovernanceReport(governed=True, checks=[Check("deployed", True, "ok")])
 _UNGOVERNED = GovernanceReport(
@@ -210,6 +220,78 @@ async def test_warm_is_one_search_and_one_explain_per_asset_eight_at_a_time() ->
     assert len(registry.searches) == 1
     assert sorted(registry.explained) == sorted(registry.catalog)
     assert 1 < _Slow.peak <= 8
+
+
+def _spans(monkeypatch: pytest.MonkeyPatch) -> Any:
+    pytest.importorskip("opentelemetry.sdk")
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("donkey_kit.test")
+    monkeypatch.setattr(telemetry, "_tracer", lambda: tracer)
+    return exporter
+
+
+async def test_a_cached_and_an_uncached_discover_differ_by_span(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = _spans(monkeypatch)
+    d = _discovery(_Registry({"inventory": _GOVERNED, "shadow": _UNGOVERNED}), _TRACED)
+    await _discover(d, governed=True)
+    await _discover(d, governed=True)
+
+    read, cached = exporter.get_finished_spans()
+    assert read.name == cached.name == SPAN_DISCOVER
+    assert dict(read.attributes) == {
+        DONKEY_DISCOVER_CACHE: "miss",
+        DONKEY_DISCOVER_SERVERS: 1,
+        DONKEY_DISCOVER_LEFT_OUT: 1,
+    }
+    assert dict(cached.attributes) == {**read.attributes, DONKEY_DISCOVER_CACHE: "hit"}
+
+
+async def test_warm_has_its_own_span_and_the_discover_after_it_is_a_hit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = _spans(monkeypatch)
+    d = _discovery(_Registry({"inventory": _GOVERNED}), _TRACED)
+    await d.warm(domain=None, tags=None, governed=None)
+    await _discover(d)
+
+    warm, discover = exporter.get_finished_spans()
+    assert (warm.name, warm.attributes[DONKEY_DISCOVER_CACHE]) == (SPAN_WARM, "miss")
+    assert (discover.name, discover.attributes[DONKEY_DISCOVER_CACHE]) == (SPAN_DISCOVER, "hit")
+
+
+async def test_a_failed_read_marks_the_span_with_the_error_type_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = _spans(monkeypatch)  # importorskips the SDK first
+    from opentelemetry.trace import StatusCode
+
+    registry = _Registry({"inventory": _GOVERNED})
+
+    async def refused(**_: Any) -> list[AssetRef]:
+        raise RegistryError("Exchange said 403 for org secret-org")
+
+    registry.search = refused  # type: ignore[method-assign]
+    with pytest.raises(RegistryError):
+        await _discover(_discovery(registry, _TRACED))
+
+    (span,) = exporter.get_finished_spans()
+    assert span.status.status_code is StatusCode.ERROR
+    assert dict(span.attributes) == {"error.type": "RegistryError"}
+    assert not span.events
+
+
+async def test_no_span_with_telemetry_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    exporter = _spans(monkeypatch)
+    await _discover(_discovery(_Registry({"inventory": _GOVERNED})))
+    assert exporter.get_finished_spans() == ()
 
 
 async def test_a_set_is_stale_after_the_ttl(monkeypatch: pytest.MonkeyPatch) -> None:

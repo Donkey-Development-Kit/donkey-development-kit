@@ -90,6 +90,7 @@ __all__ = [
     "run_context",
     "run_scope",
     "start_genai_span",
+    "tracer",
 ]
 
 _log = logging.getLogger(__name__)
@@ -215,6 +216,11 @@ def _tracer() -> Any | None:
     return trace.get_tracer("donkey_kit")
 
 
+def tracer() -> Any | None:
+    """:func:`_tracer` for the layers above core, which may not import a private name."""
+    return _tracer()
+
+
 def _host_provider_set() -> bool:
     """True once anything has set the process-global ``TracerProvider``.
 
@@ -227,21 +233,14 @@ def _host_provider_set() -> bool:
 
 
 # --- Zero-config OTLP export bootstrap (BG §1.6, #194) -----------------------
-# The span helpers above get their tracer from ``_tracer()``, which rides
-# whatever global TracerProvider the host process installed, or the DDK-scoped
-# provider built below. Without either they export nothing: OpenTelemetry's
-# default is a no-op provider. This is what turns "we build spans" into "spans
-# reach the customer's sink", with the zero-config contract of BG §1.6:
-#   set OTEL_EXPORTER_OTLP_ENDPOINT (the *standard* OTel env var) → spans export.
-#   no SDK-specific env var, and no endpoint set → inert and silent.
-# The provider it builds is DDK-scoped: it carries DDK's own spans and is never made the
-# process-global provider unless ``telemetry_install_global`` is set. OTel lets the global
-# provider be set only once, so taking it implicitly would silently lock out a host that
-# configures its own afterwards (#732, docs/adr/0010-no-hidden-global-side-effects.md).
-# Export I/O runs on the BatchSpanProcessor's background thread, off the request hot path —
-# which is exactly why per-call overhead stays under the 1ms bar (benchmarked in CI, #194):
-# the call site only creates the span, sets attributes and enqueues; the network flush is
-# somebody else's thread.
+# The span helpers above get their tracer from ``_tracer()``: the host's global
+# TracerProvider, else the DDK-scoped one built below, else OTel's no-op default. The
+# zero-config contract of BG §1.6: set OTEL_EXPORTER_OTLP_ENDPOINT (the *standard* OTel
+# env var) and spans export; set nothing and DDK is inert and silent. The scoped provider
+# is never made process-global unless ``telemetry_install_global`` is set, because OTel
+# lets the global be set only once (#732, docs/adr/0010-no-hidden-global-side-effects.md).
+# Export I/O runs on the BatchSpanProcessor's background thread, which is why per-call
+# overhead stays under the 1ms bar (benchmarked in CI, #194).
 
 
 class TelemetryExportWarning(UserWarning):

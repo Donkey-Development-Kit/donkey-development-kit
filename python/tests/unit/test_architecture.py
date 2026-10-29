@@ -329,7 +329,7 @@ _OVERSIZED_CORE_MODULES = {
     "config.py": 1100,
     "errors.py": 1030,
     "lastcall.py": 828,
-    "telemetry.py": 630,
+    "telemetry.py": 629,
 }
 
 

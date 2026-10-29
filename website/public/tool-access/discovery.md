@@ -226,7 +226,9 @@ It reads the asset version's API Manager instances in the environment set by
   criteria. `ToolSet.discovered_at` says when the registry was read and
   `ToolSet.is_stale` turns true once the TTL has passed;
   `donkey.tools.refresh()` drops the cache, and `DONKEY_NO_CACHE=1` turns it
-  off.
+  off. Each call records a `donkey.tools.discover` span whose
+  `donkey.discover.cache` attribute is `hit` or `miss` (see
+  [Telemetry](https://docs.donkey-kit.dev/telemetry.md)).
 - **No connection.** `discover()` opens no MCP connection. The tools are listed
   when you bind, or call `describe()`.
 - **Bounded fan-out.** The `explain()` and `resolve_mcp()` reads for each asset
