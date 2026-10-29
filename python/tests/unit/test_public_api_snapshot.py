@@ -141,10 +141,10 @@ MEMBERS = [
     "ToolSet.servers [property]",
     "ToolSet.strands() [async]",
     "ToolSet.wait_for_gateway_approval(timeout='2m')",
-    "ToolsFacade.discover(*, domain=None, tags=None, governed=None, locked=False, auth=None) [async]",
+    "ToolsFacade.discover(*, domain=None, tags=None, governed=True, locked=False, auth=None) [async]",
     "ToolsFacade.lock()",
     "ToolsFacade.refresh()",
-    "ToolsFacade.warm(*, domain=None, tags=None, governed=None) [async]",
+    "ToolsFacade.warm(*, domain=None, tags=None, governed=True) [async]",
 ]
 
 

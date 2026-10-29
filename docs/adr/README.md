@@ -84,7 +84,8 @@ is not rewritten.
 | [0010](0010-no-hidden-global-side-effects.md) | No hidden global side effects: the OTel provider | Accepted | #732 |
 | [0011](0011-nightly-lock-refresh-pr.md) | A green nightly opens the lock-refresh PR, and the release toolchain is locked too | Accepted | #763 |
 | [0012](0012-custom-policy-registry.md) | Customer-registered refusal shapes, in one process-wide registry behind a hook slot | Accepted | #210 |
-| [0013](0013-ungoverned-mcp-binding.md) | Binding refuses an MCP server that is not governed, with no opt-out | Accepted | #1150 |
+| [0013](0013-ungoverned-mcp-binding.md) | Binding refuses an MCP server that is not governed, with no opt-out | Superseded by [0017](0017-governed-discovery-default.md) | #1150 |
 | [0014](0014-a2a-server-package.md) | `donkey.serve()` wraps the official a2a-sdk, in a top-level `a2a` package beside `integrations` | Accepted | #224 |
 | [0015](0015-provisioning-boundary.md) | The SDK creates only the ingress instance in front of the developer's own agent or MCP server, never a control plane | Accepted | #319 |
 | [0016](0016-policy-source-evidence-class.md) | A gateway response shape read from the policy's own source may be typed, at `VERIFIED (POLICY SOURCE)` | Accepted | #1429 |
+| [0017](0017-governed-discovery-default.md) | Discovery is governed by default; binding still refuses an ungoverned server, with no opt-out | Accepted | #1424 |

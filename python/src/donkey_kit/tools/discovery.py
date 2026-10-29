@@ -107,8 +107,8 @@ class Discovery:
             self._said_unfiltered = True
             _log.info(
                 "donkey.tools.discover() is unfiltered (governed=None): it lists every MCP "
-                "server, and binding refuses an ungoverned one. Pass governed=True to leave "
-                "those out."
+                "server, and binding refuses an ungoverned one. Leave governed at its "
+                "default (True) to leave those out."
             )
         key = self._key(domain, tags, governed, criteria)
         with self._span(SPAN_DISCOVER) as record:
