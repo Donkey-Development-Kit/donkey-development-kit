@@ -22,5 +22,5 @@ documented in
 | File | |
 | --- | --- |
 | `action.yml` | The composite action. It installs donkey-kit from this checkout of the repository into its own virtual environment, then runs `run.py`. |
-| `run.py` | Runs `donkey --json publish` and writes the job summary, the step outputs and the error annotations, from the JSON donkey prints on a failed publish too. Standard library only. Tested by `python/tests/unit/test_action.py`. |
+| `run.py` | Runs `donkey --json publish` and writes the job summary, the step outputs and the error annotations, from the JSON donkey prints on a failed publish too. It reads only `plan_format` 1 (a dry run) and `publish_format` 1, and fails the step on any other document. Standard library only. Tested by `python/tests/unit/test_action.py`. |
 | `tests/fixture/` | One MCP server, which `.github/workflows/action-self-test.yml` dry-runs on Linux, macOS and Windows. |

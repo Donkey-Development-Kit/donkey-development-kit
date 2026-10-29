@@ -70,6 +70,7 @@ def test_a_publish_writes_the_summary_and_the_outputs(
     monkeypatch.setenv("INPUT_CLIENT_ID", "cid")
     monkeypatch.setenv("INPUT_CLIENT_SECRET", "s3cret")
     body = {
+        "publish_format": 1,
         "assets": [
             {**ASSET, "status": "published", "detail": "published 1.0.0"},
             {**ASSET, "asset_id": "pricing", "type": "agent", "status": "unchanged", "detail": "x"},
@@ -105,6 +106,7 @@ def test_a_failed_publish_still_writes_the_summary_and_the_outputs(
 ) -> None:
     """#1426: donkey prints the outcome JSON when an asset fails, and exits 1."""
     body = {
+        "publish_format": 1,
         "assets": [
             {**ASSET, "asset_id": "pricing", "status": "published", "detail": "published 1.0.0"},
             {**ASSET, "status": "failed", "detail": "Exchange refused | publishing. Fix it."},
@@ -155,9 +157,10 @@ def test_the_flags(
 ) -> None:
     for name, value in inputs.items():
         monkeypatch.setenv(name, value)
-    calls = _donkey(monkeypatch, json.dumps({"assets": [], "issues": []}))
+    document = {"plan_format": 1, "publish_format": 1, "assets": [], "issues": []}
+    calls = _donkey(monkeypatch, json.dumps(document))
 
-    run.main()
+    assert run.main() == 0
 
     assert calls[0]["command"][4:] == flags
 
@@ -186,8 +189,10 @@ def test_the_dry_run_summary_lists_the_digests(github: dict[str, Path]) -> None:
 def test_a_failure_annotates_each_error_line_and_keeps_the_exit_code(
     github: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    plan = {
-        "assets": [{**ASSET, "version": None}],
+    stopped = {**ASSET, "version": None, "status": "not_attempted", "detail": "not attempted"}
+    document = {
+        "publish_format": 1,
+        "assets": [stopped],
         "issues": [
             {
                 "kind": "missing-version",
@@ -199,7 +204,7 @@ def test_a_failure_annotates_each_error_line_and_keeps_the_exit_code(
         ],
     }
     stderr = "1 issue\n  .donkey-kit.toml:0  missing-version  100% wrong\nnothing was published\n"
-    _donkey(monkeypatch, json.dumps(plan), stderr=stderr, code=1)
+    _donkey(monkeypatch, json.dumps(document), stderr=stderr, code=1)
 
     assert run.main() == 1
 
@@ -211,16 +216,20 @@ def test_a_failure_annotates_each_error_line_and_keeps_the_exit_code(
         "::error title=donkey publish::nothing was published",
     ]
     summary = github["summary"].read_text()
-    assert "`org-1:sku-manager:<version>`" in summary
+    assert "| not_attempted | mcp | `org-1:sku-manager:<version>` | not attempted |" in summary
     assert (
         "- `.donkey-kit.toml:0` missing-version: donkey.publication: set version \\| in" in summary
     )
+    assert "did not finish" not in summary
+    assert "not_attempted=1" in github["output"].read_text()
 
 
 def test_a_failure_with_no_stderr_annotates_each_json_issue(
     github: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    monkeypatch.setenv("INPUT_DRY_RUN", "true")
     plan = {
+        "plan_format": 1,
         "assets": [{**ASSET, "version": None}],
         "issues": [
             {
@@ -240,6 +249,60 @@ def test_a_failure_with_no_stderr_annotates_each_json_issue(
         "::error title=donkey publish::.donkey-kit.toml:0 missing-version: donkey.publication: "
         "set version in [donkey.publication]",
     ]
+
+
+@pytest.mark.parametrize(
+    ("dry_run", "document", "found"),
+    [
+        (False, {"plan_format": 1}, "plan_format 1"),
+        (False, {"publish_format": 2}, "publish_format 2"),
+        (True, {"publish_format": 1}, "publish_format 1"),
+        (False, {}, "no format key"),
+    ],
+)
+def test_a_document_of_another_format_is_not_read_and_fails_the_step(
+    github: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    dry_run: bool,
+    document: dict[str, Any],
+    found: str,
+) -> None:
+    """#1427: the summary and the outputs come only from the document this action reads."""
+    monkeypatch.setenv("INPUT_DRY_RUN", str(dry_run).lower())
+    asset = {**ASSET, "status": "published", "detail": "published 1.0.0"}
+    _donkey(monkeypatch, json.dumps({**document, "assets": [asset], "issues": []}))
+
+    assert run.main() == 1
+
+    key = "plan_format" if dry_run else "publish_format"
+    (line,) = capsys.readouterr().out.splitlines()
+    assert line.startswith(
+        f"::error title=donkey publish::donkey printed a JSON document with {found}"
+    )
+    assert f"this action reads {key} 1" in line
+    assert not github["summary"].exists()
+    assert not github["output"].exists()
+
+
+def test_a_failed_run_of_another_format_keeps_donkeys_exit_code(
+    github: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _donkey(monkeypatch, json.dumps({"assets": [], "issues": []}), stderr="boom\n", code=2)
+
+    assert run.main() == 2
+
+    assert capsys.readouterr().out.splitlines()[1:] == ["::error title=donkey publish::boom"]
+
+
+def test_the_formats_are_donkey_kits() -> None:
+    from donkey_kit.registry.exchange_publish import PUBLISH_FORMAT
+    from donkey_kit.registry.publish_plan import PLAN_FORMAT
+
+    assert run.FORMATS == {
+        True: ("plan_format", PLAN_FORMAT),
+        False: ("publish_format", PUBLISH_FORMAT),
+    }
 
 
 def test_output_that_is_not_json_still_fails_with_an_annotation(

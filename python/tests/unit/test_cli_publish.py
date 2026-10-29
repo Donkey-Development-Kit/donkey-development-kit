@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from _fake_exchange import ORG, FakeExchange
+from _json_shapes import PLAN_ASSET_KEYS, PLAN_KEYS, PUBLISH_ASSET_KEYS, PUBLISH_KEYS, assert_shape
 from typer.testing import CliRunner
 
 from donkey_kit.cli import app
@@ -61,7 +62,9 @@ def test_dry_run_json(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     result = runner.invoke(app, ["--json", "publish", "--dry-run", str(repo)])
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["assets"][0]["group_id"] == "org-123"
+    document = json.loads(result.output)
+    assert_shape(document, PLAN_KEYS, "assets", PLAN_ASSET_KEYS)
+    assert document["assets"][0]["group_id"] == "org-123"
 
 
 def test_the_org_id_in_the_scanned_roots_config_is_the_default_group(
@@ -94,7 +97,9 @@ def test_dry_run_json_issues_go_to_stderr_too(repo: Path, monkeypatch: pytest.Mo
     result = runner.invoke(app, ["--json", "publish", "--dry-run", str(repo)])
 
     assert result.exit_code == 1
-    assert [i["kind"] for i in json.loads(result.stdout)["issues"]] == ["missing-version"]
+    document = json.loads(result.stdout)
+    assert_shape(document, PLAN_KEYS, "assets", PLAN_ASSET_KEYS)
+    assert [i["kind"] for i in document["issues"]] == ["missing-version"]
     assert "1 issue" in result.stderr
     assert "missing-version  donkey.publication" in result.stderr
 
@@ -143,7 +148,9 @@ def test_publish_json_reports_each_assets_outcome(repo: Path, exchange: FakeExch
     result = runner.invoke(app, ["--json", "publish", str(repo)])
 
     assert result.exit_code == 0, result.output
-    (asset,) = json.loads(result.stdout)["assets"]
+    document = json.loads(result.stdout)
+    assert_shape(document, PUBLISH_KEYS, "assets", PUBLISH_ASSET_KEYS)
+    (asset,) = document["assets"]
     assert (asset["asset_id"], asset["status"], asset["detail"]) == (
         "sku-manager",
         "unchanged",
@@ -173,7 +180,9 @@ def test_a_failed_publish_prints_each_assets_outcome_and_exits_1(
     result = runner.invoke(app, ["--json", "publish", str(repo)])
 
     assert result.exit_code == 1
-    (asset,) = json.loads(result.stdout)["assets"]
+    document = json.loads(result.stdout)
+    assert_shape(document, PUBLISH_KEYS, "assets", PUBLISH_ASSET_KEYS)
+    (asset,) = document["assets"]
     assert asset["status"] == "incomplete"
     assert asset["detail"].startswith("1.0.0 is published, but its publish did not finish")
     assert asset["detail"].endswith("Fix what Exchange reported, then re-run donkey publish.")
@@ -227,13 +236,24 @@ def test_a_plan_with_issues_publishes_nothing(repo: Path, exchange: FakeExchange
     assert exchange.requests == []
 
 
-def test_publish_json_with_issues_prints_the_plan(repo: Path, exchange: FakeExchange) -> None:
+def test_publish_json_with_issues_reports_every_asset_not_attempted(
+    repo: Path, exchange: FakeExchange
+) -> None:
+    """#1427: the publish document, not the plan, also when an issue stops it."""
     (repo / ".donkey-kit.toml").write_text("[donkey.publication]\n", encoding="utf-8")
 
     result = runner.invoke(app, ["publish", "--json", str(repo)])
 
     assert result.exit_code == 1
-    assert [i["kind"] for i in json.loads(result.stdout)["issues"]] == ["missing-version"]
+    document = json.loads(result.stdout)
+    assert_shape(document, PUBLISH_KEYS, "assets", PUBLISH_ASSET_KEYS)
+    (asset,) = document["assets"]
+    assert (asset["status"], asset["detail"]) == (
+        "not_attempted",
+        "not attempted: the plan has issues",
+    )
+    assert [i["kind"] for i in document["issues"]] == ["missing-version"]
+    assert "missing-version  donkey.publication" in result.stderr
     assert exchange.requests == []
 
 

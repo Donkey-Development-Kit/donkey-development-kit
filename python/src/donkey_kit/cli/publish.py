@@ -22,10 +22,12 @@ were refused, and the assets after it are ``not_attempted``; what was
 published before stays published. A rerun finishes an ``incomplete`` publish
 rather than reporting it ``unchanged`` (#1426).
 
-``--json`` prints the plan as JSON; after a publish, each asset also carries
-the ``status`` (``published``, ``unchanged``, ``incomplete``, ``failed`` or
-``not_attempted``) and ``detail`` of its outcome, also when the publish
-failed. Issues and errors still go to stderr.
+``--json`` with ``--dry-run`` prints the plan (``plan_format`` 1). Without it,
+it prints the publish document (``publish_format`` 1): the plan's assets, each
+with the ``status`` (``published``, ``unchanged``, ``incomplete``, ``failed``
+or ``not_attempted``) and ``detail`` of its outcome, also when the publish
+failed, and every asset ``not_attempted`` when an issue stopped it (#1427).
+Issues and errors still go to stderr.
 
 Exit codes: 1 when the scan or the declaration reports an issue (nothing is
 sent) or an asset is ``failed`` or ``incomplete``, 2 when there is nothing at
@@ -38,6 +40,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -45,7 +48,7 @@ from ..core.config import TOML_NAME, DonkeyConfig
 from ..core.errors import ConfigError, DonkeyError
 from ..core.runtime import Runtime
 from ..registry.exchange_page import PageSource
-from ..registry.exchange_publish import PublishOutcome, publish_plan
+from ..registry.exchange_publish import PUBLISH_FORMAT, PublishOutcome, publish_plan
 from ..registry.publish_plan import PublishPlan, plan_publication
 from ..registry.scan import ScanResult
 from ..registry.scan import scan as scan_repository
@@ -93,7 +96,9 @@ def publish(
         raise typer.Exit(1 if plan.issues else 0)
     if plan.issues:
         if as_json:
-            typer.echo(plan.to_json(), nl=False)
+            detail = "not attempted: the plan has issues"
+            stopped = tuple(PublishOutcome(a, "not_attempted", detail) for a in plan.assets)
+            typer.echo(_outcomes_json(plan, stopped), nl=False)
         _issues(plan)
         typer.secho("nothing was published", fg="red", err=True)
         raise typer.Exit(1)
@@ -163,10 +168,19 @@ def _ci_source() -> PageSource | None:
     )
 
 
-def _outcomes_json(plan: PublishPlan, outcomes: tuple[PublishOutcome, ...]) -> str:
-    """The plan's JSON with each asset's outcome; outcomes are in plan order. A
-    refused asset's detail ends with the remediation, as ``donkey verify``'s does."""
+def _document(plan: PublishPlan, key: str, version: int) -> dict[str, Any]:
+    """The plan's JSON with the command's own format key in place of ``plan_format``."""
     data = plan.to_dict()
+    del data["plan_format"]
+    data[key] = version
+    return data
+
+
+def _outcomes_json(plan: PublishPlan, outcomes: tuple[PublishOutcome, ...]) -> str:
+    """The publish document: the plan's assets with each one's outcome, in plan
+    order. A refused asset's detail ends with the remediation, as ``donkey
+    verify``'s does."""
+    data = _document(plan, "publish_format", PUBLISH_FORMAT)
     for asset, outcome in zip(data["assets"], outcomes, strict=True):
         detail = outcome.detail
         if outcome.status in _FAILED and outcome.error is not None:

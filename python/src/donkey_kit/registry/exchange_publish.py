@@ -59,6 +59,7 @@ from .scan import ScanResult
 
 __all__ = [
     "DIGEST_PROPERTY",
+    "PUBLISH_FORMAT",
     "PublishOutcome",
     "PublishStatus",
     "PublishedVersion",
@@ -157,6 +158,11 @@ class PublishedVersion:
 
 
 PublishStatus = Literal["published", "unchanged", "incomplete", "failed", "not_attempted"]
+
+#: The version of ``donkey publish --json``'s document: the plan's assets, each
+#: with its outcome's ``status`` and ``detail``. Bumped when the shape changes
+#: incompatibly, as ``PLAN_FORMAT`` is (#1427).
+PUBLISH_FORMAT = 1
 
 
 @dataclass(frozen=True)

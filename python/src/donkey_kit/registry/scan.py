@@ -173,6 +173,16 @@ class ScanIssue:
     line: int
     detail: str
 
+    def to_dict(self) -> dict[str, Any]:
+        """The issue as plain JSON-ready data, as every ``--json`` document lists it."""
+        return {
+            "kind": self.kind,
+            "subject": self.subject,
+            "path": self.path,
+            "line": self.line,
+            "detail": self.detail,
+        }
+
 
 @dataclass(frozen=True)
 class ScanResult:
@@ -258,16 +268,7 @@ class ScanResult:
                 for s in self.mcp_servers
             ],
             "unattributed": [t.qualname for t in self.unattributed],
-            "issues": [
-                {
-                    "kind": i.kind,
-                    "subject": i.subject,
-                    "path": i.path,
-                    "line": i.line,
-                    "detail": i.detail,
-                }
-                for i in self.issues
-            ],
+            "issues": [i.to_dict() for i in self.issues],
         }
 
 

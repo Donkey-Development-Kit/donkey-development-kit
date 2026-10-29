@@ -46,11 +46,16 @@ from .exchange_page import PageSource
 from .exchange_publish import latest_version, publish_plan
 from .expose_plan import ExposePlan, PlannedPolicy
 from .publish_plan import PublishPlan
-from .scan import ScanResult
+from .scan import ScanIssue, ScanResult
 
-__all__ = ["ExposeReport", "Step", "StepStatus", "expose"]
+__all__ = ["EXPOSE_FORMAT", "ExposeReport", "Step", "StepStatus", "expose"]
 
 StepStatus = Literal["present", "created", "planned", "differs", "missing", "failed", "skipped"]
+
+#: The version of :meth:`ExposeReport.to_dict`, the ``donkey expose --json`` and
+#: ``donkey preflight --json`` document. Bumped when its shape changes
+#: incompatibly, as ``PLAN_FORMAT`` is (#1427).
+EXPOSE_FORMAT = 1
 
 # The statuses after which the run can go on.
 _GOOD = frozenset({"present", "created", "planned"})
@@ -84,23 +89,30 @@ class Step:
 
 @dataclass(frozen=True)
 class ExposeReport:
-    """What :func:`expose` did, step by step, and where the service is reachable."""
+    """What :func:`expose` did, step by step, and where the service is reachable.
+
+    ``issues`` are the plan's: a plan with issues is not run, so its report
+    has no steps (#1427).
+    """
 
     steps: tuple[Step, ...]
     url: str | None = None
     dry_run: bool = False
+    issues: tuple[ScanIssue, ...] = ()
 
     @property
     def ok(self) -> bool:
-        """Whether every step is ``present``, ``created`` or ``planned``."""
-        return all(s.status in _GOOD for s in self.steps)
+        """Whether there is no issue and every step is ``present``, ``created`` or ``planned``."""
+        return not self.issues and all(s.status in _GOOD for s in self.steps)
 
     def to_dict(self) -> dict[str, Any]:
-        """The report as plain JSON-ready data."""
+        """The report as plain JSON-ready data, versioned by ``expose_format``."""
         return {
+            "expose_format": EXPOSE_FORMAT,
             "ok": self.ok,
             "dry_run": self.dry_run,
             "url": self.url,
+            "issues": [i.to_dict() for i in self.issues],
             "steps": [
                 {
                     "name": s.name,

@@ -135,6 +135,28 @@ hidden provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
 `generate`); they were removed with the refused provisioning control plane, and
 typer now rejects them as unknown commands (exit `2`).
 
+### JSON output
+
+Each document that `scan`, `publish`, `verify`, `preflight` and `expose` print
+with `--json` carries its own format key. A script reads the key before it reads
+the rest. The number goes up only when the shape changes in a way that breaks an
+existing reader:
+
+| Command | Format key | What it prints |
+|---|---|---|
+| `donkey scan` | `scan_format: 1` | The scan model. |
+| `donkey publish --dry-run` | `plan_format: 1` | The plan: the assets a publish would register, and the issues. |
+| `donkey publish` | `publish_format: 1` | The plan's assets, each with a `status` and a `detail`, and the issues. |
+| `donkey verify` | `verify_format: 1` | The plan's assets, each with a `status`, a `detail` and its `differences`, and the issues. |
+| `donkey preflight`, `donkey expose` | `expose_format: 1` | `ok`, `dry_run`, the `url`, one entry per step, and the issues. |
+
+A declaration issue still prints the document, so stdout is JSON whenever
+the command got as far as reading the declaration. Nothing is sent then. A
+`publish` or `verify` reports every asset `not_attempted`, an `expose`
+report has `ok: false` and no steps, and every document lists the issues.
+The issues also go to stderr, and the command exits `1`. A missing path or
+invalid config exits `2` with no document.
+
 ### Command reference
 
 {/* BEGIN GENERATED: cli-reference (edit python/scripts/generate_docs.py, then run it) */}
@@ -455,8 +477,9 @@ asset whose latest published version has the same digest is left unchanged;
 one changed without a version bump is refused before anything is published. It reads
 the `ANYPOINT_*` control-plane credentials.
 
-With `--json`, each asset in the plan carries a `status` and a `detail`, also
-when the publish fails:
+With `--json` it prints the publish document (`publish_format: 1`; with
+`--dry-run`, the plan, `plan_format: 1`). Each asset carries a `status` and a
+`detail`, also when the publish fails:
 
 | `status` | Meaning |
 |---|---|
@@ -464,7 +487,7 @@ when the publish fails:
 | `unchanged` | The latest version already has this digest, and its publish is complete. |
 | `incomplete` | The version is published, but its endpoint, page, or name and description were refused. A rerun finishes it. |
 | `failed` | Exchange refused the asset, and nothing was published for it. The detail ends with the fix. |
-| `not_attempted` | An earlier asset failed, so this one was not tried. |
+| `not_attempted` | An earlier asset failed, or an issue stopped the publish, so this one was not tried. |
 
 It exits `0` when every asset is `published` or `unchanged`, `1` on an issue
 or when an asset is `failed` or `incomplete` (what was published before stays
@@ -485,7 +508,9 @@ published with against the tools it lists through its gateway, and the card an
 agent's version was published with against the card it serves there. It writes
 nothing. Each asset is reported as `match`, `drift` (with each difference) or
 `error`; an agent with protocol `other` or none declared is `skipped`, since it
-has no card to compare.
+has no card to compare. With `--json` it prints the verify document
+(`verify_format: 1`), where a declaration issue makes every asset
+`not_attempted`.
 
 It reads the `ANYPOINT_*` control-plane credentials for Exchange and the
 gateway credential for the live side, and exits `0` when every verified asset matches,
@@ -548,7 +573,8 @@ the gateway, the environment or a connected-app scope is missing.
 Both exit `0` when every step is present, created or planned; `1` when a step
 is missing, differs or failed, or the declaration has an issue (nothing is
 sent then); and `2` on a missing path, invalid config or missing control-plane
-credentials. The connected-app scopes they need are in
+credentials. With `--json` both print the report (`expose_format: 1`), with
+the declaration's issues when it has any. The connected-app scopes they need are in
 [Connected-app scopes](/reference/scopes#for-donkey-expose).
 
 ## Planned commands <Badge tone="roadmap">Roadmap</Badge>

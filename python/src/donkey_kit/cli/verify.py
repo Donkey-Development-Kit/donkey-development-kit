@@ -12,8 +12,10 @@ compare (docs/verified-apis.md §7).
 It needs the control-plane credentials, to read Exchange, and the gateway
 credential, to read the live side, as a ``donkey.tools`` binding does.
 
-``--json`` prints the plan as JSON, each asset with its ``status`` (``match``,
-``drift``, ``error`` or ``skipped``), ``detail`` and ``differences``.
+``--json`` prints the verify document (``verify_format`` 1): the plan's
+assets, each with its ``status`` (``match``, ``drift``, ``error``, ``skipped``,
+or ``not_attempted`` when an issue stopped the verify), ``detail`` and
+``differences`` (#1427). Issues still go to stderr too.
 
 Exit codes: 0 when every verified asset matches, 1 when one drifted, a read failed,
 or the scan or the declaration reports an issue (nothing is read), 2 when there
@@ -37,15 +39,20 @@ from ..registry.publication import Publication, PublicationAssetType
 from ..registry.publish_plan import PlannedAsset, PublishPlan, plan_publication
 from ..registry.scan import scan as scan_repository
 from ._app import app
-from .publish import _issues
+from .publish import _document, _issues
 
-__all__ = ["verify"]
+__all__ = ["VERIFY_FORMAT", "verify"]
+
+#: The version of ``donkey verify --json``'s document. Bumped when its shape
+#: changes incompatibly, as ``PLAN_FORMAT`` is (#1427).
+VERIFY_FORMAT = 1
 
 
 @dataclass(frozen=True)
 class VerifyOutcome:
     """What verifying one planned asset found: ``status`` is ``match``,
-    ``drift``, ``error`` or ``skipped``, and ``differences`` the drift lines."""
+    ``drift``, ``error``, ``skipped`` or ``not_attempted``, and
+    ``differences`` the drift lines."""
 
     asset: PlannedAsset
     status: str
@@ -73,7 +80,9 @@ def verify(
     plan = plan_publication(result, path, default_group_id=cfg.org_id)
     if plan.issues:
         if as_json:
-            typer.echo(plan.to_json(), nl=False)
+            detail = "not attempted: the plan has issues"
+            stopped = tuple(VerifyOutcome(a, "not_attempted", detail) for a in plan.assets)
+            typer.echo(_outcomes_json(plan, stopped), nl=False)
         _issues(plan)
         typer.secho("nothing was verified", fg="red", err=True)
         raise typer.Exit(1)
@@ -129,8 +138,8 @@ async def _verify_one(donkey: Donkey, asset: PlannedAsset) -> VerifyOutcome:
 
 
 def _outcomes_json(plan: PublishPlan, outcomes: tuple[VerifyOutcome, ...]) -> str:
-    """The plan's JSON with each asset's outcome; outcomes are in plan order."""
-    data = plan.to_dict()
+    """The verify document: the plan's assets with each one's outcome, in plan order."""
+    data = _document(plan, "verify_format", VERIFY_FORMAT)
     for asset, outcome in zip(data["assets"], outcomes, strict=True):
         asset["status"], asset["detail"] = outcome.status, outcome.detail
         asset["differences"] = list(outcome.differences)

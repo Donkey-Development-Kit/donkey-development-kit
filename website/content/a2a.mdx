@@ -321,6 +321,9 @@ It stays narrow, so it never turns into a provisioning tool:
   instance.
 - `--dry-run`, and `donkey preflight`, print what it would create and send no
   write. Each step reports its own result.
+- `--json` prints the report as JSON, with `expose_format: 1`. It does so
+  even when the declaration has an issue, and then lists the issues and no
+  steps. See [JSON output](/cli#json-output).
 - Gateways, environments, LLM proxies, organization-wide policy and
   connected-app scopes belong to your platform team and its
   infrastructure-as-code. If one is missing, `donkey expose` tells you which

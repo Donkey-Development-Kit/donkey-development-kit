@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from _json_shapes import VERIFY_ASSET_KEYS, VERIFY_KEYS, assert_shape
 from typer.testing import CliRunner
 
 from donkey_kit.cli import app
@@ -175,7 +176,9 @@ def test_json_carries_each_outcome(repo: Path, monkeypatch: pytest.MonkeyPatch) 
     result = runner.invoke(app, ["--json", "verify", str(repo)])
 
     assert result.exit_code == 1, result.output
-    (asset,) = json.loads(result.output)["assets"]
+    document = json.loads(result.output)
+    assert_shape(document, VERIFY_KEYS, "assets", VERIFY_ASSET_KEYS)
+    (asset,) = document["assets"]
     assert asset["status"] == "drift"
     assert asset["differences"] == ["tool lookup_sku: the description changed"]
 
@@ -253,6 +256,29 @@ def test_a_declaration_issue_reads_nothing(repo: Path, monkeypatch: pytest.Monke
 
     assert result.exit_code == 1, result.output
     assert "nothing was verified" in result.output
+    assert donkey.read == []
+
+
+def test_json_with_a_declaration_issue_reports_every_asset_not_attempted(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1427: the verify document, not the plan, also when an issue stops it."""
+    (repo / ".donkey-kit.toml").write_text("[donkey.publication]\n", encoding="utf-8")
+    donkey = _serve(monkeypatch, [_TOOL])
+
+    result = runner.invoke(app, ["--json", "verify", str(repo)])
+
+    assert result.exit_code == 1, result.output
+    document = json.loads(result.stdout)
+    assert_shape(document, VERIFY_KEYS, "assets", VERIFY_ASSET_KEYS)
+    (asset,) = document["assets"]
+    assert (asset["status"], asset["detail"], asset["differences"]) == (
+        "not_attempted",
+        "not attempted: the plan has issues",
+        [],
+    )
+    assert [i["kind"] for i in document["issues"]] == ["missing-version"]
+    assert "nothing was verified" in result.stderr
     assert donkey.read == []
 
 
