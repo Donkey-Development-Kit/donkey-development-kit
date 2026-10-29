@@ -31,9 +31,8 @@ the resumed tool, while the others raise nothing and hand the model the
 rejection message as the tool's result. Core never imports a framework:
 the hooks are passed in from the top-level ``donkey`` module.
 
-A resumed call runs as its requester, with the user and attribution bound where
-it was requested; a resolving context bound to another user is refused (#1416,
-:mod:`donkey_kit.core.identity`). A native pause keeps its requester in memory.
+A resumed call runs as its requester, with the user and attribution bound where it
+was requested, and a resolver bound to another user is refused (#1416, ``identity``).
 """
 
 from __future__ import annotations
