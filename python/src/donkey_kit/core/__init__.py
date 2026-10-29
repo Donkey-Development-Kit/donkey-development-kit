@@ -37,6 +37,7 @@ from .errors import (
 )
 from .identity import UserScope
 from .lastcall import LastCall, LastCallStatus
+from .step_up import GatewayApprovalDenied, GatewayApprovalPending
 from .telemetry import (
     RunScope,
     current_correlation_id,
@@ -77,6 +78,8 @@ __all__ = [
     "DonkeyClientView",
     "DonkeyConfig",
     "DonkeyError",
+    "GatewayApprovalDenied",
+    "GatewayApprovalPending",
     "GatewayUnavailable",
     "LastCall",
     "LastCallStatus",

@@ -17,6 +17,7 @@ import httpx
 import pytest
 
 from donkey_kit.core.errors import AuthError, ToolInvocationError
+from donkey_kit.core.step_up import GatewayApprovalDenied, GatewayApprovalPending
 from donkey_kit.registry.criteria import Check, GovernanceReport
 from donkey_kit.registry.models import AssetRef, McpServerHandle
 from donkey_kit.tools import mcp as mcp_module
@@ -52,6 +53,8 @@ class _Server:
     def __init__(self, pages: dict[str | None, _Page], *, status: int | None = None) -> None:
         self.pages = pages
         self.status = status
+        self.reply_headers: dict[str, str] = {}
+        self.body: bytes = b""
         self.headers: dict[str, str] = {}
         self.initialized = False
 
@@ -65,7 +68,12 @@ def server(monkeypatch: pytest.MonkeyPatch) -> _Server:
     async def streamable_http_client(url: str, *, http_client: Any) -> AsyncIterator[Any]:
         srv.headers = dict(http_client.headers)
         if srv.status is not None:
-            response = httpx.Response(srv.status, request=httpx.Request("POST", url))
+            response = httpx.Response(
+                srv.status,
+                headers=srv.reply_headers,
+                content=srv.body,
+                request=httpx.Request("POST", url),
+            )
             for hook in http_client.event_hooks["response"]:
                 await hook(response)
             raise RuntimeError("Server returned an error response")  # as mcp 2.x does
@@ -126,6 +134,24 @@ async def test_list_tools_maps_the_recorded_status(
 ) -> None:
     server.status = status
     with pytest.raises(error, match=f"HTTP {status}"):
+        await mcp_module.list_tools("https://gw.example.test/x/", {}, server="x")
+
+
+async def test_list_tools_raises_a_ciba_pending_answer_typed(server: _Server) -> None:
+    # The OBO policy's CIBA 401 is not a credential failure (docs/verified-apis.md §4, #1320).
+    server.status = 401
+    server.reply_headers = {"content-type": "application/json", "retry-after": "5"}
+    server.body = b'{"error":"authorization_pending","error_description":"in progress"}'
+    with pytest.raises(GatewayApprovalPending) as info:
+        await mcp_module.list_tools("https://gw.example.test/x/", {}, server="x")
+    assert info.value.retry_after == 5.0
+
+
+async def test_list_tools_raises_a_ciba_denial_typed(server: _Server) -> None:
+    server.status = 403
+    server.reply_headers = {"content-type": "application/json"}
+    server.body = b'{"error":"access_denied","error_description":"denied"}'
+    with pytest.raises(GatewayApprovalDenied):
         await mcp_module.list_tools("https://gw.example.test/x/", {}, server="x")
 
 

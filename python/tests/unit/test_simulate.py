@@ -36,6 +36,7 @@ from donkey_kit.core.errors import (
     UpstreamRequestError,
     classify,
 )
+from donkey_kit.core.step_up import GatewayApprovalDenied, GatewayApprovalPending
 from donkey_kit.simulator import fixtures as fx
 from donkey_kit.simulator.app import SIMULATOR_HEADER
 
@@ -67,6 +68,8 @@ _ROUND_TRIP = [
     (PromptInjectionBlocked, "injection-protection"),
     (ContentSafetyBlocked, "content-safety"),
     (AgentKilled, "agent-killed"),
+    (GatewayApprovalPending, "ciba-pending"),
+    (GatewayApprovalDenied, "ciba-denied"),
     (UpstreamRequestError, "model-not-found"),
     (ModelNotRoutable, "model-not-routable"),
     (UpstreamModelError, "upstream-5xx"),

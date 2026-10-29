@@ -5,22 +5,21 @@ SDK's clearest value over raw HTTP.
 
 Two design points that matter:
 
-1. :class:`PolicyViolation` must be distinguishable from a transient error at
-   the framework boundary so host frameworks do not silently retry a refusal.
-   It is NEVER retried by our transport.
-2. ``remediation`` is a structurally-guaranteed, human-readable next step —
-   worth more than a stack trace. Every :class:`DonkeyError` carries one: the
-   base constructor refuses to build an instance whose remediation is empty or
-   whitespace, and every subclass ships a canonical default (BG §1.2, #182,
-   #715). That default is the single source ``donkey doctor`` (#202) reuses, so
-   a diagnosis and the exception it stands for can never disagree.
+1. :class:`PolicyViolation` must be distinguishable from a transient error at the framework
+   boundary so host frameworks do not silently retry a refusal. It is NEVER retried by our
+   transport.
+2. ``remediation`` is a structurally-guaranteed, human-readable next step — worth more than a
+   stack trace. Every :class:`DonkeyError` carries one: the base constructor refuses to build
+   an instance whose remediation is empty or whitespace, and every subclass ships a canonical
+   default (BG §1.2, #182, #715). That default is the single source ``donkey doctor`` (#202)
+   reuses, so a diagnosis and the exception it stands for can never disagree.
 
-The concrete HTTP-response → exception mapping lives in :func:`classify`: an
-ordered series of discriminators, each keyed on a rejection shape captured from
-a real gateway (docs/verified-apis.md §4,
-``src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/``, BG §1.5) rather
-than a hand-written guess. A shape it does not recognise falls through to
-a generic :class:`PolicyViolation` or :class:`DonkeyError`.
+The concrete HTTP-response → exception mapping lives in :func:`classify`: an ordered series of
+discriminators, each keyed on a rejection shape captured from a real gateway
+(docs/verified-apis.md §4, ``src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/``, BG §1.5)
+rather than a hand-written guess. The CIBA step-up types live in ``core/step_up`` (#1320). A
+shape it does not recognise falls through to a generic :class:`PolicyViolation` or
+:class:`DonkeyError`.
 """
 
 from __future__ import annotations
@@ -656,39 +655,35 @@ def classify(
 ) -> DonkeyError:
     """Map an HTTP error response to a specific exception.
 
-    ``correlation_id`` (the run id) and ``call_id`` (the per-request id) are the
-    two ids the client sent (BG §1.1, #195). When not passed explicitly they are
-    read back from the response's own request headers, so a caller bridging an
-    ``openai.APIStatusError`` — ``classify(err.response)`` — gets a
-    :class:`DonkeyError` whose ``correlation_id`` equals the header that was sent
-    with no extra wiring. An explicit argument (e.g. when the header name was
-    overridden via config) always wins over the auto-derived value.
+    ``correlation_id`` (the run id) and ``call_id`` (the per-request id) are the two ids the
+    client sent (BG §1.1, #195). When not passed explicitly they are read back from the
+    response's own request headers, so a caller bridging an ``openai.APIStatusError`` —
+    ``classify(err.response)`` — gets a :class:`DonkeyError` whose ``correlation_id`` equals the
+    header that was sent with no extra wiring. An explicit argument (e.g. when the header name
+    was overridden via config) always wins over the auto-derived value.
 
     The precise policy discrimination (BG §1.2, working instruction #4) is driven by
     real rejection captures from a live governed LLM proxy (docs/verified-apis.md §4,
     ``src/donkey_kit/simulator/_fixtures/anypoint/llm_proxy/reject.*``), NOT hand-written guesses.
     What the captures established:
 
-    * **PII detection** rejects with **403** and a *nested* error object whose
-      ``type`` is ``"pii_detected"`` (and, unlike a genuine auth failure, NO
-      ``www-authenticate`` header). So a 403 is NOT automatically an auth error —
-      the error ``type`` is checked first. The gateway's message echoes each
-      flagged value, so the exception message is rebuilt from the entity types
-      and offsets and the original is kept on ``PIIDetected.gateway_message``.
-    * **Agent Kill Switch** rejects with **403** and a *nested* error object whose
-      ``code`` is ``"agent_killed"`` (no ``type``, no ``www-authenticate``) →
-      :class:`AgentKilled`. Keyed on the body ``code``, not the status, and
-      checked BEFORE the auth and generic-4xx rules so a killed agent is not
-      mis-typed as an :class:`UpstreamRequestError` (#694).
-    * **Request rate limit** rejects with **429**, the body ``{"error":"Too Many
-      Requests"}`` and the ``x-ratelimit-limit`` / ``x-ratelimit-remaining`` /
-      ``x-ratelimit-reset`` (ms) headers → :class:`RequestRateLimitExceeded`
-      (#974). Keyed on those headers, which the policy sends only with
-      ``exposeHeaders: true``; without them the 429 is not told apart.
-    * **Token rate limit** rejects with **429** and an **empty body**; the budget
-      state is entirely in headers (``x-token-limit`` / ``x-token-remaining`` /
-      ``x-token-reset`` in ms). There is NO standard ``retry-after``. Any 429 the
-      request-rate-limit rule does not claim maps here.
+    * **PII detection** rejects with **403** and a *nested* error object whose ``type`` is
+      ``"pii_detected"`` (and, unlike a genuine auth failure, NO ``www-authenticate`` header).
+      So a 403 is NOT automatically an auth error — the error ``type`` is checked first. The
+      gateway's message echoes each flagged value, so the exception message is rebuilt from the
+      entity types and offsets and the original is kept on ``PIIDetected.gateway_message``.
+    * **Agent Kill Switch** rejects with **403** and a *nested* error object whose ``code`` is
+      ``"agent_killed"`` (no ``type``, no ``www-authenticate``) → :class:`AgentKilled`. Keyed on
+      the body ``code``, not the status, and checked BEFORE the auth and generic-4xx rules so a
+      killed agent is not mis-typed as an :class:`UpstreamRequestError` (#694).
+    * **Request rate limit** rejects with **429**, the body ``{"error":"Too Many Requests"}``
+      and the ``x-ratelimit-limit`` / ``x-ratelimit-remaining`` / ``x-ratelimit-reset`` (ms)
+      headers → :class:`RequestRateLimitExceeded` (#974). Keyed on those headers, which the
+      policy sends only with ``exposeHeaders: true``; without them the 429 is not told apart.
+    * **Token rate limit** rejects with **429** and an **empty body**; the budget state is
+      entirely in headers (``x-token-limit`` / ``x-token-remaining`` / ``x-token-reset`` in ms).
+      There is NO standard ``retry-after``. Any 429 the request-rate-limit rule does not claim
+      maps here.
     * **client-id-enforcement** rejects with **401** + a *flat-string* ``error``
       and a ``www-authenticate`` header → auth.
     * **Upstream provider passthrough** (e.g. OpenAI ``model_not_found``) is a
@@ -700,31 +695,33 @@ def classify(
     * **Injection protection** rejects with the ``x-injection-protection:
       blocked`` header (the header, not the status, is the discriminator; #181)
       → :class:`PromptInjectionBlocked`.
-    * **Regex Prompt Guard** rejects with **403** and a *flat-string* ``error``
-      plus a top-level ``matched_patterns`` list → :class:`PromptInjectionBlocked`
-      (``policy="regex-prompt-guard"``). Keyed on ``matched_patterns`` and checked
-      BEFORE the 401/403→auth rule so a deny-list block is not mis-typed as auth.
-    * **Content safety / guardrails** (Azure Content Safety, Amazon Bedrock
-      Guardrails, Google Model Armor, CrowdStrike AIDR) reject with **403** and a vendor header
-      ``x-llm-proxy-<vendor>-...-action: reject`` → :class:`ContentSafetyBlocked`
-      (flagged reasons parsed from the sibling ``...-reason`` header). Also
-      checked before the auth rule; on a fail-closed 503 it is a 5xx outage.
+    * **Regex Prompt Guard** rejects with **403** and a *flat-string* ``error`` plus a top-level
+      ``matched_patterns`` list → :class:`PromptInjectionBlocked` (``policy="regex-prompt-guard"``).
+      Keyed on ``matched_patterns`` and checked BEFORE the 401/403→auth rule so a deny-list
+      block is not mis-typed as auth.
+    * **Content safety / guardrails** (Azure Content Safety, Amazon Bedrock Guardrails, Google
+      Model Armor, CrowdStrike AIDR) reject with **403** and a vendor header
+      ``x-llm-proxy-<vendor>-...-action: reject`` → :class:`ContentSafetyBlocked` (flagged
+      reasons parsed from the sibling ``...-reason`` header). Also checked before the auth rule;
+      on a fail-closed 503 it is a 5xx outage.
+    * **OAuth2 OBO CIBA step-up** answers **401** ``error: authorization_pending`` while the user
+      has not approved, and **403** ``error: access_denied`` once they deny →
+      ``GatewayApprovalPending`` / ``GatewayApprovalDenied`` (``core/step_up``, #1320). Also
+      checked before the auth rule: the credential was accepted.
 
-    These shapes have no ``_verify.py`` constant — ``classify()`` reads them
-    straight from the response — so their verification record is the
-    docs/verified-apis.md §4 rows. Any other content-moderation /
-    federated-guardrail shape falls through to a generic
-    :class:`PolicyViolation` whose message names what was observed and says the
-    shape is unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate``
-    shape (docs/verified-apis.md §4), a **403 carrying no ``www-authenticate`` header** and matching
-    none of the policy discriminators above is treated as one of these unconfirmed
-    refusals, not mis-typed as an :class:`AuthError`.
+    These shapes have no ``_verify.py`` constant — ``classify()`` reads them straight from the
+    response — so their verification record is the docs/verified-apis.md §4 rows. Any other
+    content-moderation / federated-guardrail shape falls through to a generic
+    :class:`PolicyViolation` whose message names what was observed and says the shape is
+    unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate`` shape
+    (docs/verified-apis.md §4), a **403 carrying no ``www-authenticate`` header** and matching
+    none of the policy discriminators above is treated as one of these unconfirmed refusals, not
+    mis-typed as an :class:`AuthError`.
 
     A shape a customer registered with ``classify.register()`` (BG §2.2, #210,
-    ``core/classifier``) is matched after every built-in above and before the
-    upstream-envelope rule, so a verified shape always wins and a custom
-    policy's nested-envelope 403 is not mis-typed as an
-    :class:`UpstreamRequestError`.
+    ``core/classifier``) is matched after every built-in above and before the upstream-envelope
+    rule, so a verified shape always wins and a custom policy's nested-envelope 403 is not
+    mis-typed as an :class:`UpstreamRequestError`.
     """
 
     shape = _shape(response, correlation_id=correlation_id, call_id=call_id)
@@ -739,15 +736,13 @@ def classify(
 class _Shape:
     """What every :func:`classify` matcher reads off one response, parsed once.
 
-    ``body`` is the top-level JSON object (it also carries the Regex Prompt
-    Guard's ``matched_patterns`` key), ``None`` when the body is not a JSON
-    object, e.g. Gemini's LIST-shaped error envelope (#548), whose nested error
-    object ``nested_error`` still recovers. ``error_obj`` is the nested
-    ``error`` object from either envelope shape, iff it is itself an object.
-    ``error_type`` is its ``type`` (the OpenAI-format discriminator:
-    ``pii_detected``, ``invalid_request_error`` …), or Gemini's string
-    ``status`` (``INVALID_ARGUMENT``), which stands in for it (#548). ``kw``
-    are the constructor kwargs every classified error shares."""
+    ``body`` is the top-level JSON object (it also carries the Regex Prompt Guard's
+    ``matched_patterns`` key), ``None`` when the body is not a JSON object, e.g. Gemini's
+    LIST-shaped error envelope (#548), whose nested error object ``nested_error`` still recovers.
+    ``error_obj`` is the nested ``error`` object from either envelope shape, iff it is itself an
+    object. ``error_type`` is its ``type`` (the OpenAI-format discriminator: ``pii_detected``,
+    ``invalid_request_error`` …), or Gemini's string ``status`` (``INVALID_ARGUMENT``), which
+    stands in for it (#548). ``kw`` are the constructor kwargs every classified error shares."""
 
     response: ResponseLike
     status: int
@@ -776,18 +771,17 @@ def _shape(response: ResponseLike, *, correlation_id: str | None, call_id: str |
             # id the client actually sent, read back from the request (BG §1.1, #195).
             "correlation_id": correlation_id if correlation_id is not None else sent_correlation,
             "call_id": call_id if call_id is not None else sent_call,
-            # The upstream provider's request id — resolved from the per-provider
-            # header list, so a Bedrock refusal (x-amzn-requestid, no x-request-id)
-            # is not silently None. Same resolver LastCall uses (#542).
+            # The upstream provider's request id — resolved from the per-provider header list, so
+            # a Bedrock refusal (x-amzn-requestid, no x-request-id) is not silently None (#542).
             "request_id": read_request_id(response),
             "response": response,
         },
     )
 
 
-# Next-step wording for the two classified shapes whose class default is not
-# the right sentence: one constant each, never inline. Every other shape uses its
-# class's own ``remediation`` (#728).
+# Next-step wording for the two classified shapes whose class default is not the right
+# sentence: one constant each, never inline. Every other shape uses its class's own
+# ``remediation`` (#728).
 _REGEX_PROMPT_GUARD_REMEDIATION = (
     "The Regex Prompt Guard policy matched a denied pattern in the prompt. Remove "
     "or rephrase the flagged content, or adjust the policy's deny-list patterns in "
@@ -875,9 +869,9 @@ def _match_injection_protection(s: _Shape) -> DonkeyError | None:
 
 
 def _match_auth(s: _Shape) -> DonkeyError | None:
-    """Auth: the verified client-id-enforcement shape (docs/verified-apis.md §4),
-    a 401 or a 403 carrying a ``www-authenticate`` challenge. A 403 without it
-    falls through to the unconfirmed-refusal rule, not auth (#184)."""
+    """Auth: the verified client-id-enforcement shape (docs/verified-apis.md §4), a 401 or a 403
+    carrying a ``www-authenticate`` challenge. A 403 without it falls through to the
+    unconfirmed-refusal rule, not auth (#184); a CIBA 401 is claimed earlier (#1320)."""
     challenged = _wire.WWW_AUTHENTICATE_HEADER in s.response.headers
     if not (s.status == 401 or (s.status == 403 and challenged)):
         return None
@@ -890,10 +884,9 @@ def _match_auth(s: _Shape) -> DonkeyError | None:
 
 
 def _match_request_rate_limit(s: _Shape) -> DonkeyError | None:
-    """Request rate limit: 429 with the gateway's ``x-ratelimit-limit`` /
-    ``x-ratelimit-remaining`` headers and no ``x-token-*`` trio
-    (docs/verified-apis.md §4, #974). Ahead of the token rule, which takes any
-    other 429."""
+    """Request rate limit: 429 with the gateway's ``x-ratelimit-limit`` / ``x-ratelimit-remaining``
+    headers and no ``x-token-*`` trio (docs/verified-apis.md §4, #974). Ahead of the token
+    rule, which takes any other 429."""
     headers = s.response.headers
     if (
         s.status != 429
@@ -940,10 +933,9 @@ def _match_upstream_request(s: _Shape) -> DonkeyError | None:
 
 
 def _match_model_not_routable(s: _Shape) -> DonkeyError | None:
-    """A bare model name on a multi-provider proxy: a 4xx flat-string ``error``
-    naming the model and asking for ``provider/model`` (docs/verified-apis.md
-    §4, #825). Keyed on the gateway's own sentence, since the status and
-    envelope match the unconfirmed fall-through."""
+    """A bare model name on a multi-provider proxy: a 4xx flat-string ``error`` naming the model
+    and asking for ``provider/model`` (docs/verified-apis.md §4, #825). Keyed on the gateway's
+    own sentence, since the status and envelope match the unconfirmed fall-through."""
     if not 400 <= s.status < 500:
         return None
     flat_error = str_or_none(s.body.get("error")) if s.body is not None else None
@@ -958,10 +950,9 @@ def _match_model_not_routable(s: _Shape) -> DonkeyError | None:
 
 
 def _match_unconfirmed_refusal(s: _Shape) -> DonkeyError | None:
-    """An unrecognised non-429 4xx with no nested provider envelope: a refusal
-    whose contract cannot be pinned (#253). Surfaced honestly, naming the status
-    and any gateway policy headers, never coerced into an unverified subclass
-    (#184)."""
+    """An unrecognised non-429 4xx with no nested provider envelope: a refusal whose contract
+    cannot be pinned (#253). Surfaced honestly, naming the status and any gateway policy
+    headers, never coerced into an unverified subclass (#184)."""
     if not 400 <= s.status < 500:
         return None
     policy_headers = sorted(
@@ -988,11 +979,19 @@ def _match_upstream_failure(s: _Shape) -> DonkeyError | None:
     return UpstreamModelError(f"Upstream/provider failure ({s.status}). Retryable.", **s.kw)
 
 
-#: A customer-registered refusal shape (BG §2.2, #210), installed by
-#: ``core/classifier`` when it is imported. A hook slot, not an import: this
-#: module sits below the registry in the core layers, and with no registry
-#: imported there is nothing registered to match.
+#: A customer-registered refusal shape (BG §2.2, #210), installed by ``core/classifier`` when
+#: it is imported. A hook slot, not an import: this module sits below the registry in the core
+#: layers, and with no registry imported there is nothing registered to match.
 _REGISTERED_MATCHER: list[Callable[[_Shape], DonkeyError | None]] = []
+
+#: The OBO policy's CIBA pending/denied rules (#1320), installed by ``core/step_up``, whose
+#: types subclass this module's. ``core`` imports it, so the slot is always filled.
+_STEP_UP_MATCHERS: list[Callable[[_Shape], DonkeyError | None]] = []
+
+
+def _match_step_up(s: _Shape) -> DonkeyError | None:
+    """A CIBA step-up answer (#1320): a 401/403 keyed on its flat-string body ``error``."""
+    return next((e for m in _STEP_UP_MATCHERS if (e := m(s)) is not None), None)
 
 
 def _match_registered(s: _Shape) -> DonkeyError | None:
@@ -1000,28 +999,28 @@ def _match_registered(s: _Shape) -> DonkeyError | None:
     return _REGISTERED_MATCHER[0](s) if _REGISTERED_MATCHER else None
 
 
-#: The built-in rules a registration may never shadow (``classify.register()``
-#: rejects any spec one of these claims). Every policy shape with its own
-#: discriminator (body ``type``/``code``, a vendor header, ``matched_patterns``)
-#: precedes the 401/403 auth rule. ``model_not_routable`` needs a flat-string
-#: ``error`` and ``upstream_request`` a nested object, so the two are disjoint
-#: and their order between them is free.
+#: The built-in rules a registration may never shadow (``classify.register()`` rejects any spec
+#: one of these claims). Every policy shape with its own discriminator (body ``type``/``code``/
+#: ``error``, a vendor header, ``matched_patterns``) precedes the 401/403 auth rule.
+#: ``model_not_routable`` needs a flat-string ``error`` and ``upstream_request`` a nested
+#: object, so the two are disjoint and their order between them is free.
 _POLICY_MATCHERS: tuple[Callable[[_Shape], DonkeyError | None], ...] = (
     _match_pii,
     _match_agent_killed,
     _match_content_safety,
     _match_regex_prompt_guard,
     _match_injection_protection,
+    _match_step_up,
     _match_auth,
     _match_request_rate_limit,
     _match_token_budget,
     _match_model_not_routable,
 )
 
-#: :func:`classify`'s rules, most specific first. The order is the contract:
-#: the built-ins, then the customer registry (so a verified shape always wins,
-#: and a registered nested-envelope refusal is not mis-typed as a provider
-#: mistake), then the upstream envelope and the unconfirmed-refusal fall-through.
+#: :func:`classify`'s rules, most specific first. The order is the contract: the built-ins,
+#: then the customer registry (so a verified shape always wins, and a registered nested-envelope
+#: refusal is not mis-typed as a provider mistake), then the upstream envelope and the
+#: unconfirmed-refusal fall-through.
 _MATCHERS: tuple[Callable[[_Shape], DonkeyError | None], ...] = (
     *_POLICY_MATCHERS,
     _match_registered,

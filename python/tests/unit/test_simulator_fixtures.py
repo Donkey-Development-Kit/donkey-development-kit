@@ -27,6 +27,8 @@ _CONTRACT_STATUS = {
     "content-safety": 403,
     "content-moderation": 400,
     "agent-killed": 403,
+    "ciba-pending": 401,
+    "ciba-denied": 403,
     "model-not-found": 400,
     "model-not-routable": 400,
     "upstream-5xx": 503,

@@ -30,6 +30,8 @@ specific headers.
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
 | Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) |
 | Bare model name on a multi-provider proxy | `400` | flat `{"error":"…"}` saying the model "is not in the known unique model map" | `ModelNotRoutable` (`.model`) |
+| OAuth2 OBO step-up (CIBA), waiting for the user | `401` | flat `{"error":"authorization_pending"}` + `retry-after`, **no** `www-authenticate` | `GatewayApprovalPending` (`retry_after`) |
+| OAuth2 OBO step-up (CIBA), user denied | `403` | flat `{"error":"access_denied"}`, **no** `www-authenticate` | `GatewayApprovalDenied` (`policy="oauth2-obo-ciba"`) |
 
 `PIIDetected`, `AgentKilled`, the regex-prompt-guard check, and the content-safety
 check are all evaluated **before** the generic 401/403→auth rule, because each is
@@ -37,7 +39,9 @@ a `403` (or `4xx`) that is *not* an auth failure. `AgentKilled` is also checked
 before the upstream-4xx rule: its nested `error` object would otherwise read as
 an upstream request mistake, when the upstream was never called. Likewise the injection check gates on the
 `x-injection-protection` header, so an ordinary malformed `400` stays an
-ordinary refusal.
+ordinary refusal. The two CIBA step-up answers are checked before the auth rule
+too: the gateway accepted the credential and is asking the user to approve the
+call on another device, so an `AuthError` would point you at the wrong fix.
 
 `classify()` checks the policy discriminators first, whatever the status, and
 only then falls back to the status code. Within each step the first match wins,
@@ -51,6 +55,8 @@ flowchart TD
     D -->|"x-llm-proxy-*-action: reject"| X3["ContentSafetyBlocked"]
     D -->|"top-level matched_patterns"| X4["PromptInjectionBlocked<br/>regex-prompt-guard"]
     D -->|"x-injection-protection: blocked"| X5["PromptInjectionBlocked"]
+    D -->|"401 + flat error = authorization_pending"| X14["GatewayApprovalPending"]
+    D -->|"403 + flat error = access_denied"| X15["GatewayApprovalDenied"]
     D -->|none| S{"2 · Status"}
     S -->|"401, or 403 + www-authenticate"| X6["AuthError"]
     S -->|429| Q{"x-ratelimit-limit and -remaining,<br/>no x-token-limit?"}
@@ -91,6 +97,17 @@ classification.
 Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the ten
 policy-rejection rows.
 
+The CIBA step-up rows come from the OAuth2 OBO Credential Injection policy with
+`cibaEnabled`. While the user hasn't answered, every call gets a `401`
+`authorization_pending` with a `retry-after` (the policy's poll interval plus
+two seconds); once they approve, the same request succeeds. A request nobody
+answers is never reported as expired: the policy starts a new approval flow and
+keeps answering "pending", so keep your own deadline. After a deny, the gateway
+caches the decision; on OBO policy 1.1.3 it does so per user, not per
+conversation, for up to an hour. The policy's initiation failure (`502`,
+`ciba_initiation_failed`) has not been captured and stays an
+`UpstreamModelError`.
+
 The Injection Protection shape is live-verified against a deployed proxy
 (#669); `classify()` keys on the header discriminator alone for it, not the
 body.
@@ -106,10 +123,12 @@ DonkeyError                     # base of the whole tree
 ├─ PolicyViolation              # base for every governance rejection
 │  ├─ PIIDetected               # 403, type=pii_detected; .entities, .gateway_message
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
+│  ├─ GatewayApprovalDenied     # 403, error=access_denied — the user denied the CIBA step-up
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
 │  ├─ RequestRateLimitExceeded  # 429, rate-limiting policy; .retry_after (seconds); sibling of TokenBudgetExceeded
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
 │  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR 403 reject header; .provider, .categories
+├─ GatewayApprovalPending       # 401, error=authorization_pending — waiting for the user's CIBA approval; .retry_after
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
 ├─ ModelNotRoutable             # 400, bare model name on a multi-provider proxy; .model
@@ -143,6 +162,8 @@ never burn an exhausted budget or replay a blocked prompt.
 | `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails, or a registry read is refused (`401`/`403`) because the connected app lacks a scope. Inside [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md#no-silent-fallback-a-deliberate-hard-failure): a missing `id_token`, a refused token exchange, or an expired user token — never a fallback to the service identity. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. A refused registry read names the missing scope; see [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). `as_user()`: pass the user's current OIDC `id_token`. |
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. It also stops [`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget.md) loops, and spans are flushed before it reaches you. | Ask an administrator to restore this agent's model access in Governance > Security. |
+| `GatewayApprovalPending` | `401`, flat `error: "authorization_pending"`, **no** `www-authenticate` | **Yes, after `.retry_after`** — never auto-retried; the same request succeeds once the user approves. | Re-send after `.retry_after` seconds; don't change or refresh the credentials, they were accepted. |
+| `GatewayApprovalDenied` | `403`, flat `error: "access_denied"` | **No** — a `PolicyViolation`, never retried; the gateway keeps answering with the denial until its cached decision expires. | Tell the user the action was not authorized. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `RequestRateLimitExceeded` | `429` with `x-ratelimit-limit` and `x-ratelimit-remaining` and **no** `x-token-limit` | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
@@ -238,6 +259,9 @@ a canonical default. For the refusals:
   entity list in API Manager.
 - `AgentKilled` → ask an administrator to restore this agent's model access in
   Governance > Security.
+- `GatewayApprovalPending` → re-send the same request after `retry_after`
+  seconds; it succeeds once the user approves.
+- `GatewayApprovalDenied` → tell the user the action was not authorized.
 - `TokenBudgetExceeded` → wait for the window to reset (see `retry_after`) or
   request an increase.
 - `RequestRateLimitExceeded` → wait for the window to reset (see
@@ -454,7 +478,9 @@ opt-in and bounded, and it re-sends only as a new governed request.
 In `jwt` mode the async client additionally refreshes the wallet JWT and
 retries **once** on a 401. In the default client-id mode the data-plane client
 holds no token, so a 401 is terminal, as it is on the blocking client, and
-surfaces immediately as `AuthError`. The Anypoint control-plane credential
+surfaces immediately as `AuthError`. A CIBA `401` (`GatewayApprovalPending`) is
+not a credential failure, but in `jwt` mode it still triggers that one refresh
+and re-send before it reaches you; the re-send just gets "pending" again. The Anypoint control-plane credential
 lives on a separate client: model calls never fetch, send or refresh it. See
 [What the SDK sends where](https://docs.donkey-kit.dev/reference/configuration.md#what-the-sdk-sends-where).
 
