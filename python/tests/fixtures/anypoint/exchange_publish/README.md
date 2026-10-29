@@ -94,6 +94,20 @@ under the same version was refused after the same two reads, with nothing
 sent. The external-instance POST, the page calls and the `409` behaved as they
 do for `mcp`.
 
+## A version's published tools (#991)
+
+Captured 2026-10-29, read-only, with the demos repo's connected app
+(`read:exchange`) against the published `ddk-demo-sku-lookup:1.1.0`, renamed
+`ddk-verify-991-fixture` here, with every ID scrubbed. Nothing was written.
+
+- `graphql.files.json` — `POST /graph/api/v2/graphql`, `asset(groupId,
+  assetId, version)` selecting the version's `files`.
+- `mcp-metadata.stored.json` — the `mcp-metadata` `json` file, downloaded
+  without credentials from its `externalLink` (key order normalised here).
+
+A version the asset does not have answers like `graphql.absent.json`.
+`tests/unit/test_publication_verify.py` replays them.
+
 ## What these verify (docs/verified-apis.md §7, §12.3)
 
 `tests/unit/test_exchange_publish.py` replays them through a stateful fake

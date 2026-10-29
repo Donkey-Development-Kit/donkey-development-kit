@@ -86,7 +86,7 @@ def blocked(what: str) -> NotImplementedError:
     """Construct the standard verification-blocked error.
 
     Use for surfaces where we have no defensible placeholder at all (e.g. the
-    Exchange descriptor read behind ``Publication.verify()``, BG §2.5).
+    Exchange entry render behind ``Publication.preview()``, BG §2.5).
     """
 
     return NotImplementedError(f"blocked on verification: {what}")

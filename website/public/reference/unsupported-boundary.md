@@ -83,7 +83,7 @@ How each row was established (live capture, plugin test, and so on) is in the
 
 ## Deliberately outside the boundary
 
-- A2A agent resolution, MCP discovery and binding, and `Publication.preview()` / `verify()` are
+- A2A agent resolution and `Publication.preview()` are
   Roadmap, not hidden dependencies. Today they
   raise `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.

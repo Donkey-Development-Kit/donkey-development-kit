@@ -316,6 +316,34 @@ class ExchangeRegistry:
         self._index_cache.set(key, handle)
         return handle
 
+    async def published_tools(self, ref: AssetRef | str) -> list[dict[str, Any]]:
+        """The tools an MCP server asset version was published with: the
+        ``tools`` of its ``mcp-metadata`` file, as Exchange stores it
+        (docs/verified-apis.md §7, #991). Not cached: this is the read
+        ``Publication.verify()`` compares the live server against.
+
+        Raises:
+            ConfigError: The control-plane settings are missing.
+            ValueError: ``ref`` is not ``group_id/asset_id/version``.
+            RegistryError: Exchange has no such version, or it has no
+                ``mcp-metadata`` file, or a read failed.
+            AuthError: Exchange refused the read (``401``/``403``).
+        """
+        from .exchange_publish import published_tools
+
+        cfg = self._cfg.validated(need="control_plane")
+        asset = AssetRef.parse(ref)
+        tools = await published_tools(
+            self._http,
+            asset.group_id,
+            asset.asset_id,
+            asset.version,
+            base_url=cfg.control_plane_url,
+        )
+        if tools is None:
+            raise RegistryError(f"Exchange has no asset version {asset.coordinates}.")
+        return tools
+
     async def resolve_agent(self, ref: AssetRef | str) -> AgentHandle:
         """Resolve an A2A agent asset to a handle.
 

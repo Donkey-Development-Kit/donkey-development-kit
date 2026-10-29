@@ -8396,6 +8396,44 @@ reflect, or a broken framework adapter.
   description that is tautological or missing, and `preview()` reports
   description quality.
 
+## Verifying at runtime: `verify()`
+
+`Publication.verify(donkey)` is the read-only runtime check that the live MCP
+server still matches what its version was published with. It writes nothing:
+there is no runtime publish.
+
+```python
+from donkey_kit import Donkey
+from donkey_kit.experimental import Publication, PublicationAssetType
+
+pub = Publication(
+    asset_type=PublicationAssetType.MCP_SERVER,
+    group_id="${ANYPOINT_ORG_ID}",
+    asset_id="hr-tools-mcp",
+    version="1.3.0",
+    name="HR Tools",
+    description="Employee lookup and leave-balance tools for HR agents.",
+)
+
+async with Donkey.from_env() as donkey:
+    drift = await pub.verify(donkey)                     # warns, returns the differences
+    await pub.verify(donkey, raise_on_drift=True)        # raises PublicationDrift instead
+```
+
+It reads the `tools` of the version's `mcp-metadata` file from Exchange, and
+lists the live server's tools through its gateway instance, with the same
+governance check and credential as a [`donkey.tools`](https://docs.donkey-kit.dev/tool-access.md) binding:
+an ungoverned server raises `UngovernedMcpServer` and is sent nothing. A tool
+added or removed, a changed description, or a changed set of parameter names
+is drift. Parameter types are not compared, because `donkey publish` records
+only the plain annotations it reads without running your code.
+
+By default each difference is logged at `WARNING` and returned, so a drifted
+catalog is loud without taking down production traffic. With
+`raise_on_drift=True` it raises `PublicationDrift`, whose message
+lists every difference. Only `MCP_SERVER` publications are verified; the other
+types raise `NotImplementedError`.
+
 ## Related
 
 - [CLI & decorators](https://docs.donkey-kit.dev/cli.md) — mark tools with `@donkey.tool` today.
@@ -13921,7 +13959,8 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Registry: `resolve_agent()`, `donkey.registry.warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()` | Token request, then the `search()`, `explain()` and `resolve_mcp()` reads | Available. Its `domain` filter and `locked=True` raise `NotImplementedError` before sending. `donkey.tools.warm()` does the same reads ahead of time. See [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md). |
 | Tool pinning: `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
-| Publication: `Publication.preview()` / `verify()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
+| Publication: `Publication.verify()` | Token request, then the Exchange version read and its `mcp-metadata` download, the `explain()` and `resolve_mcp()` reads, and the server's `tools/list` through the gateway | Available for MCP servers; other asset types raise `NotImplementedError` before sending. See [Verifying at runtime](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify). |
+| Publication: `Publication.preview()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |
 | `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose). |
 | `donkey preflight`, `donkey expose --dry-run` | Token request, then the same reads, and no writes | Available |
@@ -15255,7 +15294,7 @@ How each row was established (live capture, plugin test, and so on) is in the
 
 ## Deliberately outside the boundary
 
-- A2A agent resolution, MCP discovery and binding, and `Publication.preview()` / `verify()` are
+- A2A agent resolution and `Publication.preview()` are
   Roadmap, not hidden dependencies. Today they
   raise `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.

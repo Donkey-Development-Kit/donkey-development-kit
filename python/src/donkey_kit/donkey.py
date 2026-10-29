@@ -222,6 +222,12 @@ class ToolsFacade:
             domain=domain, tags=tags, governed=governed, auth=auth
         )
 
+    async def _resolve(self, ref: str) -> ToolSet:
+        """A ``ToolSet`` of the one MCP server asset version ``ref``, with its
+        verdict and endpoint read as :meth:`discover` reads them. What
+        ``Publication.verify()`` lists the live tools through (#991)."""
+        return await self._discovery.resolve(ref, auth=None)
+
     async def warm(
         self,
         *,

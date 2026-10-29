@@ -57,6 +57,7 @@ __all__ = [
     "latest_version",
     "mcp_metadata",
     "publish_plan",
+    "published_tools",
 ]
 
 # docs/verified-apis.md §12.3.
@@ -81,6 +82,14 @@ _LATEST_QUERY = (
     "query($groupId: String!, $assetId: String!) { asset(groupId: $groupId, assetId: $assetId) "
     "{ version name description files { classifier packaging externalLink } "
     "otherVersions { version } } }"
+)
+# One version's files: its ``mcp-metadata`` is read back by Publication.verify()
+# (docs/verified-apis.md §7, #991). A version Exchange does not have is a ``200``
+# whose error carries ``extensions.status`` ``404``, as for the latest query.
+_FILES_QUERY = (
+    "query($groupId: String!, $assetId: String!, $version: String!) "
+    "{ asset(groupId: $groupId, assetId: $assetId, version: $version) "
+    "{ version files { classifier packaging externalLink } } }"
 )
 _VERSION_QUERY = (
     "query($groupId: String!, $assetId: String!, $version: String!) "
@@ -271,6 +280,22 @@ async def latest_version(
     return await _Exchange(http, base_url).latest(group_id, asset_id)
 
 
+async def published_tools(
+    http: httpx.AsyncClient, group_id: str, asset_id: str, version: str, *, base_url: str
+) -> list[dict[str, Any]] | None:
+    """The ``tools`` of the ``mcp-metadata`` file published with
+    ``group_id:asset_id:version``, as Exchange stores it, or ``None`` when
+    Exchange has no such version. A version published without the file has no
+    tools to read, which is a :class:`RegistryError`.
+
+    Raises:
+        RegistryError: Exchange refused the query or the download, or the
+            version has no ``mcp-metadata`` file.
+        AuthError: Exchange refused the query with ``401``/``403``.
+    """
+    return await _Exchange(http, base_url).tools(group_id, asset_id, version)
+
+
 def mcp_metadata(asset: PlannedAsset, result: ScanResult) -> dict[str, Any]:
     """The ``mcp-metadata`` file published with ``asset``: its transport, its
     tools with their descriptions and an input schema derived from the scanned
@@ -429,6 +454,41 @@ class _Exchange:
             description=data.get("description"),
         )
 
+    async def tools(
+        self, group_id: str, asset_id: str, version: str
+    ) -> list[dict[str, Any]] | None:
+        coordinates = f"{group_id}:{asset_id}:{version}"
+        data = await self._asset(
+            _FILES_QUERY,
+            {"groupId": group_id, "assetId": asset_id, "version": version},
+            scope=_scopes.EXCHANGE_READ,
+        )
+        if data is None:
+            return None
+        link = next(
+            (
+                f["externalLink"]
+                for f in data.get("files") or ()
+                if f.get("classifier") == "mcp-metadata"
+                and f.get("packaging") == "json"
+                and f.get("externalLink")
+            ),
+            None,
+        )
+        if link is None:
+            raise RegistryError(f"{coordinates} has no mcp-metadata file in Exchange")
+        if urlsplit(link).scheme != "https":
+            raise RegistryError(
+                f"Exchange returned a non-https mcp-metadata link for {coordinates}"
+            )
+        # A pre-signed link, like the POM's: no credential goes to this host.
+        response = await self._http.get(link)
+        _check(response, f"downloading the mcp-metadata of {coordinates}", scope=None)
+        tools = response.json().get("tools")
+        if not isinstance(tools, list):
+            raise RegistryError(f"The mcp-metadata of {coordinates} has no tools list")
+        return [t for t in tools if isinstance(t, dict)]
+
     async def register_endpoint(
         self, asset: PlannedAsset, group: str, asset_id: str, version: str
     ) -> None:
@@ -489,10 +549,13 @@ class _Exchange:
         )
         _check(response, f"updating the name and description of {group}:{asset_id}")
 
-    async def _asset(self, query: str, variables: dict[str, str]) -> dict[str, Any] | None:
-        """The ``asset`` the query selects, or ``None`` when Exchange has none."""
+    async def _asset(
+        self, query: str, variables: dict[str, str], *, scope: str = _scopes.EXCHANGE_PUBLISH
+    ) -> dict[str, Any] | None:
+        """The ``asset`` the query selects, or ``None`` when Exchange has none.
+        ``scope`` is the one a ``401``/``403`` names."""
         response = await self.post(_GRAPHQL_PATH, json={"query": query, "variables": variables})
-        _check(response, "querying Exchange")
+        _check(response, "querying Exchange", scope=scope)
         body = response.json()
         errors = body.get("errors") or ()
         if errors:
