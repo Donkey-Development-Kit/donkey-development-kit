@@ -270,9 +270,9 @@ async def test_warm_has_its_own_span_and_the_discover_after_it_is_a_hit(
 async def test_a_failed_read_marks_the_span_with_the_error_type_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    exporter = _spans(monkeypatch)  # importorskips the SDK first
     from opentelemetry.trace import StatusCode
 
-    exporter = _spans(monkeypatch)
     registry = _Registry({"inventory": _GOVERNED})
 
     async def refused(**_: Any) -> list[AssetRef]:
