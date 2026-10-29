@@ -212,16 +212,13 @@ LLM_PROXY_WALLET_CLIENT_ID_HEADER = _wire.LLM_PROXY_WALLET_CLIENT_ID_HEADER
 LLM_PROXY_WALLET_JWT_HEADER = _wire.LLM_PROXY_WALLET_JWT_HEADER
 LLM_PROXY_WALLET_JWT_SCHEME = _wire.LLM_PROXY_WALLET_JWT_SCHEME
 
-# --- On-behalf-of user token (BG §2.4, #215) — UNVERIFIED (#255) -----------
-# ``donkey.as_user(id_token=...)`` forwards the user's token unchanged; the
-# gateway's OBO policy runs the exchange (#1350). The request header the gateway
-# reads it from is not confirmed (docs/verified-apis.md §13): a placeholder,
-# overridable with ``user_token_header``.
-USER_TOKEN_HEADER = Unverified(
-    key="identity.user_token_header",
-    placeholder=_wire.USER_TOKEN_HEADER_PLACEHOLDER,
-    doc_ref="docs/verified-apis.md §13",
-)
+# --- On-behalf-of user token (BG §2.4, #215) — VERIFIED (LIVE) 2026-10-29 ---
+# ``donkey.as_user(id_token=...)`` forwards the user's token unchanged. The
+# gateway reads it as ``Authorization: Bearer <token>``: an OBO-exchanged user
+# token in that header was accepted by JWT Validation and OAuth2 OBO Credential
+# Injection on eight MCP instances (docs/verified-apis.md §13, #255,
+# provisioning #81). ``user_token_header`` still overrides it.
+USER_TOKEN_HEADER = _wire.USER_TOKEN_HEADER
 
 # --- Region host map (docs/verified-apis.md §1) ------------------------------
 # The US host is VERIFIED (CLI) 2026-08-28; EU is VERIFIED (plugin) 2026-10-12

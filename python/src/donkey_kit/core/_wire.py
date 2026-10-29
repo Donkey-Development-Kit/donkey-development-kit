@@ -51,10 +51,10 @@ LLM_PROXY_WALLET_CLIENT_ID_HEADER = "X-Client-Id"
 LLM_PROXY_WALLET_JWT_HEADER = "Authorization"
 LLM_PROXY_WALLET_JWT_SCHEME = "Bearer"
 
-# On-behalf-of user token (BG §2.4, #215): a placeholder, not a confirmed name
-# (docs/verified-apis.md §13). The Omni Gateway OBO credential-injection policy
-# reads the incoming ``Authorization`` bearer, so that is the default.
-USER_TOKEN_HEADER_PLACEHOLDER = "Authorization"
+# On-behalf-of user token (BG §2.4, #215; docs/verified-apis.md §13): the Omni
+# Gateway JWT Validation and OBO credential-injection policies read the incoming
+# ``Authorization`` bearer.
+USER_TOKEN_HEADER = "Authorization"
 
 # --- Response headers --------------------------------------------------------
 

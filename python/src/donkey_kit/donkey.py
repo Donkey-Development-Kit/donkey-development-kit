@@ -815,9 +815,9 @@ class Donkey:
         nested block restores the outer user on exit. Control-plane calls stay
         the service's own.
 
-        The header the token rides in is an UNVERIFIED placeholder
-        (docs/verified-apis.md §13): set ``user_token_header`` to the one your
-        gateway reads. ``token_exchange_path`` is deprecated and ignored.
+        The token rides as ``Authorization: Bearer <token>``
+        (docs/verified-apis.md §13); set ``user_token_header`` if your gateway
+        reads another header. ``token_exchange_path`` is deprecated and ignored.
 
         The same documented degradation as :meth:`run` applies (BG §1.8): a
         ``connection_kwargs()``-only adapter that does not route through the

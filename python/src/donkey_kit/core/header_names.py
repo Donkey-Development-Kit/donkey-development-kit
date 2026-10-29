@@ -168,7 +168,7 @@ def user_token_header_problem(name: str) -> str | None:
     if (problem := _unsafe(name)) is not None:
         return problem
     lowered = name.lower()
-    if lowered == _verify.USER_TOKEN_HEADER.placeholder.lower():
+    if lowered == _verify.USER_TOKEN_HEADER.lower():
         return None
     if lowered in CONSUMER_AUTH_HEADERS:
         return "it carries the consumer's own credentials"

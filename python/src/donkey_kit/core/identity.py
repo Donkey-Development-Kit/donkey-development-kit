@@ -17,9 +17,9 @@ The binding is a contextvar like ``donkey.run(...)``: it reaches the
 leaks into a concurrent task that entered no scope. Nested scopes restore the
 outer user on exit.
 
-**Unconfirmed wire contract.** Which request header the gateway reads the user
-token from is a placeholder (docs/verified-apis.md §13, #255):
-``user_token_header`` overrides it.
+**Wire contract.** The token rides as ``Authorization: Bearer <token>``, the
+header the gateway's JWT Validation and OBO policies read (docs/verified-apis.md
+§13); ``user_token_header`` overrides it.
 
 **No authorisation here.** The SDK forwards a token; what the user may do is
 decided by the gateway and the platform. Nothing in this module inspects the
@@ -49,7 +49,7 @@ __all__ = ["UserScope", "current_user", "user_token_header"]
 def user_token_header(cfg: DonkeyConfig) -> str:
     """The request header the user token rides in: the ``user_token_header``
     override, else the placeholder default."""
-    return cfg.user_token_header or _verify.USER_TOKEN_HEADER.get()
+    return cfg.user_token_header or _verify.USER_TOKEN_HEADER
 
 
 class _UserBinding:
