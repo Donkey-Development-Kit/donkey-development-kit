@@ -234,7 +234,9 @@ Each asset is published with:
   (transport, endpoint, protocol version); and provenance: the asset ID and version, the content digest and, when the
   publish runs in GitHub Actions, the repository, the commit and a link to the
   run. It never includes credentials or your org ID. Only a new version gets a
-  page; an unchanged asset keeps the one it has.
+  page; an unchanged asset keeps the one it has. A page written by a rerun
+  that [finishes a publish](#when-a-publish-fails) has no "Changes since"
+  section.
 
 A publish is safe to repeat:
 
@@ -245,11 +247,43 @@ A publish is safe to repeat:
   bumping its version, `donkey publish` stops before sending and tells you to
   bump it. The same happens if the version is already published with other
   content.
+- A rerun finishes a publish that stopped partway. See below.
 
-`donkey publish` exits `0` when everything was published or left unchanged. It
-exits `1` when the plan has an issue (nothing is sent) or Exchange refuses a
-publish, and `2` when the path doesn't exist, the config is invalid, or the
-control-plane credentials are missing.
+### When a publish fails
+
+Assets are published one at a time, in plan order. When Exchange refuses a
+call, `donkey publish` stops. The assets published before it stay published,
+and `--json` still prints every asset with its `status` and `detail`:
+
+| `status` | Meaning |
+|---|---|
+| `published` | A new version was published, or a rerun finished an `incomplete` one. |
+| `unchanged` | The latest version already has this digest, and its publish is complete. |
+| `incomplete` | The version is published, but registering its endpoint, writing its page, or setting the asset's name and description was refused. |
+| `failed` | Exchange refused the asset, and nothing was published for it. |
+| `not_attempted` | An earlier asset failed, so this one was not tried. |
+
+The refusal and its fix go to stderr, and a refused asset's `detail` ends with
+the same fix. A common one: a connected app without `manage:exchange` can
+publish a version but not register its endpoint, so the asset is `incomplete`.
+
+Fix what was reported and run `donkey publish` again, with the same version.
+A version that has the planned digest counts as `unchanged` only once its
+publish is complete. If it is not, the rerun does whatever is missing:
+
+- registers the endpoint, when the version's instances don't list it,
+- writes and publishes the Home page, when the version has no published one,
+- sets the declared name and description, when the asset's differ,
+
+and reports the asset `published`, with a detail such as `finished publishing
+1.0.0: registered its endpoint`. Nothing is published twice, and a complete
+version gets no write. Checking the page reads the version's portal draft, one
+more read per unchanged asset.
+
+`donkey publish` exits `0` when every asset is `published` or `unchanged`. It
+exits `1` when the plan has an issue (nothing is sent) or an asset is `failed`
+or `incomplete`, and `2` when the path doesn't exist, the config is invalid,
+or the control-plane credentials are missing.
 
 ## Publishing agents
 
@@ -326,12 +360,14 @@ input left empty keeps the `ANYPOINT_*` variable your job already sets.
 | `donkey-kit` | empty | A pip requirement to install instead, such as `donkey-kit[cli]==X.Y.Z`. |
 
 The job summary shows a table of the assets: each one's digest on a dry run,
-and each one's status and detail after a publish. The step's outputs are the
-`published` and `unchanged` counts, a `skipped` count kept for older
+and each one's status and detail after a publish, including one that failed
+partway. The step's outputs are the `published`, `unchanged`, `incomplete`,
+`failed` and `not-attempted` counts, a `skipped` count kept for older
 workflows (always `0`), and `result`, the path of the
 JSON that `donkey publish --json` printed. A failed publish fails the step with
 `donkey`'s exit code, and each line `donkey` printed to stderr becomes an error
-annotation, so the fix shows on the run's page.
+annotation, so the fix shows on the run's page. Re-running the failed job
+finishes the publish (see [When a publish fails](#when-a-publish-fails)).
 
 ## From GitLab CI
 
