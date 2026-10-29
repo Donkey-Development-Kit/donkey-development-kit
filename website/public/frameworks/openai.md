@@ -20,6 +20,23 @@ conformance suite in CI.
   `Runner.run`, inside [`typed_refusals()`](https://docs.donkey-kit.dev/errors.md).
 - A conformance suite you can run against your own agent.
 
+  **Turn off the Agents SDK's own tracing.** The Agents SDK traces every run
+  by default. Its default exporter posts those traces, including each model
+  call's input and output, to OpenAI's trace ingest endpoint
+  (`https://api.openai.com/v1/traces/ingest`) whenever an OpenAI API key is
+  available, for example `OPENAI_API_KEY` in the environment. That export
+  does not go through the gateway, so the gateway's PII and content policies
+  never see it. DDK leaves the setting alone, because flipping it would be a
+  hidden process-wide change. Turn it off yourself with any one of these:
+
+  - `agents.set_tracing_disabled(True)`, once at startup, for the whole process;
+  - `Runner.run(agent, input, run_config=RunConfig(tracing_disabled=True))`, per run;
+  - `OPENAI_AGENTS_DISABLE_TRACING=1` in the environment.
+
+  DDK's own [OpenTelemetry spans](https://docs.donkey-kit.dev/telemetry.md#opentelemetry-genai-spans) still
+  cover every governed model call, and they
+  [leave message content off by default](https://docs.donkey-kit.dev/telemetry.md#message-content-stays-off-spans-by-default).
+
 ## Install
 
 ```bash

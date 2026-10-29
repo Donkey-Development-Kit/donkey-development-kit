@@ -84,8 +84,9 @@ TICKETS: tuple[str, ...] = (
     "Please update my account: my SSN is 123-45-6789 and DOB 1985-02-14.",
 )
 
-# Tracing off: the Agents SDK's default trace exporter posts to OpenAI, not the
-# proxy. The governed spans come from the SDK's own transport instead.
+# Tracing off: the Agents SDK traces by default, and its exporter posts prompts
+# and outputs to OpenAI whenever an OpenAI API key is set, bypassing the proxy
+# and its PII policy. The governed spans come from the SDK's own transport.
 _RUN_CONFIG = RunConfig(tracing_disabled=True)
 
 
