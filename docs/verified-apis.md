@@ -1603,6 +1603,7 @@ verified with, and what `as_user()` still does not cover, is below the table.
 |---|---|---|---|---|---|
 | User-token request header | `core/transport/headers.py` `_apply_user_token`, `core/_verify.py` `USER_TOKEN_HEADER`; override `user_token_header` / `DONKEY_USER_TOKEN_HEADER` | VERIFIED (LIVE) | `Authorization: Bearer <token>`. JWT Validation and OAuth2 OBO Credential Injection on the eight `ddk-<key>-mcp` instances read the user token from it and accepted it (`calculate("6*7")` → `42` on all eight); the gateway's OBO exchange event names the user and the agent. A custom header carries the raw token | 2026-10-29 | raw HTTP, not `as_user()`; provisioning #81, #255 |
 | User token on MCP `ToolSet` bindings | `tools/session.py` `ToolSet._headers` (listing and every binding), header from `core.identity.user_token_header` | VERIFIED (LIVE) | Inside `as_user()`, `ToolSet.langgraph()` with no service credential sent the user token as `Authorization: Bearer` to `ddk-langgraph-mcp`: it bound the four tools and `calculate("6*7")` returned `42`. The gateway's OBO exchange event (client `ddk-langgraph-mcp`) names the test user (`userId`) and the agent (`subject_token_client_id` `ddk-langgraph-agent`). The user's raw login token in the same block → `401`, raised as `AuthError` with no retry | 2026-10-29 | `as_user()` + `langchain-mcp-adapters` 0.3.2, `mcp` 1.30.0; #1366 |
+| User token on governed model calls | `core/transport/headers.py` `_apply_user_token` through `donkey.llm.client()` | VERIFIED (LIVE) | `ddk-model-wallet` (JWT Validation on `Authorization: Bearer`, audience the proxy, Client ID Enforcement off), `client-id` mode, `gemini/gemini-3.8-flash`. Outside `as_user()` (only the client-id pair, which this proxy ignores) → `401`; inside, with the test user's login token, whose `aud` names the proxy → `200`, completion `PONG`; inside, with `not-a-jwt` → `401`. The raw client raises the OpenAI SDK's `AuthenticationError` for the `401`s (classify it with `classify(e.response)`, as for any raw-client error). The proxy validates the user token itself: no OBO exchange runs on model calls | 2026-10-29 | `donkey.llm.client()` + `as_user()`; #1373 |
 
 **The header capture (LIVE, 2026-10-29, #255, provisioning #81).** The eight
 `ddk-<key>-mcp` instances on Omni Gateway run MCP Support, then JWT Validation
@@ -1632,8 +1633,10 @@ Two findings bound what `as_user()`'s forward-unchanged design covers:
 - **`as_user()` reached MCP calls only from #1366.** Before it, the
   `ToolSet` bindings sent their own `McpAuth` headers; the row above is the
   live check of the change. The token passed in was the agent-exchanged one
-  (`aud` `ddk-langgraph-mcp`, `azp` the agent, `act.sub` set). No LLM proxy
-  reading a user token has been captured yet.
+  (`aud` `ddk-langgraph-mcp`, `azp` the agent, `act.sub` set). On model
+  calls the user's login token works as is wherever its `aud` already names
+  the proxy (the row above, #1373); no LLM proxy that runs an OBO exchange on
+  model calls exists yet.
 
 **Earlier evidence (2026-10-28 and 2026-10-29).**
 
