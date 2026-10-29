@@ -1592,7 +1592,8 @@ guard is removed. Ordered by confidence:
 ## 13. On-behalf-of user token (BG §2.4)
 
 `donkey.as_user(id_token=...)` (#215) stamps the user's token, unchanged, on
-every data-plane request in the block. The SDK runs no token exchange: the
+every data-plane request in the block, and on the MCP `ToolSet` bindings made
+in it (#1366). The SDK runs no token exchange: the
 gateway's OBO policy runs it (#1350, from the evidence below), so there is no
 SDK exchange endpoint left to verify. The header is verified live (#255): a
 plain constant in `core/_verify.py`, still overridable in config. What it was
@@ -1601,6 +1602,7 @@ verified with, and what `as_user()` still does not cover, is below the table.
 | Item | Where used | Status | Verified value | Date | Source |
 |---|---|---|---|---|---|
 | User-token request header | `core/transport/headers.py` `_apply_user_token`, `core/_verify.py` `USER_TOKEN_HEADER`; override `user_token_header` / `DONKEY_USER_TOKEN_HEADER` | VERIFIED (LIVE) | `Authorization: Bearer <token>`. JWT Validation and OAuth2 OBO Credential Injection on the eight `ddk-<key>-mcp` instances read the user token from it and accepted it (`calculate("6*7")` → `42` on all eight); the gateway's OBO exchange event names the user and the agent. A custom header carries the raw token | 2026-10-29 | raw HTTP, not `as_user()`; provisioning #81, #255 |
+| User token on MCP `ToolSet` bindings | `tools/session.py` `ToolSet._headers` (listing and every binding), header from `core.identity.user_token_header` | VERIFIED (LIVE) | Inside `as_user()`, `ToolSet.langgraph()` with no service credential sent the user token as `Authorization: Bearer` to `ddk-langgraph-mcp`: it bound the four tools and `calculate("6*7")` returned `42`. The gateway's OBO exchange event (client `ddk-langgraph-mcp`) names the test user (`userId`) and the agent (`subject_token_client_id` `ddk-langgraph-agent`). The user's raw login token in the same block → `401`, raised as `AuthError` with no retry | 2026-10-29 | `as_user()` + `langchain-mcp-adapters` 0.3.2, `mcp` 1.30.0; #1366 |
 
 **The header capture (LIVE, 2026-10-29, #255, provisioning #81).** The eight
 `ddk-<key>-mcp` instances on Omni Gateway run MCP Support, then JWT Validation
@@ -1627,9 +1629,11 @@ Two findings bound what `as_user()`'s forward-unchanged design covers:
   user, `azp` = the agent and `act.sub` = the agent instance. `as_user()`
   forwards what it is given, so it works only with a token already issued for
   the gateway's audience.
-- **`as_user()` does not reach MCP calls.** It stamps data-plane model
-  requests; the `ToolSet` bindings send their own `McpAuth` headers. No LLM
-  proxy reading a user token has been captured yet.
+- **`as_user()` reached MCP calls only from #1366.** Before it, the
+  `ToolSet` bindings sent their own `McpAuth` headers; the row above is the
+  live check of the change. The token passed in was the agent-exchanged one
+  (`aud` `ddk-langgraph-mcp`, `azp` the agent, `act.sub` set). No LLM proxy
+  reading a user token has been captured yet.
 
 **Earlier evidence (2026-10-28 and 2026-10-29).**
 
