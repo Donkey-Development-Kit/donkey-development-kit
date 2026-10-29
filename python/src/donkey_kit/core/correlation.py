@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import uuid
 import warnings
+from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -32,7 +33,7 @@ from .runledger import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from .refusals import TypedRefusals
     from .runledger import _Ledger
@@ -331,6 +332,21 @@ class AttributionScope:
 
     async def __aexit__(self, *exc: Any) -> None:
         self._unbind()
+
+
+@contextmanager
+def _exact_attribution(cost: CostTags | None, business_group: str | None) -> Iterator[None]:
+    """Bind exactly ``cost`` and ``business_group`` for the block, replacing
+    (not merging over) whatever is bound, and restore on exit. ``None`` binds
+    nothing, so the configured value applies. For a call deferred to another
+    context, which runs with its requester's attribution (#1416)."""
+    cost_token = _cost_tags.set(cost)
+    group_token = _business_group.set(business_group)
+    try:
+        yield
+    finally:
+        _business_group.reset(group_token)
+        _cost_tags.reset(cost_token)
 
 
 def attribution_scope(

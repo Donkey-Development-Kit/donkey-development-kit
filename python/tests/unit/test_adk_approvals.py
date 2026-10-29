@@ -2,8 +2,9 @@
 
 The approved round trip is in ``tests/conformance/test_approval_round_trip.py``;
 these cover a rejection, a forged or replayed resume, a tool taking ADK's
-``ToolContext``, and a gated tool without the plugin. Run in the
-``adk-stacks`` nox session, at google-adk's floor and its newest release.
+``ToolContext``, a gated tool without the plugin, and the user an approved
+call runs as (#1416). Run in the ``adk-stacks`` nox session, at google-adk's
+floor and its newest release.
 """
 
 from __future__ import annotations
@@ -23,7 +24,8 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.tools import ToolContext
 from google.genai import types
 
-from donkey_kit import ApprovalRequired, Donkey
+from donkey_kit import ApprovalRequired, AuthError, Donkey, DonkeyConfig
+from donkey_kit.core.identity import current_user
 from donkey_kit.integrations import adk as adk_mod
 from donkey_kit.integrations.adk import (
     APPROVAL_KIND,
@@ -162,6 +164,55 @@ async def test_a_tool_taking_adks_tool_context_pauses_and_runs_approved() -> Non
     assert request.args["toolConfirmation"]["payload"]["arguments"] == {"ticket_id": "T-1"}
     await _send(runner, session.id, _user(approve(request, by="m.keller")))
     assert ran == ["T-1 in fc-1"]
+
+
+#: The user token each call of :func:`refund_as_user` ran as.
+users: list[str | None] = []
+
+
+@Donkey.tool(approval="required")
+def refund_as_user(ticket_id: str) -> dict[str, str]:
+    """Refund a support ticket."""
+    user = current_user()
+    users.append(user.token if user else None)
+    return {"status": "refunded"}
+
+
+def _donkey() -> Donkey:
+    return Donkey(
+        DonkeyConfig(
+            llm_proxy_url="https://proxy",
+            llm_proxy_client_id="cid",
+            llm_proxy_client_secret="csecret",
+        )
+    )
+
+
+async def _paused_as_alice(donkey: Donkey) -> tuple[Runner, str, Any]:
+    users.clear()
+    runner, sessions = _runner(approval_plugin(), tool=refund_as_user)
+    session = await sessions.create_session(app_name="refunds", user_id="u")
+    async with donkey.as_user(id_token="id-token-alice"):
+        events = await _send(runner, session.id, _user(types.Part(text="go")))
+    (request,) = pending_approvals(events)
+    return runner, session.id, request
+
+
+async def test_an_approved_call_runs_as_the_user_who_paused_it() -> None:
+    async with _donkey() as donkey:
+        runner, session_id, request = await _paused_as_alice(donkey)
+        # The approver's handler resumes the run, outside as_user().
+        await _send(runner, session_id, _user(approve(request, by="m.keller")))
+    assert users == ["id-token-alice"]
+
+
+async def test_resuming_as_another_user_is_refused() -> None:
+    async with _donkey() as donkey:
+        runner, session_id, request = await _paused_as_alice(donkey)
+        async with donkey.as_user(id_token="id-token-bob"):
+            with pytest.raises(AuthError, match="as_user"):
+                await _send(runner, session_id, _user(approve(request, by="m.keller")))
+    assert users == []
 
 
 async def test_a_gated_tool_without_the_plugin_raises_approval_required() -> None:

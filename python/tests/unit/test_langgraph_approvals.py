@@ -5,7 +5,8 @@ native ``interrupt()``, not an exception the framework cannot resume.
 ``Command(resume={"approved": True, "by": ...})`` records the approver and runs
 the tool; ``{"approved": False, ...}`` raises ``ApprovalRejected``. The pause
 lives in the checkpointer, so it survives a process restart, and a refusal and
-the pause compose without either swallowing the other.
+the pause compose without either swallowing the other. The resumed tool runs as
+the user who paused the graph, whoever resumes it (#1416).
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from donkey_kit import (
     ApprovalRejected,
     ApprovalRequired,
     Approvals,
+    AuthError,
     Donkey,
     DonkeyConfig,
     DonkeyError,
@@ -28,6 +30,8 @@ from donkey_kit import (
 )
 from donkey_kit.core import approvals as approvals_mod
 from donkey_kit.core import telemetry
+from donkey_kit.core.correlation import current_business_group
+from donkey_kit.core.identity import current_user
 from donkey_kit.core.telemetry import current_correlation_id
 
 pytest.importorskip("langgraph")
@@ -173,6 +177,58 @@ def test_resume_records_the_approver_and_runs_the_tool_once(spans: Any) -> None:
     approved = _events(spans)[1][1]
     assert approved["donkey.approval.approved_by"] == "m.keller"
     assert approved["donkey.correlation_id"] == "run-9"
+
+
+def _identity_graph(seen: list[tuple[str | None, str | None]]) -> StateGraph:
+    """A one-node graph whose gated tool records the user and business group it runs as."""
+
+    @Donkey.tool(approval="required")
+    def issue_refund(ticket_id: str) -> str:
+        """Refund a support ticket."""
+        user = current_user()
+        seen.append((user.token if user else None, current_business_group()))
+        return f"refunded {ticket_id}"
+
+    def refund(state: dict) -> dict:
+        return {"result": issue_refund(state["ticket_id"])}
+
+    builder = StateGraph(dict)
+    builder.add_node("refund", refund)
+    builder.add_edge(START, "refund")
+    builder.add_edge("refund", END)
+    return builder
+
+
+async def test_the_resumed_tool_runs_as_the_user_who_paused_the_graph() -> None:
+    seen: list[tuple[str | None, str | None]] = []
+    graph = _identity_graph(seen).compile(checkpointer=MemorySaver())
+    thread = _thread("t-identity")
+
+    async with Donkey(_cfg()) as donkey:
+        async with donkey.as_user(id_token="id-token-alice"):
+            with donkey.attribution(business_group="risk-eu"):
+                graph.invoke({"ticket_id": "T-1"}, thread)
+        # The approver's handler resumes the graph, outside as_user().
+        with donkey.attribution(business_group="risk-us"):
+            done = graph.invoke(Command(resume=_APPROVE), thread)
+
+    assert done["result"] == "refunded T-1"
+    assert seen == [("id-token-alice", "risk-eu")]
+
+
+async def test_resuming_the_graph_as_another_user_is_refused() -> None:
+    seen: list[tuple[str | None, str | None]] = []
+    graph = _identity_graph(seen).compile(checkpointer=MemorySaver())
+    thread = _thread("t-identity-other")
+
+    async with Donkey(_cfg()) as donkey:
+        async with donkey.as_user(id_token="id-token-alice"):
+            graph.invoke({"ticket_id": "T-1"}, thread)
+        async with donkey.as_user(id_token="id-token-bob"):
+            with pytest.raises(AuthError, match="as_user"):
+                graph.invoke(Command(resume=_APPROVE), thread)
+
+    assert seen == []
 
 
 def test_outside_a_run_the_pause_and_the_tool_share_a_correlation_id() -> None:
