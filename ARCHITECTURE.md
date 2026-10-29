@@ -171,10 +171,12 @@ Beside it:
   each typed refusal to it. `reactions` holds the `donkey.on(...)` refusal handlers (#208):
   sans-IO, it decides each next step and the clients sleep and send.
   `approvals` holds the `@donkey.tool(approval="required")` gate and the
-  `donkey.approvals` registry (#211): it reads correlation, errors and telemetry,
-  sits beside `transport`, and neither imports the other. A resumed tool's model
-  calls go through the transport like any other, so an approval never overrides
-  a refusal. Inside a LangGraph graph the gate pauses with `interrupt()` instead
+  `donkey.approvals` registry (#211): it reads correlation, errors, identity and
+  telemetry, sits beside `transport`, and neither imports the other. A resumed
+  tool's model calls go through the transport like any other, so an approval
+  never overrides a refusal. A resumed tool runs as its requester: `identity`
+  captures the user and attribution bound when the call was asked for, and
+  re-binds them on resume (#1416). Inside a LangGraph graph the gate pauses with `interrupt()` instead
   (#212): `donkey.py` passes the LangGraph adapter's hook into `gate(natives=...)`,
   so core still imports no framework.
   `inbound` binds the run for one inbound A2A task (#225): it adopts the

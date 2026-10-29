@@ -130,6 +130,43 @@ usual: typed inside `donkey.run()` or `@donkey.governed`, and seen by your
 refusal handlers. An approval says a human allowed the tool to run. It does
 not say the gateway has to accept what the tool sends.
 
+## Who a resumed call runs as
+
+An approved tool runs as the user who asked for it, not as the code that
+resumes it. When the call pauses, DDK records the user bound by
+[`donkey.as_user()`](/identity), or that none was, and the attribution bound by
+`donkey.run(...)` or `donkey.attribution(...)`. When the call resumes, DDK binds
+exactly those for the tool. Its model calls carry the requester's user token and
+cost tags, so the gateway applies the requester's per-user policy. A reviewer's
+request handler that resolves the approval lends the tool neither the
+reviewer's identity nor the service's.
+
+| The code that resumes the call | What happens |
+|---|---|
+| Runs outside any `as_user()` block | The tool runs as its requester. |
+| Runs inside `as_user()` with the requester's token | The tool runs as its requester. |
+| Runs inside `as_user()` with another token, or with any token when the requester had none | `AuthError`, and the tool is not run. A `resolve()` refused this way leaves the approval pending. |
+
+"The same user" means the same token. DDK reads no claims, so a refreshed token
+for the same person counts as another user: resume outside `as_user()`
+instead. The tool sends the token recorded at the pause, and if it has expired
+by then, the gateway refuses it as a typed error.
+
+The four framework pauses below record the requester when DDK sees the pause:
+the LangGraph interrupt, the Strands `ApprovalHook`, the ADK plugin, and
+`pending_approvals(result)` for the OpenAI Agents SDK. For the OpenAI Agents
+SDK, call `pending_approvals` inside the `as_user()` block that ran the agent.
+
+<Callout type="warning">
+  A framework pause keeps its requester in process memory only, for the most
+  recent 1,024 pauses. DDK never writes the token into a checkpoint or a run
+  state. A pause resumed after a restart, or in another process, runs as the
+  resuming code's own binding. Only the gated tool is re-bound, so the
+  framework's other model calls in the resumed run use the resuming code's
+  binding too. To run the whole resumed run as the requester, resume it inside
+  their `as_user()` block.
+</Callout>
+
 ## Timeouts
 
 A pending approval waits `approval_timeout` (15 minutes unless the tool sets

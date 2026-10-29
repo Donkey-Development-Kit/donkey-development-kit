@@ -99,6 +99,13 @@ with a `.remediation`, before any request leaves the process.
 | What went wrong | When it raises | The error names |
 |---|---|---|
 | No `id_token`: empty, blank or `None` | `donkey.as_user(...)` itself | the missing `id_token` |
+| An approved tool resumed with another user's token | when the tool would run | the approval and the tool |
+
+The same rule holds across an approval. A tool that waits for a human runs as
+the user who asked for it, with their token and attribution, wherever it is
+resumed. Resuming it inside `as_user()` under a different token raises
+`AuthError` instead of running it as someone else. See
+[Who a resumed call runs as](/hitl#who-a-resumed-call-runs-as).
 
 The errors and the SDK's logs never contain the token itself. There is **no
 setting that enables a fallback** to the service identity, and none will be

@@ -663,7 +663,8 @@ type = "layers"
 # errors' PolicyViolation, and runledger (the run ledger, #613), which holds
 # lastcall records and errors' DonkeyErrors and is bound by correlation.
 # approvals (the @donkey.tool approval gate, #211) sits beside transport: it
-# reads correlation, errors and telemetry, and neither imports the other.
+# reads correlation, errors, identity and telemetry, and neither imports the
+# other.
 # inbound (the run an inbound A2A task binds, #225) sits there too: it binds
 # correlation and opens a telemetry span, and imports neither sibling. Two
 # deviations from the order sketched in #729: lastcall sits BELOW errors, because a DonkeyError reads its request id

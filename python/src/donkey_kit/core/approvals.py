@@ -30,10 +30,14 @@ rejection differs between them: LangGraph raises :class:`ApprovalRejected` from
 the resumed tool, while the others raise nothing and hand the model the
 rejection message as the tool's result. Core never imports a framework:
 the hooks are passed in from the top-level ``donkey`` module.
+
+A resumed call runs as its requester, with the user and attribution bound where it
+was requested, and a resolver bound to another user is refused (#1416, ``identity``).
 """
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 import logging
@@ -41,13 +45,15 @@ import math
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections import OrderedDict
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, TypeAlias, TypeVar
 
 from .correlation import request_correlation_id, run_scope
 from .errors import DonkeyError
+from .identity import Requester, capture_requester, check_requester, requester_scope
 from .reactions import Duration, _seconds
 
 __all__ = [
@@ -209,6 +215,7 @@ class _Pending:
     func: Callable[..., Any]
     args: tuple[Any, ...]
     kwargs: dict[str, Any]
+    requester: Requester
 
 
 # Process-global, in request order: an approval is raised wherever a gated tool
@@ -216,6 +223,9 @@ class _Pending:
 # thread, so the state is module-level like the tool registry it serves.
 _LOCK = threading.Lock()
 _PENDING: dict[str, _Pending] = {}
+# The requesters of the latest native pauses, by id (a pause may never resume).
+_NATIVE_REQUESTERS: OrderedDict[str, Requester] = OrderedDict()
+_NATIVE_KEPT = 1024
 
 
 class Approvals:
@@ -245,19 +255,24 @@ class Approvals:
     def resolve(self, approval_id: str, *, approved_by: str) -> Any:  # noqa: ANN401
         """Approve the call, record ``approved_by``, and run the tool.
 
-        The tool runs under the approval's correlation id, with the arguments it
-        was called with, and this returns what the tool returns; for an
-        ``async`` tool that is an awaitable, so
-        ``await donkey.approvals.resolve(...)``. The approval is consumed:
+        The tool runs as its requester, with the ``donkey.as_user(...)`` user and
+        attribution bound where it was called (#1416), under the approval's
+        correlation id and with its arguments. This returns what the tool
+        returns: for an ``async`` tool, an awaitable. The approval is consumed:
         resolving it twice is a :class:`KeyError`. A refusal from any model call
         the tool makes propagates as usual.
 
         Raises:
+            AuthError: This code runs inside ``donkey.as_user(...)`` for a
+                different user than the requester; the approval stays pending.
             ApprovalTimedOut: The approval expired before this call.
             KeyError: No approval with this id is pending in this process.
             ValueError: ``approved_by`` is empty.
         """
         who = _identity(approved_by, "approved_by")
+        with _LOCK:
+            found = _find(approval_id)
+        check_requester(found.requester, what=_what(found.approval))
         pending = _take(approval_id)
         record_decision(pending.approval, approved=True, by=who)
         return _resume(pending)
@@ -326,6 +341,7 @@ def _reset_for_tests() -> None:
     ``tests/conftest.py``."""
     with _LOCK:
         _PENDING.clear()
+        _NATIVE_REQUESTERS.clear()
 
 
 def parse_timeout(value: Duration) -> float:
@@ -351,18 +367,21 @@ def gate(func: _F, *, risk: str | None, timeout: float, natives: Sequence[Native
     It binds the call's arguments first, so a call that could never run raises
     :class:`TypeError` at once instead of waiting for an approver. Each of
     ``natives`` is tried next (see :data:`NativePause`); when none applies, the
-    call is recorded as pending and :class:`ApprovalRequired` is raised.
+    call is recorded as pending and :class:`ApprovalRequired` is raised. A call
+    a native hook approves runs as the requester :func:`record_pending` kept
+    for it, when this process paused it (#1416).
     """
     signature = inspect.signature(func)
 
-    def ask(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Approval:
+    def ask(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[Approval, Requester | None]:
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
         arguments = MappingProxyType(dict(bound.arguments))
         for native in natives:
             approved = native(func.__name__, arguments, risk)
             if approved is not None:
-                return approved
+                with _LOCK:
+                    return approved, _NATIVE_REQUESTERS.get(approved.id)
         now = time.time()
         approval = Approval(
             id=uuid.uuid4().hex,
@@ -373,8 +392,8 @@ def gate(func: _F, *, risk: str | None, timeout: float, natives: Sequence[Native
             requested_at=now,
             expires_at=now + timeout,
         )
-        _add(_Pending(approval, func, args, dict(kwargs)))
-        record_pending(approval)
+        _add(_Pending(approval, func, args, dict(kwargs), capture_requester()))
+        _record_pending(approval)
         raise ApprovalRequired(
             f"tool {approval.tool!r} needs human approval (id {approval.id})",
             approval=approval,
@@ -384,24 +403,32 @@ def gate(func: _F, *, risk: str | None, timeout: float, natives: Sequence[Native
 
         @functools.wraps(func)
         async def async_gated(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
-            approval = ask(args, kwargs)
-            with run_scope(approval.correlation_id):
+            with _as_requested(*ask(args, kwargs)):
                 return await func(*args, **kwargs)
 
         return async_gated  # type: ignore[return-value]
 
     @functools.wraps(func)
     def gated(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
-        approval = ask(args, kwargs)
-        with run_scope(approval.correlation_id):
+        with _as_requested(*ask(args, kwargs)):
             return func(*args, **kwargs)
 
     return gated  # type: ignore[return-value]
 
 
 def record_pending(approval: Approval) -> None:
-    """Record ``approval`` as waiting for a decision: a
-    ``donkey.approval.pending`` span event, with its expiry when it has one."""
+    """Record ``approval`` as a call a framework paused, where it was requested:
+    a ``donkey.approval.pending`` span event, and the requester bound here, which
+    the gate runs the approved call as (#1416). The latest 1024 are kept, in memory."""
+    with _LOCK:
+        _NATIVE_REQUESTERS[approval.id] = capture_requester()
+        _NATIVE_REQUESTERS.move_to_end(approval.id)
+        while len(_NATIVE_REQUESTERS) > _NATIVE_KEPT:
+            _NATIVE_REQUESTERS.popitem(last=False)
+    _record_pending(approval)
+
+
+def _record_pending(approval: Approval) -> None:
     expiry = {"donkey.approval.expires_at": approval.expires_at}
     _record(approval, _EVENT_PENDING, expiry if math.isfinite(approval.expires_at) else {})
 
@@ -428,16 +455,26 @@ def _expire(approval: Approval) -> None:
     _log.info("approval %s for tool %s timed out", approval.id, approval.tool)
 
 
+def _what(approval: Approval) -> str:
+    return f"approval {approval.id} for tool {approval.tool!r}"
+
+
+@contextlib.contextmanager
+def _as_requested(approval: Approval, requester: Requester | None) -> Iterator[None]:
+    """Run an approved call as its requester, when known, under its correlation id."""
+    with requester_scope(requester, what=_what(approval)), run_scope(approval.correlation_id):
+        yield
+
+
 def _resume(pending: _Pending) -> object:
-    approval = pending.approval
     if inspect.iscoroutinefunction(pending.func):
 
         async def resumed() -> object:
-            with run_scope(approval.correlation_id):
+            with _as_requested(pending.approval, pending.requester):
                 return await pending.func(*pending.args, **pending.kwargs)
 
         return resumed()
-    with run_scope(approval.correlation_id):
+    with _as_requested(pending.approval, pending.requester):
         return pending.func(*pending.args, **pending.kwargs)
 
 

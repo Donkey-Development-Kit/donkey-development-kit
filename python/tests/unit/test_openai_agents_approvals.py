@@ -6,7 +6,8 @@ call in ``result.interruptions``. ``pending_approvals`` records the pause,
 ``approve`` / ``reject`` record the decision and hand it to ``RunState``, and
 ``Runner.run(agent, state)`` resumes. The pause lives in the run state, so it
 survives ``to_string()`` / ``from_string()``, and a refusal the resumed tool's
-model call gets is raised typed instead of becoming a tool result.
+model call gets is raised typed instead of becoming a tool result. The resumed
+tool runs as the user the paused call was recorded for (#1416).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import pytest
 from donkey_kit import (
     ApprovalRequired,
     Approvals,
+    AuthError,
     Donkey,
     DonkeyConfig,
     PIIDetected,
@@ -30,6 +32,7 @@ from donkey_kit import (
 from donkey_kit._testing import http_clients, swap_transport
 from donkey_kit.core import approvals as approvals_mod
 from donkey_kit.core import telemetry
+from donkey_kit.core.identity import current_user
 from donkey_kit.core.telemetry import current_correlation_id
 from donkey_kit.core.toolspec import tool_spec
 
@@ -395,6 +398,54 @@ async def test_a_sync_gated_tool_pauses_and_resumes() -> None:
 
     assert ran == ["T-2"]
     assert _tool_results(sent[-1]) == ["refunded T-2"]
+
+
+async def _paused_as_alice(donkey: Donkey, seen: list[str | None]) -> tuple[Any, Any, Any]:
+    """A run paused on a gated tool inside ``as_user(alice)``: its agent, state
+    and approval. The tool records the user token it runs as."""
+    for client in http_clients(donkey):
+        swap_transport(client, _gateway([], {"ticket_id": "T-1"}))
+
+    @donkey.tool(approval="required")
+    def issue_refund(ticket_id: str) -> str:
+        """Refund a support ticket."""
+        user = current_user()
+        seen.append(user.token if user else None)
+        return f"refunded {ticket_id}"
+
+    agent = agents.Agent(
+        name="refunds",
+        model=donkey.openai_agents.model("gpt-4o"),
+        tools=[ddk_agents.function_tool(issue_refund)],
+    )
+    async with donkey.as_user(id_token="id-token-alice"):
+        result = await agents.Runner.run(agent, "refund", run_config=_RUN)
+        (approval,) = ddk_agents.pending_approvals(result)
+    return agent, result.to_state(), approval
+
+
+async def test_the_resumed_tool_runs_as_the_user_who_paused_the_run() -> None:
+    seen: list[str | None] = []
+    async with Donkey(_cfg()) as donkey:
+        agent, state, approval = await _paused_as_alice(donkey, seen)
+        # The approver's handler resumes the run, outside as_user().
+        ddk_agents.approve(state, approval, by="m.keller")
+        await agents.Runner.run(agent, state, run_config=_RUN)
+
+    assert seen == ["id-token-alice"]
+
+
+async def test_resuming_the_run_as_another_user_is_refused() -> None:
+    seen: list[str | None] = []
+    async with Donkey(_cfg()) as donkey:
+        agent, state, approval = await _paused_as_alice(donkey, seen)
+        ddk_agents.approve(state, approval, by="m.keller")
+        async with donkey.as_user(id_token="id-token-bob"):
+            with pytest.raises(AuthError, match="as_user"):
+                async with donkey.run():
+                    await agents.Runner.run(agent, state, run_config=_RUN)
+
+    assert seen == []
 
 
 # --- rejection -----------------------------------------------------------------
