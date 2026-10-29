@@ -449,6 +449,8 @@ headers.
    `message/send` to the Cumulus Bank `trusted-agent-id-core-banking-agent`
    instance (20825039, `agent-network-ingress-gw`, OBO `1.1.3`; provisioning
    #96); fixtures `rejections/reject.ciba-{pending,denied}.{headers.txt,body.json}`.
+   The same `401` / `403` shapes, and the `502` `ciba_initiation_failed`, were then
+   captured live on an MCP `tools/call` (2026-10-29, provisioning #113, §9).
 
 `core/errors.classify()` implements this (tests: `test_llm_proxy_contract.py`,
 `test_rejection_contract.py`, `test_errors.py`): error `type == "pii_detected"` →
@@ -679,7 +681,7 @@ driving `ddk-model-wallet` (2000 tokens/day on `openai:gpt-5-mini`) on instance
 | Agent Kill Switch | applied to `ddk-agent-kill-switch` | VERIFIED (LIVE) | `403`, nested `{"error":{code:"agent_killed",message}}` — no `type`, no `www-authenticate`, no reason field (#314). Discriminator: nested `error.code == "agent_killed"` → `AgentKilled` | 2026-09-29 | live probe, `ddk-agent-kill-switch` instance 21206201 (shared-omni-gateway), quarantined agent `act.sub=21206128`, correlation id `00000000-0000-4000-8000-ede8f2783ba7` (#694) |
 | OAuth2 OBO Credential Injection, CIBA pending | `credential-injection-oauth2-obo` `1.1.3` (`cibaEnabled: true`), on instance 20825039 | VERIFIED (LIVE) | `401`, flat-string `{"error":"authorization_pending","error_description":…}`, `retry-after: 5` (`8` after `slow_down`), no `www-authenticate`. Discriminator: `401` + body `error == "authorization_pending"` → `GatewayApprovalPending` (#1320). An unanswered request past `expires_in` (about 124s observed) stays `401` pending: the policy starts a new flow and the client never sees an expiry | 2026-10-28 | live probe, A2A `message/send`, `trusted-agent-id-core-banking-agent` (Cumulus Bank, `agent-network-ingress-gw`); provisioning #96 |
 | OAuth2 OBO Credential Injection, CIBA denied | same | VERIFIED (LIVE) | `403`, flat-string `{"error":"access_denied","error_description":"The downstream user denied the CIBA authorization request."}`, no `www-authenticate`. Discriminator: `403` + body `error == "access_denied"` → `GatewayApprovalDenied` (#1320). On `1.1.3` the denial is cached per `login_hint` for up to an hour, even across fresh tokens and new `contextId`s | 2026-10-28 | same probe |
-| OAuth2 OBO Credential Injection, CIBA initiation failure | same | DOCUMENTED | `502`, `error: ciba_initiation_failed` per the policy source; not captured (producing it would mean breaking `cibaEndpoint` on a Production instance). Falls through to `UpstreamModelError` like any `5xx` | — | policy source |
+| OAuth2 OBO Credential Injection, CIBA initiation failure | `credential-injection-oauth2-obo` `1.1.3`, on the dedicated `ddk-langgraph-mcp-ciba` instance (21264335) with `cibaEndpoint` pointed at a path that does not exist | VERIFIED (LIVE) | `502`, `content-type: application/json`, `{"error":"ciba_initiation_failed","error_description":"Failed to initiate CIBA backchannel authorization."}`, on an MCP `tools/call`. Falls through to `UpstreamModelError` like any `5xx` | 2026-10-29 | live probe, provisioning #113 (PR #115); the endpoint was restored afterwards |
 | Model wallet budget | `mw-find-key-policy` `1.0.3` + `mw-token-rate-limit-policy` `1.0.0`, auto-attached, not applied by hand | VERIFIED (LIVE) | `429`, flat-string `{"error":"token rate limit exceeded"}` (`text/plain`), `retry-after: 86400`, `x-model-wallet-selected`; no `x-token-*`. See "Model-wallet budget emission" above. | 2026-09-30 | live probe, `ddk-model-wallet` instance 21189395 (#301) |
 
 **Apply note (verified):** these LLM policies apply against the schema-bearing
@@ -1227,16 +1229,26 @@ holds each binding to this in the venvs above.
 Collision renaming and the approval gate run in the SDK before any call. They
 were not repeated through the gateway.
 
+**The gateway's CIBA step-up on an MCP `tools/call`: `VERIFIED (LIVE)`, 2026-10-29,
+provisioning #113 (#1380).** On the dedicated instance `ddk-langgraph-mcp-ciba` (21264335,
+`shared-omni-gateway`, OBO `1.1.3` with CIBA; provisioning PR #115) a `tools/call` of
+`calculate` answers `401` + `retry-after: 5` + `{"error":"authorization_pending",…}` (no
+`www-authenticate`) until the user answers; after an approve the retry gets `200` with the
+tool result (a fresh `initialize` is needed first: the first handshake got the pending
+`401`, so no session existed); after a deny `403` + `access_denied`, cached per user on
+1.1.3; with `cibaEndpoint` broken, `502` + `ciba_initiation_failed`. The user token was
+sent directly in `Authorization`, not through the `as_user()` path (#255).
+
 **How each framework surfaces the OBO policy's CIBA step-up on `tools/call`:
-`VERIFIED (local round-trip)`, 2026-10-29, #214.** The live CIBA captures (§4 item 8)
-are on an A2A `message/send`. Whether an MCP client sees the same answers is a separate
+`VERIFIED (local round-trip)`, 2026-10-29, #214.** The wire shapes are the live ones above.
+Whether an MCP client sees the same answers is a separate
 question, because the `401` is an HTTP error, not a JSON-RPC one. `python/scripts/mcp_binding/server.py
 --ciba add=pending` (or `denied`) answers a `tools/call` of `add` with the captured shapes:
 `401` + `Retry-After` + `authorization_pending`, and `403` + `access_denied`. This is the
-live shape replayed locally, not a live MCP capture. `probe_ciba.py` calls it through each
+live shape replayed locally. `probe_ciba.py` calls it through each
 framework's own tool object; fixtures `mcp_binding/ciba-<venv>.json`, Python 3.12.16.
-Nothing here is live: an OBO + CIBA MCP instance was not available (provisioning #97 is the
-runbook).
+The per-framework results below are local: no framework client was run against the live
+instance.
 
 | Framework | Surfaces the `401` / `403` as |
 |---|---|
@@ -1261,7 +1273,8 @@ approval from a bad credential. So:
 - **`tools/list` is typed.** `open_session`'s response hook reads the body, so
   `GatewayApprovalPending` / `GatewayApprovalDenied` arrive there. `ToolSet.wait_for_gateway_approval()`
   waits on that path (#214).
-- `tools/call` through an OBO + CIBA instance stays `DOCUMENTED` until a live capture.
+- The gateway sends no discriminating header on the live `tools/call` `401` either (§9 above),
+  so the live capture does not change this.
 
 Which MCP transports Omni Gateway can front (streamable HTTP, SSE, stdio) is
 UNVERIFIED (#1150). §5 verifies only the shape of a gateway MCP endpoint. The
@@ -1704,5 +1717,5 @@ Two findings bound what `as_user()`'s forward-unchanged design covers:
 - **Step-up MFA** (`BG §2.3`). The OBO policy's CIBA step-up shapes are
   `VERIFIED (LIVE)` in §4 item 8 and typed as `GatewayApprovalPending` /
   `GatewayApprovalDenied` (#1320). `ToolSet.wait_for_gateway_approval()` waits on
-  `tools/list` (#214); how each framework surfaces the same answers on `tools/call` is in §9. The `502` `ciba_initiation_failed` shape is
-  still uncaptured.
+  `tools/list` (#214); how each framework surfaces the same answers on `tools/call` is in §9.
+  The `502` `ciba_initiation_failed` shape is `VERIFIED (LIVE)` too (§4 table, 2026-10-29).
