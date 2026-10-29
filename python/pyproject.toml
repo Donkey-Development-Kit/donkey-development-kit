@@ -150,7 +150,8 @@ cli = ["typer>=0.26.0", "rich>=13.8.0"]
 test = ["pytest>=8.0", "pytest-asyncio>=0.23.1"]
 
 # --- Everything a user runs, together ---
-# The framework-free extras plus LangGraph, the first deep adapter (BG §1.8). No
+# The framework-free extras (`mcp`, the client `ToolSet` binding needs, included:
+# #1436) plus LangGraph, the first deep adapter (BG §1.8). No
 # test runner or linter (#744): add `donkey-kit[all,test]` for the conformance
 # plugin. The seven other framework extras are deliberately NOT here:
 # whether they co-install is an upstream property no floor can guarantee
@@ -159,7 +160,7 @@ test = ["pytest>=8.0", "pytest-asyncio>=0.23.1"]
 # docs/co-installability.md table, re-checked nightly (#769). See
 # docs/verified-apis.md §8.1.
 all = [
-    "donkey-kit[llm,langgraph,otel,cli,local,a2a]",
+    "donkey-kit[llm,langgraph,otel,cli,local,a2a,mcp]",
 ]
 
 # Contributor tooling is a PEP 735 dependency group, not an extra, so it stays

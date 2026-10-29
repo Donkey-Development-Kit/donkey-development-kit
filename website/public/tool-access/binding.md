@@ -36,8 +36,9 @@ things for you:
   before you bind.
 
 Install the MCP client with the framework's extra, for example
-`pip install "donkey-kit[langgraph,mcp]" langchain-mcp-adapters`. A binding
-whose packages are missing raises `ImportError` with the command to run.
+`pip install "donkey-kit[langgraph,mcp]" langchain-mcp-adapters`. The `[all]`
+extra includes `mcp` too. A binding whose packages are missing raises
+`ImportError` with the command to run.
 
 ## Auth
 

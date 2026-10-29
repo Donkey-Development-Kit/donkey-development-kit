@@ -247,6 +247,23 @@ async def test_resolve_under_another_user_is_refused_and_stays_pending() -> None
     assert seen == [(_ALICE, None, None)]
 
 
+def test_a_sync_as_user_block_is_checked_like_an_async_one() -> None:
+    """A blocking handler requests and resolves under ``with donkey.as_user()``
+    (#1436): the requester is captured and checked the same way."""
+    seen: Seen = []
+    issue_refund = _refund_tool(seen)
+    with Donkey(_cfg()) as donkey:
+        with donkey.as_user(token=_ALICE):
+            approval = _requested_sync(issue_refund, "T-1")
+        with donkey.as_user(token=_BOB), pytest.raises(AuthError):
+            donkey.approvals.resolve(approval.id, approved_by="m.keller")
+        assert seen == []
+        with donkey.as_user(token=_ALICE):
+            assert donkey.approvals.resolve(approval.id, approved_by="m.keller") == "refunded"
+        assert current_user() is None
+    assert seen == [(_ALICE, None, None)]
+
+
 async def test_resolve_under_the_requesters_own_token_runs() -> None:
     seen: Seen = []
     issue_refund = _refund_tool(seen)
