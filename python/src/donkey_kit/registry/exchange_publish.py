@@ -32,19 +32,26 @@ With ``if_changed`` an asset whose latest published digest equals the planned
 one is left alone, so a merge that changes nothing publishes nothing. A planned
 version that is already published with other content fails before anything is
 sent: bump the version.
+
+A refused call does not raise: the asset's outcome is ``failed``, or
+``incomplete`` when its version was published but a later step was refused,
+and the assets after it are ``not_attempted`` (#1426). A rerun finishes an
+incomplete publish: a version with the planned digest is ``unchanged`` only
+once its endpoint is registered, its page is published and the asset has the
+declared name and description, and whichever is missing is done then.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import httpx
 
-from ..core.errors import RegistryError
+from ..core.errors import DonkeyError, RegistryError
 from . import _scopes
 from .exchange_page import Changes, PageSource, documentation_page, tool_changes
 from .publish_plan import PlannedAsset, PublishPlan
@@ -53,6 +60,7 @@ from .scan import ScanResult
 __all__ = [
     "DIGEST_PROPERTY",
     "PublishOutcome",
+    "PublishStatus",
     "PublishedVersion",
     "agent_card",
     "agent_metadata",
@@ -148,18 +156,33 @@ class PublishedVersion:
     description: str | None = None
 
 
+PublishStatus = Literal["published", "unchanged", "incomplete", "failed", "not_attempted"]
+
+
 @dataclass(frozen=True)
 class PublishOutcome:
     """What :func:`publish_plan` did with one planned asset.
 
-    ``status`` is ``published`` (a new version was created) or ``unchanged``
-    (the latest version already has this digest); ``detail`` says which
-    version.
+    ``status`` is one of:
+
+    * ``published``: a new version was created, or a rerun finished the
+      publish of one that was ``incomplete``;
+    * ``unchanged``: the latest version already has this digest and its
+      publish is complete;
+    * ``incomplete``: the version is published, but registering its
+      endpoint, writing its page or updating the asset's name and
+      description was refused; a rerun finishes it;
+    * ``failed``: nothing was published for this asset;
+    * ``not_attempted``: an earlier asset failed, so this one was not tried.
+
+    ``detail`` says which version, or what was refused. ``error`` is the
+    refusal of a ``failed`` or ``incomplete`` asset, with its ``remediation``.
     """
 
     asset: PlannedAsset
-    status: Literal["published", "unchanged"]
+    status: PublishStatus
     detail: str
+    error: DonkeyError | None = None
 
 
 async def publish_plan(
@@ -178,18 +201,25 @@ async def publish_plan(
     ``result`` is the scan the plan came from. ``source`` is where the publish
     runs from, for each new version's page. A plan with issues is refused.
 
+    Returns one outcome per planned asset, in plan order. A refused call stops
+    the publish: that asset is ``failed`` or ``incomplete``, with the
+    :class:`~donkey_kit.core.errors.DonkeyError` as its ``error`` (a
+    :class:`RegistryError`, or an ``AuthError`` naming the ``manage:exchange``
+    scope, docs/scopes.md), and every later one is ``not_attempted``.
+
     Raises:
         ValueError: The plan has issues.
-        RegistryError: Exchange refused a call, or a planned version is
-            already published with other content.
-        AuthError: Exchange refused a call with ``401``/``403``; its ``remediation``
-            names the ``manage:exchange`` scope (docs/scopes.md).
     """
     if plan.issues:
         raise ValueError("a plan with issues is not published; fix them first")
     exchange = _Exchange(http, base_url)
     outcomes: list[PublishOutcome] = []
     for asset in plan.assets:
+        if outcomes and outcomes[-1].status in ("failed", "incomplete", "not_attempted"):
+            outcomes.append(
+                PublishOutcome(asset, "not_attempted", "not attempted: an earlier asset failed")
+            )
+            continue
         outcomes.append(
             await _publish_one(
                 asset, result, exchange, org_id=org_id, if_changed=if_changed, source=source
@@ -207,63 +237,106 @@ async def _publish_one(
     if_changed: bool,
     source: PageSource | None,
 ) -> PublishOutcome:
+    """Publish one asset; a refused call is its ``failed`` or ``incomplete`` outcome."""
     group, asset_id, version = _gav(asset)
-    latest = await exchange.latest(group, asset_id)
-    if latest is not None:
-        if latest.version == version and latest.digest == asset.digest:
-            return PublishOutcome(asset, "unchanged", f"{version} is already published")
-        if version in latest.versions:
-            raise _version_exists(asset, latest)
-        if if_changed and latest.digest == asset.digest:
-            return PublishOutcome(
-                asset, "unchanged", f"the latest version, {latest.version}, has this digest"
-            )
-    changes = None
-    if latest is not None and asset.type == "mcp":
-        # Read before the publish, so a failed read sends nothing. A version
-        # with no mcp-metadata file (published by hand) has nothing to diff.
-        before = await exchange.tools(
-            group, asset_id, latest.version, missing_ok=True, scope=_scopes.EXCHANGE_PUBLISH
-        )
-        if before is not None:
-            changes = Changes(
-                latest.version, tool_changes(before, mcp_metadata(asset, result)["tools"])
-            )
-    data, files = _content(asset, result)
-    response = await exchange.post(
-        _PUBLISH_PATH.format(org=org_id, group=group, asset=asset_id, version=version),
-        data={
-            "name": asset.name,
-            "description": asset.description or "",
-            "type": asset.type,
-            f"properties.{DIGEST_PROPERTY}": asset.digest,
-            **data,
-        },
-        files=files,
-        headers={"x-sync-publication": "true"},
-    )
-    if response.status_code == 409:
-        # A version that appeared since the read above, or an earlier attempt
-        # of this one that landed before a retry: fine only with this digest.
+    published: str | None = None  # the version Exchange has, once it has it
+    try:
         latest = await exchange.latest(group, asset_id)
-        if latest is None or latest.version != version or latest.digest != asset.digest:
+        if latest is not None and latest.digest == asset.digest:
+            if latest.version == version:
+                published = version
+                done = f"{version} is already published"
+                return await _finish(asset, result, exchange, latest, done, source=source)
+            if if_changed and version not in latest.versions:
+                published = latest.version
+                done = f"the latest version, {latest.version}, has this digest"
+                return await _finish(asset, result, exchange, latest, done, source=source)
+        if latest is not None and version in latest.versions:
             raise _version_exists(asset, latest)
-    else:
-        _check(response, f"publishing {group}:{asset_id}:{version}")
-    if asset.endpoint:
-        await exchange.register_endpoint(asset, group, asset_id, version)
-    await exchange.publish_page(
-        group,
-        asset_id,
-        version,
-        documentation_page(asset, result, source=source, changes=changes),
-    )
-    detail = f"published {version}"
+        changes = None
+        if latest is not None and asset.type == "mcp":
+            # Read before the publish, so a failed read sends nothing. A version
+            # with no mcp-metadata file (published by hand) has nothing to diff.
+            before = await exchange.tools(
+                group, asset_id, latest.version, missing_ok=True, scope=_scopes.EXCHANGE_PUBLISH
+            )
+            if before is not None:
+                changes = Changes(
+                    latest.version, tool_changes(before, mcp_metadata(asset, result)["tools"])
+                )
+        data, files = _content(asset, result)
+        response = await exchange.post(
+            _PUBLISH_PATH.format(org=org_id, group=group, asset=asset_id, version=version),
+            data={
+                "name": asset.name,
+                "description": asset.description or "",
+                "type": asset.type,
+                f"properties.{DIGEST_PROPERTY}": asset.digest,
+                **data,
+            },
+            files=files,
+            headers={"x-sync-publication": "true"},
+        )
+        if response.status_code == 409:
+            # A version that appeared since the read above, or an earlier attempt
+            # of this one that landed before a retry: fine only with this digest.
+            latest = await exchange.latest(group, asset_id)
+            if latest is None or latest.version != version or latest.digest != asset.digest:
+                raise _version_exists(asset, latest)
+        else:
+            _check(response, f"publishing {group}:{asset_id}:{version}")
+        published = version
+        if asset.endpoint:
+            await exchange.register_endpoint(asset, group, asset_id, version)
+        await exchange.publish_page(
+            group,
+            asset_id,
+            version,
+            documentation_page(asset, result, source=source, changes=changes),
+        )
+        detail = f"published {version}"
+        details = _changed_details(asset, latest)
+        if details:
+            await exchange.update_details(group, asset_id, details)
+            detail += f"; updated the asset's {' and '.join(details)}"
+        return PublishOutcome(asset, "published", detail)
+    except DonkeyError as exc:
+        if published is None:
+            return PublishOutcome(asset, "failed", str(exc), exc)
+        detail = f"{published} is published, but its publish did not finish: {exc}"
+        return PublishOutcome(asset, "incomplete", detail, exc)
+
+
+async def _finish(
+    asset: PlannedAsset,
+    result: ScanResult,
+    exchange: _Exchange,
+    latest: PublishedVersion,
+    unchanged: str,
+    *,
+    source: PageSource | None,
+) -> PublishOutcome:
+    """Finish the publish of ``latest``, the version with ``asset``'s digest:
+    register its endpoint, publish its page and set the declared name and
+    description, each only when it is missing. ``unchanged`` is the detail
+    when nothing was. A page published here has no "Changes since" section."""
+    group, asset_id, _ = _gav(asset)
+    version = latest.version
+    done = []
+    if asset.endpoint and await exchange.register_endpoint(asset, group, asset_id, version):
+        done.append("registered its endpoint")
+    if not await exchange.has_page(group, asset_id, version):
+        # The page of what was published as ``version``, under a later planned one too.
+        page = documentation_page(replace(asset, version=version), result, source=source)
+        await exchange.publish_page(group, asset_id, version, page)
+        done.append("published its page")
     details = _changed_details(asset, latest)
     if details:
         await exchange.update_details(group, asset_id, details)
-        detail += f"; updated the asset's {' and '.join(details)}"
-    return PublishOutcome(asset, "published", detail)
+        done.append(f"updated the asset's {' and '.join(details)}")
+    if not done:
+        return PublishOutcome(asset, "unchanged", unchanged)
+    return PublishOutcome(asset, "published", f"finished publishing {version}: {', '.join(done)}")
 
 
 def _content(
@@ -565,7 +638,8 @@ class _Exchange:
 
     async def register_endpoint(
         self, asset: PlannedAsset, group: str, asset_id: str, version: str
-    ) -> None:
+    ) -> bool:
+        """Register ``asset``'s endpoint for the version; ``False`` when it was already."""
         # Instances belong to the version group, so a new patch version usually
         # has the endpoint already.
         data = await self._asset(
@@ -576,7 +650,7 @@ class _Exchange:
                 f"Exchange does not list {group}:{asset_id}:{version} after publishing it"
             )
         if asset.endpoint in _endpoints(data):
-            return
+            return False
         response = await self.post(
             _INSTANCE_PATH.format(group=group, asset=asset_id, group_name=data["versionGroup"]),
             json={"name": asset.service_id, "endpointUri": asset.endpoint},
@@ -595,6 +669,21 @@ class _Exchange:
                 response=response,
             )
         _check(response, f"registering the endpoint of {group}:{asset_id}:{version}")
+        return True
+
+    async def has_page(self, group: str, asset_id: str, version: str) -> bool:
+        """Whether the version's Home page is published: its portal draft is
+        ``PUBLISHED`` and has the ``home`` page, as once :meth:`publish_page`
+        has run (docs/verified-apis.md §12.3). Any other draft counts as no page,
+        so the page is written again."""
+        draft = _PORTAL_DRAFT_PATH.format(group=group, asset=asset_id, version=version)
+        response = await self._http.get(self._base + draft)
+        _check(response, f"reading the page of {group}:{asset_id}:{version}")
+        body = response.json()
+        if not isinstance(body, dict) or body.get("draftStatus") != "PUBLISHED":
+            return False
+        pages = body.get("pages") or ()
+        return any(isinstance(p, dict) and p.get("path") == _HOME_PAGE for p in pages)
 
     async def publish_page(self, group: str, asset_id: str, version: str, markdown: str) -> None:
         """Write ``markdown`` as the version's Home page and publish it."""

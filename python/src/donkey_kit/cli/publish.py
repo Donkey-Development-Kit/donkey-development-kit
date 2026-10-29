@@ -16,13 +16,20 @@ Actions it links the repository, commit and run it was published from.
 An agent is published with its ``[donkey.agents]`` protocol, ``other`` when
 none is declared, and an ``a2a_v1`` agent with its A2A agent card.
 
+A refused call stops the publish. That asset is ``failed``, or ``incomplete``
+when its version was published but its endpoint, page or name and description
+were refused, and the assets after it are ``not_attempted``; what was
+published before stays published. A rerun finishes an ``incomplete`` publish
+rather than reporting it ``unchanged`` (#1426).
+
 ``--json`` prints the plan as JSON; after a publish, each asset also carries
-the ``status`` (``published`` or ``unchanged``) and ``detail`` of
-its outcome. Issues and errors still go to stderr.
+the ``status`` (``published``, ``unchanged``, ``incomplete``, ``failed`` or
+``not_attempted``) and ``detail`` of its outcome, also when the publish
+failed. Issues and errors still go to stderr.
 
 Exit codes: 1 when the scan or the declaration reports an issue (nothing is
-sent) or Exchange refuses a publish, 2 when there is nothing at the path or the
-config is invalid or lacks the control-plane credentials.
+sent) or an asset is ``failed`` or ``incomplete``, 2 when there is nothing at
+the path or the config is invalid or lacks the control-plane credentials.
 """
 
 from __future__ import annotations
@@ -45,6 +52,10 @@ from ..registry.scan import scan as scan_repository
 from ._app import app
 
 __all__ = ["publish"]
+
+# The outcomes that exit 1, and the ones the text summary counts after "published".
+_FAILED = ("failed", "incomplete")
+_NOT_DONE = ("incomplete", "failed", "not_attempted")
 
 
 @app.command()
@@ -94,18 +105,22 @@ def publish(
     try:
         outcomes = asyncio.run(_publish(cfg, plan, result, if_changed=if_changed))
     except DonkeyError as exc:
+        # Refused before any asset was tried, e.g. building the runtime.
+        detail = f"not attempted: {exc}"
+        outcomes = tuple(PublishOutcome(a, "not_attempted", detail, exc) for a in plan.assets)
         typer.secho(str(exc), fg="red", err=True)
         typer.secho(exc.remediation, err=True)
-        raise typer.Exit(1) from exc
     if as_json:
         typer.echo(_outcomes_json(plan, outcomes), nl=False)
-        return
+    else:
+        _outcomes(outcomes)
     for o in outcomes:
-        a = o.asset
-        line = f"  {o.status:<9} {a.type:<6} {a.group_id}:{a.asset_id}:{a.version}  {o.detail}"
-        typer.echo(line)
-    published = sum(o.status == "published" for o in outcomes)
-    typer.echo(f"published {published} asset{'' if published == 1 else 's'}")
+        if o.status in _FAILED and o.error is not None:
+            if as_json:  # the text table has the detail already
+                typer.secho(o.detail, fg="red", err=True)
+            typer.secho(o.error.remediation, err=True)
+    if any(o.error is not None for o in outcomes):
+        raise typer.Exit(1)
 
 
 def _runtime(cfg: DonkeyConfig) -> Runtime:
@@ -149,11 +164,27 @@ def _ci_source() -> PageSource | None:
 
 
 def _outcomes_json(plan: PublishPlan, outcomes: tuple[PublishOutcome, ...]) -> str:
-    """The plan's JSON with each asset's outcome; outcomes are in plan order."""
+    """The plan's JSON with each asset's outcome; outcomes are in plan order. A
+    refused asset's detail ends with the remediation, as ``donkey verify``'s does."""
     data = plan.to_dict()
     for asset, outcome in zip(data["assets"], outcomes, strict=True):
-        asset["status"], asset["detail"] = outcome.status, outcome.detail
+        detail = outcome.detail
+        if outcome.status in _FAILED and outcome.error is not None:
+            detail = f"{detail} {outcome.error.remediation}".strip()
+        asset["status"], asset["detail"] = outcome.status, detail
     return json.dumps(data, sort_keys=True, indent=2) + "\n"
+
+
+def _outcomes(outcomes: tuple[PublishOutcome, ...]) -> None:
+    for o in outcomes:
+        a = o.asset
+        line = f"  {o.status:<9} {a.type:<6} {a.group_id}:{a.asset_id}:{a.version}  {o.detail}"
+        typer.secho(line, fg="red" if o.status in _FAILED else None)
+    published = sum(o.status == "published" for o in outcomes)
+    line = f"published {published} asset{'' if published == 1 else 's'}"
+    counts = [(s, sum(o.status == s for o in outcomes)) for s in _NOT_DONE]
+    rest = ", ".join(f"{n} {s.replace('_', ' ')}" for s, n in counts if n)
+    typer.echo(f"{line}; {rest}" if rest else line)
 
 
 def _summary(plan: PublishPlan) -> None:

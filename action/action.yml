@@ -51,6 +51,15 @@ outputs:
   unchanged:
     description: How many assets were left unchanged.
     value: ${{ steps.publish.outputs.unchanged }}
+  incomplete:
+    description: How many assets have their version published but not their endpoint, page, or name and description. A rerun finishes them.
+    value: ${{ steps.publish.outputs.incomplete }}
+  failed:
+    description: How many assets Exchange refused, with nothing published for them.
+    value: ${{ steps.publish.outputs.failed }}
+  not-attempted:
+    description: How many assets were not tried because an earlier one failed.
+    value: ${{ steps.publish.outputs.not_attempted }}
   skipped:
     description: "Always 0: every asset is published or left unchanged since agents are published too (#1260). Kept so workflows that read it keep working."
     value: ${{ steps.publish.outputs.skipped }}

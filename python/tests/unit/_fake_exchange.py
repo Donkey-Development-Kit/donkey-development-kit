@@ -48,9 +48,9 @@ class FakeExchange:
     """Published versions per ``(group, asset)``, in publish order, plus the
     endpoints registered per version group, the published Home page per
     version, and each asset's name and description. ``requests`` records every
-    call and ``metadata_reads`` every ``mcp-metadata`` download; ``fail_pages``
-    and ``fail_details`` answer the page write and the asset PATCH with a
-    ``500``."""
+    call and ``metadata_reads`` every ``mcp-metadata`` download; ``fail_pages``,
+    ``fail_details`` and ``fail_instances`` answer the page write, the asset
+    PATCH and the external-instance POST with a ``500``."""
 
     assets: dict[tuple[str, str], dict[str, Published]] = field(default_factory=dict)
     instances: dict[tuple[str, str, str], list[str]] = field(default_factory=dict)
@@ -59,6 +59,7 @@ class FakeExchange:
     requests: list[httpx.Request] = field(default_factory=list)
     fail_pages: bool = False
     fail_details: bool = False
+    fail_instances: bool = False
     metadata_reads: list[tuple[str, str, str]] = field(default_factory=list)
     _drafts: dict[tuple[str, str, str], str | None] = field(default_factory=dict)
 
@@ -96,6 +97,8 @@ class FakeExchange:
             path,
         )
         if instance and request.method == "POST":
+            if self.fail_instances:
+                return httpx.Response(500, json={"message": "instance creation failed"})
             endpoint = json.loads(request.content)["endpointUri"]
             self.instances.setdefault(instance.groups(), []).append(endpoint)
             return httpx.Response(201, text=fixture("instance.201.json"))
@@ -123,8 +126,16 @@ class FakeExchange:
     ) -> httpx.Response:
         assert key[1] in {a for _, a in self.assets} and key[2] in self.assets[key[:2]]
         if page is None and request.method == "GET":
-            self._drafts.setdefault(key, self.pages.get(key))
-            return httpx.Response(200, text=fixture("portal-draft.200.json"))
+            draft = self._drafts.setdefault(key, self.pages.get(key))
+            body = json.loads(fixture("portal-draft.200.json"))
+            # Captured: a version with a published Home page. Its pages without
+            # one, and a status other than PUBLISHED for a draft with unpublished
+            # edits, are this fake's own (not captured).
+            if draft is None:
+                body["pages"] = []
+            if draft != self.pages.get(key):
+                body["draftStatus"] = "UNPUBLISHED-EDITS"
+            return httpx.Response(200, json=body)
         assert key in self._drafts, "page call before the draft was opened"
         if page == "/pages" and request.method == "POST":
             assert json.loads(request.content) == {"pagePath": "home"}

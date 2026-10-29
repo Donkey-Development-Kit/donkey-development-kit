@@ -16,6 +16,7 @@ from donkey_kit.cli import app
 from donkey_kit.cli import publish as publish_command
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.config import DonkeyConfig
+from donkey_kit.core.errors import AuthError
 from donkey_kit.core.runtime import Runtime
 
 runner = CliRunner()
@@ -161,6 +162,58 @@ def test_new_content_under_a_published_version_exits_1(repo: Path, exchange: Fak
     assert result.exit_code == 1
     assert "sku-manager:1.0.0 is already published with other content" in result.output
     assert "Bump the version" in result.output
+
+
+def test_a_failed_publish_prints_each_assets_outcome_and_exits_1(
+    repo: Path, exchange: FakeExchange
+) -> None:
+    """#1426: the outcome document is printed when the publish fails, too."""
+    exchange.fail_pages = True
+
+    result = runner.invoke(app, ["--json", "publish", str(repo)])
+
+    assert result.exit_code == 1
+    (asset,) = json.loads(result.stdout)["assets"]
+    assert asset["status"] == "incomplete"
+    assert asset["detail"].startswith("1.0.0 is published, but its publish did not finish")
+    assert asset["detail"].endswith("Fix what Exchange reported, then re-run donkey publish.")
+    assert "Exchange refused writing the page of" in result.stderr
+    assert "re-run donkey publish" in result.stderr
+
+
+def test_a_rerun_finishes_an_incomplete_publish(repo: Path, exchange: FakeExchange) -> None:
+    exchange.fail_pages = True
+    first = runner.invoke(app, ["publish", str(repo)])
+    exchange.fail_pages = False
+
+    rerun = runner.invoke(app, ["--json", "publish", str(repo)])
+
+    assert first.exit_code == 1
+    assert "incomplete mcp" in first.stdout
+    assert "published 0 assets; 1 incomplete" in first.stdout
+    assert rerun.exit_code == 0, rerun.output
+    (asset,) = json.loads(rerun.stdout)["assets"]
+    assert (asset["status"], asset["detail"]) == (
+        "published",
+        "finished publishing 1.0.0: published its page",
+    )
+    assert list(exchange.assets[(ORG, "sku-manager")]) == ["1.0.0"]
+
+
+def test_a_refusal_before_any_asset_reports_every_asset_not_attempted(
+    repo: Path, exchange: FakeExchange, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refused(cfg: DonkeyConfig) -> Runtime:
+        raise AuthError("no token", remediation="Check the connected app.")
+
+    monkeypatch.setattr(publish_command, "_runtime", refused)
+
+    result = runner.invoke(app, ["--json", "publish", str(repo)])
+
+    assert result.exit_code == 1
+    (asset,) = json.loads(result.stdout)["assets"]
+    assert (asset["status"], asset["detail"]) == ("not_attempted", "not attempted: no token")
+    assert "Check the connected app." in result.stderr
 
 
 def test_a_plan_with_issues_publishes_nothing(repo: Path, exchange: FakeExchange) -> None:
