@@ -247,7 +247,9 @@ class ToolsFacade:
         Call it at startup with the arguments the agent will pass to
         :meth:`discover`: it does the same reads and fills the same cache entry,
         so the first tool lookup does not wait on them. It always reads, even
-        when that entry is cached, and returns the number of servers cached.
+        when that entry is cached: it first drops the registry's cached lookups,
+        as ``donkey.registry.refresh()`` does, so the verdicts it caches are
+        current. It returns the number of servers cached.
 
         There is no bulk read of applied policies, so the cost is O(N): one
         ``search()``, then an ``explain()`` and a ``resolve_mcp()`` per MCP
@@ -269,7 +271,9 @@ class ToolsFacade:
         return await self._discovery.warm(domain=domain, tags=tags, governed=governed)
 
     def refresh(self) -> None:
-        """Drop the cached discoveries, so the next :meth:`discover` reads the registry."""
+        """Drop the cached discoveries and the registry's cached lookups (as
+        ``donkey.registry.refresh()`` does), so the next :meth:`discover` reads
+        Exchange and API Manager again."""
         self._discovery.refresh()
 
     def lock(self) -> None:

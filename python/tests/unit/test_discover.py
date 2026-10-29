@@ -54,7 +54,9 @@ def _ref(asset_id: str) -> AssetRef:
 
 
 class _Registry:
-    """``search``/``explain``/``resolve_mcp`` over a fixed catalog, recording calls."""
+    """``search``/``explain``/``resolve_mcp`` over a fixed catalog, recording calls.
+    It caches nothing, so ``refresh()`` only counts; test_discover_registry_cache.py
+    runs discovery over the real, caching registry."""
 
     def __init__(
         self,
@@ -66,6 +68,10 @@ class _Registry:
         self.unresolved = unresolved
         self.searches: list[dict[str, Any]] = []
         self.explained: list[str] = []
+        self.refreshes = 0
+
+    def refresh(self) -> None:
+        self.refreshes += 1
 
     async def search(self, **kw: Any) -> list[AssetRef]:
         self.searches.append(kw)
@@ -171,7 +177,9 @@ async def test_discover_is_cached_until_refresh(monkeypatch: pytest.MonkeyPatch)
     assert not first.is_stale
     await _discover(d, tags=["other"])
     assert len(registry.searches) == 2
+    assert registry.refreshes == 0
     d.refresh()
+    assert registry.refreshes == 1
     await _discover(d)
     assert len(registry.searches) == 3
     monkeypatch.setenv("DONKEY_NO_CACHE", "1")
@@ -198,6 +206,7 @@ async def test_warm_always_reads_and_replaces_the_entry() -> None:
     first = await _discover(d)
     registry.catalog["orders"] = _GOVERNED
     assert await d.warm(domain=None, tags=None, governed=None) == 2
+    assert registry.refreshes == 1
     again = await _discover(d)
     assert len(registry.searches) == 2
     assert len(again.servers) == 2

@@ -137,6 +137,8 @@ class Discovery:
         criteria = governed if isinstance(governed, GovernanceCriteria) else GovernanceCriteria()
         key = self._key(domain, tags, governed, criteria)
         with self._span(SPAN_WARM) as record:
+            # The registry caches its lookups too; warm() reads past both (#1419).
+            self._registry.refresh()
             found = await self._fill(key, domain, tags, governed, criteria)
             record(found, False)
         return len(found.servers)
@@ -271,8 +273,10 @@ class Discovery:
         return card
 
     def refresh(self) -> None:
-        """Drop every cached discovery, so the next ``discover()`` reads the registry."""
+        """Drop every cached discovery and the registry's cached lookups, so the
+        next ``discover()`` reads Exchange and API Manager again."""
         self._cache.invalidate()
+        self._registry.refresh()
 
     async def _read(
         self,
