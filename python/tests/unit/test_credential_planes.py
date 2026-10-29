@@ -196,7 +196,7 @@ async def test_gemini_shaped_request_carries_no_authorization() -> None:
     async with Donkey(_client_id_cfg()) as donkey:
         _wire(donkey, token_endpoint, upstream)
         await donkey._http.post(
-            f"{_PROXY}models/gemini-2.5-flash:generateContent",
+            f"{_PROXY}models/gemini-3.8-flash:generateContent",
             headers={"x-goog-api-key": "goog-sentinel"},
             json={"contents": [{"role": "user", "parts": [{"text": "hi"}]}]},
         )

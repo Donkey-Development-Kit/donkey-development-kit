@@ -8,7 +8,7 @@ status: offline-verified
 These scripts show the wire: plain `httpx` against a proxy provisioned
 **`Format=Gemini`** (for example `ddk-gemini-inbound`) with the same
 `client_id` / `client_secret` pair. For an agent, ADK's native `Gemini` model is
-bound to the same proxy by `donkey.adk.gemini("gemini-2.5-flash")` — see
+bound to the same proxy by `donkey.adk.gemini("gemini-3.8-flash")` — see
 [Native Gemini](/frameworks/adk#native-gemini). The route is
 `<proxy URL>/models/<model>:generateContent`. `DonkeyConfig` still resolves
 and validates the credentials, and `classify()` still types the errors.
@@ -31,7 +31,7 @@ set -a; source .env.local; set +a
 export DONKEY_LLM_PROXY_URL=https://<host>/ddk-gemini-inbound/      # overrides the file
 ```
 
-The model is `gemini-2.5-flash` (the `MODEL` constant).
+The model is `gemini-3.8-flash` (the `MODEL` constant).
 
 ## 01 — Native `generateContent`
 
@@ -75,7 +75,7 @@ policy refusal.
 bad = httpx.post(
     f"{cfg.llm_proxy_url}/chat/completions",
     headers=headers,
-    json={"model": "gemini-2.5-flash", "messages": [{"role": "user", "content": "hello"}]},
+    json={"model": "gemini-3.8-flash", "messages": [{"role": "user", "content": "hello"}]},
     timeout=60,
 )
 error = classify(bad)

@@ -228,8 +228,8 @@ async def test_adk_gemini_model_call_is_observed() -> None:
 
     donkey = _donkey(_gemini)
     async with donkey:
-        request = LlmRequest(model="gemini-2.5-flash", contents=[_gemini_message()])
-        async for _ in donkey.adk.gemini("gemini-2.5-flash").generate_content_async(request):
+        request = LlmRequest(model="gemini-3.8-flash", contents=[_gemini_message()])
+        async for _ in donkey.adk.gemini("gemini-3.8-flash").generate_content_async(request):
             pass
         assert donkey.last_call.status is LastCallStatus.OBSERVED
 
@@ -248,7 +248,7 @@ async def test_adk_runner_is_unobserved_but_after_model_callback_sees_it() -> No
     async with donkey:
         agent = LlmAgent(
             name="a",
-            model=donkey.adk.gemini("gemini-2.5-flash"),
+            model=donkey.adk.gemini("gemini-3.8-flash"),
             after_model_callback=after_model,
         )
         runner = InMemoryRunner(agent=agent, app_name="app")
@@ -382,7 +382,7 @@ async def test_adk_streamed_run_after_model_callback_sees_every_response() -> No
     pytest.importorskip("google.adk")
     donkey = _donkey(_gemini_stream)
     async with donkey:
-        in_callback = await _streamed_callbacks(donkey, donkey.adk.gemini("gemini-2.5-flash"))
+        in_callback = await _streamed_callbacks(donkey, donkey.adk.gemini("gemini-3.8-flash"))
     assert in_callback == [(True, None)] * 3 + [(False, 38)]
 
 
@@ -431,7 +431,7 @@ async def test_adk_hand_built_models_reach_after_model_callback_when_bridged() -
         lite = last_call_bridged(LiteLlm)
         await run(lite(model="openai/gpt-4o", **donkey.adk.connection_kwargs()))
         gemini = last_call_bridged(Gemini)
-        await run(gemini(model="gemini-2.5-flash", **donkey.adk.gemini_connection_kwargs()))
+        await run(gemini(model="gemini-3.8-flash", **donkey.adk.gemini_connection_kwargs()))
     assert in_callback == [LastCallStatus.OBSERVED] * 2
     assert issubclass(lite, LiteLlm) and issubclass(gemini, Gemini)
 
@@ -447,14 +447,14 @@ def test_last_call_bridged_builds_one_class_and_takes_only_adk_models() -> None:
     # Already bridged, as the factories' classes are: not bridged twice.
     assert last_call_bridged(bridged) is bridged
     donkey = _donkey(_gemini)
-    assert last_call_bridged(type(donkey.adk.gemini("gemini-2.5-flash"))) is bridged
+    assert last_call_bridged(type(donkey.adk.gemini("gemini-3.8-flash"))) is bridged
 
     class Mine(Gemini):
         pass
 
     mine = last_call_bridged(Mine)
     assert issubclass(mine, Mine) and mine is not bridged
-    for wrong in (object, "Gemini", Gemini(model="gemini-2.5-flash")):
+    for wrong in (object, "Gemini", Gemini(model="gemini-3.8-flash")):
         with pytest.raises(TypeError, match="BaseLlm"):
             last_call_bridged(wrong)  # type: ignore[arg-type]
 
@@ -467,7 +467,7 @@ async def test_adk_factories_return_the_adk_classes() -> None:
 
     donkey = _donkey()
     async with donkey:
-        assert isinstance(donkey.adk.gemini("gemini-2.5-flash"), Gemini)
+        assert isinstance(donkey.adk.gemini("gemini-3.8-flash"), Gemini)
         assert isinstance(donkey.adk.model("gpt-4o"), LiteLlm)
 
 
@@ -490,9 +490,9 @@ async def test_adk_bridge_closes_before_a_complete_response() -> None:
         )
 
     async with donkey:
-        request = LlmRequest(model="gemini-2.5-flash", contents=[_gemini_message()])
-        model = donkey.adk.gemini("gemini-2.5-flash")
+        request = LlmRequest(model="gemini-3.8-flash", contents=[_gemini_message()])
+        model = donkey.adk.gemini("gemini-3.8-flash")
         async for response in model.generate_content_async(request):
             if not response.partial:
                 await asyncio.create_task(sibling())
-        assert donkey.last_call.requested_model == "gemini-2.5-flash"
+        assert donkey.last_call.requested_model == "gemini-3.8-flash"

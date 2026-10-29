@@ -155,17 +155,17 @@ from google.adk.models import Gemini
 
 async with Donkey.from_env() as donkey:
     # 1. Off a shared Donkey instance
-    llm = donkey.adk.gemini("gemini-2.5-flash")
+    llm = donkey.adk.gemini("gemini-3.8-flash")
 
     # 3. Governed kwargs, native constructor
-    llm = Gemini(model="gemini-2.5-flash", **donkey.adk.gemini_connection_kwargs())
+    llm = Gemini(model="gemini-3.8-flash", **donkey.adk.gemini_connection_kwargs())
 ```
 
 ```python
 # 2. Module-level factory
 from donkey_kit.integrations.adk import gemini
 
-llm = gemini("gemini-2.5-flash")
+llm = gemini("gemini-3.8-flash")
 ```
 
 **Pointing at the Gemini proxy.** `DONKEY_LLM_PROXY_URL` usually names a
@@ -175,7 +175,7 @@ proxy, and the URL must pass the
 [`https://` rule](/reference/configuration#endpoints-must-use-https):
 
 ```python
-llm = donkey.adk.gemini("gemini-2.5-flash", base_url="https://…/ddk-gemini-inbound/")
+llm = donkey.adk.gemini("gemini-3.8-flash", base_url="https://…/ddk-gemini-inbound/")
 ```
 
 Any other keyword is passed to ADK's `Gemini` and overrides the governed
@@ -187,7 +187,7 @@ default — for example `retry_options`, or your own `client_kwargs`.
 from google.adk.models import Gemini
 
 llm = Gemini(
-    model="gemini-2.5-flash",
+    model="gemini-3.8-flash",
     base_url=...,  # the Format=Gemini proxy URL
     client_kwargs={
         "api_key": ...,  # a placeholder; google-genai requires one
@@ -237,7 +237,7 @@ def record_usage(callback_context, llm_response):
 
 agent = LlmAgent(
     name="assistant",
-    model=donkey.adk.gemini("gemini-2.5-flash"),
+    model=donkey.adk.gemini("gemini-3.8-flash"),
     after_model_callback=record_usage,
 )
 ```

@@ -159,7 +159,7 @@ MODEL = os.environ.get("DEMO_MODEL", "gpt-4o")
 # adk.gemini needs a Format=Gemini proxy; the default DDK proxies are Format=OpenAI.
 # Its live round-trip runs only when this points at one (same consumer creds).
 GEMINI_PROXY_ENV = "DONKEY_GEMINI_PROXY_URL"
-GEMINI_MODEL = os.environ.get("DEMO_GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.environ.get("DEMO_GEMINI_MODEL", "gemini-3.8-flash")
 # The Anthropic client speaks the native Messages API, which needs a
 # Format=Anthropic proxy; its live turn runs only when this points at one.
 ANTHROPIC_PROXY_ENV = "DONKEY_ANTHROPIC_PROXY_URL"
