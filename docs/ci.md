@@ -96,7 +96,7 @@ The jobs, grouped by what they protect:
 
 The nightly run resolves fresh against the newest upstream releases, with no
 constraints (ADR 0007 rule 4). `matrix` re-verifies the conformance-tested
-adapters (LangGraph, the OpenAI Agents SDK) against §8 signatures, and `framework-legs` runs every
+adapters (LangGraph, the OpenAI Agents SDK) against the [`verified-apis.md` §8](verified-apis.md) signatures, and `framework-legs` runs every
 `ADAPTERS` entry (#748). `lowest-direct` installs base, the framework-free
 extras and each framework extra at their declared floors (`uv pip install
 --resolution lowest-direct`, Python 3.10), runs their suites, and fails a leg

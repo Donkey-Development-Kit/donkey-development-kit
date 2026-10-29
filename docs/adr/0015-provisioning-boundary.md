@@ -27,9 +27,10 @@ Two facts shape the line:
 
 - **The calls exist.** `docs/verified-apis.md` §12.5 records the API Manager
   calls that create an ingress instance, attach inbound policies and deploy
-  it to a gateway target (VERIFIED (plugin)). §7 and §12.3 record the
-  Exchange publish and external-instance calls (VERIFIED (LIVE) for `mcp`
-  assets). The connected-app write scopes are UNVERIFIED (§1).
+  it to a gateway target (VERIFIED (plugin)). `docs/verified-apis.md` §7
+  and §12.3 record the Exchange publish and external-instance calls
+  (VERIFIED (LIVE) for `mcp` assets). The connected-app write scopes are
+  UNVERIFIED (`docs/verified-apis.md` §1).
 - **The platform is adding its own IaC.** The roadmap's "LLM Gateway IaC"
   is first-class infrastructure-as-code for gateway configuration. An SDK
   that manages the shared infrastructure (gateways, targets, LLM proxies,

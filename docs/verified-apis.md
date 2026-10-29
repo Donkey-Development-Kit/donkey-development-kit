@@ -1,6 +1,6 @@
 # Verified APIs — output of the verification discipline
 
-> **Status (2026-08-28): partially verified.** The **management/control-plane**
+> **Status (2026-10-29): partially verified.** The **management/control-plane**
 > contract (OAuth token path, Exchange/API-Manager/gateway REST endpoints,
 > provisioning topology, project format, control-plane headers) is now
 > `VERIFIED (plugin)` — read from the shipping official client
@@ -31,16 +31,23 @@
 > `ddk-pii-masking` / `ddk-token-rate-limit` (#253). One streaming exception is
 > recorded `VERIFIED (LIVE)` but **non-conformant**: chat-completions streaming
 > over a Gemini upstream (§2, #830, 2026-10-01) sends whole `chat.completion`
-> events with no `delta` and no `[DONE]`. This is an upstream gap. Still
-> `UNVERIFIED`: any other unrecognised content-moderation shape (§4, the
-> fall-through; federated-guardrail verdicts are tracked in #305), the
-> **MCP tool bind through the governed gateway** (§9; the framework binding
-> classes themselves were `VERIFIED (local round-trip)` against a local
-> reference MCP server on 2026-10-28, #636–#652, except CrewAI's, and so were
-> the SDK's own `ToolSet` bindings over them, #221; the §10
-> descriptor-derivation reads were `VERIFIED (local capture)` on 2026-10-26,
-> #1024), and the user-token header
-> behind `donkey.as_user()` (§13, #255). §11
+> events with no `delta` and no `[DONE]`. This is an upstream gap. The
+> control plane and the tool path are now `VERIFIED (LIVE)` too: Exchange
+> search, the publication of scanned MCP servers and agents, and the read-back
+> `donkey verify` compares against (§7, #53, #218, #1260, #991, #1354); MCP and A2A
+> endpoint resolution and the governed-state reads behind `explain()` (§6,
+> #1297, #1298, #1354); the SDK's `ToolSet` bindings through the governed
+> gateway (§9, 2026-10-28, #221), over framework binding classes that are
+> `VERIFIED (local round-trip)` against a local reference MCP server
+> (#636–#652); and the user-token header behind `donkey.as_user()` (§13,
+> 2026-10-29, #255). The §10 descriptor-derivation reads are
+> `VERIFIED (local capture)` (2026-10-26, #1024). Still `UNVERIFIED`: any other
+> unrecognised content-moderation shape (§4, the fall-through;
+> federated-guardrail verdicts are tracked in #305), the business-group
+> attribution header and the inbound correlation id on a served request (§3),
+> and which policies are Connected-Mode-only (§6). The lockfile (BG §2.7) and
+> the governed-state search filters (`search(governed=, environment=,
+> domain=)`, §6, §7) keep their code guards. §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
 > code path was wired to them.
@@ -766,7 +773,7 @@ decision resolves as out of scope rather than answered.
 | Exact publication / discovery asset-type tokens (`mcp`, `a2a-agent`, `agent`, `api`) | `PublicationAssetType`, `AssetRef.type`, `ExchangeRegistry.search(asset_types=)` | PARTIAL: `mcp` VERIFIED (LIVE) 2026-10-26; `agent` VERIFIED (LIVE) 2026-10-27 | `mcp` is confirmed by a live publish: the asset comes back with `"type":"mcp"` and `donkey publish` publishes MCP servers with it (#218). `agent` is confirmed the same way: a live publish with `type=agent` comes back as `"type":"agent"`, and `donkey publish` publishes each `@donkey.agent` with it (#1260). `a2a-agent` is not an Exchange type: an A2A agent publishes as `agent`, so `search(asset_types=["a2a-agent"])` stays blocked. Discovery searches by the same tokens; `api` is `rest-api`, `http-api` and `soap-api`, the types MuleSoft's Graph API page lists (#53) | 2026-10-26 and 2026-10-27 sandbox publishes, `tests/fixtures/anypoint/exchange_publish/{publish,agent.publish}.201.json`; Exchange Experience API spec; plugin `asset-facet.js`; `tests/fixtures/anypoint/exchange_search/` |
 | Exchange asset search endpoint, auth, paging (#53) | `ExchangeRegistry.search()` | VERIFIED (LIVE) 2026-10-27 | `POST /graph/api/v1/graphql` with the control-plane bearer token: `assets(query: $query, latestVersionsOnly: true)`, `$query` a `SearchAsset`. `organizationIds` takes the business group. `searchTerm`, `organizationIds`, `tags` and `latestVersionsOnly` are on MuleSoft's page; `types`, `limit` and `offset` are `SearchAsset` fields it does not list, observed live. Paged by `limit`/`offset` with no total; a short page is the last. Without `latestVersionsOnly` an asset comes back once per version (790 rows for 371 assets across the root organisation); the v2 `assets` query that `anypoint-cli-v4 exchange asset list` sends returns every version too, so the SDK uses v1. The documented REST `GET /exchange/api/v2/assets/search` needs the root organisation's ID and documents no text filter | 2026-10-27 sandbox; [Searching the Graph API](https://docs.mulesoft.com/exchange/to-search-with-graph-api); `tests/fixtures/anypoint/exchange_search/`; plugin `lib/helpers/queries.js` |
 | Wildcard/substring `query` server-side? (#53) | `search(query=)` | VERIFIED (LIVE) 2026-10-27 | No. `searchTerm` matches whole words and word prefixes of the asset ID, name and description, ignoring case (`sku`, `SKU`, `lookup`, `ddk-demo` and `keycloak`, a description word, match). It does not match inside words (`ku-loo` matches nothing), and `*` is not a wildcard (`*sku*` matches what `sku` does). So a plain `query` is sent as `searchTerm`, and a `query` with `*`, `?` or `[` is matched by the SDK over the asset ID, name and description, reading 250-asset pages with the other filters applied | 2026-10-27 sandbox probes; `exchange_search/search.term.json`, `search.description-term.json` |
-| Which search filters are server-side? (#53) | `search()`, §6.1.3 | VERIFIED (LIVE) 2026-10-27 | `types` and `tags` are. Several types are ORed; several tags are ANDed, ignoring case (`crewai` + `langgraph` matches nothing). A tag filter also matches the keyed tags Exchange derives (`v0.3` matches every agent), so the SDK keeps an asset only when every tag is a keyless one, the kind set in Exchange or at publish. `domain` has no Exchange equivalent and stays blocked. Lifecycle is a v2 `assets(status: [...])` argument (`published`, `deprecated` and, per the page, `development`), not used by search yet | 2026-10-27 sandbox; `exchange_search/search.tags*.json`, `search.page{1,2}.json` |
+| Which search filters are server-side? (#53) | `search(asset_types=, tags=, domain=)` | VERIFIED (LIVE) 2026-10-27 | `types` and `tags` are. Several types are ORed; several tags are ANDed, ignoring case (`crewai` + `langgraph` matches nothing). A tag filter also matches the keyed tags Exchange derives (`v0.3` matches every agent), so the SDK keeps an asset only when every tag is a keyless one, the kind set in Exchange or at publish. `domain` has no Exchange equivalent and stays blocked. Lifecycle is a v2 `assets(status: [...])` argument (`published`, `deprecated` and, per the page, `development`), not used by search yet | 2026-10-27 sandbox; `exchange_search/search.tags*.json`, `search.page{1,2}.json` |
 | Publication mechanism for non-Mule assets (REST / CLI / Maven)? JVM needed? | §7 CI story | VERIFIED (CLI) | Maven + CLI: `agent-network project publish` publishes the built project to Exchange; **JVM required** (`mvnw`) | 2026-08-28: `agent-network:project:publish --help` |
 | Publication uses Maven GAV coordinates | BG §2.5 | VERIFIED (CLI) | group-id/asset-id/asset-version; groupId defaults to org id | 2026-08-28: `:project:create --help`, `api-mgr:api:describe` |
 | Documentation pages publishable? | BG §2.5 | PARTIAL | `exchange asset page` + `exchange asset resource` topics exist | 2026-08-28: `exchange:asset --help` |
