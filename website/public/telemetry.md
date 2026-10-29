@@ -68,6 +68,13 @@ A [tool that needs approval](https://docs.donkey-kit.dev/hitl.md) records each s
 `.approved`, `.rejected` or `.timed_out`). The event names the approver and
 carries `donkey.correlation_id`, but never the tool's arguments.
 
+Each [tool discovery](https://docs.donkey-kit.dev/tool-access/discovery.md) is a `donkey.tools.discover` span,
+and each `donkey.tools.warm()` a `donkey.tools.warm` span. `donkey.discover.cache`
+is `hit` when the set came from the cache and `miss` when the registry was read.
+`donkey.discover.servers` counts the servers in the set, and
+`donkey.discover.left_out` the MCP assets left out as ungoverned. A failed read
+sets `error.type` to the exception's class name, never its message.
+
 Export goes over OTLP to wherever you already send spans. **Nothing in the
 emit path is Anypoint-specific**, so if your team already runs Grafana, Elastic,
 Honeycomb, New Relic, Datadog, Dynatrace, Langfuse or Phoenix, "policy refusals

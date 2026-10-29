@@ -13,14 +13,15 @@ instance on a gateway, and are discovered and bound the same way.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
 from datetime import datetime, timezone
 
-from ..core import _verify
+from ..core import _verify, telemetry
 from ..core.approvals import NativePause
 from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
@@ -42,12 +43,23 @@ DISCOVER_LIMIT = 200
 #: the control plane.
 _CONCURRENCY = 8
 
+#: One span per discover() or warm() call (#1323). Its attributes say whether the
+#: registry was read, so a cache hit and a read are told apart from the trace.
+SPAN_DISCOVER = "donkey.tools.discover"
+SPAN_WARM = "donkey.tools.warm"
+#: ``hit`` when the set came from the cache, ``miss`` when the registry was read.
+DONKEY_DISCOVER_CACHE = "donkey.discover.cache"
+#: Servers in the returned set, and MCP assets left out as ungoverned.
+DONKEY_DISCOVER_SERVERS = "donkey.discover.servers"
+DONKEY_DISCOVER_LEFT_OUT = "donkey.discover.left_out"
+
 
 @dataclasses.dataclass(frozen=True)
 class _Found:
     servers: tuple[McpServerHandle, ...]
     at: datetime
     started: float
+    left_out: int = 0
 
 
 class Discovery:
@@ -95,9 +107,12 @@ class Discovery:
                 "those out."
             )
         key = self._key(domain, tags, governed, criteria)
-        found = self._cache.get(key)
-        if found is None:
-            found = await self._fill(key, domain, tags, governed, criteria)
+        with self._span(SPAN_DISCOVER) as record:
+            found = self._cache.get(key)
+            hit = found is not None
+            if found is None:
+                found = await self._fill(key, domain, tags, governed, criteria)
+            record(found, hit)
         return ToolSet(
             list(found.servers),
             _natives=self._natives,
@@ -116,7 +131,37 @@ class Discovery:
         """See ``ToolsFacade.warm``."""
         criteria = governed if isinstance(governed, GovernanceCriteria) else GovernanceCriteria()
         key = self._key(domain, tags, governed, criteria)
-        return len((await self._fill(key, domain, tags, governed, criteria)).servers)
+        with self._span(SPAN_WARM) as record:
+            found = await self._fill(key, domain, tags, governed, criteria)
+            record(found, False)
+        return len(found.servers)
+
+    @contextlib.contextmanager
+    def _span(self, name: str) -> Iterator[Callable[[_Found, bool], None]]:
+        """A span around one discovery, and the callback that sets its outcome.
+        Inert when telemetry is off or OpenTelemetry is not installed. A failure
+        sets ``error.type`` to the exception's class name only, never its message."""
+        tracer = telemetry.tracer() if self._cfg.telemetry else None
+        if tracer is None:
+            yield _no_record
+            return
+        from opentelemetry.trace import Status, StatusCode
+
+        with tracer.start_as_current_span(
+            name, record_exception=False, set_status_on_exception=False
+        ) as span:
+
+            def record(found: _Found, hit: bool) -> None:
+                span.set_attribute(DONKEY_DISCOVER_CACHE, "hit" if hit else "miss")
+                span.set_attribute(DONKEY_DISCOVER_SERVERS, len(found.servers))
+                span.set_attribute(DONKEY_DISCOVER_LEFT_OUT, found.left_out)
+
+            try:
+                yield record
+            except Exception as exc:
+                span.set_attribute("error.type", type(exc).__name__)
+                span.set_status(Status(StatusCode.ERROR))
+                raise
 
     def _key(
         self,
@@ -201,7 +246,7 @@ class Discovery:
                 if refs
                 else f"no MCP asset in Exchange matched tags={list(tags or [])!r}",
             )
-        return _Found(tuple(kept), at, started)
+        return _Found(tuple(kept), at, started, left_out=len(handles) - len(kept))
 
     async def _handle(self, ref: AssetRef, criteria: GovernanceCriteria) -> McpServerHandle:
         """``ref``'s endpoint with its verdict. A server that does not resolve to
@@ -215,6 +260,10 @@ class Discovery:
             report = GovernanceReport(governed=False, checks=[*report.checks, failed])
             return McpServerHandle(ref=ref, endpoint_url="", governance=report)
         return dataclasses.replace(handle, ref=ref, governance=report)
+
+
+def _no_record(_found: _Found, _hit: bool) -> None:
+    """The outcome callback when no span is recorded."""
 
 
 def blocked_lock() -> NotImplementedError:
