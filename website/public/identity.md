@@ -30,9 +30,10 @@ platform request and needs no connected-app credentials.
   the outer user when it exits.
 - **Forwarded as is.** The SDK doesn't read the token's claims or expiry. An
   expired token comes back from the gateway as a typed error.
-- **Model calls only.** The user token goes on requests to the LLM proxy. Calls
-  to the Anypoint platform keep the service's own credentials, and a request to
-  any other origin never carries it.
+- **Model calls and MCP tools.** The user token goes on requests to the LLM
+  proxy, and on the MCP tool sets you [bind](https://docs.donkey-kit.dev/tool-access/binding.md#acting-for-a-user)
+  inside the block. Calls to the Anypoint platform keep the service's own
+  credentials, and a request to any other origin never carries it.
 
 ## Configuring the header
 
@@ -44,9 +45,10 @@ JWT Validation and on-behalf-of policies read. You can override it:
 | `DONKEY_USER_TOKEN_HEADER` | `user_token_header` | `Authorization` | The request header the user token rides in. `Authorization` carries it as `Bearer <token>`; any other header carries the raw token. |
 
   `as_user()` forwards the token you pass, unchanged. JWT Validation accepts it
-  only if its audience names the gateway API. A user's login token usually
-  names your app instead: exchange it at your identity provider for one issued
-  to the gateway's audience before you pass it in.
+  only if its audience names the gateway API (for an MCP tool set, the MCP
+  instance). A user's login token usually names your app instead: exchange it
+  at your identity provider for one issued to the gateway's audience before you
+  pass it in.
 
 `token_exchange_path` (`DONKEY_TOKEN_EXCHANGE_PATH`) is deprecated and ignored:
 setting it makes `as_user()` emit a `DeprecationWarning`.

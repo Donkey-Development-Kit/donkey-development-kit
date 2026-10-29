@@ -21,6 +21,12 @@ approval ``@donkey.tool(approval="required")`` gives a local function (#1153).
 A per-tool binding (LangGraph, LlamaIndex, Anthropic) applies
 :meth:`ToolSet._bind_tool` to each gated tool's invoker; a whole-server binding
 refuses a gate. The rules and the gate live in ``tools/approval.py``.
+
+Inside ``donkey.as_user(...)`` (BG §2.4, #1366) listing and binding send the
+user's token in the user-token header (``Authorization: Bearer`` by default,
+docs/verified-apis.md §13) instead of the credential's ``Authorization``; the
+credential's other headers still go. The token is read when the set lists or
+binds, so a binding keeps the user it was made for.
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ from ..core import _verify
 from ..core.approvals import APPROVAL_TIMEOUT, NativePause, parse_timeout
 from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, ConfigError, DonkeyError
+from ..core.identity import current_user
 from ..core.reactions import Duration
 from ..core.tool_access import tool_access_denial
 from ..registry.models import McpServerHandle
@@ -128,6 +135,7 @@ class ToolSet:
         _auth: McpAuth | None = None,
         _discovered: tuple[datetime, float, float] | None = None,
         _limits: tuple[int, int] | None = None,
+        _user_header: str | None = None,
     ) -> None:
         self._servers = list(servers)
         # Every filter() call so far: a tool is exposed only if all accept it,
@@ -145,6 +153,8 @@ class ToolSet:
         # (tool_warn_count, tool_warn_tokens) from the config discovery read; a
         # set built by hand gets the DonkeyConfig defaults.
         self._limits = _limits or (DonkeyConfig.tool_warn_count, DonkeyConfig.tool_warn_tokens)
+        # The header a donkey.as_user() token rides in (core.identity.user_token_header).
+        self._user_header = _user_header or _verify.USER_TOKEN_HEADER
 
     def _with(
         self,
@@ -161,6 +171,7 @@ class ToolSet:
             _auth=self._auth,
             _discovered=self._discovered,
             _limits=self._limits,
+            _user_header=self._user_header,
         )
 
     @property
@@ -382,16 +393,18 @@ class ToolSet:
         that :attr:`name_map`, :meth:`descriptor_tokens` and the ``filter()``
         typo check see the tools. A ``401`` or ``403`` drops the cached
         credential and is retried once, unless it is a CIBA step-up answer
-        (#1320), which is raised as it is.
+        (#1320), which is raised as it is, or the call ran inside
+        ``donkey.as_user(...)``, where it was the user's token that was refused.
 
         Raises:
             UngovernedMcpServer: A server in the set is not governed (ADR 0013).
-            ConfigError: No gateway credential is configured, or a ``filter()``
-                or ``require_approval()`` name matches no tool.
+            ConfigError: No gateway credential is configured outside a
+                ``donkey.as_user(...)`` block, or a ``filter()`` or
+                ``require_approval()`` name matches no tool.
             GatewayApprovalPending: The gateway is waiting for the user's CIBA
                 approval; re-run after ``retry_after`` seconds.
             GatewayApprovalDenied: The user denied that approval.
-            AuthError: The gateway refused the credential.
+            AuthError: The gateway refused the credential or the user's token.
             ToolInvocationError: A server could not list its tools.
         """
         self._require_governed()
@@ -408,9 +421,9 @@ class ToolSet:
         return self._with(_servers=servers) if missing else self
 
     async def _list(self, indexes: list[int]) -> list[tuple[dict[str, object], ...]]:
-        auth = self._credential()
+        user = current_user() is not None
         for attempt in (1, 2):
-            headers = await auth.headers()
+            headers = await self._headers()
             try:
                 return list(
                     await asyncio.gather(
@@ -424,11 +437,37 @@ class ToolSet:
                         )
                     )
                 )
-            except AuthError:
+            except AuthError as exc:
+                if user:
+                    raise AuthError(
+                        f"{exc} The request carried the donkey.as_user() token.",
+                        remediation=(
+                            "Pass a current access token issued for the MCP instance: "
+                            "its audience must name the instance, so exchange the "
+                            "user's login token at your identity provider first "
+                            "(RFC 8693; docs/verified-apis.md §13)."
+                        ),
+                    ) from exc
                 if attempt == 2:
                     raise
-                await auth.invalidate()
+                await self._credential().invalidate()
         raise AssertionError("unreachable")  # pragma: no cover
+
+    async def _headers(self) -> dict[str, str]:
+        """The headers listing and binding send: the credential's, with the
+        ``donkey.as_user(...)`` token in the user-token header inside a block
+        (#1366). It replaces the credential's ``Authorization``; the rest stays."""
+        user = current_user()
+        if user is None:
+            return await self._credential().headers()
+        headers = await self._auth.headers() if self._auth is not None else {}
+        header = self._user_header
+        if header.lower() == _verify.LLM_PROXY_WALLET_JWT_HEADER.lower():
+            value = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {user.token}"
+        else:
+            value = user.token
+        kept = {k: v for k, v in headers.items() if k.lower() != header.lower()}
+        return {**kept, header: value}
 
     def _credential(self) -> McpAuth:
         if self._auth is None:
@@ -478,7 +517,7 @@ class ToolSet:
                     "binds whole servers, so there is no per-tool call to gate; bind with "
                     "langgraph(), llamaindex() or anthropic() to gate a discovered tool."
                 )
-        headers = await self._credential().headers()
+        headers = await self._headers()
         _report_cost(binding, len(exposed), descriptor_tokens(exposed), self._limits)
         if not bound:
             _log.info(

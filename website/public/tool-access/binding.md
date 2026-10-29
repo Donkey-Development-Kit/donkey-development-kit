@@ -85,6 +85,32 @@ tools = await donkey.tools.discover(governed=True, auth=BearerAuth(hr_token))
 hr = tools.filter(servers=["hr-mcp"])   # asset ID, or coordinates such as "<group-id>/hr-mcp/*"
 ```
 
+## Acting for a user
+
+Bind inside [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md) and the binding sends the user's
+token instead of your service's, so the gateway's on-behalf-of policy acts for
+that user:
+
+```python
+async with donkey.as_user(id_token=user_token):
+    tools = await (await donkey.tools.discover(governed=True)).langgraph()
+    agent = create_react_agent(model, tools=tools)
+    await agent.ainvoke({"messages": [("user", question)]})
+```
+
+- The token rides in the `user_token_header` (`Authorization: Bearer <token>`
+  by default). It replaces the credential's `Authorization`; the credential's
+  other headers, such as `client_id` and `client_secret`, still go. Inside the
+  block a binding needs no credential of its own.
+- The token is read when you bind, like any credential. A binding made inside
+  the block keeps that user's token, so bind once per user; a binding made
+  outside the block carries none.
+- The token goes as you pass it. JWT Validation accepts it only if its audience
+  names the MCP instance, so exchange the user's login token at your identity
+  provider for that audience first.
+- A `401` or `403` on the user's token raises `AuthError` without retrying: the
+  SDK never falls back to your service's credential.
+
 ## Filtering
 
 `filter()` takes an allow-list, a deny-list and a predicate, and deny wins.

@@ -4168,9 +4168,10 @@ platform request and needs no connected-app credentials.
   the outer user when it exits.
 - **Forwarded as is.** The SDK doesn't read the token's claims or expiry. An
   expired token comes back from the gateway as a typed error.
-- **Model calls only.** The user token goes on requests to the LLM proxy. Calls
-  to the Anypoint platform keep the service's own credentials, and a request to
-  any other origin never carries it.
+- **Model calls and MCP tools.** The user token goes on requests to the LLM
+  proxy, and on the MCP tool sets you [bind](https://docs.donkey-kit.dev/tool-access/binding.md#acting-for-a-user)
+  inside the block. Calls to the Anypoint platform keep the service's own
+  credentials, and a request to any other origin never carries it.
 
 ## Configuring the header
 
@@ -4182,9 +4183,10 @@ JWT Validation and on-behalf-of policies read. You can override it:
 | `DONKEY_USER_TOKEN_HEADER` | `user_token_header` | `Authorization` | The request header the user token rides in. `Authorization` carries it as `Bearer <token>`; any other header carries the raw token. |
 
   `as_user()` forwards the token you pass, unchanged. JWT Validation accepts it
-  only if its audience names the gateway API. A user's login token usually
-  names your app instead: exchange it at your identity provider for one issued
-  to the gateway's audience before you pass it in.
+  only if its audience names the gateway API (for an MCP tool set, the MCP
+  instance). A user's login token usually names your app instead: exchange it
+  at your identity provider for one issued to the gateway's audience before you
+  pass it in.
 
 `token_exchange_path` (`DONKEY_TOKEN_EXCHANGE_PATH`) is deprecated and ignored:
 setting it makes `as_user()` emit a `DeprecationWarning`.
@@ -7327,6 +7329,32 @@ bind, so the other servers are never listed and never receive the token:
 tools = await donkey.tools.discover(governed=True, auth=BearerAuth(hr_token))
 hr = tools.filter(servers=["hr-mcp"])   # asset ID, or coordinates such as "<group-id>/hr-mcp/*"
 ```
+
+## Acting for a user
+
+Bind inside [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md) and the binding sends the user's
+token instead of your service's, so the gateway's on-behalf-of policy acts for
+that user:
+
+```python
+async with donkey.as_user(id_token=user_token):
+    tools = await (await donkey.tools.discover(governed=True)).langgraph()
+    agent = create_react_agent(model, tools=tools)
+    await agent.ainvoke({"messages": [("user", question)]})
+```
+
+- The token rides in the `user_token_header` (`Authorization: Bearer <token>`
+  by default). It replaces the credential's `Authorization`; the credential's
+  other headers, such as `client_id` and `client_secret`, still go. Inside the
+  block a binding needs no credential of its own.
+- The token is read when you bind, like any credential. A binding made inside
+  the block keeps that user's token, so bind once per user; a binding made
+  outside the block carries none.
+- The token goes as you pass it. JWT Validation accepts it only if its audience
+  names the MCP instance, so exchange the user's login token at your identity
+  provider for that audience first.
+- A `401` or `403` on the user's token raises `AuthError` without retrying: the
+  SDK never falls back to your service's credential.
 
 ## Filtering
 

@@ -29,6 +29,7 @@ from ..core.approvals import NativePause
 from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, RegistryError
+from ..core.identity import user_token_header
 from ..registry.criteria import Check, GovernanceCriteria, GovernanceReport
 from ..registry.exchange import ExchangeRegistry
 from ..registry.models import AssetRef, McpServerHandle
@@ -122,6 +123,7 @@ class Discovery:
             _auth=auth if auth is not None else self._auth,
             _discovered=(found.at, found.started, self._cfg.registry_cache_ttl_s),
             _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
+            _user_header=user_token_header(self._cfg),
         )
 
     async def warm(
@@ -207,6 +209,7 @@ class Discovery:
             _natives=self._natives,
             _auth=auth if auth is not None else self._auth,
             _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
+            _user_header=user_token_header(self._cfg),
         )
 
     async def agent_card(self, ref: AssetRef | str) -> dict[str, Any]:

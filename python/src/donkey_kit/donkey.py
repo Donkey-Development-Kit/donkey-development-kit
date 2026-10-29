@@ -798,7 +798,8 @@ class Donkey:
         """Run the governed model calls in the block as the user behind
         ``id_token``, not as this service (BG §2.4, #215).
 
-        Every data-plane call in the block carries the user's token, unchanged::
+        Every data-plane call in the block carries the user's token, unchanged,
+        and so does every MCP ``ToolSet`` bound in the block (#1366)::
 
             async with donkey.as_user(id_token=request.id_token):
                 await agent.run(task)
