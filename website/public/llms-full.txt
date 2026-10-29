@@ -8206,7 +8206,10 @@ Each asset is published with:
   Documentation section. Every page has the same sections: an Overview with
   the description (or "No description is declared.") followed by your
   `documentation` file; the tools, each with its description, the `approval`
-  and `risk` it declares, and a table of its parameters; how to connect
+  and `risk` it declares, and a table of its parameters; on a new version of
+  an existing asset, "Changes since" the latest published version (tools
+  added or removed, a description changed, a parameter added, removed or given
+  another type), which a first publish leaves out; how to connect
   (transport, endpoint, protocol version); and provenance: the asset ID and version, the content digest and, when the
   publish runs in GitHub Actions, the repository, the commit and a link to the
   run. It never includes credentials or your org ID. Only a new version gets a

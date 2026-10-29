@@ -1,7 +1,7 @@
 """A stateful fake Exchange for ``donkey publish`` tests (#218).
 
 It answers the calls the publisher makes (the multipart publish, the GraphQL
-``asset`` query, the POM download, the external-instance POST, the portal
+``asset`` query, the POM and ``mcp-metadata`` downloads, the external-instance POST, the portal
 draft, page and draft-publish calls, and the asset PATCH) by replaying the
 bodies captured in ``tests/fixtures/anypoint/exchange_publish/`` (an ``agent``
 asset's GraphQL and POM from its own ``agent.*`` captures, #1260), with the
@@ -48,8 +48,9 @@ class FakeExchange:
     """Published versions per ``(group, asset)``, in publish order, plus the
     endpoints registered per version group, the published Home page per
     version, and each asset's name and description. ``requests`` records every
-    call; ``fail_pages`` and ``fail_details`` answer the page write and the
-    asset PATCH with a ``500``."""
+    call and ``metadata_reads`` every ``mcp-metadata`` download; ``fail_pages``
+    and ``fail_details`` answer the page write and the asset PATCH with a
+    ``500``."""
 
     assets: dict[tuple[str, str], dict[str, Published]] = field(default_factory=dict)
     instances: dict[tuple[str, str, str], list[str]] = field(default_factory=dict)
@@ -58,6 +59,7 @@ class FakeExchange:
     requests: list[httpx.Request] = field(default_factory=list)
     fail_pages: bool = False
     fail_details: bool = False
+    metadata_reads: list[tuple[str, str, str]] = field(default_factory=list)
     _drafts: dict[tuple[str, str, str], str | None] = field(default_factory=dict)
 
     def transport(self) -> httpx.MockTransport:
@@ -190,6 +192,7 @@ class FakeExchange:
             f["externalLink"] = (
                 f"https://{_POM_HOST}/presigned?g={variables['groupId']}"
                 f"&a={variables['assetId']}&v={version}&p={f['packaging']}"
+                f"&c={f['classifier'] or ''}"
             )
         key = (variables["groupId"], variables["assetId"], group_name)
         asset["instances"] = [{"endpointUri": e} for e in self.instances.get(key, [])]
@@ -200,6 +203,9 @@ class FakeExchange:
         assert "authorization" not in request.headers
         q = request.url.params
         published = self.assets[(q["g"], q["a"])][q["v"]]
+        if q["c"] == "mcp-metadata" and q["p"] == "json":
+            self.metadata_reads.append((q["g"], q["a"], q["v"]))
+            return httpx.Response(200, json=published.metadata)
         pom = fixture("agent.pom.xml" if published.type == "agent" else "pom.xml")
         if published.digest is None:
             pom = re.sub(r"\s*<ddkDigest>.*</ddkDigest>", "", pom)
