@@ -792,7 +792,7 @@ def test_substituted_is_true_only_when_both_known_and_differ() -> None:
     ("requested", "provider", "served", "expected"),
     [
         ("openai/gpt-5-mini", "openai", "gpt-5-mini", False),
-        ("gemini/gemini-2.5-flash", "gemini", "gemini-2.5-flash", False),
+        ("gemini/gemini-3.8-flash", "gemini", "gemini-3.8-flash", False),
         ("azureopenai/gpt-5-mini", "azureopenai", "gpt-5-mini", False),
         (
             "bedrockanthropic/us.anthropic.claude-sonnet-5",
@@ -801,7 +801,7 @@ def test_substituted_is_true_only_when_both_known_and_differ() -> None:
             False,
         ),
         ("OpenAI/gpt-5-mini", "openai", "gpt-5-mini", False),  # provider is case-insensitive
-        ("openai/gpt-5-mini", "gemini", "gemini-2.5-flash", True),  # a real substitution
+        ("openai/gpt-5-mini", "gemini", "gemini-3.8-flash", True),  # a real substitution
         ("openai/gpt-5-mini", "azureopenai", "gpt-5-mini", True),  # same model, other provider
         ("openai/gpt-5-mini", None, "gpt-5-mini", True),  # no provider: verbatim, never hidden
         ("gpt-5.1", "openai", "gpt-5.1", False),  # bare names: verbatim, as before
@@ -872,7 +872,7 @@ _SEMANTIC_HEADER = "x-llm-proxy-semantic-routing-success"
         # A multi-word topic name with spaces parses whole.
         (
             "Request successfully matched 'Customer Support' topic "
-            "(Provider: gemini, Model: gemini-2.5-flash). Score: 0.7.",
+            "(Provider: gemini, Model: gemini-3.8-flash). Score: 0.7.",
             ("Customer Support", 0.7),
         ),
         (None, (None, None)),  # header absent — model-based / non-proxy / simulated

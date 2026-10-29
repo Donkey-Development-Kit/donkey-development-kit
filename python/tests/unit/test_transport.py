@@ -2342,14 +2342,14 @@ def test_sync_on_model_substitution_raise_is_silent_for_a_provider_prefixed_matc
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
-            headers={_LLM_MODEL_HEADER: "gemini-2.5-flash", "x-llm-proxy-llm-provider": "gemini"},
-            json={"model": "gemini-2.5-flash"},
+            headers={_LLM_MODEL_HEADER: "gemini-3.8-flash", "x-llm-proxy-llm-provider": "gemini"},
+            json={"model": "gemini-3.8-flash"},
         )
 
     cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")
     with _sync_client(handler, cfg) as client:
         resp = client.post(
-            "https://proxy/chat", json={"model": "gemini/gemini-2.5-flash", "input": "hi"}
+            "https://proxy/chat", json={"model": "gemini/gemini-3.8-flash", "input": "hi"}
         )
     assert resp.status_code == 200
 
@@ -2364,11 +2364,11 @@ async def test_model_substituted_message_names_a_fallback_only_when_the_gateway_
         return httpx.Response(
             200,
             headers={
-                _LLM_MODEL_HEADER: "gemini-2.5-flash",
+                _LLM_MODEL_HEADER: "gemini-3.8-flash",
                 "x-llm-proxy-llm-provider": "gemini",
                 _ROUTING_FALLBACK: fallback,
             },
-            json={"model": "gemini-2.5-flash"},
+            json={"model": "gemini-3.8-flash"},
         )
 
     cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")

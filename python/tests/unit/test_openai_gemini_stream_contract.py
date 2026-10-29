@@ -29,7 +29,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "open
 _CFG = DonkeyConfig(llm_proxy_url="https://proxy")
 _CHAT = "https://proxy/ddk-model-wallet/chat/completions"
 _BODY = {
-    "model": "gemini/gemini-2.5-flash",
+    "model": "gemini/gemini-3.8-flash",
     "stream": True,
     "messages": [{"role": "user", "content": "hi"}],
 }

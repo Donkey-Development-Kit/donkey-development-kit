@@ -227,7 +227,7 @@ class ADKAdapter(Adapter):
     def gemini(self, model: str, *, base_url: str | None = None, **kw: Any) -> Gemini:
         """Return ADK's native ``google.adk.models.Gemini`` bound to a
         ``Format=Gemini`` proxy, with the shared http client injected (#691).
-        Pass the bare model id (``"gemini-2.5-flash"``) — no provider prefix.
+        Pass the bare model id (``"gemini-3.8-flash"``) — no provider prefix.
 
         The object is a ``Gemini`` subclass that carries ``donkey.last_call``
         back to the context that started each model call, so an

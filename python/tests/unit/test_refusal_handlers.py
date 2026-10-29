@@ -532,7 +532,7 @@ def test_fallback_without_a_body_model_propagates(
     handlers = RefusalHandlers()
     handlers.on(ContentSafetyBlocked).fallback(model="internal-safe-model")
     wire = Wire(refused(ContentSafetyBlocked), ok)
-    url = "https://proxy.example/v1beta/models/gemini-2.5-flash:generateContent"
+    url = "https://proxy.example/v1beta/models/gemini-3.8-flash:generateContent"
     with caplog.at_level(logging.WARNING, logger="donkey_kit.core.reactions"):
         response = send(kind, handlers, wire, body={"contents": []}, url=url)
     assert response.status_code == 403

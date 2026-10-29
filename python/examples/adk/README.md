@@ -74,11 +74,11 @@ per-run correlation, spans, usage and `donkey.last_call` all work. Pass
 ```python
 from donkey_kit.integrations.adk import gemini
 
-m = gemini("gemini-2.5-flash", base_url="https://<ingress-gw>/<gemini-instance>/")
+m = gemini("gemini-3.8-flash", base_url="https://<ingress-gw>/<gemini-instance>/")
 ```
 
 The manual equivalent is
-`Gemini(model="gemini-2.5-flash", **donkey.adk.gemini_connection_kwargs())`;
+`Gemini(model="gemini-3.8-flash", **donkey.adk.gemini_connection_kwargs())`;
 the docs page lists every kwarg it fills in.
 
 ## Links

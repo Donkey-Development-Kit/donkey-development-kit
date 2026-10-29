@@ -611,7 +611,7 @@ attaches there once, so you never wire it call by call.
 |---|---|---|
 | LangGraph | `donkey.langgraph.chat_model("gpt-4o")` | `langchain_openai.ChatOpenAI` |
 | Google ADK | `donkey.adk.model("gpt-4o")` | `LiteLlm` |
-| Google ADK on a `Format=Gemini` proxy | `donkey.adk.gemini("gemini-2.5-flash")` | `google.adk.models.Gemini` |
+| Google ADK on a `Format=Gemini` proxy | `donkey.adk.gemini("gemini-3.8-flash")` | `google.adk.models.Gemini` |
 | Strands | `donkey.strands.model("gpt-4o")` | `OpenAIModel` |
 | MS Agent Framework | `donkey.agent_framework.chat_client("gpt-4o")` | Agent Framework chat client |
 | LlamaIndex | `donkey.llamaindex.llm("gpt-4o")` | `OpenAILike` |
@@ -930,7 +930,7 @@ for it: pick the adapter that matches your proxy.
 |---|---|
 | **OpenAI** | `donkey.llm.client()` or any framework adapter. Default DDK proxies are `Format=OpenAI`. |
 | **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`). The proxy serves the native Messages route at `POST /<base-path>/v1/messages`; OpenAI-shape `/chat/completions` returns 404. |
-| **Gemini** | `donkey.adk.gemini("gemini-2.5-flash")` (ADK's native `Gemini` model — see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini)). The proxy serves `POST /<base-path>/models/<model>:generateContent` and `:streamGenerateContent`. There is no standalone `google-genai` adapter; you can also reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
+| **Gemini** | `donkey.adk.gemini("gemini-3.8-flash")` (ADK's native `Gemini` model — see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini)). The proxy serves `POST /<base-path>/models/<model>:generateContent` and `:streamGenerateContent`. There is no standalone `google-genai` adapter; you can also reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
 
   **Ingress Format is not the same as the upstream provider.** The ingress
   Format is the wire protocol *your request* speaks to the proxy. The upstream
@@ -1537,17 +1537,17 @@ from google.adk.models import Gemini
 
 async with Donkey.from_env() as donkey:
     # 1. Off a shared Donkey instance
-    llm = donkey.adk.gemini("gemini-2.5-flash")
+    llm = donkey.adk.gemini("gemini-3.8-flash")
 
     # 3. Governed kwargs, native constructor
-    llm = Gemini(model="gemini-2.5-flash", **donkey.adk.gemini_connection_kwargs())
+    llm = Gemini(model="gemini-3.8-flash", **donkey.adk.gemini_connection_kwargs())
 ```
 
 ```python
 # 2. Module-level factory
 from donkey_kit.integrations.adk import gemini
 
-llm = gemini("gemini-2.5-flash")
+llm = gemini("gemini-3.8-flash")
 ```
 
 **Pointing at the Gemini proxy.** `DONKEY_LLM_PROXY_URL` usually names a
@@ -1557,7 +1557,7 @@ proxy, and the URL must pass the
 [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https):
 
 ```python
-llm = donkey.adk.gemini("gemini-2.5-flash", base_url="https://…/ddk-gemini-inbound/")
+llm = donkey.adk.gemini("gemini-3.8-flash", base_url="https://…/ddk-gemini-inbound/")
 ```
 
 Any other keyword is passed to ADK's `Gemini` and overrides the governed
@@ -1569,7 +1569,7 @@ default — for example `retry_options`, or your own `client_kwargs`.
 from google.adk.models import Gemini
 
 llm = Gemini(
-    model="gemini-2.5-flash",
+    model="gemini-3.8-flash",
     base_url=...,  # the Format=Gemini proxy URL
     client_kwargs={
         "api_key": ...,  # a placeholder; google-genai requires one
@@ -1619,7 +1619,7 @@ def record_usage(callback_context, llm_response):
 
 agent = LlmAgent(
     name="assistant",
-    model=donkey.adk.gemini("gemini-2.5-flash"),
+    model=donkey.adk.gemini("gemini-3.8-flash"),
     after_model_callback=record_usage,
 )
 ```
@@ -12932,7 +12932,7 @@ Status: Offline-verified. Shipped and verified offline; no live gateway round-tr
 These scripts show the wire: plain `httpx` against a proxy provisioned
 **`Format=Gemini`** (for example `ddk-gemini-inbound`) with the same
 `client_id` / `client_secret` pair. For an agent, ADK's native `Gemini` model is
-bound to the same proxy by `donkey.adk.gemini("gemini-2.5-flash")` — see
+bound to the same proxy by `donkey.adk.gemini("gemini-3.8-flash")` — see
 [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). The route is
 `<proxy URL>/models/<model>:generateContent`. `DonkeyConfig` still resolves
 and validates the credentials, and `classify()` still types the errors.
@@ -12955,7 +12955,7 @@ set -a; source .env.local; set +a
 export DONKEY_LLM_PROXY_URL=https://<host>/ddk-gemini-inbound/      # overrides the file
 ```
 
-The model is `gemini-2.5-flash` (the `MODEL` constant).
+The model is `gemini-3.8-flash` (the `MODEL` constant).
 
 ## 01 — Native `generateContent`
 
@@ -12999,7 +12999,7 @@ policy refusal.
 bad = httpx.post(
     f"{cfg.llm_proxy_url}/chat/completions",
     headers=headers,
-    json={"model": "gemini-2.5-flash", "messages": [{"role": "user", "content": "hello"}]},
+    json={"model": "gemini-3.8-flash", "messages": [{"role": "user", "content": "hello"}]},
     timeout=60,
 )
 error = classify(bad)

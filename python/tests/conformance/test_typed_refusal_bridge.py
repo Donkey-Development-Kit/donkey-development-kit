@@ -137,7 +137,7 @@ async def _adk_run(model: Any, *, streaming: bool = False) -> None:
 
 async def _adk_gemini(donkey: Donkey) -> None:
     pytest.importorskip("google.adk.models")
-    await _adk_run(donkey.adk.gemini("gemini-2.5-flash"))
+    await _adk_run(donkey.adk.gemini("gemini-3.8-flash"))
 
 
 async def _adk_model(donkey: Donkey) -> None:

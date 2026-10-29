@@ -177,7 +177,7 @@ shared gateway:
 
 - `ddk-openai-model-routing` (21177134)
 - `ddk-azure-openai-model-routing` (21188199), which serves both Azure and, through its
-  model-based route, `gemini/gemini-2.5-flash`
+  model-based route, `gemini/gemini-3.8-flash`
 - `ddk-bedrock-anthropic-model-routing` (21192625)
 
 Every capture's `x-llm-proxy-llm-provider` header names the intended upstream. The
