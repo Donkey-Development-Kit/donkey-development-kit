@@ -13,11 +13,12 @@ sit on the ``openai`` client and raise its errors; Agent Framework wraps them in
 a ``ChatClientException``. LiteLLM (under ADK's ``LiteLlm``) raises its own
 ``APIError`` or ``InternalServerError`` around a response it rebuilt.
 
-Eleven surfaces (the raw OpenAI client, the Anthropic client, a LangGraph graph,
+Twelve surfaces (the raw OpenAI client, the Anthropic client, a LangGraph graph,
 an OpenAI Agents SDK ``Runner`` run, a LlamaIndex ``FunctionAgent`` run, an ADK
 ``LlmAgent`` on ``adk.gemini()`` (#955) and on ``adk.model()``, buffered and
-streamed (#969), a Strands ``Agent`` and its approved tool (#1237), and an
-Agent Framework ``Agent`` (#983))
+streamed (#969), a Strands ``Agent``, its approved tool (#1237) and an ungated
+tool under a ``GovernedToolHook`` alone (#1446), and an Agent Framework
+``Agent`` (#983))
 times three errors, each raised by the real transport:
 
 * ``PIIDetected`` — ``donkey.simulate(PIIDetected)`` serves the captured 403.
@@ -81,11 +82,9 @@ async def _adk_model_streamed(donkey: Donkey) -> None:
     await adk_run(donkey.adk.model("gpt-4o"), streaming=True)
 
 
-async def _strands_tool(donkey: Donkey) -> None:
-    """An approved Strands tool calls the governed client (#1237)."""
-    strands = pytest.importorskip("strands")
+def _strands_tool_model() -> Any:
+    """A Strands model that calls the ``ask`` tool once."""
     models = pytest.importorskip("strands.models.model")
-    from donkey_kit.integrations.strands import ApprovalHook, approve, pending_approvals
 
     class ToolModel(models.Model):
         turns = 0
@@ -113,6 +112,14 @@ async def _strands_tool(donkey: Donkey) -> None:
             yield {"contentBlockStop": {}}
             yield {"messageStop": {"stopReason": "tool_use"}}
 
+    return ToolModel()
+
+
+async def _strands_tool(donkey: Donkey) -> None:
+    """An approved Strands tool calls the governed client (#1237)."""
+    strands = pytest.importorskip("strands")
+    from donkey_kit.integrations.strands import ApprovalHook, approve, pending_approvals
+
     @Donkey.tool(approval="required")
     async def ask() -> str:
         """Ask the governed model."""
@@ -120,16 +127,41 @@ async def _strands_tool(donkey: Donkey) -> None:
         pytest.fail("the governed tool call must refuse")
 
     agent = strands.Agent(
-        model=ToolModel(), tools=[strands.tool(ask)], hooks=[ApprovalHook()], callback_handler=None
+        model=_strands_tool_model(),
+        tools=[strands.tool(ask)],
+        hooks=[ApprovalHook()],
+        callback_handler=None,
     )
     (approval,) = pending_approvals(await agent.invoke_async("hi"))
     await agent.invoke_async([approve(approval, by="reviewer").native])
+
+
+async def _strands_governed_tool(donkey: Donkey) -> None:
+    """An ungated Strands tool calls the governed client, with only a
+    ``GovernedToolHook`` on the agent (#1446)."""
+    strands = pytest.importorskip("strands")
+    from donkey_kit.integrations.strands import GovernedToolHook
+
+    @strands.tool
+    async def ask() -> str:
+        """Ask the governed model."""
+        await raw_openai(donkey)
+        pytest.fail("the governed tool call must refuse")
+
+    agent = strands.Agent(
+        model=_strands_tool_model(),
+        tools=[ask],
+        hooks=[GovernedToolHook()],
+        callback_handler=None,
+    )
+    await agent.invoke_async("hi")
 
 
 SURFACES: dict[str, Call] = {
     **TRANSPORT_SURFACES,
     "adk.model.streamed": _adk_model_streamed,
     "strands.tool": _strands_tool,
+    "strands.governed_tool": _strands_governed_tool,
 }
 
 
@@ -189,6 +221,7 @@ _FACTORIES = {
     **TRANSPORT_FACTORIES,
     "adk.model.streamed": ("adk", "model"),
     "strands.tool": ("strands", "model"),
+    "strands.governed_tool": ("strands", "model"),
 }
 
 

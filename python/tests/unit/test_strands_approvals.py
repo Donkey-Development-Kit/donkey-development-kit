@@ -49,6 +49,7 @@ from donkey_kit.integrations import strands as strands_mod
 from donkey_kit.integrations.strands import (
     APPROVAL_INTERRUPT,
     ApprovalHook,
+    GovernedToolHook,
     approve,
     approved_call,
     pending_approvals,
@@ -481,8 +482,12 @@ async def test_a_tool_refusal_stops_the_agent_without_retrying(
     assert calls == ["T-1"]
 
 
+@pytest.mark.parametrize("hook", [ApprovalHook, GovernedToolHook])
 @pytest.mark.parametrize("executor", [ConcurrentToolExecutor, SequentialToolExecutor])
-async def test_an_ungated_tool_refusal_also_stops_the_agent(executor: type[Any]) -> None:
+async def test_an_ungated_tool_refusal_also_stops_the_agent(
+    executor: type[Any], hook: type[Any]
+) -> None:
+    """``GovernedToolHook`` alone types the refusal: no approval hook needed (#1446)."""
     refusal = PIIDetected("governed tool refused")
 
     @tool
@@ -491,7 +496,7 @@ async def test_an_ungated_tool_refusal_also_stops_the_agent(executor: type[Any])
         raise refusal
 
     model = _ScriptedModel(_REFUND)
-    agent = _agent(model, issue_refund, hooks=(ApprovalHook(),), tool_executor=executor())
+    agent = _agent(model, issue_refund, hooks=(hook(),), tool_executor=executor())
     async with Donkey(_cfg()) as donkey:
         with pytest.raises(PIIDetected) as caught:
             async with donkey.run():
@@ -500,6 +505,22 @@ async def test_an_ungated_tool_refusal_also_stops_the_agent(executor: type[Any])
     assert caught.value is refusal
     assert len(model.turns) == 1
     assert approved_call("issue_refund") is None
+
+
+async def test_without_a_governed_hook_a_tool_refusal_reaches_the_model() -> None:
+    """The control: with no hook, Strands sends the refusal to the model as an
+    error tool result, so the test above proves the hook."""
+
+    @tool
+    def issue_refund(ticket_id: str) -> str:
+        """Refund a ticket."""
+        raise PIIDetected("governed tool refused")
+
+    model = _ScriptedModel(_REFUND)
+    result = await _agent(model, issue_refund).invoke_async("refund T-1")
+
+    assert result.stop_reason == "end_turn"
+    assert model.tool_results()["tu-1"]["status"] == "error"
 
 
 async def test_an_ordinary_tool_failure_still_reaches_the_model() -> None:

@@ -1847,11 +1847,31 @@ Strands forwards to its internal OpenAI client.
   as an `Approval`; resume the agent on `approve(...).native` or
   `reject(...).native`, the interrupt response each helper returns on the
   `Approval`. See [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-strands-agent).
-- **Refusals inside tools stop the agent.** With `ApprovalHook()` installed,
-  a governed refusal inside an approved or ungated tool leaves the tool loop
-  before a retry or another model turn. Use `donkey.run()` or `@donkey.governed`
-  around the invocation to recover its typed error from Strands' event-loop
-  wrapper. Ordinary tool errors still go to the model as error tool results.
+- **Refusals inside tools stop the agent.** Strands sends a tool's exception
+  to the model as an error tool result, a governed refusal included. Add
+  `GovernedToolHook()` from `donkey_kit.integrations.strands` to the agent's
+  `hooks`, and a governed refusal inside a tool leaves the tool loop before a
+  retry or another model turn. You add the hook yourself: the model and the
+  MCP clients the SDK builds can't reach the `Agent`. An `ApprovalHook` is a
+  `GovernedToolHook`, so an agent with `ApprovalHook()` needs no other hook,
+  and the refusal stops the agent in an approved tool as in an ungated one.
+
+  ```python
+  from strands import Agent
+  from donkey_kit.integrations.strands import GovernedToolHook
+
+  agent = Agent(
+      model=donkey.strands.model("gpt-4o"),
+      tools=[lookup_order],
+      hooks=[GovernedToolHook()],
+  )
+  ```
+
+  Use `donkey.run()` or `@donkey.governed` around the invocation to recover
+  the typed error from Strands' event-loop wrapper. Ordinary tool errors still
+  go to the model as error tool results. With `GovernedToolHook()` alone, a
+  `@donkey.tool(approval="required")` call raises its `ApprovalRequired` to
+  your code instead of pausing: add `ApprovalHook()` for the pause.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.
@@ -4838,12 +4858,14 @@ that restored the agent from a Strands session, give the restored agent a new
 the resume's time and correlation id.
 
 A model call the approved tool makes is judged by the gateway as usual.
-`ApprovalHook` re-raises a governed refusal from inside a tool before Strands
-can retry the tool or send the refusal text to the model. Wrap the invocation
-in `donkey.run()` or `@donkey.governed` to receive the typed error rather than
-Strands' event-loop exception. This also applies to ungated tools on the same
-agent. Ordinary tool failures remain error tool results for the model, as do
-human rejections.
+`ApprovalHook` is a `GovernedToolHook`: it re-raises a governed refusal from
+inside a tool before Strands can retry the tool or send the refusal text to the
+model. Wrap the invocation in `donkey.run()` or `@donkey.governed` to receive
+the typed error rather than Strands' event-loop exception. This also applies to
+ungated tools on the same agent. An agent with no gated tools gets the same
+from `GovernedToolHook()` alone (see [Strands](https://docs.donkey-kit.dev/frameworks/strands.md#notes)).
+Ordinary tool failures remain error tool results for the model, as do human
+rejections.
 
 Without the hook, nothing pauses. The gate raises `ApprovalRequired` inside the
 tool, Strands turns it into an error tool result, and the call waits in
@@ -9208,6 +9230,16 @@ serves the agent are not compared: `url`, `supportedInterfaces`,
 `preferredTransport`, `protocolVersion`, `version` (your code's version, not the
 asset's) and the security fields (`securitySchemes`, `security`,
 `securityRequirements`), which the upstream declares and the gateway enforces.
+
+You can read the live side yourself, with the same governance check and
+credential and no cache: `live_tools()` returns what the MCP server's
+`tools/list` returns now, and `live_card()` the card the A2A agent serves now.
+Each takes the asset version as `group_id/asset_id/version`:
+
+```python
+tools = await donkey.tools.live_tools("${ANYPOINT_ORG_ID}/hr-tools-mcp/1.3.0")
+card = await donkey.tools.live_card("${ANYPOINT_ORG_ID}/hr-agent/0.1.0")
+```
 
 By default each difference is logged at `WARNING` and returned, so a drifted
 catalog is loud without taking down production traffic. With
