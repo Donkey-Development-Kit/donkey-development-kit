@@ -38,7 +38,8 @@ A refused call does not raise: the asset's outcome is ``failed``, or
 and the assets after it are ``not_attempted`` (#1426). A rerun finishes an
 incomplete publish: a version with the planned digest is ``unchanged`` only
 once its endpoint is registered, its page is published and the asset has the
-declared name and description, and whichever is missing is done then.
+declared name and description, and whichever is missing is done then. A page
+written then says what changed since the published version before it (#1481).
 """
 
 from __future__ import annotations
@@ -54,7 +55,7 @@ import httpx
 from ..core.errors import DonkeyError, RegistryError
 from . import _scopes
 from .exchange_page import Changes, PageSource, documentation_page, tool_changes
-from .publish_plan import PlannedAsset, PublishPlan
+from .publish_plan import _SEMVER, PlannedAsset, PublishPlan
 from .scan import ScanResult
 
 __all__ = [
@@ -259,17 +260,10 @@ async def _publish_one(
                 return await _finish(asset, result, exchange, latest, done, source=source)
         if latest is not None and version in latest.versions:
             raise _version_exists(asset, latest)
-        changes = None
-        if latest is not None and asset.type == "mcp":
-            # Read before the publish, so a failed read sends nothing. A version
-            # with no mcp-metadata file (published by hand) has nothing to diff.
-            before = await exchange.tools(
-                group, asset_id, latest.version, missing_ok=True, scope=_scopes.EXCHANGE_PUBLISH
-            )
-            if before is not None:
-                changes = Changes(
-                    latest.version, tool_changes(before, mcp_metadata(asset, result)["tools"])
-                )
+        # Read before the publish, so a failed read sends nothing.
+        changes = await _changes(
+            asset, result, exchange, latest.version if latest is not None else None
+        )
         data, files = _content(asset, result)
         response = await exchange.post(
             _PUBLISH_PATH.format(org=org_id, group=group, asset=asset_id, version=version),
@@ -325,7 +319,9 @@ async def _finish(
     """Finish the publish of ``latest``, the version with ``asset``'s digest:
     register its endpoint, publish its page and set the declared name and
     description, each only when it is missing. ``unchanged`` is the detail
-    when nothing was. A page published here has no "Changes since" section."""
+    when nothing was. A page published here says what changed since the
+    published version before ``latest``, as the version's first publish would
+    have."""
     group, asset_id, _ = _gav(asset)
     version = latest.version
     done = []
@@ -333,7 +329,9 @@ async def _finish(
         done.append("registered its endpoint")
     if not await exchange.has_page(group, asset_id, version):
         # The page of what was published as ``version``, under a later planned one too.
-        page = documentation_page(replace(asset, version=version), result, source=source)
+        finished = replace(asset, version=version)
+        changes = await _changes(finished, result, exchange, _version_before(latest))
+        page = documentation_page(finished, result, source=source, changes=changes)
         await exchange.publish_page(group, asset_id, version, page)
         done.append("published its page")
     details = _changed_details(asset, latest)
@@ -343,6 +341,54 @@ async def _finish(
     if not done:
         return PublishOutcome(asset, "unchanged", unchanged)
     return PublishOutcome(asset, "published", f"finished publishing {version}: {', '.join(done)}")
+
+
+async def _changes(
+    asset: PlannedAsset, result: ScanResult, exchange: _Exchange, since: str | None
+) -> Changes | None:
+    """What changed in the MCP server ``asset``'s tools since the published
+    version ``since``, for its page. ``None`` for an agent, when there is no
+    such version, or when it has no ``mcp-metadata`` tools (published by hand)."""
+    if since is None or asset.type != "mcp":
+        return None
+    group, asset_id, _ = _gav(asset)
+    before = await exchange.tools(
+        group, asset_id, since, missing_ok=True, scope=_scopes.EXCHANGE_PUBLISH
+    )
+    if before is None:
+        return None
+    return Changes(since, tool_changes(before, mcp_metadata(asset, result)["tools"]))
+
+
+def _version_before(latest: PublishedVersion) -> str | None:
+    """The highest of ``latest.versions`` below ``latest.version`` by semver
+    precedence, or ``None`` when there is none: the order Exchange lists the
+    other versions in is not relied on."""
+    current = _precedence(latest.version)
+    if current is None:
+        return None
+    earlier = [
+        (key, v) for v in latest.versions if (key := _precedence(v)) is not None and key < current
+    ]
+    return max(earlier)[1] if earlier else None
+
+
+_Precedence = tuple[int, int, int, int, tuple[tuple[int, int, str], ...]]
+
+
+def _precedence(version: str) -> _Precedence | None:
+    """``version``'s Semantic Versioning 2.0.0 precedence as a sort key, or
+    ``None`` when it is not semver. A pre-release sorts below its release and
+    its identifiers compare in order, numeric ones numerically and below
+    alphanumeric ones; build metadata is ignored."""
+    match = _SEMVER.fullmatch(version)
+    if match is None:
+        return None
+    major, minor, patch, pre = int(match[1]), int(match[2]), int(match[3]), match[4]
+    if pre is None:
+        return major, minor, patch, 1, ()
+    ids = tuple((0, int(i), "") if i.isdigit() else (1, 0, i) for i in pre.split("."))
+    return major, minor, patch, 0, ids
 
 
 def _content(

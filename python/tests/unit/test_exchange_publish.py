@@ -777,6 +777,67 @@ async def test_a_version_bump_alone_finishes_the_latest_versions_publish(
     assert list(exchange.assets[(ORG, AGENT)]) == ["1.0.0"]
 
 
+def _refuse_page(exchange: FakeExchange, monkeypatch: pytest.MonkeyPatch, version: str) -> None:
+    """Refuse writing the MCP server's page of ``version``, the agent's still written."""
+    handle = exchange.handle
+
+    def refusing(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT" and f"/{ASSET}/{version}/portal/" in request.url.path:
+            return httpx.Response(500, json={"message": "page write failed"})
+        return handle(request)
+
+    monkeypatch.setattr(exchange, "handle", refusing)
+
+
+async def test_a_rerun_says_what_changed_since_the_version_before(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1481: the page a rerun writes for 1.1.0 is the one its first publish would have."""
+    await _publish(http, repo())
+    changed = repo(version="1.1.0", description="Look up a SKU's stock.")
+    with monkeypatch.context() as patch:
+        _refuse_page(exchange, patch, "1.1.0")
+        assert _refused((await _publish(http, changed))[ASSET], "incomplete")
+
+    rerun = await _publish(http, changed)
+
+    assert rerun[ASSET].detail == "finished publishing 1.1.0: published its page"
+    page = exchange.pages[(ORG, ASSET, "1.1.0")]
+    assert "## Changes since 1.0.0\n\n- `lookup_sku`: the description changed.\n" in page
+    assert exchange.metadata_reads == [(ORG, ASSET, "1.0.0")] * 2
+
+
+async def test_a_rerun_of_a_first_version_has_no_changes_section(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with monkeypatch.context() as patch:
+        _refuse_page(exchange, patch, "1.0.0")
+        assert _refused((await _publish(http, repo()))[ASSET], "incomplete")
+
+    rerun = await _publish(http, repo())
+
+    assert rerun[ASSET].detail == "finished publishing 1.0.0: published its page"
+    assert "## Changes since" not in exchange.pages[(ORG, ASSET, "1.0.0")]
+    assert exchange.metadata_reads == []
+
+
+async def test_a_rerun_diffs_against_the_version_before_by_semver_precedence(
+    repo: Repo, exchange: FakeExchange, http: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """1.10.0-rc.1 precedes 1.10.0 and follows 1.9.0, though it sorts first as text."""
+    await _publish(http, repo(version="1.9.0", description="Look up a SKU, first."))
+    await _publish(http, repo(version="1.10.0-rc.1", description="Look up a SKU, second."))
+    final = repo(version="1.10.0", description="Look up a SKU, third.")
+    with monkeypatch.context() as patch:
+        _refuse_page(exchange, patch, "1.10.0")
+        await _publish(http, final)
+
+    await _publish(http, final)
+
+    assert "## Changes since 1.10.0-rc.1\n" in exchange.pages[(ORG, ASSET, "1.10.0")]
+    assert exchange.metadata_reads[-1] == (ORG, ASSET, "1.10.0-rc.1")
+
+
 _HOME = [{"name": "home", "path": "home"}]
 
 
