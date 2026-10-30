@@ -13809,9 +13809,10 @@ Source: https://docs.donkey-kit.dev/roadmap.md
 DDK is delivered in five phases. Each phase is a GitHub milestone with a clear
 goal; the progress bars and issue lists below are loaded from those milestones
 when you open the page. Phase 1 shipped as `donkey-kit` 0.1.0, and its
-stabilisation releases, 0.1.1, 0.1.2 and 0.1.3, followed. 0.1.3 is the current
-release on [PyPI](https://pypi.org/project/donkey-kit/), and Phase 2 comes
-next.
+stabilisation releases, 0.1.1, 0.1.2 and 0.1.3, followed. The newest release is
+the one on [PyPI](https://pypi.org/project/donkey-kit/), with its notes on the
+[release notes](https://docs.donkey-kit.dev/release-notes.md) page. The status pill on each phase below shows
+which one is in progress.
 
   Complete every issue in the milestone is closed ·{' '}
   In progress work has landed and more is open ·{' '}
