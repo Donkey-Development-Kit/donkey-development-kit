@@ -46,7 +46,7 @@ from uuid import UUID
 from ..core.approvals import Approval, ApprovalRejected, record_decision, record_pending
 from ..core.correlation import current_correlation_id
 from ..core.masking import masked
-from . import AdapterCapabilities
+from . import AdapterCapabilities, missing_framework_error
 from . import typed_refusals as _bridge
 from ._base import Adapter, default_adapter
 
@@ -268,14 +268,18 @@ def approval_interrupt(
     Raises:
         ApprovalRejected: The resume value rejected the call.
         ValueError: The resume value is not ``{"approved": bool, "by": str}``.
+        ImportError: ``langgraph`` is not installed.
     """
     # Loaded by name, so mypy sees them as Any with or without LangGraph
     # installed (#763). A static import would need langgraph in the mypy skip
     # list, which also erases the real LangGraph types the langgraph-demo job
     # checks examples/langgraph against.
-    lg_config = importlib.import_module("langgraph.config")
-    lg_errors = importlib.import_module("langgraph.errors")
-    lg_types = importlib.import_module("langgraph.types")
+    try:
+        lg_config = importlib.import_module("langgraph.config")
+        lg_errors = importlib.import_module("langgraph.errors")
+        lg_types = importlib.import_module("langgraph.types")
+    except ModuleNotFoundError as exc:
+        raise missing_framework_error("langgraph", exc.name) from exc
 
     try:
         configurable = lg_config.get_config().get("configurable") or {}
@@ -349,6 +353,7 @@ def approve(approval: Approval, *, by: str) -> Approval:
     Raises:
         ValueError: ``by`` is empty, or ``approval`` is not one of
             :func:`pending_approvals`.
+        ImportError: ``langgraph`` is not installed.
     """
     return _resume(approval, approved=True, by=by)
 
@@ -364,6 +369,7 @@ def reject(approval: Approval, *, by: str) -> Approval:
     Raises:
         ValueError: ``by`` is empty, or ``approval`` is not one of
             :func:`pending_approvals`.
+        ImportError: ``langgraph`` is not installed.
     """
     return _resume(approval, approved=False, by=by)
 
@@ -409,7 +415,10 @@ def _resume(approval: Approval, *, approved: bool, by: str) -> Approval:
     decision = {"approved": approved, "by": by.strip()}
     # Interrupt.id from langgraph 0.6, interrupt_id before it.
     interrupt_id = getattr(interrupt, "id", None) or getattr(interrupt, "interrupt_id", None)
-    lg_types = importlib.import_module("langgraph.types")
+    try:
+        lg_types = importlib.import_module("langgraph.types")
+    except ModuleNotFoundError as exc:
+        raise missing_framework_error("langgraph", exc.name) from exc
     command = lg_types.Command(resume={interrupt_id: decision} if interrupt_id else decision)
     return dataclasses.replace(approval, native=command)
 
