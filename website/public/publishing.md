@@ -238,9 +238,9 @@ Each asset is published with:
   (transport, endpoint, protocol version); and provenance: the asset ID and version, the content digest and, when the
   publish runs in GitHub Actions, the repository, the commit and a link to the
   run. It never includes credentials or your org ID. Only a new version gets a
-  page; an unchanged asset keeps the one it has. A page written by a rerun
-  that [finishes a publish](#when-a-publish-fails) has no "Changes since"
-  section.
+  page; an unchanged asset keeps the one it has. A rerun that
+  [finishes a publish](#when-a-publish-fails) writes the same page, with
+  "Changes since" the published version before it.
 
 A publish is safe to repeat:
 
@@ -281,7 +281,9 @@ A version that has the planned digest counts as `unchanged` only once its
 publish is complete. If it is not, the rerun does whatever is missing:
 
 - registers the endpoint, when the version's instances don't list it,
-- writes and publishes the Home page, when the version has no published one,
+- writes and publishes the Home page, when the version has no published one
+  (for an MCP server, it first reads the tools of the published version
+  before it, for the page's "Changes since"),
 - sets the declared name and description, when the asset's differ,
 
 and reports the asset `published`, with a detail such as `finished publishing
