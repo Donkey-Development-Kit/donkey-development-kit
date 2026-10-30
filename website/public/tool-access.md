@@ -13,7 +13,7 @@ tool objects** — the same "no wrapper" approach as [model access](https://docs
 ## Two lines from catalog to agent
 
 ```python
-tools = await donkey.tools.discover(tags=["approved"], governed=True)
+tools = await donkey.tools.discover(tags=["approved"])
 agent = create_react_agent(donkey.langgraph.chat_model("gpt-4o"), await tools.langgraph())
 ```
 
@@ -30,7 +30,7 @@ needs:
 ```python
 tools = await donkey.tools.discover(
     tags=["approved"],
-    governed=True,           # default criteria, or a GovernanceCriteria
+    governed=True,           # the default: default criteria; or an explicit GovernanceCriteria
 )
 ```
 

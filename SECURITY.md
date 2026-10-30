@@ -32,8 +32,9 @@ Report it privately through GitHub's private vulnerability reporting:
 
 Please include:
 
-- the affected version (`python -c "import donkey_kit; print(donkey_kit.__version__)"`)
-  and the installed extras;
+- the affected version (`donkey --version` with the `[cli]` extra, or
+  `python -c "import donkey_kit; print(donkey_kit.__version__)"`) and the
+  installed extras;
 - what an attacker can do, and the steps or a minimal script to reproduce it;
 - any logs or captures, **with credentials, tokens and tenant identifiers
   removed**.

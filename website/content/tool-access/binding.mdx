@@ -70,11 +70,11 @@ to `discover(auth=...)`. Anything with an async `headers()` and an async
 from donkey_kit.tools.auth import BearerAuth, ClientIdAuth
 
 tools = await donkey.tools.discover(
-    tags=["hr"], governed=True,
+    tags=["hr"],
     auth=ClientIdAuth("<client-id>", "<client-secret>"),
 )
 # or, for an instance behind JWT Validation:
-tools = await donkey.tools.discover(tags=["hr"], governed=True, auth=BearerAuth(my_provider))
+tools = await donkey.tools.discover(tags=["hr"], auth=BearerAuth(my_provider))
 ```
 
 - A binding with no credential raises `ConfigError` before any request.
@@ -89,7 +89,10 @@ tools = await donkey.tools.discover(tags=["hr"], governed=True, auth=BearerAuth(
   URL with its trailing slash: an older `mcp` release, such as the 2.1 that
   Strands installs, then follows no redirect at all.
 - A `401` or `403` while listing tools drops the cached credential and retries
-  once, then raises `AuthError`.
+  once, then raises `AuthError`. A gateway step-up answer is the exception: it
+  raises `GatewayApprovalPending` or `GatewayApprovalDenied` at once and keeps
+  the credential. To wait for the user instead, see
+  [`wait_for_gateway_approval()`](/hitl#waiting-while-listing-mcp-tools).
 - Discovery reads the server URLs from the control plane at `base_url`, so the
   credential follows `base_url`'s rule. If `base_url` comes from the working
   directory's `.donkey-kit.toml` or `.donkey-kit.local.toml` and isn't a
@@ -106,7 +109,7 @@ is that instance. Narrow the set to it with `filter(servers=[...])` before you
 bind, so the other servers are never listed and never receive the token:
 
 ```python
-tools = await donkey.tools.discover(governed=True, auth=BearerAuth(hr_token))
+tools = await donkey.tools.discover(auth=BearerAuth(hr_token))
 hr = tools.filter(servers=["hr-mcp"])   # asset ID, or coordinates such as "<group-id>/hr-mcp/*"
 ```
 
@@ -118,7 +121,7 @@ that user:
 
 ```python
 async with donkey.as_user(token=user_token):
-    tools = await (await donkey.tools.discover(governed=True)).langgraph()
+    tools = await (await donkey.tools.discover()).langgraph()
     agent = create_react_agent(model, tools=tools)
     await agent.ainvoke({"messages": [("user", question)]})
 ```
@@ -172,7 +175,7 @@ Allow and deny entries are exact names or glob patterns, matched against the
 bare tool name and the server-qualified one (`hr__get_employee`, `hr__*`):
 
 ```python
-tools = await donkey.tools.discover(tags=["hr"], governed=True)
+tools = await donkey.tools.discover(tags=["hr"])
 filtered = tools.filter(allow=["get_employee", "search_employees"])
 # or:
 filtered = tools.filter(deny=["delete_*"])
@@ -283,7 +286,7 @@ with `require_approval(tools=[...], risk=...)` before you bind (see
 **native** MCP objects. They are async, because each lists the tools first:
 
 ```python
-ts = await donkey.tools.discover(tags=["hr"], governed=True)
+ts = await donkey.tools.discover(tags=["hr"])
 await ts.langgraph()          # -> list[BaseTool]
 await ts.llamaindex()         # -> list[FunctionTool]
 async with ts.anthropic() as tools:   # -> list[BetaAsyncFunctionTool]
