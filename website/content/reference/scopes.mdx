@@ -23,7 +23,7 @@ environment too.
 
 | Scope | Grant on | Used by |
 |---|---|---|
-| `read:exchange` | the business group | `search()`, `explain()` tag, lifecycle and governance checks |
+| `read:exchange` | the business group | `search()`, `explain()` tag, lifecycle and governance checks, `Publication.verify()` |
 | `view:environment` | the business group and the `ANYPOINT_ENV` environment | `resolve_mcp()`, `explain()` |
 | `read:api_configuration` | the business group and the environment | `resolve_mcp()`, `explain()` |
 | `read:api_policies` | the business group and the environment | `explain()` policy checks |
@@ -75,6 +75,9 @@ unless the row says **plus**.
 | `explain()`: `require_tags`, `require_lifecycle` | Exchange asset version read | `read:exchange` | <Badge tone="live">Live</Badge> |
 | `explain()`: `require_governance_pass` | API Governance conformance read | `read:exchange`, `view:ang_governance_profiles` or `admin:ang_governance_profiles` | <Badge tone="live">Live</Badge> |
 | `donkey.tools.discover()` | The `search()`, `explain()` and `resolve_mcp()` reads | Theirs | <Badge tone="live">Live</Badge> |
+| `Publication.verify()`, `donkey verify`: the published version | Exchange Graph API asset query, and the file download | `read:exchange` | <Badge tone="live">Live</Badge> |
+| `Publication.verify()`, `donkey verify`: find the instance | The `resolve_mcp()` or `resolve_agent()` and `explain()` reads | Theirs | <Badge tone="live">Live</Badge> |
+| A bound `ToolSet`, `Publication.verify()`: the live server or agent | MCP or A2A through its gateway instance | None: the consumer credential, not the connected app | <Badge tone="live">Live</Badge> |
 | `donkey publish` | Exchange publish, endpoint registration, asset name and description, page | `manage:exchange`. `create:exchange` and `edit:exchange` are not enough. | <Badge tone="live">Live</Badge> |
 | `donkey preflight`, `donkey expose`: find the gateway | Omni Gateway Manager gateway list and read | `read:servers` | <Badge tone="live">Live</Badge> |
 | `donkey expose`: create an instance | API Manager instance create | `manage:api_configuration` or `manage:apis`, **plus** `read:exchange` | <Badge tone="live">Live</Badge> |
@@ -92,6 +95,7 @@ environment.
 | `resolve_mcp()`, `explain()` | `AuthError`. Its `remediation` names the scope the call needs and the business group, for example "The connected app likely lacks the scope 'read:servers' on business group …". |
 | `explain()` Exchange and API Governance checks | No error: the check is UNKNOWN (`passed=None`), and its detail names `read:exchange`. |
 | `search()` | No error: Exchange returns no assets, so `search()` returns `[]`. If a search you expect to match returns nothing, check `read:exchange` first. |
+| `Publication.verify()`, `donkey verify` | `AuthError` naming `read:exchange` if Exchange refuses the published-version read. The instance reads fail as for `resolve_mcp()` and `explain()`. |
 | `donkey publish` | `AuthError` naming `manage:exchange`. If the app has `edit:exchange` instead, the version can be published but registering its endpoint fails with a `RegistryError` naming `manage:exchange`. |
 | `donkey expose`, `donkey preflight` | The step fails (`✗`), its remediation names the scope, and the steps after it are skipped. An instance create without `read:exchange` answers `400` "Error while trying to retrieve asset", which the step reports as a missing `read:exchange`. |
 
