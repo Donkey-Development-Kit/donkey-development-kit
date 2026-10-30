@@ -127,6 +127,29 @@ def test_policy_middleware_registers_on_a_real_agent(api: str) -> None:
     assert isinstance(agent, af.Agent)
 
 
+def test_a_renamed_decorator_is_blocked_on_verification(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With the package installed, a missing ``chat_middleware`` is an upstream
+    rename: the verification guard, not the install hint (#1503)."""
+    # agent_framework resolves its exports lazily and caches them, so drop the
+    # cached one and stop the module-level __getattr__ resolving it again.
+    resolve = vars(af).get("__getattr__")
+
+    def renamed(name: str) -> object:
+        if name == "chat_middleware" or resolve is None:
+            raise AttributeError(name)
+        return resolve(name)
+
+    monkeypatch.delattr(af, "chat_middleware", raising=False)
+    monkeypatch.setattr(af, "__getattr__", renamed, raising=False)
+    fab = Donkey(_cfg())
+
+    with pytest.raises(NotImplementedError, match=r"^blocked on verification:") as excinfo:
+        fab.agent_framework.policy_middleware()
+
+    assert "agent_framework.chat_middleware import" in str(excinfo.value)
+    assert type(excinfo.value.__cause__) is ImportError
+
+
 async def test_pii_refusal_ends_the_run_typed_after_one_send(api: str) -> None:
     sent: list[httpx.Request] = []
     fab = Donkey(_cfg())
