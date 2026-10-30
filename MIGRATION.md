@@ -15,6 +15,7 @@
   - [9. The mcp and a2a extras are back, and [all] and [adk] install more](#9-the-mcp-and-a2a-extras-are-back-and-all-and-adk-install-more)
   - [10. An AgentKilled stops that Donkey for good](#10-an-agentkilled-stops-that-donkey-for-good)
   - [11. refusal_translator leaves two adapters' __all__](#11-refusal_translator-leaves-two-adapters-__all__)
+  - [12. A configured URL with a user name or password is refused](#12-a-configured-url-with-a-user-name-or-password-is-refused)
   - [Budget headers (not breaking)](#budget-headers-not-breaking)
   - [ADK gemini() and model() return subclasses (not breaking)](#adk-gemini-and-model-return-subclasses-not-breaking)
   - [OpenAI Agents SDK is a conformance-tested adapter (not breaking)](#openai-agents-sdk-is-a-conformance-tested-adapter-not-breaking)
@@ -76,15 +77,16 @@ human approvals. It also gives three more gateway refusals their own types.
   now run.
 - Section 7 still works but emits a `DeprecationWarning`.
 - Sections 8 and 9 change what `pip` installs.
-- Sections 10 and 11 change runtime behaviour and two adapters' `__all__`.
+- Sections 10 to 12 change runtime behaviour, two adapters' `__all__` and
+  which configured URLs are accepted.
 
 The names 0.1.2 deprecated (its sections 4 to 6 and 11) still work in 0.2.0
 and still warn. The one exception is `GovernanceCriteria`, which is back in
 `donkey_kit` without a warning (section 7). The release that removes the
 others says so here and in its Release notes' Breaking changes section.
 
-If you wrote code against a 0.2.0 pre-release (`0.2.0.devN` from TestPyPI),
-also read [If you used a 0.2.0 pre-release](#if-you-used-a-020-pre-release).
+If you wrote code against a 0.2.0 pre-release (`0.2.0.devN` or `0.2.0rcN`
+from TestPyPI), also read [If you used a 0.2.0 pre-release](#if-you-used-a-020-pre-release).
 
 ### 1. A CIBA approval response is `GatewayApprovalPending` or `GatewayApprovalDenied`
 
@@ -103,8 +105,10 @@ approve a call on another device (CIBA), and catches `AuthError` or reads
 - A `403` whose body is `{"error": "access_denied"}` was a `PolicyViolation`
   with `policy == "unknown"`, or an `AuthError` when it carried a
   `WWW-Authenticate` header. It is now `GatewayApprovalDenied`, a
-  `PolicyViolation` with `policy == "oauth2-obo-ciba"`. `donkey.policy.type`
-  reads `approval_denied`. It is terminal and never retried.
+  `PolicyViolation` with `policy == "oauth2-obo-ciba"`, and also an
+  `ApprovalError`, the base it shares with `ApprovalRejected` (#1423).
+  `donkey.policy.type` reads `approval_denied`. It is terminal and never
+  retried.
 
 **Fix:** catch the new types ahead of `AuthError`. Don't refresh or replace
 the credentials on `GatewayApprovalPending`, because they were accepted.
@@ -218,6 +222,22 @@ public URL is plain `http://` to a non-loopback host is refused, unless
 `DONKEY_ALLOW_HTTP=1` is set. `derive_descriptor(mode="auto:static")`
 now raises `ValueError`: that mode was dropped (#1252).
 
+The gateway credential follows the endpoint rule of 0.1.1 section 2 (ADR 0019,
+#1479). A discovered `ToolSet`, `donkey.tools.live_card()`,
+`Publication.verify()` and `donkey verify` raise `ConfigError`, before
+anything is sent, when all of these hold:
+
+- `base_url` comes from `./.donkey-kit.toml` or `.donkey-kit.local.toml`;
+- it is not a regional Anypoint host;
+- the gateway credential (`llm_proxy_client_id` / `_secret`, an `llm_auth`
+  token, a `discover(auth=...)` credential or the `as_user()` token) does not
+  come from those same files.
+
+`donkey verify` reports such an asset as `error` and exits 1. Set
+`ANYPOINT_BASE_URL` in the environment (or `base_url` in code), move the
+gateway pair into `.donkey-kit.local.toml`, or set
+`DONKEY_TRUST_PROJECT_CONFIG=1` for a checkout you trust.
+
 **Fix:** remove the fallback, or keep it only for the calls that still raise
 `NotImplementedError` in 0.2.0. Those are `donkey.tools.lock()`,
 `discover(locked=True)`, `donkey.registry.search(domain=)`,
@@ -328,6 +348,23 @@ The typed-refusal bridge (`donkey.run()`, `@donkey.governed`,
 **Fix:** let the bridge do the translation. If you call it directly, import
 it by name and expect it to change without notice.
 
+### 12. A configured URL with a user name or password is refused
+
+**Who:** anyone whose `llm_proxy_url`, `base_url`, connected-app token
+endpoint, or a URL passed in code to `donkey.llm.client()` or an adapter
+factory, carries a user name or password, as in `https://user:pass@host/`
+(#1478).
+
+**Symptom:** building the client raises `ConfigError`, before anything is
+sent: `llm_proxy_url carries a user name or password (host llm.example.test).`
+The message names the setting and the host, never the user name or password.
+Neither `DONKEY_ALLOW_HTTP=1` nor a loopback host exempts it. Before, the URL
+was accepted, and httpx sent the user name and password to the host as
+`Authorization: Basic`.
+
+**Fix:** remove the user name and password from the URL. The SDK sends its
+own credentials.
+
 ### Budget headers (not breaking)
 
 A rate-limit reset header that is negative, NaN, infinite or too large for a
@@ -362,8 +399,9 @@ doesn't change that global setting for you (ADR 0010). Turn it off with
 Import these from `donkey_kit`:
 
 - **Errors:** `GatewayApprovalPending`, `GatewayApprovalDenied` (#1320),
-  `ApprovalRequired`, `ApprovalRejected`, `ApprovalTimedOut`,
-  `ToolNotInProfile` and `UngovernedMcpServer`.
+  `ApprovalError`, `ApprovalNotFound`, `ApprovalRequired`,
+  `ApprovalRejected`, `ApprovalTimedOut`, `ToolNotInProfile` and
+  `UngovernedMcpServer`.
 - **Approvals:** `Approval` and `Approvals` (`donkey.approvals`).
 - **Tools and registry:** `ToolSet`, `McpAuth` and `GovernanceCriteria`.
 - **Agents and A2A:** `AgentSpec`, `registered_agents`, `A2AResult` and
@@ -377,13 +415,19 @@ Import these from `donkey_kit`:
 
 `donkey_kit.core` adds `PolicyRegistration`, `RefusalContext`, `RunUsage` and
 `current_business_group`. The LangGraph, OpenAI Agents SDK, ADK and Strands
-modules add approval helpers (`pending_approvals`, `approve`, `reject`), and
-`donkey_kit.experimental` adds `tool_access_denial`.
+modules add approval helpers (`pending_approvals`, `approve`, `reject`).
+`donkey_kit.integrations.strands` also adds `ApprovalHook` and
+`GovernedToolHook`, which raises a governed refusal inside a tool as its typed
+error (#1446). `donkey_kit.experimental` adds `tool_access_denial` and
+`DescriptorMismatch`.
 
 `Donkey` gains `on()`, `attribution()`, `run(business_group=)`,
 `run_from_headers()`, `correlation_headers()`, `as_user()`, `approvals`,
 `serve()`, `agent()`, `current_run()`, `flush_telemetry()`,
 `tools.warm()` and `tools.refresh()`, and `@donkey.tool` takes `approval=`.
+`donkey.tools.live_tools()` and `donkey.tools.live_card()` read the live side
+of a published MCP server or agent. They are Provisional (ADR 0020): they may
+change in a minor release, with a migration note (#1499).
 `DonkeyConfig` gains `llm_proxy_key_header`, `user_token_header`,
 `tool_warn_count` and `tool_warn_tokens`. The CLI gains `donkey --version`
 and the `dev`, `scan`, `expose` and `preflight` commands, and `donkey mock`
@@ -480,8 +524,41 @@ against one, because the surface was new in 0.2.0 or raised
   `classify.register()` rule that matches the AIDR header now raises
   `ValueError` at registration, because the built-in rule shadows it. Delete
   the rule and catch `ContentSafetyBlocked`.
-- **Strands tool refusals propagate** through `ApprovalHook` as their typed
-  error instead of becoming a tool result (#1237).
+- **Strands tool refusals propagate** as their typed error instead of
+  becoming a tool result, through `ApprovalHook` or, for an agent with no
+  gated tools, `GovernedToolHook` (#1237, #1446).
+- **`donkey.approvals` is per client** (ADR 0018, #1423). Each `Donkey`
+  resolves only the approvals its own calls recorded. The module-level
+  `donkey_kit.core.approvals.approvals` instance is gone. A gated call
+  records on the client whose `donkey.run()`, `run_from_headers()` or
+  `as_user()` block runs it. Outside a block, it records on the client it was
+  declared on: `@donkey.tool` on an instance, or the client whose
+  `discover()` built the `ToolSet`. A class-level
+  `@Donkey.tool(approval="required")` called outside every block raises
+  `ConfigError`, so call it inside a block or declare it on an instance.
+- **The approval errors are typed.** An unknown or already-decided approval
+  id raises `ApprovalNotFound`, which is still a `KeyError`.
+  `ApprovalRejected` and `GatewayApprovalDenied` share the new
+  `ApprovalError` base. `DescriptorMismatch` is a `DonkeyError`, still a
+  `ValueError`, and is exported from `donkey_kit.experimental` (#1423).
+- **`require_approval()` on a whole-server binding raises `ConfigError`**
+  instead of `NotImplementedError`. The whole-server bindings are ADK,
+  Strands, the OpenAI Agents SDK, Agent Framework and CrewAI. Bind with
+  `langgraph()`, `llamaindex()` or `anthropic()` to gate a discovered tool,
+  or use the framework's own approval (#1423).
+- **The gateway credential is held back from a project-file `base_url`.** A
+  discovered `ToolSet`, `donkey.tools.live_card()`, `Publication.verify()`
+  and `donkey verify` raise `ConfigError` when `base_url` comes from the
+  working-directory files, isn't a regional Anypoint host, and the gateway
+  credential comes from somewhere else. See section 5 for the fix (#1479).
+- **The ADK and LangGraph helpers raise the install-hint `ImportError`.**
+  Without the extra, these used to raise a bare `ModuleNotFoundError`:
+  ADK's `last_call_bridged()`, `approval_plugin()`, `approve()` and
+  `reject()`, and LangGraph's `approve()`, `reject()` and
+  `approval_interrupt()`. They now raise an `ImportError` naming the
+  `pip install "donkey-kit[...]"` line. `ImportError` is the parent class, so
+  `except ImportError:` still catches it but `except ModuleNotFoundError:`
+  no longer does. Catch `ImportError` (#1440, #1502).
 
 ## 0.1.3: no breaking changes
 
