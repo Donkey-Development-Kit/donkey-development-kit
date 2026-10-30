@@ -6,14 +6,16 @@ a ``# type: ignore[<code>]`` on a call that must fail type checking; strict mode
 ``warn_unused_ignores`` turns the ignore into an error the moment the call stops
 failing, so a loosened annotation cannot pass silently.
 
-The ``ToolSet`` bindings are pinned at their current ``list[Any]``: tightening
-them to each framework's own type can surface new downstream mypy errors, so it
-is a deliberate change of its own (#1445), and this file changes with it.
+The ``ToolSet`` bindings are pinned at their current ``list[Any]``, and
+``Approvals.resolve()`` at its current ``Any``: tightening them can surface new
+downstream mypy errors, so it is a deliberate change of its own (#1445), and
+this file changes with it.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from datetime import timedelta
 from typing import Any
 
@@ -23,9 +25,17 @@ from donkey_kit import (
     A2AResult,
     A2ATask,
     AgentSpec,
+    Approval,
+    ApprovalError,
+    ApprovalNotFound,
+    ApprovalRejected,
+    ApprovalRequired,
+    Approvals,
+    ApprovalTimedOut,
     Classifier,
     Donkey,
     DonkeyError,
+    GatewayApprovalDenied,
     LastCall,
     OnRefusal,
     PIIDetected,
@@ -39,6 +49,7 @@ from donkey_kit import (
     registered_agents,
 )
 from donkey_kit.core import PolicyRegistration, RefusalContext, RunUsage
+from donkey_kit.experimental import DescriptorMismatch
 
 # --- @donkey.agent keeps the decorated callable's signature (BG §2.9, #217) -------
 
@@ -198,3 +209,125 @@ async def check_toolset_bindings(donkey: Donkey) -> None:
     # Renamed to openai_agents() (#1468); the old name is gone.
     await tools.openai()  # type: ignore[attr-defined]
     tools.filter(allow="get_*")  # type: ignore[arg-type]
+
+
+# --- @donkey.tool keeps the decorated signature, gated or not (BG §2.3, #1423) ----
+
+
+async def check_tool(donkey: Donkey) -> None:
+    # Read from an instance it declares the gated tool on that client; on the
+    # class it names none (ADR 0018). Both forms type the same.
+    @donkey.tool(approval="required", risk="financial", approval_timeout="15m")
+    async def issue_refund(ticket_id: str, amount: float) -> str:
+        """Refund a ticket."""
+        return ticket_id
+
+    @Donkey.tool(approval="required", approval_timeout=timedelta(minutes=5))
+    def close_ticket(ticket_id: str, *, note: str = "") -> bool:
+        """Close a ticket."""
+        return bool(note)
+
+    @donkey.tool
+    async def lookup_crm(customer_id: str) -> dict[str, str]:
+        """Look up a customer."""
+        return {"id": customer_id}
+
+    @Donkey.tool(server="sku-manager")
+    def lookup_sku(sku: str) -> int:
+        """Look up a SKU."""
+        return len(sku)
+
+    assert_type(await issue_refund("T-1", 140.0), str)
+    assert_type(close_ticket("T-1", note="done"), bool)
+    assert_type(await lookup_crm("C-1"), dict[str, str])
+    assert_type(lookup_sku("S-1"), int)
+
+    await issue_refund("T-1")  # type: ignore[call-arg]
+    close_ticket(1)  # type: ignore[arg-type]
+    close_ticket("T-1", note=1)  # type: ignore[arg-type]
+    donkey.tool(approval="optional")  # type: ignore[call-overload]
+    Donkey.tool(risk=1)  # type: ignore[call-overload]
+    donkey.tool(approval_timeout=[15])  # type: ignore[call-overload]
+    donkey.tool(lookup_sku, approval="required")  # type: ignore[call-overload]
+
+
+# --- donkey.approvals: this client's registry (BG §2.3, ADR 0018) -----------------
+
+
+def check_approvals(donkey: Donkey, err: ApprovalRequired, tools: ToolSet) -> None:
+    assert_type(donkey.approvals, Approvals)
+    assert_type(Approvals(), Approvals)
+    assert_type(donkey.approvals.pending(), tuple[Approval, ...])
+
+    approval = err.approval
+    assert_type(approval, Approval)
+    assert_type(err.tool, str)
+    assert_type(err.arguments, Mapping[str, Any])
+    assert_type(err.risk, str | None)
+    assert_type(approval.id, str)
+    assert_type(approval.arguments, Mapping[str, Any])
+    assert_type(approval.correlation_id, str)
+    assert_type(approval.expires_at, float)
+    assert_type(approval.expired, bool)
+    # The framework's own pause object (#1422): open by design.
+    assert_type(approval.native, Any)
+
+    assert_type(donkey.approvals.get(approval.id), Approval)
+    # The tool's own return value, or an awaitable for an async tool.
+    assert_type(donkey.approvals.resolve(approval.id, approved_by="m.keller"), Any)
+    assert_type(donkey.approvals.reject(approval.id, rejected_by="m.keller"), Approval)
+    assert_type(tools.require_approval(tools=["issue_refund"], risk="financial"), ToolSet)
+
+    donkey.approvals.resolve(approval.id)  # type: ignore[call-arg]
+    donkey.approvals.resolve(approval.id, "m.keller")  # type: ignore[call-arg]
+    donkey.approvals.reject(approval.id, approved_by="m.keller")  # type: ignore[call-arg]
+    donkey.approvals.get(1)  # type: ignore[arg-type]
+    donkey.approvals = Approvals()  # type: ignore[misc]
+    approval.id = "other"  # type: ignore[misc]
+    tools.require_approval(["issue_refund"])  # type: ignore[call-arg]
+
+
+# --- the approval errors: who refused, and what else they are (#1423) -------------
+
+
+def takes_donkey_error(err: DonkeyError) -> None: ...
+def takes_approval_error(err: ApprovalError) -> None: ...
+def takes_policy_violation(err: PolicyViolation) -> None: ...
+def takes_key_error(err: KeyError) -> None: ...
+def takes_value_error(err: ValueError) -> None: ...
+
+
+def check_approval_errors(
+    rejected: ApprovalRejected,
+    denied: GatewayApprovalDenied,
+    not_found: ApprovalNotFound,
+    timed_out: ApprovalTimedOut,
+    required: ApprovalRequired,
+    mismatch: DescriptorMismatch,
+) -> None:
+    # A refusal, by a human or by the gateway's step-up, is an ApprovalError.
+    takes_approval_error(rejected)
+    takes_approval_error(denied)
+    takes_policy_violation(denied)
+    assert_type(rejected.approval, Approval)
+    assert_type(denied.policy, str)
+
+    # An unknown id is still the KeyError it used to be.
+    takes_donkey_error(not_found)
+    takes_key_error(not_found)
+    assert_type(not_found.approval_id, str | None)
+    assert_type(not_found.remediation, str)
+
+    takes_donkey_error(mismatch)
+    takes_value_error(mismatch)
+    assert_type(mismatch.remediation, str)
+
+    assert_type(timed_out.approval, Approval)
+    assert_type(required.approval, Approval)
+
+    # Waiting, expiry and an unknown id are not refusals; a human's no is not a policy.
+    takes_approval_error(not_found)  # type: ignore[arg-type]
+    takes_approval_error(timed_out)  # type: ignore[arg-type]
+    takes_approval_error(required)  # type: ignore[arg-type]
+    takes_policy_violation(rejected)  # type: ignore[arg-type]
+    takes_key_error(rejected)  # type: ignore[arg-type]
