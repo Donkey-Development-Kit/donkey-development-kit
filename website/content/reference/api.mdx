@@ -439,7 +439,12 @@ Every required field for `need` that is unset, each with the env var that sets i
 ### `config.check_endpoints()`
 
 ```python nocheck
-config.check_endpoints(*, need: Capability, code_credential: str | None = None) -> None
+config.check_endpoints(
+    *,
+    need: Capability,
+    code_credential: str | None = None,
+    fields: tuple[str, ...] = (),
+) -> None
 ```
 
 Raise `ConfigError` if `need`'s endpoint may not receive the credentials that would be sent to it.

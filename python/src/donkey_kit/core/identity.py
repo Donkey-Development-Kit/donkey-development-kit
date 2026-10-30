@@ -26,9 +26,10 @@ header the gateway's JWT Validation and OBO policies read (docs/verified-apis.md
 **Checked endpoints only** (ADR 0005, #1439). The user token never comes from
 the working directory's config files, so it is never sent to an endpoint read
 from them unless ``DONKEY_TRUST_PROJECT_CONFIG`` opts in:
-:func:`check_user_token_endpoint` runs ``DonkeyConfig.check_endpoints`` for it,
-for the LLM proxy when the scope is built and for the control plane that MCP
-gateway URLs are read from before a ``ToolSet`` sends it.
+:func:`check_user_token_endpoint` runs ``DonkeyConfig.check_endpoints`` for it
+when the scope is built, for the LLM proxy. A discovered ``ToolSet`` checks the
+control plane its MCP gateway URLs were read from, for the token and the
+gateway credential together (``tools.auth.check_gateway_endpoint``, ADR 0019).
 
 **No authorisation here.** The SDK forwards a token; what the user may do is
 decided by the gateway and the platform. Nothing in this module inspects the
@@ -69,6 +70,7 @@ if TYPE_CHECKING:
     from .cost import CostTags
 
 __all__ = [
+    "USER_TOKEN_LABEL",
     "Requester",
     "UserScope",
     "capture_requester",
@@ -78,6 +80,9 @@ __all__ = [
     "requester_scope",
     "user_token_header",
 ]
+
+#: How an endpoint-check refusal names the user token (``DonkeyConfig.check_endpoints``).
+USER_TOKEN_LABEL = "the donkey.as_user() token"
 
 
 def user_token_header(cfg: DonkeyConfig) -> str:
@@ -98,7 +103,7 @@ def check_user_token_endpoint(cfg: DonkeyConfig, *, need: Capability) -> None:
             (for ``base_url``, unless it is a standard Anypoint host), or it is
             not ``https://``.
     """
-    cfg.check_endpoints(need=need, code_credential="the donkey.as_user() token")
+    cfg.check_endpoints(need=need, code_credential=USER_TOKEN_LABEL)
 
 
 class _UserBinding:

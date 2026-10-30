@@ -674,6 +674,16 @@ lists every difference. `API` publications are not verified and raise
 [`donkey verify`](/cli#donkey-verify) runs the same check from CI, for every MCP
 server and `a2a_v1` agent in the repository.
 
+Both read the live side at a gateway URL that discovery read from the control
+plane at `base_url`, so the gateway credential follows `base_url`'s rule. If
+`base_url` comes from the working directory's `.donkey-kit.toml` or
+`.donkey-kit.local.toml` and isn't a regional Anypoint host, the credential is
+sent only when it comes from those files too, or when `DONKEY_TRUST_PROJECT_CONFIG`
+is set. Otherwise `verify()` raises `ConfigError` before anything is sent, and
+`donkey verify` reports each such asset as an `error` with that message and
+exits `1`. See
+[Which credentials a URL receives](/reference/configuration#which-credentials-a-url-receives).
+
 ## Related
 
 - [CLI & decorators](/cli) — mark tools with `@donkey.tool` today.

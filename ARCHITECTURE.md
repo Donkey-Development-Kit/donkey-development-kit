@@ -372,10 +372,18 @@ request either plane sends passes the same origin check.
   is set in the environment. The check runs before a credential leaves on
   either plane: in `validated()` for model calls and the registry, before each
   control-plane token fetch, and before a `Donkey(auth=…)` provider's token is
-  requested. The `donkey.as_user()` token counts as set in code too. It is
-  checked against `llm_proxy_url` when the scope is built, and against
-  `base_url`, where discovery read the MCP gateway URLs from, before a
-  discovered `ToolSet` sends it (#1439).
+  requested. The `donkey.as_user()` token counts as set in code too, and is
+  checked against `llm_proxy_url` when the scope is built (#1439). A URL
+  derived from a configured endpoint is held to the rule of the endpoint it
+  came from (ADR 0019, #1479). Discovery reads the MCP and A2A gateway URLs
+  from the control plane at `base_url`. So before a discovered `ToolSet` lists
+  or binds, and before `Discovery.agent_card()` reads a card,
+  `tools.auth.check_gateway_endpoint` checks against `base_url` whatever is
+  about to go: the service's gateway credential (the
+  `llm_proxy_client_id`/`llm_proxy_client_secret` pair, weighed by its source;
+  the `llm_auth` token; or a `discover(auth=…)` credential, set in code) and,
+  inside a block, the `as_user()` token. A hand-built `ToolSet` has its URLs
+  in code and is not checked.
   Provenance stores a keyed digest of each loaded value (the key is random per
   process), so `asdict()` copies no secret and a config rebuilt in another
   process keeps its URL sources but treats its credentials as set in code. A

@@ -238,6 +238,8 @@ class ToolsFacade:
             UngovernedMcpServer: The server is not governed, so nothing is sent
                 to it (ADR 0013).
             RegistryError: ``ref`` does not resolve to one gateway instance.
+            ConfigError: The gateway credential may not go to a URL read from a
+                control plane the working directory's config files named (ADR 0019).
             AuthError: The gateway refused the credential.
             ToolInvocationError: The server could not list its tools.
 
@@ -260,6 +262,8 @@ class ToolsFacade:
             RegistryError: The agent is not governed (nothing is sent to it), does
                 not resolve to one deployed A2A instance behind an ``https://``
                 gateway URL, or the read failed.
+            ConfigError: The gateway credential may not go to a URL read from a
+                control plane the working directory's config files named (ADR 0019).
             AuthError: The gateway refused the credential.
 
         Docs: https://docs.donkey-kit.dev/publishing#verifying-at-runtime-verify

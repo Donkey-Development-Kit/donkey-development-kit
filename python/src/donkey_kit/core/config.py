@@ -619,28 +619,28 @@ class DonkeyConfig:
             raise ConfigError(f"Unknown capability {need!r} passed to validated().")
         return missing
 
-    def check_endpoints(self, *, need: Capability, code_credential: str | None = None) -> None:
+    def check_endpoints(
+        self, *, need: Capability, code_credential: str | None = None, fields: tuple[str, ...] = ()
+    ) -> None:
         """Raise :class:`ConfigError` if ``need``'s endpoint may not receive the
         credentials that would be sent to it.
 
         The endpoint must be ``https://``; ``http://`` is accepted for loopback
-        hosts, and for other hosts only with ``DONKEY_ALLOW_HTTP=1`` in the
-        environment, which does not relax the rest of this check. And an
-        endpoint read from the working directory's ``.donkey-kit.toml`` or its
-        ``.local`` overlay only receives credentials read from those same files,
+        hosts (exempt from this rule only), and for other hosts only with
+        ``DONKEY_ALLOW_HTTP=1`` in the environment, which relaxes nothing else.
+        And an endpoint read from the working directory's ``.donkey-kit.toml`` or
+        its ``.local`` overlay only receives credentials read from those files,
         unless it is a standard Anypoint control-plane host or
-        ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set in the environment. Loopback
-        hosts are exempt from the ``https://`` rule only. In ``jwt`` and
-        ``bearer`` auth modes the token comes from the caller's ``AuthProvider``,
-        never from those files, so it always counts as outside them. ``code_credential``
-        names another credential supplied in code, such as the token of a
-        ``Donkey(auth=...)`` provider or of ``donkey.as_user()``, which counts as
-        outside them too, in every auth mode.
+        ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set in the environment. The ``jwt``
+        and ``bearer`` modes' ``AuthProvider`` token always counts as outside
+        them, as does ``code_credential``, which names credentials set in code
+        (a ``Donkey(auth=...)`` or ``donkey.as_user()`` token). ``fields`` names
+        the config fields sent in place of ``client_id``/``client_secret`` (ADR 0019).
         """
         runtime = [code_credential] if code_credential else []
         if need == "control_plane":
             key, url = "base_url", self.control_plane_url
-            credentials: tuple[str, ...] = ("client_id", "client_secret")
+            credentials: tuple[str, ...] = fields or ("client_id", "client_secret")
         elif need == "llm":
             if not self.llm_proxy_url:
                 return
