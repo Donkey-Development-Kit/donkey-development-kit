@@ -29,11 +29,13 @@ class Window:
         """Fraction of the window consumed, ``0.0``-``1.0``, or ``None`` while
         unobserved or when ``limit`` is non-positive (no window to divide by).
         Clamped: a ``remaining`` above ``limit`` (a window that reset between
-        calls) reports ``0.0`` rather than a negative fraction."""
+        calls) reports ``0.0`` rather than a negative fraction, and one below
+        zero reports ``1.0``. ``remaining`` is clamped before the division, so a
+        header too large for a float cannot overflow it."""
         if self.limit is None or self.remaining is None or self.limit <= 0:
             return None
-        used = (self.limit - self.remaining) / self.limit
-        return min(1.0, max(0.0, used))
+        remaining = min(max(self.remaining, 0), self.limit)
+        return (self.limit - remaining) / self.limit
 
 
 def _reset_at(window: Window, reset_ms: float, ts: datetime) -> datetime | None:

@@ -21,6 +21,7 @@ from donkey_kit.core.errors import (
     UpstreamRequestError,
     classify,
     gateway_unavailable,
+    parse_retry_after,
 )
 from donkey_kit.core.step_up import GatewayApprovalDenied, GatewayApprovalPending
 from donkey_kit.core.telemetry import policy_type_slug
@@ -70,6 +71,19 @@ def test_negative_retry_after_is_floored_at_zero(headers: dict[str, str]) -> Non
     err = classify(_resp(429, headers))
     assert isinstance(err, TokenBudgetExceeded)
     assert err.retry_after == 0.0
+
+
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "1e400"])
+@pytest.mark.parametrize("header", ["retry-after", "x-token-reset"])
+def test_a_non_finite_retry_after_is_none(header: str, value: str) -> None:
+    err = classify(_resp(429, {header: value}))
+    assert isinstance(err, TokenBudgetExceeded)
+    assert err.retry_after is None
+
+
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "1e400"])
+def test_parse_retry_after_refuses_a_non_finite_value(value: str) -> None:
+    assert parse_retry_after(value) is None
 
 
 def _fixture_response(shape: str) -> httpx.Response:
