@@ -31,6 +31,8 @@ node_modules/
 
 # Editors
 .vscode/
+# Local sandbox write paths (machine-specific absolute paths; do not commit)
+.cursor/sandbox.json
 
 # Claude Code worktrees (isolated agent workspaces)
 .claude/worktrees/
