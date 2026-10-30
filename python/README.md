@@ -4,6 +4,23 @@
 
 <p align="center">
   <a href="https://pypi.org/project/donkey-kit/"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fpypi.org%2Fpypi%2Fdonkey-kit%2Fjson&query=%24.info.version&prefix=v&label=PyPI&logo=pypi&logoColor=white&color=blue&cacheSeconds=300" alt="donkey-kit on PyPI" /></a>
+  <a href="https://pypi.org/project/donkey-kit/"><img src="https://img.shields.io/pypi/pyversions/donkey-kit?logo=python&logoColor=white" alt="Supported Python versions" /></a>
+  <a href="https://github.com/Donkey-Development-Kit/donkey-development-kit/actions/workflows/ci.yml?query=branch%3Adevelop"><img src="https://img.shields.io/github/actions/workflow/status/Donkey-Development-Kit/donkey-development-kit/ci.yml?branch=develop&label=CI&logo=githubactions&logoColor=white" alt="CI status" /></a>
+  <a href="https://pepy.tech/projects/donkey-kit"><img src="https://img.shields.io/pepy/dt/donkey-kit?label=downloads" alt="Total downloads" /></a>
+  <a href="https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/donkey-kit?color=green" alt="License: Apache-2.0" /></a>
+  <a href="https://docs.donkey-kit.dev"><img src="https://img.shields.io/badge/docs-docs.donkey--kit.dev-0A7BBB?logo=readthedocs&logoColor=white" alt="Documentation" /></a>
+</p>
+
+<p align="center">
+  <a href="https://docs.donkey-kit.dev/frameworks/langgraph"><img src="https://img.shields.io/badge/LangGraph-1C3C3C?logo=langgraph&logoColor=white" alt="LangGraph" /></a>
+  <a href="https://docs.donkey-kit.dev/frameworks/adk"><img src="https://img.shields.io/badge/Google_ADK-4285F4?logo=google&logoColor=white" alt="Google ADK" /></a>
+  <a href="https://docs.donkey-kit.dev/frameworks/openai"><img src="https://img.shields.io/badge/OpenAI_Agents_SDK-412991" alt="OpenAI Agents SDK" /></a>
+  <a href="https://docs.donkey-kit.dev/frameworks/agent-framework"><img src="https://img.shields.io/badge/Microsoft_Agent_Framework-5E5E5E" alt="Microsoft Agent Framework" /></a>
+  <a href="https://docs.donkey-kit.dev/frameworks/anthropic"><img src="https://img.shields.io/badge/Anthropic-191919?logo=anthropic&logoColor=white" alt="Anthropic" /></a>
+  <a href="https://docs.donkey-kit.dev/frameworks/crewai"><img src="https://img.shields.io/badge/CrewAI-FF5A50?logo=crewai&logoColor=white" alt="CrewAI" /></a>
+  <a href="https://docs.donkey-kit.dev/frameworks/llamaindex"><img src="https://img.shields.io/badge/LlamaIndex-8A2BE2" alt="LlamaIndex" /></a>
+  <a href="https://docs.donkey-kit.dev/frameworks/strands"><img src="https://img.shields.io/badge/Strands_Agents-FF9900" alt="Strands Agents" /></a>
+  <a href="https://docs.donkey-kit.dev/telemetry"><img src="https://img.shields.io/badge/OpenTelemetry-425CC7?logo=opentelemetry&logoColor=white" alt="OpenTelemetry" /></a>
 </p>
 
 # Donkey Development Kit
@@ -95,22 +112,25 @@ pip install -e ".[llm,cli]" --group dev
 
 Extras are one per framework (`langgraph`, `adk`, `strands`, `agent_framework`,
 `openai-agents`, `anthropic`, `crewai`, `llamaindex`) plus `otel`, `cli`, `local`,
-`test` (the [conformance pytest plugin](https://docs.donkey-kit.dev/testing) —
+`a2a` (the official `a2a-sdk`, for `donkey.serve()`), `mcp` (the MCP client a
+governed `ToolSet` binds with), `test` (the [conformance pytest plugin](https://docs.donkey-kit.dev/testing) —
 `pytest --donkey-conformance --donkey-agent=my_app.agent:build`), and `all`. `all` is
 everything a user runs that installs together — `llm`, `langgraph`, `otel`, `cli`,
-`local` — with no test runner, so add `test` for the conformance plugin:
+`local`, `a2a`, `mcp` — with no test runner, so add `test` for the conformance plugin:
 `donkey-kit[all,test]`. It leaves out the seven other framework extras, because
 whether they install together depends on their upstream releases. The generated
 [co-installability table](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/co-installability.md) shows which combinations resolve, re-checked
 nightly. Add the one framework you use: `donkey-kit[all,crewai]`.
 Configuration and first-agent walkthroughs live on the
-[documentation site](https://docs.donkey-kit.dev/).
+[documentation site](https://docs.donkey-kit.dev/). Features that call the Anypoint
+control plane (registry, tool discovery, `donkey publish`) need a connected app
+with the scopes listed per operation in [`docs/scopes.md`](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/scopes.md).
 
 ## Framework support
 
-The roster is deliberately **one deep, seven shallow** (`BG §1.8`): one adapter
-held to the full conformance bar, the rest supported through the three-line
-`connection_kwargs()` escape hatch. Every framework below returns its framework's
+The roster is deliberately **two deep, six shallow** (`BG §1.8`): LangGraph and
+the OpenAI Agents SDK are held to the full conformance bar, the rest supported
+through the three-line `connection_kwargs()` escape hatch. Every framework below returns its framework's
 **own native object** — never a wrapper.
 
 <!-- BEGIN GENERATED: framework-status (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
@@ -124,7 +144,7 @@ depth is the adapter roster's `conformance_tested`.
 | Google ADK | `donkey.adk.gemini()` | `connection_kwargs()` | **Live-verified** |
 | Strands | `donkey.strands.model()` | `connection_kwargs()` | **Live-verified** |
 | MS Agent Framework | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | **Live-verified** |
-| OpenAI Agents SDK | `donkey.openai_agents.model()` | `connection_kwargs()` | **Live-verified** |
+| OpenAI Agents SDK | `donkey.openai_agents.model()` | **Conformance-tested** | **Live-verified** |
 | Anthropic SDK | `donkey.anthropic.client()` | `connection_kwargs()` | **Live-verified** |
 | CrewAI | `donkey.crewai.llm()` | `connection_kwargs()` | **Live-verified** |
 | LlamaIndex | `donkey.llamaindex.llm()` | `connection_kwargs()` | **Live-verified** |
@@ -135,8 +155,9 @@ installed framework (`scripts/verify_frameworks.py`), with no live round-trip.
 **Live-verified** means a real round-trip through a governed proxy. The raw
 client (`donkey.llm.client()`) is conformance-tested too.
 
-`connection_kwargs()` works for all eight; a second deep adapter is promoted from
-demand evidence, one at a time (#223/#244) — never guessed up front. See the
+`connection_kwargs()` works for all eight; a deep adapter is promoted from demand
+evidence, one at a time — never guessed up front. The OpenAI Agents SDK was the
+second, on Phase 1 demand (#223); the next is #244. See the
 [framework pages](https://docs.donkey-kit.dev/frameworks/)
 for each. Which framework versions are supported and tested is on the site's
 [version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility)
@@ -151,14 +172,22 @@ conformance-tested against the simulator. For the adapters (each factory is
 listed under [Framework support](#framework-support)):
 
 <!-- BEGIN GENERATED: framework-status-summary (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
-LangGraph is conformance-tested against the simulator in CI.
+LangGraph and OpenAI Agents SDK are conformance-tested against the simulator in CI.
 Each adapter factory's constructor row in §8 of the ledger reads **live-verified**.
 <!-- END GENERATED: framework-status-summary -->
 
 Everything still gated raises `NotImplementedError("blocked on verification: …")`
-rather than guessing at an unverified endpoint, header, or class name — that
-currently includes Exchange→MCP tool discovery and Exchange publication; their
-types live in `donkey_kit.experimental`, outside the stable namespace. The SDK
+rather than guessing at an unverified endpoint, header, or class name. That
+currently covers a `Publication`'s descriptor derivation (`preview()`, `export()`),
+the lockfile (`donkey.tools.lock()`, `discover(locked=True)`), the governed-state
+search filters (`search(governed=, environment=, domain=)`) and the hidden
+`donkey status` command. Exchange search and the publication of scanned MCP
+servers and agents (`donkey publish`, `donkey verify`) are verified against a
+live sandbox. MCP tool discovery and every framework's `ToolSet` binding are
+verified through the governed gateway: behind Client ID Enforcement all eight
+frameworks called a bound tool (#1312); behind JWT Validation seven did and
+ADK's tools were listed but not called (#221). Their types (`ToolSet`,
+`GovernanceCriteria`, `UngovernedMcpServer`, …) are exported from `donkey_kit`. The SDK
 does not ship a provisioning control plane (ADR 0008 in `docs/adr/`). The adapters build their framework's native object directly; they
 refuse only when the installed framework version lacks the class or field the
 adapter depends on.
@@ -182,7 +211,21 @@ legitimately cannot satisfy a scenario, the reason is asserted in code
 | CrewAI | JWT refreshed per send | CrewAI's native OpenAI provider owns the transport and builds its own clients, so the rotating JWT the SDK adds per send never reaches its requests. `donkey.crewai.llm()` and `connection_kwargs()` raise `ConfigError` in `jwt` mode; use client-id auth with CrewAI. ADK's `model()` and `gemini()`, LlamaIndex and Microsoft Agent Framework send through the SDK's client and carry the rotating JWT on async calls ([`jwt` mode](https://docs.donkey-kit.dev/reference/configuration#jwt--model-wallet-auth-mode)). |
 | CrewAI | budget refusal not retried | CrewAI wraps every LLM call in its own rate-limit retry (3 attempts) and treats any `429` as a rate limit, so a `TokenBudgetExceeded` or `RequestRateLimitExceeded` refusal is sent 3 times. CrewAI has no setting to turn it off; the OpenAI client underneath has `max_retries=0`. Every other adapter sends a budget refusal once (#734). |
 | CrewAI | typed refusal bridged | CrewAI's native OpenAI provider owns the transport, so its errors come from a client the SDK never saw, and `donkey.run()` and `typed_refusals()` cannot tell a gateway refusal from any other failure there and pass those errors through (#724). ADK's `gemini()` and `model()` send through the SDK's transport and are bridged (conformance-tested in #955 and #969). LiteLLM, under `model()`, re-raises a refusal as its own exception, and the adapter's `llm_client` marks that exception with the refusal the SDK's transport received. |
+| CrewAI | refusal handler cannot un-refuse | CrewAI's native OpenAI provider owns the transport, so its refusals never reach the SDK's `_on_refusal` hook and handlers registered with [`donkey.on(...)`](https://docs.donkey-kit.dev/refusal-handlers) do not run for its calls. Every other adapter runs them, and none can turn a refusal into a success (#208, #209). |
+| CrewAI | custom policy typed | For the same reason, a refusal shape registered with [`classify.register()`](https://docs.donkey-kit.dev/custom-policies) is neither typed by `donkey.run()` nor seen by `donkey.on(...)` handlers for CrewAI's calls. Every other adapter raises the registered type, runs its handlers and records its slug as `donkey.policy.type` (#210). |
+| CrewAI | agent kill stops cleanly | CrewAI's native OpenAI provider owns the transport, so a kill-switch refusal never reaches the SDK's transport: it does not stop [`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget) loops or flush spans, and CrewAI's own rate-limit retry decides whether the call is re-sent. Every other adapter sends the kill once, stops every pace loop on the same `Donkey`, and flushes spans before the `AgentKilled` reaches your code (#220). |
+| CrewAI | approval round trip | CrewAI's native OpenAI provider owns the transport, so when an approved [`@donkey.tool(approval="required")`](https://docs.donkey-kit.dev/hitl) resumes, its model call carries neither the approval's correlation ID nor a typed refusal. The pause and the approver's span event work as for any Python code. The round trip runs on the raw client and LangGraph (#211, #212), the OpenAI Agents SDK, which pauses on its own `needs_approval` and resumes from the `RunState` (#213), and Strands' and ADK's own pauses (#1234, #1235): each resumes the call under the decision's correlation ID, and the gateway still judges it, so a refusal comes back typed. |
+| Google ADK | multi-server name collision | `ToolSet.adk()` binds each MCP server as one `McpToolset`, which takes an allow-list of tool names but cannot rename a single tool. When two servers expose a tool under the same name, the bind raises `ConfigError` before it connects; `filter(deny=["<server>__<tool>"])` keeps one of each. The LangGraph, LlamaIndex and Anthropic bindings bind each tool on its own and expose both as `<server>__<tool>` (#991). |
+| Strands Agents | multi-server name collision | For the same reason: `ToolSet.strands()` binds each server as one `MCPClient`, filtered by `tool_filters`. |
+| OpenAI Agents SDK | multi-server name collision | For the same reason: `ToolSet.openai_agents()` binds each server as one `MCPServerStreamableHttp`, filtered by a static `tool_filter`. Its model calls record no exemption. |
+| Microsoft Agent Framework | multi-server name collision | For the same reason: `ToolSet.agent_framework()` binds each server as one `MCPStreamableHTTPTool`, filtered by `allowed_tools`. |
+| CrewAI | multi-server name collision | For the same reason: `ToolSet.crewai()` binds each server as one `crewai_tools.MCPServerAdapter`, filtered by its `tool_names`. |
+| Google ADK | MCP tool denial typed | `ToolSet.adk()` leaves each tool call to `McpToolset`, which turns the gateway's MCP access denial (JSON-RPC `-32008` "Unable to access") into an error result whose text has lost the code, so the SDK cannot raise [`ToolNotInProfile`](https://docs.donkey-kit.dev/tool-access/binding#tools-outside-your-access-profile) from it. |
+| Strands Agents | MCP tool denial typed | For the same reason: `MCPClient` returns the denial as a `status: error` tool result without the code. |
+| OpenAI Agents SDK | MCP tool denial typed | `ToolSet.openai_agents()` leaves each tool call to `MCPServerStreamableHttp`, which raises the `mcp` package's `McpError` with the code intact; `tool_access_denial(exc)` turns it into `ToolNotInProfile`. |
+| Microsoft Agent Framework | MCP tool denial typed | For the same reason: `MCPStreamableHTTPTool` raises its `ToolExecutionException` with the `McpError` as its cause; `tool_access_denial(exc)` converts it. |
+| CrewAI | MCP tool denial typed | For the same reason: `MCPServerAdapter`'s tools raise the `McpError`; `tool_access_denial(exc)` converts it. |
 
-Each exemption matches what the adapter reports in `donkey.<framework>.capabilities()` (a frozen `AdapterCapabilities` per factory), and a unit test keeps the two in step (#726).
+Each transport exemption matches what the adapter reports in `donkey.<framework>.capabilities()` (a frozen `AdapterCapabilities` per factory): an adapter is exempt from the transport scenarios exactly when it reports `transport="framework"`, from gateway identity exactly when `observes_last_call` is false, and from the typed-refusal bridge exactly when `typed_refusals` is false. A unit test keeps the two in step (#726). The refusal-handler, custom-policy and kill scenarios run against every factory that reports `transport="shared"`, and a factory added without a run fails the suite (#1441). The multi-server and MCP tool denial rows are about binding MCP tools with [`ToolSet`](https://docs.donkey-kit.dev/tool-access/binding), not the model transport, so `capabilities()` does not report them.
 
 <!-- Generated from the repository README.md by python/scripts/generate_docs.py; edit that file, then run the script. -->

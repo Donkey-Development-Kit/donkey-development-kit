@@ -1,0 +1,66 @@
+{
+  "data": {
+    "asset": {
+      "version": "0.1.0",
+      "type": "agent",
+      "labels": [
+        "ddk",
+        "a2a",
+        "langgraph",
+        "demo"
+      ],
+      "files": [
+        {
+          "classifier": "a2a-card",
+          "packaging": "json",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": "a2a-card",
+          "packaging": "zip",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": "agent-metadata",
+          "packaging": "json",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": "agent-metadata",
+          "packaging": "zip",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": "fat-a2a-card",
+          "packaging": "zip",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": "fat-agent-metadata",
+          "packaging": "zip",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": "original-a2a-card",
+          "packaging": "json",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": "original-agent-metadata",
+          "packaging": "json",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": null,
+          "packaging": "pom",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": "icon",
+          "packaging": "png",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        }
+      ]
+    }
+  }
+}

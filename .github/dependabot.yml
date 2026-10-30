@@ -7,10 +7,11 @@
 # that is yanked within days never reaches a PR.
 version: 2
 updates:
-  # Every `uses:` in .github/workflows is pinned to a full commit SHA with a
-  # `# vX.Y.Z` comment; Dependabot moves both together.
+  # Every `uses:` in .github/workflows and in the scan-and-publish action
+  # (action/action.yml, #219) is pinned to a full commit SHA with a `# vX.Y.Z`
+  # comment; Dependabot moves both together.
   - package-ecosystem: github-actions
-    directory: /
+    directories: ["/", "/action"]
     target-branch: develop
     schedule:
       interval: weekly

@@ -21,7 +21,10 @@ from donkey_kit.core.errors import (
     UpstreamRequestError,
     classify,
     gateway_unavailable,
+    parse_retry_after,
 )
+from donkey_kit.core.step_up import GatewayApprovalDenied, GatewayApprovalPending
+from donkey_kit.core.telemetry import policy_type_slug
 from donkey_kit.core.transport import CALL_ID_HEADER, CORRELATION_HEADER
 from donkey_kit.simulator import fixtures as fx
 
@@ -68,6 +71,19 @@ def test_negative_retry_after_is_floored_at_zero(headers: dict[str, str]) -> Non
     err = classify(_resp(429, headers))
     assert isinstance(err, TokenBudgetExceeded)
     assert err.retry_after == 0.0
+
+
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "1e400"])
+@pytest.mark.parametrize("header", ["retry-after", "x-token-reset"])
+def test_a_non_finite_retry_after_is_none(header: str, value: str) -> None:
+    err = classify(_resp(429, {header: value}))
+    assert isinstance(err, TokenBudgetExceeded)
+    assert err.retry_after is None
+
+
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "1e400"])
+def test_parse_retry_after_refuses_a_non_finite_value(value: str) -> None:
+    assert parse_retry_after(value) is None
 
 
 def _fixture_response(shape: str) -> httpx.Response:
@@ -218,6 +234,140 @@ def test_content_safety_action_allow_is_not_content_safety_blocked() -> None:
     assert not isinstance(err, AuthError)
     assert isinstance(err, PolicyViolation)
     assert "shape unconfirmed" in str(err)
+
+
+def test_model_armor_response_phase_403_is_content_safety_blocked() -> None:
+    """#1178: a response-phase Model Armor block keeps the upstream's headers
+    (``x-gemini-*``, ``vary``) beside the vendor pair; the vendor header still
+    types it."""
+    err = classify(
+        _json_resp(
+            403,
+            {"error": "Content blocked by Google Model Armor", "categories": ["malicious_uri"]},
+            {
+                "x-gemini-service-tier": "standard",
+                "vary": "X-Origin,Referer,Origin,Accept-Encoding",
+                "x-llm-proxy-model-armor-action": "reject",
+                "x-llm-proxy-model-armor-phase": "response",
+                "x-llm-proxy-model-armor-reason": "malicious_uri",
+            },
+        )
+    )
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.categories == ["malicious_uri"]
+    assert "Google Model Armor" in str(err)
+
+
+@pytest.mark.parametrize(
+    ("prefix", "reason"),
+    [
+        ("model-armor", "timeout"),
+        ("azure-content-safety", "service_unavailable"),
+        ("bedrock-guardrail", "service_unavailable"),
+        ("crowdstrike-aidr", "auth_failed"),
+        ("crowdstrike-aidr", "indeterminate"),
+    ],
+)
+def test_content_safety_fail_closed_503_is_an_outage_not_a_block(prefix: str, reason: str) -> None:
+    """#1178: with ``failOpen`` off, a policy that cannot reach its moderation
+    service answers 503 with ``action: reject`` and the cause as the reason (per
+    the policy source). Nothing was judged, so it is the retryable 5xx, never a
+    terminal ContentSafetyBlocked."""
+    err = classify(
+        _json_resp(
+            503,
+            {"error": "service unavailable", "categories": [reason]},
+            {
+                f"x-llm-proxy-{prefix}-action": "reject",
+                f"x-llm-proxy-{prefix}-reason": reason,
+            },
+        )
+    )
+    assert isinstance(err, UpstreamModelError)
+    assert not isinstance(err, PolicyViolation)
+
+
+def test_model_armor_allow_with_skip_detection_is_not_a_block() -> None:
+    """#1178: ``skip_detection`` (content too large for a filter) rides on an
+    ``allow`` verdict; it is never a block, whatever the status."""
+    err = classify(
+        _resp(
+            403,
+            {
+                "x-llm-proxy-model-armor-action": "allow",
+                "x-llm-proxy-model-armor-reason": "skip_detection",
+            },
+        )
+    )
+    assert not isinstance(err, ContentSafetyBlocked)
+
+
+def test_crowdstrike_aidr_response_phase_403_is_content_safety_blocked() -> None:
+    """#1176/#1429: a response-phase CrowdStrike AIDR block (the policy rewrites the
+    completion, streamed or not, to a JSON 403) is typed by its vendor header,
+    with every triggered detector as a category. The shape is read from the
+    policy source, not captured live (ADR 0016)."""
+    err = classify(
+        _json_resp(
+            403,
+            {
+                "detectors": ["secrets", "topic"],
+                "error": "Content blocked by CrowdStrike Falcon AIDR",
+                "message": "",
+            },
+            {
+                "x-llm-proxy-crowdstrike-aidr-action": "reject",
+                "x-llm-proxy-crowdstrike-aidr-phase": "response",
+                "x-llm-proxy-crowdstrike-aidr-reason": "secrets,topic",
+            },
+        )
+    )
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.categories == ["secrets", "topic"]
+    assert "CrowdStrike AIDR" in str(err)
+
+
+def test_crowdstrike_aidr_reject_without_reason_has_no_categories() -> None:
+    """#1176: the policy omits the ``-reason`` header when no detector is named
+    (e.g. a reject from the verdict alone); still a block, with no categories."""
+    err = classify(
+        _resp(
+            403,
+            {
+                "x-llm-proxy-crowdstrike-aidr-action": "reject",
+                "x-llm-proxy-crowdstrike-aidr-phase": "request",
+            },
+        )
+    )
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.categories == []
+
+
+@pytest.mark.parametrize("action", ["allow", "transform"])
+def test_crowdstrike_aidr_allow_and_transform_are_not_blocks(action: str) -> None:
+    """#1176: ``allow`` (including report-only detections) and ``transform``
+    (redacted content forwarded) never block, whatever the status."""
+    err = classify(
+        _resp(
+            403,
+            {
+                "x-llm-proxy-crowdstrike-aidr-action": action,
+                "x-llm-proxy-crowdstrike-aidr-reason": "pii",
+            },
+        )
+    )
+    assert not isinstance(err, ContentSafetyBlocked)
+
+
+def test_a_policy_source_shape_states_its_evidence() -> None:
+    """ADR 0016 rule 3: a shape typed from the gateway policy's source says so
+    in the remediation and docstring a caller reads, and no remediation claims
+    the content-safety vendors are all identified from live captures."""
+    assert "CrowdStrike AIDR" in ContentSafetyBlocked.remediation
+    assert "policy source, not a live capture" in ContentSafetyBlocked.remediation
+    assert "not captured live" in (ContentSafetyBlocked.__doc__ or "")
+    assert "CrowdStrike AIDR from its policy source" in PolicyViolation.remediation
+    assert "identified specifically" not in PolicyViolation.remediation
 
 
 # --- bare model name on a multi-provider proxy (#825) -----------------------
@@ -429,8 +579,10 @@ def test_gateway_unavailable_remediation_names_the_three_causes_and_doctor() -> 
 
 
 def _all_policy_violation_types() -> set[type[PolicyViolation]]:
-    """Every PolicyViolation type, the base included, discovered transitively so
-    a subclass added later is covered without editing this test."""
+    """Every SDK PolicyViolation type, the base included, discovered transitively
+    so a subclass added later is covered without editing this test. Customer
+    subclasses that other tests define for ``classify.register()`` (#210) inherit
+    the base default by design, so only ``donkey_kit``'s own types are checked."""
     seen: set[type[PolicyViolation]] = {PolicyViolation}
     stack: list[type[PolicyViolation]] = [PolicyViolation]
     while stack:
@@ -438,7 +590,7 @@ def _all_policy_violation_types() -> set[type[PolicyViolation]]:
             if sub not in seen:
                 seen.add(sub)
                 stack.append(sub)
-    return seen
+    return {cls for cls in seen if cls.__module__.startswith("donkey_kit")}
 
 
 def test_every_policy_violation_type_ships_its_own_nonempty_default() -> None:
@@ -686,3 +838,49 @@ def test_classify_treats_an_unread_httpx2_body_as_absent() -> None:
     err = classify(response)
     assert isinstance(err, PolicyViolation)
     assert "shape unconfirmed" in str(err)
+
+
+# --- OAuth2 OBO CIBA step-up (#1320, docs/verified-apis.md §4) ---------------------------------
+_PENDING = {"error": "authorization_pending", "error_description": "in progress"}
+_DENIED = {"error": "access_denied", "error_description": "denied"}
+
+
+def test_ciba_pending_carries_the_gateway_retry_after() -> None:
+    err = classify(_json_resp(401, _PENDING, {"retry-after": "8"}))
+    assert isinstance(err, GatewayApprovalPending)
+    assert err.retry_after == 8.0
+    assert err.remediation is GatewayApprovalPending.remediation
+    assert policy_type_slug(err) is None  # nothing refused yet
+
+
+def test_ciba_pending_without_retry_after_is_still_pending() -> None:
+    err = classify(_json_resp(401, _PENDING))
+    assert isinstance(err, GatewayApprovalPending)
+    assert err.retry_after is None
+
+
+def test_ciba_denied_is_a_policy_violation_with_its_own_slug() -> None:
+    err = classify(_json_resp(403, _DENIED))
+    assert isinstance(err, GatewayApprovalDenied)
+    assert err.policy == "oauth2-obo-ciba"
+    assert policy_type_slug(err) == "approval_denied"
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        # The body value needs its own status: a swapped pair is not a CIBA answer.
+        (403, _PENDING, PolicyViolation),
+        (401, _DENIED, AuthError),
+        # A plain 401 and a challenged 401 stay auth failures.
+        (401, {"error": "unauthorized"}, AuthError),
+        # A nested provider envelope with that code is not the OBO policy's flat string.
+        (403, {"error": {"code": "access_denied", "message": "x"}}, UpstreamRequestError),
+        (400, _DENIED, PolicyViolation),
+    ],
+)
+def test_ciba_rules_need_their_status_and_flat_error(
+    status: int, body: dict, expected: type[DonkeyError]
+) -> None:
+    err = classify(_json_resp(status, body))
+    assert type(err) is expected

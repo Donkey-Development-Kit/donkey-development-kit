@@ -5,14 +5,37 @@ Status: Live. Shipped, and verified against a real governed gateway.
 The OpenAI Agents SDK (pip package `openai-agents`) gets a governed
 `OpenAIChatCompletionsModel` backed by a pre-built `AsyncOpenAI` client. The
 adapter builds that client itself, with the SDK's shared HTTP client and proxy
-headers, and hands it to the Agents SDK ready-made.
+headers, and hands it to the Agents SDK ready-made. It is a **deep adapter**
+(`BG §1.8`, promoted by Phase 1 demand in #223): like LangGraph, it runs the full
+conformance suite in CI.
 
 **What you get**
 
 - A native `agents.OpenAIChatCompletionsModel`.
 - Full header **and** transport injection — both travel together in one
   `AsyncOpenAI` object.
-- Supported at `connection_kwargs()`.
+- Per-run correlation IDs that reach the agent's dynamic instructions, its
+  `function_tool`s, and every model request.
+- Typed gateway refusals (`PIIDetected`, `TokenBudgetExceeded`, …) out of
+  `Runner.run`, inside [`typed_refusals()`](https://docs.donkey-kit.dev/errors.md).
+- A conformance suite you can run against your own agent.
+
+  **Turn off the Agents SDK's own tracing.** The Agents SDK traces every run
+  by default. Its default exporter posts those traces, including each model
+  call's input and output, to OpenAI's trace ingest endpoint
+  (`https://api.openai.com/v1/traces/ingest`) whenever an OpenAI API key is
+  available, for example `OPENAI_API_KEY` in the environment. That export
+  does not go through the gateway, so the gateway's PII and content policies
+  never see it. DDK leaves the setting alone, because flipping it would be a
+  hidden process-wide change. Turn it off yourself with any one of these:
+
+  - `agents.set_tracing_disabled(True)`, once at startup, for the whole process;
+  - `Runner.run(agent, input, run_config=RunConfig(tracing_disabled=True))`, per run;
+  - `OPENAI_AGENTS_DISABLE_TRACING=1` in the environment.
+
+  DDK's own [OpenTelemetry spans](https://docs.donkey-kit.dev/telemetry.md#opentelemetry-genai-spans) still
+  cover every governed model call, and they
+  [leave message content off by default](https://docs.donkey-kit.dev/telemetry.md#message-content-stays-off-spans-by-default).
 
 ## Install
 
@@ -128,6 +151,32 @@ class LastCallHooks(RunHooks):
 agent = Agent(name="assistant", model=donkey.openai_agents.model("gpt-4o"))
 await Runner.run(agent, "hello", hooks=LastCallHooks())
 ```
+
+## Run the conformance suite against your own agent
+
+The suite that tests this adapter is also a pytest plugin you can point at
+your own agent:
+
+```bash
+pytest --donkey-conformance --donkey-agent=my_app:build
+```
+
+`build` returns an object with an awaitable `run(text)`. The suite checks that
+it doesn't retry a budget refusal, surfaces `PIIDetected` typed, carries the
+correlation ID into its logs, and tolerates a response with no budget headers.
+The [`examples/openai_agents`](https://github.com/Donkey-Development-Kit/donkey-development-kit/tree/main/python/examples/openai_agents)
+factory has exactly this shape: it wraps `Runner.run` in `typed_refusals()`.
+[Support triage with the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md)
+walks through it end to end. See [Testing](https://docs.donkey-kit.dev/testing.md).
+
+The SDK's internal conformance matrix records no exemption for the Agents SDK,
+**approval round trip** included. An `@donkey.tool(approval="required")` wrapped
+with `donkey_kit.integrations.openai_agents.function_tool` sets the Agents SDK's
+own `needs_approval`, so `Runner.run` pauses with the call in
+`result.interruptions`. `pending_approvals`, `approve` and `reject` record the
+decision on the `RunState`, and `Runner.run(agent, state)` resumes (#213). Each
+helper returns an `Approval`; `approve` and `reject` return it with the
+`RunState` on `native`. See [Human approval](https://docs.donkey-kit.dev/hitl.md#in-an-openai-agents-sdk-run).
 
 ## Notes
 

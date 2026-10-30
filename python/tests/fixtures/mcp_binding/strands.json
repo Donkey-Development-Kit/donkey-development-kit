@@ -1,0 +1,33 @@
+{
+  "binding": {
+    "call": "with MCPClient(url=url, headers={...}) as c: tools = c.list_tools_sync(); Agent(tools=tools).tool.add(a=2, b=3)",
+    "class": "MCPClient",
+    "module": "strands.tools.mcp"
+  },
+  "date": "2026-10-28",
+  "distributions": {
+    "mcp": "2.1.1",
+    "strands-agents": "1.62.0"
+  },
+  "framework": "strands",
+  "headers_seen": {
+    "client_id": "probe-id",
+    "client_secret": "probe-secret"
+  },
+  "native_tool_types": [
+    "strands.tools.mcp.mcp_agent_tool.MCPAgentTool"
+  ],
+  "tool_call": {
+    "args": {
+      "a": 2,
+      "b": 3
+    },
+    "name": "add",
+    "result": "5"
+  },
+  "tools_listed": [
+    "add",
+    "lookup_sku"
+  ],
+  "url_shape": "http://127.0.0.1:<port>/mcp/"
+}

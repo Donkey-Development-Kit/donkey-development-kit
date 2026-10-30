@@ -16,17 +16,36 @@ Every platform API the SDK calls is classified:
 |---|---|
 | **Documented and public** | Safe to depend on. |
 | **Documented, no SLA for third-party use** | Observed on a real gateway but not promised to third parties. The SDK reads it fail-open, and the maintainers update the SDK if it changes. |
-| **Undocumented** | Must stay empty. Anything here needs a written justification and an owner. |
+| **Undocumented** | Kept to what a shipped feature cannot do without. Anything here needs a written justification and an owner. |
 
 ## Current boundary
 
-The SDK can reach two platform destinations: the Model Proxy, for every model
-call, and the Anypoint connected-app token endpoint, only when a control-plane
-feature needs a token. Model calls never request that token. The features that
+The SDK calls three kinds of platform destination. Every model call goes to
+the Model Proxy. Control-plane features call the Anypoint control plane, with a
+connected-app token. Governed MCP servers and A2A agents are called through
+their Omni Gateway instance. Model calls never request a control-plane token. The features that
 would request it are listed in
-[Which features use the control plane](https://docs.donkey-kit.dev/reference/configuration.md#which-features-use-the-control-plane);
-all of them are Roadmap in this release, so the token endpoint is contacted
-only if your own code calls `AnypointConnectedApp.token()`. The rows below
+[Which features use the control plane](https://docs.donkey-kit.dev/reference/configuration.md#which-features-use-the-control-plane).
+In this release they are `donkey publish` and `donkey.registry.search()`,
+which also call Exchange, `donkey.registry.resolve_mcp()` and
+`resolve_agent()`, which read Access Management, API Manager and Omni Gateway
+Manager, and `donkey.registry.explain()`, which reads Access Management, API
+Manager, Exchange and API Governance. `donkey.tools.discover()` makes the
+`search()`, `explain()` and `resolve_mcp()` reads, and `Publication.verify()`
+and `donkey verify` read the published version from Exchange. `donkey expose` and `donkey preflight`
+read Access Management, Omni Gateway Manager, Exchange and API Manager, and
+(`expose` only) publish to Exchange, create an API Manager instance with its
+policies and deploy it; the rest are Roadmap.
+Otherwise the token endpoint is contacted only if your own code calls
+`AnypointConnectedApp.token()`. Exchange returns a version's files as links to
+another host, which the SDK downloads without any credential.
+
+The gateway calls use the consumer credential that model calls use, never the
+connected-app token. A bound `ToolSet` lists and calls a governed server's MCP
+tools through its gateway instance. `Publication.verify()` and `donkey verify`
+read the live server's tools, or the live agent's card, the same way.
+
+The rows below
 classify each contract the SDK consumes. Any feature that would need an unconfirmed endpoint stops
 before making a network request.
 
@@ -38,13 +57,43 @@ before making a network request.
 | LLM Token Based Rate Limit `429`: `x-token-limit`, `x-token-remaining`, `x-token-reset` | `core.budget.Budget`, `core.errors.classify` | **Documented and public** | Updates `donkey.budget` and types `TokenBudgetExceeded`. Documented in the [LLM Token Based Rate Limit policy](https://docs.mulesoft.com/gateway/latest/policies-included-llm-token-rate-limit). |
 | LLM PII Detection `403` body (`error.type = "pii_detected"`) | `core.errors.classify` | **Documented and public** | Types `PIIDetected`. Documented in the [LLM PII Detection policy](https://docs.mulesoft.com/gateway/latest/policies-included-llm-pii-detection). |
 | Regex Prompt Guard body and Injection Protection response header | `core.errors.classify` | **Documented and public** | Types `PromptInjectionBlocked`. MuleSoft documents `matched_patterns` in [Regex Prompt Guard](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) and `x-injection-protection: blocked` in [Injection Protection](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection). |
-| Azure Content Safety and Amazon Bedrock Guardrails rejection headers and bodies | `core.errors.classify` | **Documented and public** | Types `ContentSafetyBlocked`. Documented in the [Azure Content Safety](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) and [Amazon Bedrock Guardrails](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) policy pages. |
+| Azure Content Safety, Amazon Bedrock Guardrails, Google Model Armor and CrowdStrike AIDR rejection headers and bodies | `core.errors.classify` | **Documented and public** | Types `ContentSafetyBlocked`. Documented in the [Azure Content Safety](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety), [Amazon Bedrock Guardrails](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails), [Google Model Armor Guardrails](https://docs.mulesoft.com/gateway/latest/policies-included-google-model-armor-guardrails) and [CrowdStrike AIDR Guardrails](https://docs.mulesoft.com/gateway/latest/policies-included-crowdstrike-aidr-guardrails) policy pages. The CrowdStrike AIDR headers and body are read from the policy's source (`crowdstrike-aidr-guardrails-policy` 1.0.0), not captured against a live proxy: the ledger records them at `VERIFIED (POLICY SOURCE)`. Owner: DDK maintainers; replace the derived fixture with a capture when an AIDR proxy is available. |
 | Upstream provider error pass-through: the nested non-`429` `4xx` envelope, and the generic `5xx` status family | `core.errors.classify` | **Documented, no SLA for third-party use** | Classifies the nested envelope as `UpstreamRequestError`; a generic `5xx` becomes `UpstreamModelError` by status only, with no assumed body. The envelope schema belongs to the upstream provider, and MuleSoft's public Model Proxy page states no pass-through compatibility contract. Owner: DDK maintainers; keep the captured provider fixture and classify a changed envelope conservatively. |
 | Successful-response budget window in the `x-llm-proxy-ratelimit` sentence | `core.budget.Budget` | **Documented, no SLA for third-party use** | Updates `donkey.budget`; an absent or changed value is ignored, never fatal. Owner: DDK maintainers; re-capture the header when the gateway policy changes. |
 | Gateway identity and routing headers: `x-request-id`, `x-envoy-decorator-operation`, `x-llm-proxy-{routing-type,routing-fallback,llm-provider,llm-model}` | `core.lastcall.LastCall`, `core.transport` | **Documented, no SLA for third-party use** | Populates `donkey.last_call`; missing or unrecognised values become `None`, and only an explicit `routing-fallback: true` changes retry behaviour. Owner: DDK maintainers; a contract change needs new fixtures before the parser changes. |
+| Exchange Graph API asset search: `POST /graph/api/v1/graphql`, `assets(query: {searchTerm, organizationIds, tags}, latestVersionsOnly: true)` | `registry.exchange.ExchangeRegistry.search` | **Documented and public** | Searches the business group's assets, at their latest versions. Documented in [Searching the Graph API](https://docs.mulesoft.com/exchange/to-search-with-graph-api). A tag filter there also matches the keyed tags Exchange derives, so the SDK keeps only assets whose matching tags are keyless, the kind the page says are set in Exchange or at publish. |
+| The `types`, `limit` and `offset` fields of the Graph API search's `query` input | `registry.exchange.ExchangeRegistry.search` | **Undocumented** | Filters by asset type and pages the results. The Graph API page does not list them; the documented REST search (`GET /exchange/api/v2/assets/search`) takes the same three parameters, but it needs the root organisation's ID and has no text filter. Justification: without them, an `asset_types` filter would read the whole group and a search could not page. Owner: DDK maintainers. A refusal raises `RegistryError`; `tests/fixtures/anypoint/exchange_search/` holds the captures to re-check against. |
+| Access Management environment list: `GET /accounts/api/organizations/{org}/environments` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain`, `registry.expose.expose` | **Documented and public** | Finds the id of the environment named by `ANYPOINT_ENV`. Documented in the [Access Management API](https://dev-portal.mulesoft.com/apis/access-management.html) reference. |
+| API Manager instance reads: `GET /apimanager/api/v1/…/environments/{env}/apis?assetId=&groupId=&assetVersion=`, `GET …/apis/{id}` and `GET …/apis/{id}/policies` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `explain`, `registry.expose.expose` | **Documented and public** | Finds the asset version's deployed MCP instance and reads its path and gateway. `explain()` also reads each deployed instance's policies and gateway name. `donkey expose` lists the environment's instances (`?limit=500`) to find its label, and reads the instance and its policies to tell what is already there. Documented in the [API Manager API](https://dev-portal.mulesoft.com/apis/api-manager.html) reference (`listApiInstances` takes the three filters). |
+| Exchange asset version read: `GET /exchange/api/v2/assets/{group}/{asset}/{version}` | `registry.exchange.ExchangeRegistry.explain` | **Documented and public** | Reads the version's tags (`labels`) and lifecycle `status` for `require_tags` and `require_lifecycle`. Documented in the [Exchange Experience API](https://dev-portal.mulesoft.com/apis/exchange-experience.html) reference (`getAssetVersion`). A refused read makes both checks UNKNOWN. |
+| API Governance conformance read: `GET /governance/xapi/api/v1/stats/organization/targets/{group}/{asset}/{version}?organization={org}` | `registry.exchange.ExchangeRegistry.explain` | **Documented, no SLA for third-party use** | Reads the business group's governance reports for the version (`summaryStatus` per ruleset) for `require_governance_pass`. It is the API Governance Experience API, which [Getting Started with API Governance](https://docs.mulesoft.com/api-governance/get-started) points to for retrieving conformance status, and whose spec is published in Exchange as `api-governance-xapi`. As an experience API it has no third-party support commitment, so the SDK reads it fail-open: no report, an unrecognised status or a refused read makes the check UNKNOWN. Owner: DDK maintainers; `tests/fixtures/anypoint/mcp_explain/` holds the captures to re-check against. |
+| Omni Gateway Manager gateway read: `GET /gatewaymanager/api/v1/…/environments/{env}/gateways/{id}` | `registry.exchange.ExchangeRegistry.resolve_mcp`, `registry.expose.expose` | **Documented and public** | Reads the gateway's `configuration.ingress.publicUrl`, the host of the resolved MCP endpoint. `donkey expose` also reads its `status`, `runtimeVersion` and listener port. Documented in the [Omni Gateway Manager API](https://dev-portal.mulesoft.com/apis/flex-gateway-manager.html) reference. |
+| Omni Gateway Manager gateway list: `GET /gatewaymanager/api/v1/…/environments/{env}/gateways?name={name}` | `registry.expose.expose` | **Documented and public** | Finds the gateway `donkey expose` deploys to, by the name in `[donkey.expose]`. Documented in the [Omni Gateway Manager API](https://dev-portal.mulesoft.com/apis/flex-gateway-manager.html) reference (`listGateways`). `name` matches a substring, so the SDK keeps the exact name only. A gateway that is not there is reported missing, never created. |
+| API Manager instance writes: `POST /apimanager/api/v1/…/environments/{env}/apis`, `POST …/apis/{id}/policies` and `GET …/apis/{id}/upstreams` | `registry.expose.expose` | **Documented and public** | Creates the instance for the published asset version, applies its inbound policies, and reads the upstream ids an outbound policy attaches to. Documented in the [API Manager API](https://dev-portal.mulesoft.com/apis/api-manager.html) reference. `donkey expose` never edits, moves or deletes what is there. |
+| Proxy deployment: `POST /proxies/xapi/v1/…/environments/{env}/apis/{id}/deployments`, then `GET …/deployments/{deploymentId}/status` | `registry.expose.expose` | **Documented, no SLA for third-party use** | Deploys the instance to the gateway and polls until it is applied. It is the Proxies Experience API (`createProxyDeployment`, `getProxyDeploymentStatus` in the [`proxies-xapi`](https://dev-portal.mulesoft.com/apis/proxies-xapi.html) reference). As an experience API it has no third-party support commitment. Owner: DDK maintainers; a refusal or a deployment that is not applied in time fails the step, and `tests/fixtures/anypoint/mcp_instance/` and `a2a_instance/` hold the captures to re-check against. |
+| Outbound policy on an A2A instance: `POST /apimanager/xapi/v1/…/environments/{env}/apis/{id}/policies/outbound-policies` | `registry.expose.expose` | **Undocumented** | See [Undocumented surfaces](#undocumented-surfaces). |
+| Exchange asset publish: `POST /exchange/api/v2/organizations/{org}/assets/{group}/{asset}/{version}`, multipart, with `x-sync-publication: true` | `registry.exchange_publish.publish_plan`, `registry.expose.expose` | **Documented and public** | Publishes each planned version of an `mcp` or `agent` asset with its `name`, `description`, `type`, `properties.*` fields and files. A `409` means the version exists, and the SDK never overwrites it. Documented in [Publishing Assets Using the Exchange API](https://docs.mulesoft.com/exchange/exchange-api) and the [Exchange Experience API](https://dev-portal.mulesoft.com/apis/exchange-experience.html) reference (`uploadOrganizationAssetVersion`); [Asset Types](https://docs.mulesoft.com/exchange/asset-types) lists agents and MCP servers. The files and the digest property it sends have their own rows below. |
+| Agent Fabric metadata files: the `files.mcp-metadata.json` and `files.agent-metadata.json` fields of the publish and, for an A2A agent, `files.a2a-v1-card.json` | `registry.exchange_publish.publish_plan`, `registry.exchange.ExchangeRegistry.published_tools`, `published_card` | **Undocumented** | Publishes an MCP server's tools, and an agent's protocol and A2A card. The SDK reads them back for `Publication.verify()` and `donkey verify`, and for the "Changes since" section of a new MCP version's page. The `files.{classifier}.{packaging}` field is documented, but neither the Exchange docs nor the Exchange Experience API names these classifiers or describes their contents: they are the files the Anypoint CLI's agent-fabric plugin publishes. Justification: no documented Exchange field holds an MCP server's tools or an agent's card. Also, API Manager creates the `a2a` instance `donkey expose` needs only for an agent whose `agent-metadata` protocol is `a2a`. Owner: DDK maintainers. A refused publish fails the asset, and a version without the file has no "Changes since" section and fails `verify()` with `RegistryError`. `tests/fixtures/anypoint/exchange_publish/` and `a2a_card/` hold the captures to re-check against. |
+| The publish digest: the `properties.ddkDigest` field, read back from the version's generated POM | `registry.exchange_publish.publish_plan`, `latest_version` | **Undocumented** | Records the planned content's digest with each version, so `donkey publish --if-changed` leaves an unchanged asset alone and a rerun can finish an incomplete publish. The Exchange Experience API takes `properties.*` fields at upload but does not say where Exchange keeps them. In live captures, Exchange keeps the field only in the generated POM's `<properties>`, which the SDK downloads from its `externalLink` (below). Justification: `--if-changed` needs a value that is written with the version and can be read back, and a documented custom field must first be configured in each organization. Owner: DDK maintainers. A digest that cannot be read counts as different content, so a version is never overwritten; at worst an unchanged asset needs a version bump. `tests/fixtures/anypoint/exchange_publish/` holds the captures (`pom.xml`). |
+| Exchange Graph API v2 asset query: `POST /graph/api/v2/graphql`, `asset(groupId, assetId, version) { version name description files { classifier packaging externalLink } }` | `registry.exchange_publish.publish_plan`, `registry.exchange.ExchangeRegistry.published_tools`, `published_card` | **Documented and public** | Reads a version's files for `Publication.verify()`, `donkey verify` and `donkey publish`. [Searching the Graph API](https://docs.mulesoft.com/exchange/to-search-with-graph-api) documents the v2 URL with the `asset(groupId, assetId, version)` query, and lists the asset fields the SDK reads, `files { classifier, packaging, externalLink }` among them. |
+| The rest of the Graph API v2 asset query: `asset(groupId, assetId)` with no version, its `otherVersions { version }`, `versionGroup` and `instances { endpointUri }` fields, and the not-found answer, a `200` whose error has `extensions.status: 404` | `registry.exchange_publish.publish_plan`, `latest_version`, `registry.expose.expose` | **Undocumented** | Finds an asset's latest version and the versions it already has, so `donkey publish` never re-sends one. Also finds the version group an endpoint is registered under, and whether it is registered already. The Graph API page does not list them. Justification: one query per asset answers what `donkey publish` needs before it sends anything. The documented `getAssetVersion` (`GET /exchange/api/v2/assets/{group}/{asset}/{version}`) returns `versions`, `files` and `instances` too, but needs a version named, and moving to documented reads has not been tried. Owner: DDK maintainers. A refused or failed query raises `RegistryError`; `tests/fixtures/anypoint/exchange_publish/` holds the captures (`graphql.*.json`). |
+| Exchange file downloads: `GET` of the `externalLink` the Graph API returns for a version's POM and JSON files | `registry.exchange_publish.publish_plan`, `latest_version`, `registry.exchange.ExchangeRegistry.published_tools`, `published_card` | **Documented, no SLA for third-party use** | Downloads the POM, for the digest, and the `mcp-metadata` or agent-card file. The Graph API page and the Exchange Experience API's asset schema both list each file's `externalLink`. That the link downloads without an Anypoint credential is observed, not documented. The SDK sends no credential to that host, and refuses a link that is not `https`. Owner: DDK maintainers; a refused download raises `RegistryError`, and `tests/fixtures/anypoint/exchange_publish/` and `a2a_card/` hold the captures to re-check against. |
+| Exchange external instance: `POST /exchange/api/v2/assets/{group}/{asset}/versionGroups/{versionGroup}/instances/external`, body `{name, endpointUri}` | `registry.exchange_publish.publish_plan` | **Documented and public** | Registers a published version's endpoint, once per endpoint URI. The instance belongs to the version group, so later patch versions list it too. Documented in [Publishing Assets Using the Exchange API](https://docs.mulesoft.com/exchange/exchange-api) ("Add Runtime Information to Your Asset") and the [Exchange Experience API](https://dev-portal.mulesoft.com/apis/exchange-experience.html) reference (`createExternalInstance`). |
+| Exchange asset portal draft: `GET /exchange/api/v2/assets/{group}/{asset}/{version}/portal/draft`, `POST …/portal/draft/pages` and `PUT …/portal/draft/pages/home` | `registry.exchange_publish.publish_plan` | **Documented and public** | Opens the version's portal draft and writes its Home page in Markdown. A rerun reads the draft's `draftStatus` and `pages` to tell whether the page is published. Documented in [Publishing Assets Using the Exchange API](https://docs.mulesoft.com/exchange/exchange-api) ("Add a New Page in Draft Mode", "Add Content to the Page") and the [Exchange Experience API](https://dev-portal.mulesoft.com/apis/exchange-experience.html) reference (`getAssetPortalDraft`, `createAssetPortalDraftPage`, `updateAssetPortalDraftPage`). |
+| Publishing the portal draft: `PATCH /exchange/api/v1/assets/{group}/{asset}/{version}`, with no body | `registry.exchange_publish.publish_plan` | **Undocumented** | Publishes the version's page. It is the call `anypoint-cli-v4 exchange asset page upload` makes. The Exchange docs describe only the v2 Exchange API, and no public reference documents this v1 call. Justification: it is the only draft publish the SDK has a live capture of. The Exchange API page documents `PATCH /exchange/api/v2/assets/{group}/{asset}/{version}/portal` for the same step, and the Exchange Experience API also lists `PUT …/portal/draft` (`publishAssetPortal`, `publishAssetPortalDraft`). Moving to one of them needs a live capture first. Owner: DDK maintainers. A refusal leaves the asset `incomplete`, and a rerun publishes the page; `tests/fixtures/anypoint/exchange_publish/` holds the captures. |
+| Exchange asset name and description: `PATCH /exchange/api/v2/assets/{group}/{asset}`, JSON `{name, description}` | `registry.exchange_publish.publish_plan` | **Documented and public** | Sets the declared name or description when it differs from the asset's. In live captures, Exchange keeps the name and description of an asset's first version, and this call changes them for every version. Documented in the [Exchange Experience API](https://dev-portal.mulesoft.com/apis/exchange-experience.html) reference (`updateAsset`). |
+| MCP over streamable HTTP through Omni Gateway: `initialize` and `tools/list` on a governed instance's endpoint | `tools.mcp.list_tools`, `tools.session.ToolSet`, `registry.publication.Publication.verify` | **Documented and public** | Lists a governed server's tools for `ToolSet.describe()`, the framework bindings and `Publication.verify()`. It sends the consumer credential the instance's policy reads: the `client_id` / `client_secret` pair, or a bearer token behind JWT Validation. Nothing is sent to a server that `explain()` does not find governed. The [MCP Support policy](https://docs.mulesoft.com/gateway/latest/policies-included-mcp-support) is how Omni Gateway fronts an MCP server, up to MCP `2025-06-18`, and links the [MCP specification](https://modelcontextprotocol.io/specification/2025-06-18), which defines both methods. |
+| MCP `tools/call` through Omni Gateway, and its tool-access denial: HTTP `200` with JSON-RPC error `-32008` `"Unable to access"` | the bound framework's MCP client, `tools.session.ToolSet`, `core.tool_access.tool_access_denial` | **Documented and public** | The bound framework's own MCP client calls the tool, with the binding's credential headers. The LangGraph, LlamaIndex and Anthropic bindings raise the denial as `ToolNotInProfile`. The [MCP Global Access policy](https://docs.mulesoft.com/gateway/latest/policies-included-mcp-global-access) documents the `200` with error `-32008`. The `"Unable to access"` message the SDK also matches was captured live, so a changed message reaches you as the framework's own error. Owner: DDK maintainers; `tests/fixtures/anypoint/mcp_access/` holds the captures to re-check against. |
+| A2A agent card through Omni Gateway: `GET <endpoint>.well-known/agent-card.json` | `tools.discovery.Discovery.agent_card`, `registry.publication.Publication.verify` | **Documented and public** | Reads the card a governed agent serves through its gateway instance, with the same consumer credential, for `Publication.verify()` and `donkey verify`. Nothing is sent to an agent that `explain()` does not find governed, and no redirect is followed. The [A2A v1 Agent Card policy](https://docs.mulesoft.com/gateway/latest/policies-included-a2a-v1-agent-card) documents the gateway serving `GET /.well-known/agent-card.json` and rewriting each interface's `url`, which is why the comparison with the published card skips those fields. |
+| OAuth 2.0 OBO Credential Injection CIBA step-up: `401` `{"error": "authorization_pending"}` with `Retry-After`, and `403` `{"error": "access_denied"}` | `core.errors.classify`, `tools.mcp.list_tools` | **Documented and public** | Types `GatewayApprovalPending`, with its `retry_after`, and `GatewayApprovalDenied` while the gateway waits for the user to approve a call out of band. On `tools/list` they back `ToolSet.wait_for_gateway_approval()`; on a framework's `tools/call` they reach you as that framework's error. The [OAuth 2.0 OBO Credential Injection policy](https://docs.mulesoft.com/gateway/latest/policies-outbound-oauth-obo) documents the `401` body and `Retry-After`. The `403` denial is not on that page: it was captured live. If either shape changes, `tools/list` raises `AuthError`; elsewhere a changed `401` becomes `AuthError` and a changed `403` a generic `PolicyViolation`. Owner: DDK maintainers; the simulator's `reject.ciba-pending` and `reject.ciba-denied` fixtures hold the captures. |
+
+The connected-app scope each of these calls needs is in
+[Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md).
 
 How each row was established (live capture, plugin test, and so on) is in the
-[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md), sections 1 to 4.
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md): sections 1 to 4 for the
+Model Proxy and the gateway's rejections, 7 and 12 for Exchange, and 9 for MCP
+tool calls.
 
   **Streaming chat completions to a Gemini upstream.** On an OpenAI-format
   proxy that routes to Gemini, `chat.completions.create(..., stream=True)`
@@ -61,11 +110,18 @@ How each row was established (live capture, plugin test, and so on) is in the
 
 ## Deliberately outside the boundary
 
-- Exchange search and resolution, API Manager governed-state reads, MCP
-  discovery and binding, and Exchange publication are
-  Roadmap, not hidden dependencies. Today they
-  raise `NotImplementedError("blocked on verification: …")` before making any
+- `Publication.preview()` and `Publication.export()`, `donkey.tools.lock()`
+  and `donkey.registry.warm()` are Roadmap, not
+  hidden dependencies. Today they raise
+  `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.
+- `donkey.as_user()` forwards the user's token on model calls and on the MCP
+  tool sets bound in its block; the gateway runs the exchange. It adds no
+  platform API: the token rides only to the Model Proxy and the governed MCP
+  servers the block calls, as `Authorization: Bearer`, the header the gateway's
+  JWT Validation and on-behalf-of policies read (see the ledger, section 13).
+  You can move it with `user_token_header`. The token is sent only when your
+  code enters `as_user()`.
 - `LLMClient.list_models(live=True)` does not call `GET /models`: the Model
   Proxy has no model-catalog endpoint.
 - The application and business-group attribution header names are
@@ -79,22 +135,39 @@ How each row was established (live capture, plugin test, and so on) is in the
 
 ## Undocumented surfaces
 
-This section must stay empty. A surface listed here needs a written
-justification and an owner, and is re-evaluated at every milestone.
+An undocumented surface needs a written justification and an owner, and is
+re-evaluated at every milestone. Each Undocumented row in the table above
+carries both, except the one below, which needs more room than a row.
 
-_(none)_
+- **Outbound policy on an A2A instance**:
+  `POST /apimanager/xapi/v1/organizations/{org}/environments/{env}/apis/{id}/policies/outbound-policies`,
+  body `{configurationData, groupId, assetId, assetVersion, upstreamIds,
+  apiVersionId}`. Used by `donkey expose` for a policy declared with
+  `outbound = true`. Justification: the public policy path refuses an
+  outbound-only policy ("This policy can not be applied as inbound"), and
+  neither the API Manager API nor any other reference on MuleSoft's developer
+  portal documents another way to attach one to an instance's upstreams. The
+  Anypoint CLI's agent-fabric plugin sends the same call. It is made only when
+  a project declares an outbound policy, and a refusal fails that policy's step
+  and skips the deployment. Owner: DDK maintainers;
+  `tests/fixtures/anypoint/a2a_instance/` holds the capture to re-check
+  against.
 
 ## Local Mode is not supported
 
   Donkey Development Kit does not support Omni/Flex Gateway **Local Mode**.
   The [local simulator](https://docs.donkey-kit.dev/simulator.md) (`donkey mock` / `simulate()`) is the
   supported local dev loop; real-gateway behavior is exercised against a
-  hosted (Connected Mode) proxy instead. A stock Flex Gateway 1.14.0 Local
-  Mode image rejects the LLM Proxy and MCP Bridge policies as missing
-  extensions and refuses configuration until registered to a control plane —
-  enough to make this scope call, bounded to that image version. See the
+  hosted (Connected Mode) proxy instead. MuleSoft documents Model Proxy as
+  supported only on Managed Omni Gateway and Self-Managed Omni Gateway in
+  Connected Mode. It also documents every MCP and A2A policy as unsupported in
+  Local Mode, and a Local Mode gateway still has to register with an Anypoint
+  control plane. A stock Flex Gateway 1.14.0 Local Mode image showed the same
+  behavior. For the same reason, `donkey dev` won't run a real gateway on your
+  machine. It uses simulated ingress instead. See the
   [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md#6-governance--local-mode-the-verification-milestone)
-  and [issue #661](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/661).
+  [issue #661](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/661),
+  and [issue #258](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/258).
 
 ## Support statement
 

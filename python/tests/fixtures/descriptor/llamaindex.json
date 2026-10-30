@@ -1,0 +1,55 @@
+{
+  "framework": "llamaindex",
+  "distribution": "llama-index-core",
+  "version": "0.14.25",
+  "python": "3.12",
+  "captured": "2026-10-26",
+  "capture": "python scripts/capture_descriptor_fixtures.py --write",
+  "object": "llama_index.core.tools.function_tool.FunctionTool",
+  "reads": {
+    ".metadata.name": "lookup_employee",
+    ".metadata.description": "lookup_employee(employee_id: 'str', include_manager: 'bool' = False) -> 'str'\nLook up an employee record by ID.\n\n    Args:\n        employee_id: The employee's ID.\n        include_manager: Whether to include the manager.",
+    ".metadata.get_parameters_dict()": {
+      "properties": {
+        "employee_id": {
+          "title": "Employee Id",
+          "type": "string"
+        },
+        "include_manager": {
+          "default": false,
+          "title": "Include Manager",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "employee_id"
+      ],
+      "type": "object"
+    }
+  },
+  "descriptor": {
+    "tools": [
+      {
+        "name": "lookup_employee",
+        "description": "lookup_employee(employee_id: 'str', include_manager: 'bool' = False) -> 'str'\nLook up an employee record by ID.\n\n    Args:\n        employee_id: The employee's ID.\n        include_manager: Whether to include the manager.",
+        "inputSchema": {
+          "properties": {
+            "employee_id": {
+              "title": "Employee Id",
+              "type": "string"
+            },
+            "include_manager": {
+              "default": false,
+              "title": "Include Manager",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "employee_id"
+          ],
+          "type": "object"
+        }
+      }
+    ]
+  }
+}

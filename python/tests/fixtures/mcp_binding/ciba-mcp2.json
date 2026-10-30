@@ -1,0 +1,59 @@
+{
+  "ciba": "HTTP 401 authorization_pending (Retry-After) / 403 access_denied on tools/call",
+  "distributions": {
+    "mcp": "2.3.0"
+  },
+  "observed": {
+    "mcp_sdk": {
+      "denied": {
+        "body_visible": false,
+        "raised": [
+          {
+            "code": null,
+            "data": null,
+            "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+            "type": "builtins.ExceptionGroup"
+          },
+          {
+            "code": null,
+            "data": null,
+            "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+            "type": "builtins.ExceptionGroup"
+          },
+          {
+            "code": -32603,
+            "data": null,
+            "message": "Server returned an error response",
+            "type": "mcp.shared.exceptions.MCPError"
+          }
+        ]
+      },
+      "pending": {
+        "body_visible": false,
+        "raised": [
+          {
+            "code": null,
+            "data": null,
+            "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+            "type": "builtins.ExceptionGroup"
+          },
+          {
+            "code": null,
+            "data": null,
+            "message": "unhandled errors in a TaskGroup (1 sub-exception)",
+            "type": "builtins.ExceptionGroup"
+          },
+          {
+            "code": -32603,
+            "data": null,
+            "message": "Server returned an error response",
+            "type": "mcp.shared.exceptions.MCPError"
+          }
+        ]
+      }
+    }
+  },
+  "probe": "probe_ciba.py",
+  "python": "3.12.16",
+  "recorded": "2026-10-29"
+}

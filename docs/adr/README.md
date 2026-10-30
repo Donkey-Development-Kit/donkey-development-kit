@@ -77,9 +77,18 @@ is not rewritten.
 | [0003](0003-core-runtime.md) | A core `Runtime` with a process default | Accepted | #725 |
 | [0004](0004-adapter-protocol-and-roster.md) | The adapter contract and a single roster | Accepted | #726 |
 | [0005](0005-config-precedence.md) | Config precedence: kwargs, env, local file, project file, user file, default | Accepted | #727 |
-| [0006](0006-api-tiers-and-deprecation.md) | API stability tiers and the 0.x deprecation policy | Proposed | #236 |
+| [0006](0006-api-tiers-and-deprecation.md) | API stability tiers and the 0.x deprecation policy | Accepted (rule 1 amended by [0020](0020-provisional-members-of-stable-classes.md)) | #236 |
 | [0007](0007-dependency-policy.md) | Dependency policy: verified floors, locked PR CI, the nightly run as the canary | Proposed | #731 |
 | [0008](0008-legacy-quarantine-and-cli-home.md) | Quarantine the legacy provisioning code and give the CLI its own package | Accepted | #730 |
 | [0009](0009-sans-io-transport.md) | A sans-IO transport policy, and no default retry of model POSTs on 502/504 | Accepted | #728 |
 | [0010](0010-no-hidden-global-side-effects.md) | No hidden global side effects: the OTel provider | Accepted | #732 |
 | [0011](0011-nightly-lock-refresh-pr.md) | A green nightly opens the lock-refresh PR, and the release toolchain is locked too | Accepted | #763 |
+| [0012](0012-custom-policy-registry.md) | Customer-registered refusal shapes, in one process-wide registry behind a hook slot | Accepted | #210 |
+| [0013](0013-ungoverned-mcp-binding.md) | Binding refuses an MCP server that is not governed, with no opt-out | Superseded by [0017](0017-governed-discovery-default.md) | #1150 |
+| [0014](0014-a2a-server-package.md) | `donkey.serve()` wraps the official a2a-sdk, in a top-level `a2a` package beside `integrations` | Accepted | #224 |
+| [0015](0015-provisioning-boundary.md) | The SDK creates only the ingress instance in front of the developer's own agent or MCP server, never a control plane | Accepted | #319 |
+| [0016](0016-policy-source-evidence-class.md) | A gateway response shape read from the policy's own source may be typed, at `VERIFIED (POLICY SOURCE)` | Accepted | #1429 |
+| [0017](0017-governed-discovery-default.md) | Discovery is governed by default; binding still refuses an ungoverned server, with no opt-out | Accepted | #1424 |
+| [0018](0018-per-client-approvals.md) | Each Donkey owns its pending approvals; a gated call records on the client that runs it, else the one it was declared on | Accepted | #1423 |
+| [0019](0019-derived-endpoint-trust.md) | A URL read from a configured endpoint follows that endpoint's trust rule, for every credential sent to it | Accepted | #1479 |
+| [0020](0020-provisional-members-of-stable-classes.md) | A public member of a stable class may be provisional, when its docstring and the snapshot both say so | Accepted | #1499 |

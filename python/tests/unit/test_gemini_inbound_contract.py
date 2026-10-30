@@ -25,8 +25,8 @@ from donkey_kit.simulator.fixtures import parse_headers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "gemini_inbound"
 _CFG = DonkeyConfig(llm_proxy_url="https://proxy")
-_GENERATE = "https://proxy/ddk-gemini-inbound/models/gemini-2.5-flash:generateContent"
-_STREAM = "https://proxy/ddk-gemini-inbound/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+_GENERATE = "https://proxy/ddk-gemini-inbound/models/gemini-3.8-flash:generateContent"
+_STREAM = "https://proxy/ddk-gemini-inbound/models/gemini-3.8-flash:streamGenerateContent?alt=sse"
 _CONTENTS = {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
 
 
@@ -86,8 +86,8 @@ def test_unknown_model_is_an_upstream_404_passed_through() -> None:
 
 
 def test_request_model_reads_the_gemini_url_path() -> None:
-    assert _request_model(httpx.Request("POST", _GENERATE, json=_CONTENTS)) == "gemini-2.5-flash"
-    assert _request_model(httpx.Request("POST", _STREAM, json=_CONTENTS)) == "gemini-2.5-flash"
+    assert _request_model(httpx.Request("POST", _GENERATE, json=_CONTENTS)) == "gemini-3.8-flash"
+    assert _request_model(httpx.Request("POST", _STREAM, json=_CONTENTS)) == "gemini-3.8-flash"
 
 
 def test_request_model_prefers_the_body_and_ignores_non_model_calls() -> None:
@@ -112,7 +112,7 @@ async def test_buffered_gemini_call_populates_last_call() -> None:
 
     record = current_last_call()
     assert record is not None and record.status is LastCallStatus.OBSERVED
-    assert record.requested_model == "gemini-2.5-flash"
+    assert record.requested_model == "gemini-3.8-flash"
     assert record.api_instance_id == "21193369"
     assert (record.input_tokens, record.output_tokens, record.total_tokens) == (9, 2, 32)
     assert record.reasoning_tokens == 21
@@ -147,6 +147,6 @@ async def test_streamed_gemini_call_fills_usage_after_drain() -> None:
         await resp.aclose()
 
     record = current_last_call()
-    assert record is not None and record.requested_model == "gemini-2.5-flash"
+    assert record is not None and record.requested_model == "gemini-3.8-flash"
     # The terminal event's cumulative counts win.
     assert (record.input_tokens, record.output_tokens, record.total_tokens) == (9, 29, 38)

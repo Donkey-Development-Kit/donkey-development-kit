@@ -223,9 +223,9 @@ DRIVERS: dict[str, Driver] = {
             "adk",
             "gemini",
             "google.adk.models",
-            lambda d: _adk(d.adk.gemini("gemini-2.5-flash")),
+            lambda d: _adk(d.adk.gemini("gemini-3.8-flash")),
             "classify",
-            stream=lambda d: _adk(d.adk.gemini("gemini-2.5-flash"), stream=True),
+            stream=lambda d: _adk(d.adk.gemini("gemini-3.8-flash"), stream=True),
             no_sync=_ASYNC_ONLY.format(fw="ADK's BaseLlm"),
         ),
         Driver(

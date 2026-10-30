@@ -50,7 +50,22 @@ _PYPROJECT = tomllib.loads((_PYTHON / "pyproject.toml").read_text())
 _CI = yaml.safe_load((_REPO / ".github" / "workflows" / "ci.yml").read_text())
 
 #: Module-level names in an adapter's ``__all__`` that are helpers, not factories.
-_HELPERS = {"refusal_translator", "typed_refusals"}
+#: The four deep-HITL adapters share the decision helpers ``pending_approvals``,
+#: ``approve`` and ``reject`` (#1422); the OpenAI Agents SDK adds ``function_tool``
+#: (wraps a ``@donkey.tool``, #213) and ADK ``approval_plugin`` (builds its
+#: ``BasePlugin``, #1235). ADK's ``last_call_bridged`` (#1218) returns a model
+#: class, not a governed object. The internal hooks (``approved_call``,
+#: ``approval_interrupt``, ``refusal_translator``) are in no ``__all__``
+#: (``test_adapter_roster.py``).
+_HELPERS = {
+    "approval_plugin",
+    "approve",
+    "function_tool",
+    "last_call_bridged",
+    "pending_approvals",
+    "reject",
+    "typed_refusals",
+}
 
 #: The ``adapter-contract`` CI leg's nox session runs the whole suite (#748): the
 #: contract files and every other test that needs the leg's framework run against it.

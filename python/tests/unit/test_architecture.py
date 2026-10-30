@@ -10,6 +10,8 @@ states, so each invariant cites the test that keeps it true:
   interpreter (the import-linter contract must ignore ``Donkey.simulate()``);
 - no cross-package private import: ``from ..<pkg> import _name`` is banned
   across top-level packages, except through the named seam modules;
+- ``registry/`` reads no private member of an object it was handed, so it
+  reaches the tools layer only through a protocol (§1.1, #1446);
 - the module size budget for ``core/`` (subpackages included), a ratchet over
   the files already past it;
 - one shared client per credential plane (BG §1.1);
@@ -317,6 +319,43 @@ def test_the_private_import_scan_allows_seams_and_same_package_imports(
     assert list(_private_imports(module, False, ast.parse(source))) == []
 
 
+# --- registry reaches no higher layer through a private member (#1446) ---------
+
+# The private members registry/ reads on an object that is not its own, by
+# module. Only ADK's tool: its schema has no public accessor (registry.introspect).
+_REGISTRY_REACH_INS = {"donkey_kit.registry.introspect": ["tool._get_declaration"]}
+
+
+def _private_member_reads(tree: ast.Module) -> Iterator[str]:
+    """Every ``x._name`` read whose ``x`` is not ``self`` or ``cls``."""
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and _is_private(node.attr)
+            and not (isinstance(node.value, ast.Name) and node.value.id in ("self", "cls"))
+        ):
+            yield ast.unparse(node)
+
+
+def test_registry_reaches_no_private_member_of_another_object() -> None:
+    """``registry/`` sits below ``tools/`` and ``Donkey`` (§1.1). Reading a
+    private member of an object it was handed (``donkey.tools._resolve``) is a
+    layering bypass ``lint-imports`` cannot see. ``Publication.verify()`` reads
+    the live side through the ``LiveAssets`` protocol instead."""
+    found = {
+        module: hits
+        for module, _, tree in _parsed_modules()
+        if module.startswith("donkey_kit.registry")
+        if (hits := list(_private_member_reads(tree)))
+    }
+    assert found == _REGISTRY_REACH_INS
+
+
+def test_the_private_member_scan_flags_the_reach_in_it_replaced() -> None:
+    source = "async def f(donkey):\n    await donkey.tools._resolve(ref)\n    self._x, cls._y\n"
+    assert list(_private_member_reads(ast.parse(source))) == ["donkey.tools._resolve"]
+
+
 # --- module size budget for core/ (#729) --------------------------------------
 
 _CORE_MODULE_BUDGET = 500  # lines
@@ -326,10 +365,10 @@ _CORE_MODULE_BUDGET = 500  # lines
 # shrinks the file, and drop the entry once the file is within budget. The
 # transport split (#728) left no transport module past it.
 _OVERSIZED_CORE_MODULES = {
-    "config.py": 1101,
-    "errors.py": 1087,
+    "config.py": 1097,
+    "errors.py": 1030,
     "lastcall.py": 828,
-    "telemetry.py": 657,
+    "telemetry.py": 629,
 }
 
 

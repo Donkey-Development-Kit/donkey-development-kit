@@ -7,7 +7,18 @@ one captured fixture for every send, runs ``agent.run(...)`` while capturing wha
 it raised and logged, and hands the resulting :class:`~.suite.Observation` to
 the scenario's check.
 
-It is the in-process sibling of the local gateway simulator, and it reuses the
+It observes in one of two modes (#322, :data:`~.suite.MODES`):
+
+- ``in-process`` (the default, #191): the gateway is a counting transport
+  swapped onto the ``Donkey``'s own clients. Hermetic and fast; nothing leaves
+  the process.
+- ``server``: the gateway is the local gateway simulator (BG §1.4, the engine
+  behind ``donkey mock``) on a real ephemeral port, booted once per run by
+  :func:`~.gateway.start_gateway`. The ``Donkey`` points at it and sends over a
+  real network hop with its own transport untouched; each scenario reconfigures
+  the running simulator, and sends are counted from its request log.
+
+The in-process mode is the in-process sibling of the local gateway simulator, and it reuses the
 simulator's machinery so the injected refusal is the *same captured bytes*
 ``classify()`` is tested against (:func:`donkey_kit.simulator.inject.resolve_fixture`
 gives us that fixture and asserts the classify() round-trip). The one deliberate
@@ -31,7 +42,7 @@ import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -40,14 +51,27 @@ from ..core import _wire
 from ..core.config import DonkeyConfig
 from ..core.errors import DonkeyError
 from ..donkey import Donkey
-from ..simulator.app import SIMULATOR_HEADER
-from ..simulator.fixtures import Fixture, load, replay_headers
+from ..simulator.app import SIMULATOR_HEADER, SimulatorConfig
+from ..simulator.fixtures import SHAPES, Fixture, load, replay_headers
 
 # Reuse the simulator's single exception->fixture mapping (and its classify()
 # round-trip assertion) rather than duplicating the table: if the mapping ever
 # drifts, simulate() and this harness fail together — the "same files" rule.
 from ..simulator.inject import resolve_fixture as _refusal_fixture
-from .suite import SCENARIOS, Observation, Outcome, Result, Scenario, validate_known_limitations
+from ..simulator.scenarios import ScenarioHit
+from .suite import (
+    MODES,
+    SCENARIOS,
+    Mode,
+    Observation,
+    Outcome,
+    Result,
+    Scenario,
+    validate_known_limitations,
+)
+
+if TYPE_CHECKING:  # the gateway module is loaded lazily, in server mode only
+    from .gateway import Gateway
 
 __all__ = [
     "DEFAULT_RUN_INPUT",
@@ -57,15 +81,16 @@ __all__ = [
     "run_conformance",
 ]
 
-# A neutral prompt handed to every agent under test. It is never actually sent
-# upstream — the transport is swapped — but agents that inspect their input want
-# a real string.
+# A neutral prompt handed to every agent under test. It never reaches a real
+# model — the gateway is the swapped transport or the local simulator — but
+# agents that inspect their input want a real string.
 DEFAULT_RUN_INPUT = "This is a Donkey conformance probe. Reply briefly."
 
 # Always used in place of the customer's LLM proxy config (#737). The harness
-# never connects (the transport is swapped for every scenario), so these just need
-# to be non-empty to satisfy validated(need="llm"). The ``.invalid`` TLD (RFC 2606)
-# never resolves, so even a client the agent builds itself cannot reach a real host.
+# never connects to a real gateway (the transport is swapped, or in server mode
+# the URL is the local simulator's), so these just need to be non-empty to
+# satisfy validated(need="llm"). The ``.invalid`` TLD (RFC 2606) never resolves,
+# so even a client the agent builds itself cannot reach a real host.
 _PLACEHOLDER = "donkey-conformance"
 _PLACEHOLDER_URL = "https://donkey-conformance.invalid"
 
@@ -78,7 +103,7 @@ class ConformanceUsageError(Exception):
     as a hard error, never a fail verdict."""
 
 
-def offline_config() -> DonkeyConfig:
+def offline_config(*, proxy_url: str = _PLACEHOLDER_URL) -> DonkeyConfig:
     """The customer's own config with every endpoint credential replaced (#737).
 
     Non-secret settings (model catalog, attribution, header names) are kept so
@@ -88,12 +113,13 @@ def offline_config() -> DonkeyConfig:
     a host that cannot resolve, not at the customer's live gateway. The
     control-plane pair is cleared too, so ``Donkey`` builds no Anypoint token
     fetcher, and the auth mode is pinned to client-id so a model-wallet JWT is
-    never needed."""
+    never needed. Server mode passes the local simulator's URL as ``proxy_url``
+    (#322); the credentials stay placeholders."""
     cfg = DonkeyConfig.from_env()
     # Replace with named fields (not **dict) so the types stay checkable.
     return replace(
         cfg,
-        llm_proxy_url=_PLACEHOLDER_URL,
+        llm_proxy_url=proxy_url,
         llm_proxy_client_id=_PLACEHOLDER,
         llm_proxy_client_secret=_PLACEHOLDER,
         llm_proxy_key=None,
@@ -157,14 +183,17 @@ def _fixture_responder(
     Uses the same header allow-list (:func:`replay_headers`) and honesty stamp
     (``x-donkey-simulator: true``) as ``simulate()`` and the mock server, so a
     conformance response is never mistaken for a live gateway response. With
-    ``strip_budget`` the ``x-token-*`` headers are dropped, so the run observes a
+    ``strip_budget`` the ``x-token-*`` headers and ``x-llm-proxy-ratelimit`` are
+    dropped, the two the token window is read from, so the run observes a
     genuinely unobserved budget even if a future capture grows them."""
 
     def respond(request: httpx.Request) -> httpx.Response:
         headers = replay_headers(fixture)
         if strip_budget:
             headers = {
-                k: v for k, v in headers.items() if not k.startswith(_wire.TOKEN_HEADER_PREFIX)
+                k: v
+                for k, v in headers.items()
+                if not k.startswith(_wire.TOKEN_HEADER_PREFIX) and k != _wire.RATELIMIT_HEADER
             }
         if fixture.content_type is not None:
             headers["content-type"] = fixture.content_type
@@ -206,6 +235,20 @@ class _ProbeTransport(httpx.AsyncBaseTransport, httpx.BaseTransport):
         return self._serve(request)
 
 
+class _EveryCall:
+    """A simulator fault scenario that serves one captured shape on every model
+    call (server mode, #322) — the simulator-side twin of :class:`_ProbeTransport`
+    serving a fixed fixture. Meets :class:`~donkey_kit.simulator.scenarios.FaultScenario`."""
+
+    def __init__(self, shape: str) -> None:
+        self.name = f"conformance:{shape}"
+        self._shape = shape
+
+    def on_call(self, text: str) -> ScenarioHit:  # noqa: ARG002 - FaultScenario protocol
+        """Serve the armed shape, whatever the request says."""
+        return ScenarioHit(self._shape)
+
+
 # The httpx-family stacks whose real network transports the harness blocks.
 # ``httpx2`` is Pydantic's continuation of httpx with its own classes; openai 3.x
 # and anthropic 1.x build their clients on it, so blocking httpx alone would let
@@ -223,8 +266,13 @@ def _installed_http_stacks() -> list[Any]:
     return stacks
 
 
+def _origin(url: Any) -> tuple[str, str, int | None]:
+    """The scheme, host and port of an httpx-family URL (``httpx.URL`` or httpx2's)."""
+    return (str(url.scheme), str(url.host), url.port)
+
+
 @contextmanager
-def _block_real_transports(attempts: list[str]) -> Iterator[None]:
+def _block_real_transports(attempts: list[str], *, allow: str | None = None) -> Iterator[None]:
     """Refuse every send that reaches a real network transport (#737).
 
     The Donkey's own clients are swapped onto the counting probe, so anything
@@ -234,10 +282,19 @@ def _block_real_transports(attempts: list[str]) -> Iterator[None]:
     one is recorded in ``attempts`` and failed with that stack's own
     ``ConnectError``, the error the agent would see if the host were down, so
     nothing leaves the process. The patch is on the classes, so it also covers
-    clients built in other threads, and it is removed on exit."""
+    clients built in other threads, and it is removed on exit.
+
+    ``allow`` is server mode's one exception (#322): a send to that origin — the
+    local simulator — goes to the real transport, so the ``Donkey``'s client
+    reaches the simulator over a real network hop. Every other host is still
+    refused."""
     restore: list[tuple[type, str, Any]] = []
+    allowed = _origin(httpx.URL(allow)) if allow is not None else None
 
     def block(stack: Any) -> None:
+        sync_send = stack.HTTPTransport.__dict__["handle_request"]
+        async_send = stack.AsyncHTTPTransport.__dict__["handle_async_request"]
+
         def refuse(request: Any) -> Exception:
             attempts.append(f"{request.method} {request.url}")
             error: Exception = stack.ConnectError(
@@ -247,17 +304,21 @@ def _block_real_transports(attempts: list[str]) -> Iterator[None]:
             )
             return error
 
-        def blocked_sync(_self: Any, request: Any) -> Any:
+        def blocked_sync(self: Any, request: Any) -> Any:
+            if allowed is not None and _origin(request.url) == allowed:
+                return sync_send(self, request)
             raise refuse(request)
 
-        async def blocked_async(_self: Any, request: Any) -> Any:
+        async def blocked_async(self: Any, request: Any) -> Any:
+            if allowed is not None and _origin(request.url) == allowed:
+                return await async_send(self, request)
             raise refuse(request)
 
-        for cls, method, blocked in (
-            (stack.HTTPTransport, "handle_request", blocked_sync),
-            (stack.AsyncHTTPTransport, "handle_async_request", blocked_async),
+        for cls, method, original, blocked in (
+            (stack.HTTPTransport, "handle_request", sync_send, blocked_sync),
+            (stack.AsyncHTTPTransport, "handle_async_request", async_send, blocked_async),
         ):
-            restore.append((cls, method, cls.__dict__[method]))
+            restore.append((cls, method, original))
             setattr(cls, method, blocked)
 
     try:
@@ -325,11 +386,22 @@ class ConformanceHarness:
     """Runs one scenario against a freshly built agent. Implements
     :class:`~.suite.ScenarioContext`: the scenario check calls
     :meth:`serve_refusal`/:meth:`serve_success` to arm the gateway and
-    :meth:`run` to drive the agent."""
+    :meth:`run` to drive the agent.
 
-    def __init__(self, agent_factory: AgentFactory, *, run_input: str = DEFAULT_RUN_INPUT) -> None:
+    With a ``gateway`` (server mode, #322) the gateway is that running local
+    simulator; without one it is a counting transport swapped onto the
+    ``Donkey``'s clients (in-process mode)."""
+
+    def __init__(
+        self,
+        agent_factory: AgentFactory,
+        *,
+        run_input: str = DEFAULT_RUN_INPUT,
+        gateway: Gateway | None = None,
+    ) -> None:
         self._factory = agent_factory
         self._run_input = run_input
+        self._gateway = gateway
         self._donkey: Donkey | None = None
         self._agent: Any = None
         self._probe: _ProbeTransport | None = None
@@ -339,12 +411,20 @@ class ConformanceHarness:
         """Build a fresh ``Donkey`` + agent, run the scenario's check against
         this harness, and tear the ``Donkey`` down — so no transport swap, budget
         state, or agent state leaks between scenarios. Real network transports
-        are blocked from before the agent is built until it is torn down."""
-        self._donkey = Donkey(offline_config())
+        are blocked from before the agent is built until it is torn down; in
+        server mode the local simulator's origin is the one exception."""
+        gateway = self._gateway
+        if gateway is None:
+            self._donkey = Donkey(offline_config())
+        else:
+            self._donkey = Donkey(offline_config(proxy_url=gateway.url))
+            gateway.configure()  # a fresh, unarmed simulator per scenario
+            gateway.reset()
         self._probe = None
         self._bypass_attempts = []
+        allow = gateway.url if gateway is not None else None
         try:
-            with _block_real_transports(self._bypass_attempts):
+            with _block_real_transports(self._bypass_attempts, allow=allow):
                 try:
                     self._agent = _build_agent(self._factory, self._donkey)
                     return await scenario.check(self)
@@ -362,15 +442,38 @@ class ConformanceHarness:
         return self._agent
 
     def serve_refusal(self, error: type[DonkeyError]) -> None:
-        """Arm the gateway to answer the next model call with the captured refusal for ``error``."""
-        self._arm(_fixture_responder(_refusal_fixture(error)))
+        """Arm the gateway to answer the next model call with the refusal for ``error``:
+        its captured fixture, or a ``classify.register()`` entry's example (#210).
+
+        Raises:
+            ConformanceUsageError: In server mode, ``error`` has no captured
+                shape the simulator can serve (a ``classify.register()`` type).
+        """
+        fixture = _refusal_fixture(error)
+        if self._gateway is None:
+            self._arm(_fixture_responder(fixture))
+            return
+        if fixture.shape not in SHAPES:
+            raise ConformanceUsageError(
+                f"server mode cannot serve {error.__name__}: the local simulator "
+                f"replays captured shapes only, and a classify.register() type has "
+                f"none. Run this scenario with --donkey-mode in-process."
+            )
+        self._gateway.configure(SimulatorConfig(scenarios=(_EveryCall(fixture.shape),)))
+        self._gateway.reset()
 
     def serve_success(self, *, budget_headers: bool = True) -> None:
         """Arm the gateway to answer with the captured success response.
 
-        ``budget_headers=False`` strips its ``x-token-*`` budget headers.
+        ``budget_headers=False`` serves it with no budget headers: in-process the
+        ``x-token-*`` headers are stripped; in server mode the simulator's
+        synthesised ``x-llm-proxy-ratelimit`` window is turned off.
         """
-        self._arm(_fixture_responder(load("success"), strip_budget=not budget_headers))
+        if self._gateway is None:
+            self._arm(_fixture_responder(load("success"), strip_budget=not budget_headers))
+            return
+        self._gateway.configure(SimulatorConfig(budget_window=budget_headers))
+        self._gateway.reset()
 
     async def run(self, *, correlation_id: str | None = None) -> Observation:
         """Drive ``agent.run(<input>)`` once and return what the harness observed.
@@ -413,11 +516,19 @@ class ConformanceHarness:
         return Observation(
             returned=returned,
             raised=raised,
-            wire_sends=self._probe.wire_sends if self._probe is not None else 0,
+            wire_sends=self._wire_sends(),
             log_text=_render_records(records),
             bypass_attempts=len(self._bypass_attempts),
             unobservable_adapters=self._unobservable_adapters(),
         )
+
+    def _wire_sends(self) -> int:
+        """Sends since the gateway was armed: counted by the probe transport
+        in-process, and from the simulator's request log in server mode (#322),
+        where there is no in-process transport to count."""
+        if self._gateway is not None:
+            return self._gateway.requests_received
+        return self._probe.wire_sends if self._probe is not None else 0
 
     def _unobservable_adapters(self) -> tuple[str, ...]:
         """The adapters the agent resolved on this ``Donkey`` whose model calls
@@ -446,11 +557,29 @@ class ConformanceHarness:
             swap_transport(client, self._probe)
 
 
+@contextmanager
+def _gateway_for(mode: Mode) -> Iterator[Gateway | None]:
+    """The running local simulator for a ``server`` run (stopped on exit), or
+    ``None`` in-process. The gateway module — and ``uvicorn`` behind it — loads
+    only here, so an in-process run never imports either."""
+    if mode == "in-process":
+        yield None
+        return
+    from .gateway import start_gateway
+
+    gateway = start_gateway()
+    try:
+        yield gateway
+    finally:
+        gateway.close()
+
+
 async def run_conformance(
     agent_factory: AgentFactory,
     *,
     known_limitations: object = None,
     run_input: str = DEFAULT_RUN_INPUT,
+    mode: Mode = "in-process",
 ) -> list[Result]:
     """Run every scenario against ``agent_factory`` and return the table rows.
 
@@ -458,21 +587,34 @@ async def run_conformance(
     asserted reason and is *not* run (the exemption replaces the check); every
     other scenario runs and is reported ``pass``/``fail``. ``known_limitations``
     is validated up front, so a bad key or empty reason raises before any agent
-    is built."""
+    is built.
+
+    ``mode="server"`` (#322) runs every scenario against one local gateway
+    simulator on an ephemeral port instead of an in-process transport; it needs
+    the ``[local]`` extra and raises the :class:`ImportError` naming it otherwise.
+
+    Raises:
+        ValueError: ``mode`` is not one of :data:`~.suite.MODES`.
+    """
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {list(MODES)}, got {mode!r}")
     known = validate_known_limitations(known_limitations)
     results: list[Result] = []
-    for scenario in SCENARIOS:
-        if scenario.name in known:
-            results.append(Result(scenario.name, scenario.title, "exempt", known[scenario.name]))
-            continue
-        harness = ConformanceHarness(agent_factory, run_input=run_input)
-        outcome = await harness.run_scenario(scenario)
-        results.append(
-            Result(
-                scenario.name,
-                scenario.title,
-                "pass" if outcome.passed else "fail",
-                outcome.detail,
+    with _gateway_for(mode) as gateway:
+        for scenario in SCENARIOS:
+            if scenario.name in known:
+                results.append(
+                    Result(scenario.name, scenario.title, "exempt", known[scenario.name])
+                )
+                continue
+            harness = ConformanceHarness(agent_factory, run_input=run_input, gateway=gateway)
+            outcome = await harness.run_scenario(scenario)
+            results.append(
+                Result(
+                    scenario.name,
+                    scenario.title,
+                    "pass" if outcome.passed else "fail",
+                    outcome.detail,
+                )
             )
-        )
     return results

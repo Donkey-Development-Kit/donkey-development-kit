@@ -228,14 +228,15 @@ and its session drift apart.
 | `all-extra-resolves` | `pip install --dry-run ".[all]"` resolves within 5 minutes, per Python |
 | `anthropic-stacks(...)`, `adk-stacks(...)`, `agent-framework-middleware`, `llamaindex-transport`, `agents-strands-last-call` | each framework's tests, with that framework installed |
 | `adapter-contract(<extra>)` | the whole suite and the strict example smoke, one leg per `ADAPTERS` extra |
-| `benchmark`, `quickstart`, `langgraph-demo` | the span-overhead budget, the gateway-free quickstart, and the Scenario-A demo with its conformance run |
+| `benchmark`, `quickstart`, `langgraph-demo`, `openai-agents-demo` | the span-overhead budget, the gateway-free quickstart, and the deep adapters' Scenario-A demos with their conformance runs |
 | `new-dependencies`, `commit-identities` | a new direct dependency exists on PyPI; no placeholder git identity in the branch's commits. Both compare against `origin/develop`, so `git fetch origin` first |
 | `openai-1x` | `[llm]` with openai held below 2: the default suite and `-m local_gateway` (#769) |
 | `docs-llms-drift` | the website's `npm test`, and the committed llms artifacts match a fresh generation (needs Node) |
 | `docs-site` | the website's `npm ci`, typecheck, lint, production build and internal-link check (needs Node; the build fetches the roadmap from the GitHub API, and `GITHUB_TOKEN` lifts its rate limit) |
 | `pip-audit(base)`, `pip-audit(all)` | resolve the base and `[all]` installs to exact pins, then audit them for known vulnerabilities |
-| `workflow-lint` | `actionlint` and `zizmor --format=github .github/`, from the repository root (both on `PATH`) |
+| `workflow-lint` | `actionlint` and `zizmor --format=github .github/ action/`, from the repository root (both on `PATH`) |
 | `dependency-review` | nothing locally: it skips. The job is GitHub's dependency-review action over the PR's dependency graph diff |
+| `action-self-test` | nothing locally: it skips. The job dry-runs the scan-and-publish action (`uses: ./action`) on Linux, macOS and Windows; `test-3.11` covers `action/run.py` |
 
 Where a green local `nox` and a red CI run can still differ:
 
@@ -246,7 +247,7 @@ Where a green local `nox` and a red CI run can still differ:
   `new-dependencies` base-branch fetch, the benchmark's artifact upload and
   trend comparison (on `main` pushes), `workflow-lint`'s linter downloads, the
   `pip-audit` action that audits the session's pin list, and the whole
-  `dependency-review` job stay in the workflow.
+  `dependency-review` and `action-self-test` jobs stay in the workflow.
 - **Other workflows.** `secret-scan`, the nightly matrix and the publish
   workflows are not sessions. To scan the history as `secret-scan` does, run
   `gitleaks git .` from the repository root.
@@ -761,8 +762,11 @@ build plan has the rationale behind each rule:
   ```bash
   cd python
   python scripts/compile_constraints.py   # needs `uv` on PATH (dev-time only; CI still uses plain pip)
-  git diff constraints/                   # review before committing
+  git diff constraints/ ../.pre-commit-config.yaml   # review before committing
   ```
+  The script also moves the pre-commit hooks' ruff `rev:` and `import-linter`
+  pin to the new typecheck-and-lint lock, which `tests/unit/test_noxfile.py`
+  holds them equal to (#1206); commit that file with the lock.
   `python scripts/compile_constraints.py --check` recompiles every combo and
   exits 1 without writing if any file would change; because each combo is
   compiled on its own, a clean `--check` run also proves every committed file
@@ -802,10 +806,20 @@ build plan has the rationale behind each rule:
   [ADR 0001](docs/adr/0001-value-objects.md). The package ships `py.typed`
   (PEP 561) — keep the public API fully annotated so downstream users get types.
 - **Public API surface.** Every public module (no `_` in its path) declares a
-  sorted `__all__` (ruff `RUF022`). Every SDK type in a public `Donkey`
-  signature is exported from `donkey_kit` (or `donkey_kit.core`), and no class
-  name means two different types across those `__all__` lists
-  (`tests/unit/test_public_api_surface.py`). A type that exists only for a
+  sorted `__all__` (ruff `RUF022`). Every SDK type in a public `Donkey` or
+  `ToolsFacade` signature is exported from `donkey_kit`. Every one in a
+  `ToolSet` signature is exported from `donkey_kit` too, or is listed as
+  provisional with the public module that exports it. No class name means two
+  different types across those `__all__` lists
+  (`tests/unit/test_public_api_surface.py`). The stable surface, which is
+  `donkey_kit.__all__` plus the public members of `Donkey`, `ToolsFacade` and
+  `ToolSet`, is snapshotted in `tests/unit/test_public_api_snapshot.py`
+  (ADR 0006 rule 4). The exception is a member whose docstring says
+  `Provisional (ADR 0020)`: the snapshot lists it in `PROVISIONAL_MEMBERS`
+  instead, and it may change in a minor release with a migration note
+  ([ADR 0020](docs/adr/0020-provisional-members-of-stable-classes.md)). A PR
+  that changes that surface updates the snapshot in the same diff, using the
+  command in the test's failure message. A type that exists only for a
   verification-blocked surface goes in `donkey_kit.experimental`, not
   `donkey_kit.__all__` (#730); a name moved there keeps a deprecated
   `donkey_kit.<name>` alias for a release. Submodule paths are not API. Don't
@@ -929,11 +943,11 @@ rule, add its row; a rule that nothing can check is a review note, not a rule.
 | Citation habit | Review-only: no tool can tell whether a comment should cite a spec section | review |
 | Trademark-descriptive language | Review-only | review |
 | Never commit secrets | `.gitignore` entries; the committed-file secret warning in `tests/unit/test_config_endpoint_trust.py`; gitleaks (`.gitleaks.toml`); GitHub push protection | `pytest`, `secret-scan`, pre-commit hook, `git push` |
-| Hardened Actions supply chain (#757) | `tests/unit/test_workflow_supply_chain.py` (every `uses:` on a full SHA with a `# vX.Y.Z` comment, no checkout keeps the token, OIDC and Pages writes on the publish and deploy jobs only, Dependabot, CODEOWNERS and binary-image rules present); actionlint and zizmor over `.github/`; `pip-audit` on a fresh base and `.[all]` resolve; `dependency-review` (PRs) | `pytest`; `workflow-lint`, `pip-audit`, `dependency-review` |
+| Hardened Actions supply chain (#757) | `tests/unit/test_workflow_supply_chain.py` (every `uses:` on a full SHA with a `# vX.Y.Z` comment, no checkout keeps the token, OIDC and Pages writes on the publish and deploy jobs only, Dependabot, CODEOWNERS and binary-image rules present); actionlint and zizmor over `.github/`, zizmor over `action/`; `pip-audit` on a fresh base and `.[all]` resolve; `dependency-review` (PRs) | `pytest`; `workflow-lint`, `pip-audit`, `dependency-review` |
 | No tenant identifiers in tracked files or built dists (#821) | `scripts/scrub_fixtures.py --check` (UUIDs outside `ALLOWED_UUIDS`, platform hosts, provider account headers) | `typecheck-and-lint`, `base-only` (wheel), publish workflows (wheel + sdist) |
 | No dead parameters or stale suppressions | ruff `ARG`, `RUF100`, `TRY203` | `ruff check .` |
 | Logging convention (#717) | ruff `BLE`, `LOG`, `G`; `tests/unit/test_logging.py` (DEBUG records for retry and 401 refresh; no header value in any record) | `ruff check .`, `pytest` |
-| Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py`; `tests/unit/test_architecture.py` (no cross-package private import, #729) | `ruff check .`, `pytest` |
+| Public API surface (#719) | ruff `RUF022`, `SLF001`; `tests/unit/test_public_api_surface.py`; `tests/unit/test_public_api_snapshot.py` (the stable surface, #1425); `tests/unit/test_architecture.py` (no cross-package private import, #729) | `ruff check .`, `pytest` |
 | Docstrings on public symbols (#722) | ruff `D101`-`D103` on `src/`; `tests/unit/test_public_docstrings.py` (summary + docs link on the headline entry points) | `ruff check .`, `pytest` |
 | Error contract (#715) | `tests/unit/test_error_taxonomy.py` (every `DonkeyError` exported from `donkey_kit` or `donkey_kit.experimental`, own non-empty overridable remediation; `classify` exported); "never a builtin exception" is review-only | `pytest` |
 | One source of truth, no dead code (#720) | `tests/unit/test_wire_names.py` (no gateway header literal outside `core/_wire.py`); `vulture` with `vulture_whitelist.py`; deprecate-before-remove is review-only | `pytest`, `typecheck-and-lint`: `vulture` |
@@ -1019,6 +1033,8 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 | `core/config.py`, `core/auth.py`, `core/endpoints.py` | `reference/configuration.mdx` |
 | `core/_verify.py`, `docs/verified-apis.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
 | `core/budget.py` | `budget.mdx` |
+| `core/reactions.py`, `core/transport/*` `_on_refusal` | `refusal-handlers.mdx` |
+| `core/approvals.py`, `core/toolspec.py` (`@donkey.tool(approval=...)`, `donkey.approvals`) | `hitl.mdx`, `cli.mdx` |
 | `core/telemetry.py`, `core/cost.py` | `telemetry.mdx` |
 | `core/lastcall.py` | `reference/last-call.mdx` |
 | `llm/*` | `quickstart.mdx`, `feature-overview.mdx` |
@@ -1029,7 +1045,7 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 | `registry/criteria.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
 | `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |
 | `tools/session.py` | `tool-access/binding.mdx` |
-| `cli/*` (`init`, `doctor`, `mock`, `test`, the blocked `status`/`publish`/`verify`) | `cli.mdx` (the site has no provisioning section; don't add one, the control plane is refused, ADR 0008 in `docs/adr/`) |
+| `cli/*` (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `expose`, `preflight`, the blocked `status`) | `cli.mdx` (the site has no provisioning section; don't add one, the control plane is refused, ADR 0008 in `docs/adr/`) |
 | `experimental.py` | `reference/unsupported-boundary.mdx`, plus the page of the surface whose types moved (`publishing.mdx`, `tool-access/discovery.mdx`) |
 | `README.md` (install/status/extras) | `quickstart.mdx`, `index.mdx` |
 

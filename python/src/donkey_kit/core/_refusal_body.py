@@ -1,23 +1,31 @@
-"""Reading a refusal response's body for ``core.errors.classify()``: the JSON
-envelope shapes the gateway and providers send, and the PII-detection policy's
-rejection message (its flagged entity types and offsets, and a summary that
-withholds the flagged values). docs/verified-apis.md §4."""
+"""Reading a refusal response for ``core.errors.classify()``: the JSON envelope
+shapes the gateway and providers send, the PII-detection policy's rejection
+message (its flagged entity types and offsets, and a summary that withholds the
+flagged values), the rate-limit and content-safety headers, and the ids the
+client sent. docs/verified-apis.md §4."""
 
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any
 
+from . import _verify, _wire
 from ._response import ResponseLike
 
 __all__ = [
+    "MODEL_NOT_ROUTABLE_RE",
     "PiiSpan",
     "code_str",
+    "content_safety_reject",
     "json_body",
     "nested_error",
+    "parse_retry_after",
     "pii_spans",
     "pii_summary",
+    "retry_after",
+    "sent_ids",
     "str_or_none",
 ]
 
@@ -140,3 +148,123 @@ def code_str(value: object) -> str | None:
 
 def str_or_none(value: object) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def sent_ids(response: ResponseLike) -> tuple[str | None, str | None]:
+    """The ``(correlation_id, call_id)`` the client sent, read back from the
+    response's own request headers under the names the transport actually used
+    (BG §1.1, #195, #363).
+
+    The transport stamps the resolved header names onto ``request.extensions``
+    at injection time (``donkey_correlation_header`` / ``donkey_call_id_header``),
+    so a per-``Donkey`` header-name override (``DonkeyConfig.correlation_header``
+    / ``.call_id_header``, docs/verified-apis.md §3) is honoured here without ``core/_refusal_body``
+    importing ``DonkeyConfig`` — it only reads a plain dict carried on the same
+    object ``response.request`` returns. When the stamp is absent (a response not
+    produced by our transport — e.g. a hand-built stock-client response), the
+    default names from ``core/_verify`` are used.
+
+    Returns ``(None, None)`` when the request is unavailable (httpx raises if it
+    was never set on the response)."""
+    try:
+        request = response.request
+    except RuntimeError:
+        return None, None
+    headers = request.headers
+    corr_name = request.extensions.get("donkey_correlation_header") or _verify.CORRELATION_ID_HEADER
+    call_name = request.extensions.get("donkey_call_id_header") or _verify.CALL_ID_HEADER
+    return headers.get(corr_name), headers.get(call_name)
+
+
+def retry_after(
+    response: ResponseLike, *, reset_header: str = _wire.TOKEN_RESET_HEADER
+) -> float | None:
+    """Seconds until the caller may retry. Prefers the standard ``retry-after``
+    (delta-seconds) header; falls back to the rate-limit policy's reset header
+    (``x-token-reset``, or ``x-ratelimit-reset`` for the request window), which
+    is captured in **milliseconds** (docs/verified-apis.md §4). A value that is
+    not a finite number is no wait at all: ``None``."""
+    seconds = parse_retry_after(response.headers.get(_wire.RETRY_AFTER_HEADER))
+    if seconds is not None:
+        return seconds
+    reset_ms = response.headers.get(reset_header)
+    if reset_ms is not None:
+        try:
+            value = float(reset_ms)
+        except ValueError:
+            return None
+        return max(0.0, value / 1000.0) if math.isfinite(value) else None
+    return None
+
+
+def parse_retry_after(raw: str | None) -> float | None:
+    """A ``Retry-After`` delta-seconds value, floored at 0, or ``None`` when it
+    is absent or not a finite number (``inf``, ``nan``, ``1e400``). The one parser
+    behind both the transport's retry sleep and an error's ``retry_after``: a
+    negative value (e.g. ``"-1"``) means "retry now", never a negative wait (#286,
+    #815)."""
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        return None  # HTTP-date form; left for the fixture-driven parser (BG §1.5)
+    return max(0.0, value) if math.isfinite(value) else None
+
+
+# The model-based-routing rejection for a bare model name on a multi-provider
+# proxy (docs/verified-apis.md §4, #825). Live text: "Failed to parse model from
+# request: Model 'gpt-5-mini' is not in the known unique model map and multiple
+# providers are configured. Use 'provider/model' format."
+MODEL_NOT_ROUTABLE_RE = re.compile(r"Model '(?P<model>[^']*)' is not in the known unique model map")
+
+# Content-safety / guardrails policies report their verdict in a pair of vendor
+# headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
+# ``...-reason``. Both are ``x-llm-proxy-<vendor>-...`` (docs/verified-apis.md §4,
+# #253/#568/#1178/#1176). Each policy also sends ``action: reject`` on its fail-closed
+# ``503`` (the moderation service was unreachable), so only a ``403`` is a block.
+# CrowdStrike AIDR's header family is read from the policy's source, not captured
+# from a live gateway (ADR 0016, #1429; the capture is #1184).
+_CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str, str], ...] = (
+    (
+        _wire.AZURE_CONTENT_SAFETY_ACTION_HEADER,
+        _wire.AZURE_CONTENT_SAFETY_REASON_HEADER,
+        "azure-content-safety",
+        "Azure Content Safety",
+    ),
+    (
+        _wire.BEDROCK_GUARDRAIL_ACTION_HEADER,
+        _wire.BEDROCK_GUARDRAIL_REASON_HEADER,
+        "bedrock-guardrails",
+        "Amazon Bedrock Guardrails",
+    ),
+    (
+        _wire.MODEL_ARMOR_ACTION_HEADER,
+        _wire.MODEL_ARMOR_REASON_HEADER,
+        "google-model-armor",
+        "Google Model Armor",
+    ),
+    (
+        _wire.CROWDSTRIKE_AIDR_ACTION_HEADER,
+        _wire.CROWDSTRIKE_AIDR_REASON_HEADER,
+        "crowdstrike-aidr",
+        "CrowdStrike AIDR",
+    ),
+)
+
+
+def content_safety_reject(response: ResponseLike) -> tuple[str, str, list[str]] | None:
+    """``(provider, vendor, categories)`` when a content-safety policy header reports
+    ``action: reject`` on a ``403``, else ``None`` (the same header on the
+    fail-closed ``503`` is an outage, #1178). ``provider`` is the stable slug that
+    ``ContentSafetyBlocked.provider`` and ``donkey.policy.provider`` carry (#1183);
+    ``vendor`` is the display name. Categories are the comma-separated flagged
+    reasons from the sibling ``...-reason`` header (empty list if absent)."""
+    if response.status_code != 403:
+        return None
+    for action_h, reason_h, provider, vendor in _CONTENT_SAFETY_VENDORS:
+        if response.headers.get(action_h) == "reject":
+            reason = response.headers.get(reason_h, "")
+            categories = [c.strip() for c in reason.split(",") if c.strip()]
+            return provider, vendor, categories
+    return None

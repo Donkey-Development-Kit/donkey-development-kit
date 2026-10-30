@@ -137,6 +137,15 @@ def test_signatures_show_private_type_variables_without_the_underscore() -> None
     assert "_Callable" not in page and "_P," not in page
 
 
+def test_cli_reference_shows_both_sides_of_a_flag_pair() -> None:
+    pytest.importorskip("typer")
+    rows = [line for line in gen.cli_reference().splitlines() if "`--if-changed`" in line]
+    assert rows == [
+        "| `--if-changed` / `--always` | on | Skip an asset whose latest published version "
+        "has the same digest. |"
+    ]
+
+
 def test_settings_index_shows_built_in_header_names() -> None:
     rows = {
         line.split("|")[1].strip(): line.split("|")[4].strip()
@@ -192,6 +201,7 @@ def test_every_adapter_factory_has_a_ledger_status() -> None:
     # Every §8 framework row has had a live round-trip (#34), so every factory reads live.
     assert {s.verification for s in rows} == {"live-verified"}
     assert by_call["donkey.langgraph.chat_model()"].conformance_tested
+    assert by_call["donkey.openai_agents.model()"].conformance_tested
 
 
 def test_ledger_status_labels_are_never_invented() -> None:
@@ -200,6 +210,7 @@ def test_ledger_status_labels_are_never_invented() -> None:
     assert gen.verification_of("UNVERIFIED (signature confirmed; pending …)") == (
         "signature-confirmed"
     )
+    assert gen.verification_of("VERIFIED (POLICY SOURCE)") == "policy-source"
     for status in ("VERIFIED (plugin)", "VERIFIED-SHAPE-ONLY", "UNVERIFIED", "VERIFIED"):
         with pytest.raises(gen.GenerationError):
             gen.verification_of(status)
@@ -217,6 +228,17 @@ def test_flipping_a_ledger_row_flips_the_docs() -> None:
     strands = next(s for s in rows if s.attr == "strands")
     assert strands.verification == "live-verified"
     assert gen.page_statuses(rows)["/frameworks/strands"] == "live"
+
+
+def test_a_policy_source_row_never_reads_live() -> None:
+    # ADR 0016: a shape read from the gateway policy's source was never observed
+    # on a live gateway, so its page is offline-verified with its own badge.
+    rows = gen.framework_statuses(_with_status(_LEDGER, _STRANDS_ROW, "VERIFIED (POLICY SOURCE)"))
+    strands = next(s for s in rows if s.attr == "strands")
+    assert strands.verification == "policy-source"
+    assert gen.page_statuses(rows)["/frameworks/strands"] == "offline-verified"
+    assert gen.page_statuses(rows)["/frameworks"] == "offline-verified"
+    assert gen._badge("policy-source") == '<Badge tone="neutral">Policy-source</Badge>'
 
 
 def test_an_unknown_ledger_status_fails_generation() -> None:

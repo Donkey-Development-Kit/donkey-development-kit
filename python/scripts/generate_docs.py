@@ -257,12 +257,14 @@ def _default_text(value: object) -> str:
 
 def settings_index() -> str:
     """Every ``DonkeyConfig`` field from the field table, in its order."""
-    from donkey_kit.core import config
+    from donkey_kit.core import _verify, config
 
     defaults = {f.name: _default_text(f.default) for f in dataclasses.fields(config.DonkeyConfig)}
     # ``None`` on a header field means "send the built-in name", not "unset".
     defaults.update((key, f"`{name}`") for key, name in config._HEADER_KEYS)  # noqa: SLF001
     defaults["base_url"] = "from `region`"
+    # The ``as_user()`` header (docs/verified-apis.md §13).
+    defaults["user_token_header"] = f"`{_verify.USER_TOKEN_HEADER}`"
     rows = [
         (
             f"`{spec.env}`",
@@ -309,6 +311,8 @@ def _option_rows(params: Iterable[Any]) -> list[tuple[str, str, str]]:
         if getattr(param, "hidden", False) or not param.opts:
             continue
         flags = ", ".join(f"`{opt}`" for opt in param.opts)
+        if getattr(param, "secondary_opts", None):
+            flags += " / " + ", ".join(f"`{opt}`" for opt in param.secondary_opts)
         meaning = rst_to_markdown(" ".join((param.help or "").split()))
         meaning = meaning[:1].upper() + meaning[1:]
         if meaning and not meaning.endswith("."):
@@ -394,6 +398,8 @@ FRAMEWORK_PAGES = REPO / "website" / "content" / "frameworks"
 _LEDGER_STATUSES: tuple[tuple[str, str], ...] = (
     ("VERIFIED (LIVE)", "live-verified"),
     ("VERIFIED (CLI)", "live-verified"),
+    # Read from the gateway policy's source, never observed live (ADR 0016): not `live`.
+    ("VERIFIED (POLICY SOURCE)", "policy-source"),
     ("UNVERIFIED (signature confirmed", "signature-confirmed"),
 )
 
@@ -401,13 +407,18 @@ _LEDGER_STATUSES: tuple[tuple[str, str], ...] = (
 _LABELS = {
     "conformance-tested": ("Conformance-tested", "accent", "conformance-tested"),
     "live-verified": ("Live-verified", "live", "live-verified"),
+    "policy-source": ("Policy-source", "neutral", "policy-source"),
     "signature-confirmed": ("Signature-confirmed", "neutral", "signature-confirmed offline"),
 }
-_PAGE_STATUS = {"live-verified": "live", "signature-confirmed": "offline-verified"}
+_PAGE_STATUS = {
+    "live-verified": "live",
+    "policy-source": "offline-verified",
+    "signature-confirmed": "offline-verified",
+}
 #: The page badge of each frontmatter status (``STATUSES`` in ``website/lib/status.mjs``).
 _PAGE_BADGE = {"live": ("Live", "live"), "offline-verified": ("Offline-verified", "neutral")}
 #: Strongest first. A page that covers several factories is rated by its weakest.
-_VERIFICATION_ORDER = ("live-verified", "signature-confirmed")
+_VERIFICATION_ORDER = ("live-verified", "policy-source", "signature-confirmed")
 
 _PIPE = re.compile(r"(?<!\\)\|")
 _FACTORY_CELL = re.compile(r"^`donkey\.(\w+)\.(\w+)\(\)`$")
@@ -468,7 +479,7 @@ class FactoryStatus:
     factory: str
     route: str
     ledger_row: str
-    #: ``live-verified`` or ``signature-confirmed``, from the §8 Status column.
+    #: ``live-verified``, ``policy-source`` or ``signature-confirmed``, from the §8 Status column.
     verification: str
     #: ``AdapterSpec.conformance_tested`` of the factory's adapter.
     conformance_tested: bool
@@ -974,6 +985,10 @@ def _kind(obj: object) -> str:
         return "class"
     if inspect.isfunction(obj):
         return "function"
+    # An SDK instance with methods, e.g. ``classify`` (#210); typing aliases
+    # are callable too, so the test is the instance's own type.
+    if type(obj).__module__.startswith("donkey_kit.") and callable(obj):
+        return "callable object"
     return "type alias"
 
 
@@ -1028,6 +1043,26 @@ def api_reference() -> str:
         "signatures and docstrings. Each entry shows the first paragraph of the",
         "docstring; `help()` on the object prints the rest. Everything listed here is",
         "importable from `donkey_kit`.",
+        "",
+        "## Stability",
+        "",
+        "Every name on this page is **stable**: the names in `donkey_kit.__all__`,",
+        "and the public methods and properties of `Donkey`. During 0.x a stable name",
+        "is removed or renamed only in a minor release, and only after an earlier",
+        "minor release shipped it as a working alias that emits a",
+        "`DeprecationWarning`. A patch release never breaks one.",
+        "",
+        "`donkey_kit.core` and the other public submodules are **provisional**: they",
+        "are documented and may change in a minor release, with a migration note.",
+        "Some types you meet through a stable object live there, such as",
+        "`RefusalContext` (what a [refusal handler](/refusal-handlers) receives),",
+        "`RunUsage` (`RunLedger.usage`) and `PolicyRegistration` (what",
+        "`classify.registered()` returns); import them from `donkey_kit.core`.",
+        "So is a method of a stable object whose docstring says *Provisional*",
+        "(`help()` shows it), such as `donkey.tools.live_tools()` and",
+        "`donkey.tools.live_card()`.",
+        "`donkey_kit.experimental` holds types for surfaces that are still blocked",
+        "on verification, and they may change in any release.",
     ]
     for doc in docs:
         lines += _class_section(doc)

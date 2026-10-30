@@ -16,11 +16,23 @@ import pytest
 
 import donkey_kit
 import donkey_kit.experimental
-from donkey_kit import DonkeyError
+from donkey_kit import Approval, DonkeyError
 
+_APPROVAL = Approval(
+    id="a-1",
+    tool="issue_refund",
+    arguments={},
+    risk=None,
+    correlation_id="run-1",
+    requested_at=0.0,
+    expires_at=1.0,
+)
 # Keyword arguments a subclass cannot be built without. Every other subclass
 # takes only the message.
 _REQUIRED_KWARGS: dict[str, dict[str, Any]] = {
+    "ApprovalRejected": {"approval": _APPROVAL},
+    "ApprovalRequired": {"approval": _APPROVAL},
+    "ApprovalTimedOut": {"approval": _APPROVAL},
     "BudgetReserveReached": {"fraction_used": 0.9, "reserve": 0.1},
     "ModelSubstituted": {"requested_model": "a", "served_model": "b"},
 }
@@ -58,7 +70,12 @@ def test_every_error_is_exported_from_donkey_kit(cls: type[DonkeyError]) -> None
     assert getattr(homes[0], cls.__name__) is cls
 
 
-_EXPERIMENTAL_ERRORS = {"PublicationDrift", "RegistryError", "ToolInvocationError"}
+_EXPERIMENTAL_ERRORS = {
+    "DescriptorMismatch",
+    "PublicationDrift",
+    "RegistryError",
+    "ToolInvocationError",
+}
 
 
 def test_only_blocked_surface_errors_are_experimental() -> None:
@@ -93,7 +110,7 @@ def test_every_error_rejects_a_blank_remediation(cls: type[DonkeyError], bad: st
 
 
 def test_classify_is_exported_from_donkey_kit() -> None:
-    from donkey_kit.core.errors import classify
+    from donkey_kit.core.classifier import classify
 
     assert "classify" in donkey_kit.__all__
     assert donkey_kit.classify is classify

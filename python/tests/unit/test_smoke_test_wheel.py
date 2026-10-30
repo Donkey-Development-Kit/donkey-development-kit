@@ -33,6 +33,12 @@ def _load() -> ModuleType:
 
 smoke = _load()
 
+# The script builds its venv with pip, which needs ensurepip; some distribution
+# Pythons ship without it.
+_needs_ensurepip = pytest.mark.skipif(
+    importlib.util.find_spec("ensurepip") is None, reason="this Python has no ensurepip"
+)
+
 
 def _record_line(name: str, data: bytes) -> str:
     digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
@@ -69,6 +75,7 @@ def test_wheel_version_reads_the_filename() -> None:
         smoke.wheel_version(Path("donkey_kit-0.1.3.tar.gz"))
 
 
+@_needs_ensurepip
 @pytest.mark.timeout(180)
 def test_a_good_wheel_installs_and_imports(
     tmp_path: Path, capfd: pytest.CaptureFixture[str]
@@ -78,6 +85,7 @@ def test_a_good_wheel_installs_and_imports(
     assert "donkey-kit 9.8.7 installs and imports from" in capfd.readouterr().out
 
 
+@_needs_ensurepip
 @pytest.mark.timeout(180)
 def test_a_wheel_whose_version_disagrees_fails(
     tmp_path: Path, capfd: pytest.CaptureFixture[str]
@@ -89,6 +97,7 @@ def test_a_wheel_whose_version_disagrees_fails(
     assert "__version__ '9.8.6', installed '9.8.7'" in capfd.readouterr().err
 
 
+@_needs_ensurepip
 @pytest.mark.timeout(180)
 def test_an_unexpected_version_fails(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
     wheel = _wheel(tmp_path, version="9.8.7", declared="9.8.7")

@@ -10,9 +10,9 @@ not be conflated (BG §1.1).
 
 VERIFICATION NOTE: the default token endpoint path is
 ``_verify.OAUTH_TOKEN_PATH``; see ``docs/verified-apis.md`` §1 and §12.1. The
-scopes each operation needs and the operations that require an *admin*
-connected app with user context remain UNVERIFIED. The latter path is not yet
-implemented and raises a verification-blocked error where it is needed.
+scopes each operation needs are in ``docs/scopes.md`` (#23). No SDK operation
+needs an *admin* connected app with user context: a ``client_credentials`` app
+with those scopes runs every one.
 """
 
 from __future__ import annotations
@@ -217,7 +217,7 @@ class AnypointConnectedApp(AuthProvider):
             raise AuthError(
                 "Anypoint token request rejected. Verify the connected-app "
                 "client_id/secret and that the app has the scopes the operation "
-                "needs (see docs/verified-apis.md §1).",
+                "needs (see docs/scopes.md).",
                 remediation=AuthError.connected_app_remediation,
                 response=resp,
             )

@@ -1,0 +1,19 @@
+{
+  "draftStatus": "PUBLISHED",
+  "id": "00000000-0000-4000-8000-00000000d1af",
+  "groupId": "00000000-0000-4000-8000-306f0858eed3",
+  "assetId": "ddk-verify-1269-fixture",
+  "organizationId": "00000000-0000-4000-8000-306f0858eed3",
+  "publishedVersionReferenceId": "0000000000000000000000000000000000000000",
+  "versionGroup": "_1.0",
+  "projectId": "00000000-0000-4000-8000-0000000c0de0",
+  "versionId": "1.0.0",
+  "createdDate": "2026-10-27T07:49:28.052Z",
+  "updatedDate": "2026-10-27T08:37:37.562Z",
+  "pages": [
+    {
+      "name": "home",
+      "path": "home"
+    }
+  ]
+}

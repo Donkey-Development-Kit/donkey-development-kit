@@ -1,19 +1,25 @@
 ---
-description: Derive a manifest and agent card from your code, then register them with Exchange / Agent Registry from CI — the Agent Scanner for your git repo.
-status: roadmap
+description: donkey scan derives a deterministic model of your agents, tools and MCP servers from code; publishing registers it with Exchange / Agent Registry from CI, complementing Agent Scanners.
+status: live
 ---
 
 import { Callout } from 'nextra/components'
+import { Badge } from '../components'
 
 # Scan & publish
 
-This capability is on the [Roadmap](/roadmap); the API shown here is the planned design.
+`donkey scan`, `donkey publish` and `donkey verify` are live: publish plans
+(`--dry-run` sends nothing) and registers each MCP server and agent in Exchange
+from CI, and verify checks the live side against what was published. The
+collision check and `descriptor="auto"` derivation are on the
+[Roadmap](/roadmap); their sections are badged and show the planned design.
 
-`donkey scan` walks your repository, finds everything marked
-[`@donkey.tool`](/cli#donkeytool), plus MCP server definitions and agent entry
-points, and produces a manifest and A2A agent card. `donkey publish` registers
-them with Exchange / Agent Registry. A GitHub Action runs both on every merge to
-`main`.
+`donkey scan` walks your repository and finds every
+[`@donkey.agent`](/cli#donkeyagent) and [`@donkey.tool`](/cli#donkeytool), plus
+the MCP servers those tools name with `server=`. It produces one deterministic
+model of them. Publishing registers that model with Exchange / Agent
+Registry, and the [GitHub Action](#from-github-actions) runs both on every merge
+to `main`.
 
 **The registry becomes a consequence of the code, not a chore.** A support agent
 with six tools registered by hand has a stale tool list within a week; with the
@@ -21,10 +27,466 @@ Action, every merge updates it.
 
 <Callout type="info">
   **This complements MuleSoft's Agent Scanners.** Agent Scanners discover agents
-  from Agentforce, Bedrock, Vertex AI, and Copilot Studio at **runtime**. Scan &
-  publish is the **design-time / CI** complement: it registers agents built in
-  plain Python that no cloud scanner can see.
+  from Agentforce, Bedrock, Vertex AI, and Copilot Studio at **runtime**. Scan is
+  the **design-time / CI** source for the agents you build in plain Python,
+  which no cloud scanner can see. Its model feeds direct Exchange publishing
+  today, and is planned to feed the platform's self-managed scanner too, so the
+  platform stays the system of record.
 </Callout>
+
+## `donkey scan` — the model of your code <Badge tone="live">Live</Badge>
+
+```bash
+donkey scan .           # a summary, and any issues
+donkey scan . --json    # the canonical model, for a CI diff
+```
+
+Scan is **static**: it parses your source and never imports or runs it. It
+needs no credentials and writes no file. The model lists:
+
+- **agents**: each `@donkey.agent`, with its name (a service ID), skills and
+  description, and the **protocol** and **endpoint** you declare for it (see
+  [Declaring how an agent is reached](#declaring-how-an-agent-is-reached)),
+- **tools**: each `@donkey.tool`, with its parameters, description, `server`,
+  `approval` and `risk`,
+- **MCP servers**: each distinct `server=` ID and the tools that name it,
+- **unattributed** tools that have no `server=`. Scan reports them and never
+  guesses a server.
+- for each MCP server, the **transport** and **endpoint** you declare for it
+  (see below), or `null` when you declare none.
+
+The model is deterministic: the same code always gives the same JSON, and its
+`digest` leaves out file paths and line numbers, so moving code does not look
+like a change. Scan also reports **issues** and exits `1` when it finds one:
+a missing or tautological description, an invalid service ID, a non-literal
+decorator argument it cannot read, or a service ID used twice. That way CI
+fails before anything is published. See [`donkey scan`](/cli#donkey-scan) for
+the full rules.
+
+### Declaring how an MCP server is reached
+
+Publishing an MCP server needs to say how a client reaches it, and that is not
+something scan can read from code: nothing ties a `server=` ID to the object
+that serves it, and the URL a client uses depends on where the server is
+deployed. So you declare it, one table per server ID, in `.donkey-kit.toml`
+beside your code:
+
+```toml
+# .donkey-kit.toml (committed)
+[donkey.mcp_servers.hr-tools]
+transport = "streamable-http"
+endpoint  = "https://hr-tools.acme.com/mcp"
+
+[donkey.mcp_servers.sku-manager]
+transport = "stdio"
+```
+
+- `transport` is one of the MCP transports: `stdio`, `streamable-http`, or
+  `sse` (deprecated by the MCP specification, still accepted).
+- `endpoint` is the `http` or `https` URL a client connects to, normally the
+  gateway-fronted one. A `stdio` server is started as a process and has no
+  endpoint. Don't put credentials in the URL. The endpoint is published as
+  written, so scan refuses a URL with a user name or password, or a query
+  parameter named like a credential (`token`, `secret`, `password`, `api_key`,
+  `client_id`, `key`, `sig` and similar). The issue names the parameter, never
+  its value.
+- A `.donkey-kit.local.toml` beside it (gitignored) overrides the project file
+  key by key, so each environment can point at its own endpoint without editing
+  the committed file:
+
+  ```toml
+  # .donkey-kit.local.toml
+  [donkey.mcp_servers.hr-tools]
+  endpoint = "http://localhost:8080/mcp"
+  ```
+
+Scan reads only these two files in the scanned directory, not your user-wide
+config file, and parses them without running anything. A server with no table
+is reported with no transport and no endpoint. Scan never guesses one, and this
+is not an issue, so `donkey scan` still exits `0`. An unknown transport, an
+endpoint that is not an `http(s)` URL, an unknown key, or a table for an ID that
+no `@donkey.tool` names is an issue and fails the scan.
+
+The declaration is part of the scan `digest`, because it is part of what would
+be published. Settings outside `[donkey.mcp_servers]` are unaffected:
+`Donkey.from_env()` ignores the table.
+
+### Declaring how an agent is reached
+
+An agent's Exchange asset says which protocol it speaks and, for an A2A agent,
+the URL its agent card names. Neither is in the decorator, so you declare them
+the same way, one table per agent name:
+
+```toml
+# .donkey-kit.toml (committed)
+[donkey.agents.support-triage]
+protocol = "a2a_v1"
+endpoint = "https://agents.acme.com/support-triage/"
+```
+
+- `protocol` is `a2a_v1`, for an agent served over A2A 1.0 such as
+  [`donkey.serve()`](/a2a), or `other`. `a2a` (A2A 0.3) is refused with a hint,
+  because `donkey.serve()` speaks 1.0.
+- `endpoint` is the `http` or `https` URL the agent is served at, with the same
+  rules as an MCP server's. An `a2a_v1` agent needs one.
+- An agent with no table is published with protocol `other` and no endpoint.
+  This is not an issue.
+- `.donkey-kit.local.toml` overrides the file key by key, and the declaration is
+  part of the digest, as for `[donkey.mcp_servers]`. A table for a name that no
+  `@donkey.agent` uses is an issue.
+
+<Callout type="warning">
+  A service ID (`@donkey.agent(name=...)`, `@donkey.tool(server=...)`) names a
+  service in the registry **permanently**, so choose it deliberately. Renaming
+  it later would register a second service rather than rename the first.
+</Callout>
+
+## Planning a publish
+
+```bash
+donkey publish --dry-run .          # the assets a publish would register
+donkey publish --dry-run . --json   # the same plan as canonical JSON (plan_format: 1)
+```
+
+The dry run scans your code the way `donkey scan` does, then prints one
+Exchange asset per MCP server (type `mcp`) and per agent (type `agent`), with
+its group ID, asset ID and version, and the digest a publish would compare
+with the latest published version's. It makes **no network call** and needs no
+credentials.
+
+Exchange coordinates aren't in your code, so you declare them in a
+`[donkey.publication]` table in `.donkey-kit.toml` beside your code:
+
+```toml
+# .donkey-kit.toml (committed)
+[donkey.publication]
+version  = "1.3.0"     # required, a semantic version
+group_id = "acme"      # optional: defaults to your org_id (ANYPOINT_ORG_ID)
+protocol_version = "2025-06-18"                                       # optional
+provider = { organization = "Acme HR", url = "https://hr.acme.example" }  # optional
+
+[donkey.publication.assets.hr-tools]   # a service ID; every key is optional
+asset_id    = "hr-tools-mcp"           # default: the service ID
+name        = "HR Tools"               # default: the service ID
+description = "Look up employees and their managers."
+version     = "1.4.0"                  # default: the table's version
+documentation = "docs/hr-tools.md"     # Markdown that opens the asset's page
+# protocol_version and provider can be set here too, overriding the table's
+```
+
+- An MCP server has no description in code, so give it one here. An agent
+  defaults to its own description. Exchange and Agent Fabric show the name as
+  the asset's title and the description under it. A name or description you
+  change later is applied with the next new version, to every version.
+- `protocol_version` is the MCP protocol revision your server speaks:
+  `2024-11-05`, `2025-03-26`, `2025-06-18` or `2025-11-25`. `provider` is who
+  provides it, with both `organization` and `url`. Agent Fabric shows them as
+  the asset's protocol version and provider; without `provider` it shows
+  "Other". Both describe an MCP server, so an agent's `assets` table can't set
+  them; the table-wide ones apply to MCP servers only.
+- `documentation` is a Markdown file, relative to the scanned directory and
+  inside it. Its content opens the asset's page (see below).
+- A `.donkey-kit.local.toml` beside it overrides the project file key by key,
+  as for `[donkey.mcp_servers]`.
+- The digest covers what would be published for that asset: its tools, their
+  descriptions and parameters (an agent's skills), how the server or agent is
+  reached, the asset's name and
+  description, and the protocol version, provider and documentation content
+  when you set them. Editing the documentation file is a change, so it needs a
+  new version. The digest leaves out file paths, line numbers and the version, so
+  moving code or bumping the version alone does not look like a change.
+
+The dry run exits `1` on any issue, so CI can run it on every pull request:
+every issue `donkey scan` reports, plus a missing group ID or version, a
+version that isn't semantic, an unknown key, a protocol version or provider
+the metadata can't carry (or one set for an agent), a documentation file that is missing or outside the
+scanned directory, or an `assets` table for a service ID your code doesn't
+define.
+
+## Publishing MCP servers
+
+```bash
+donkey publish .            # publish what changed (--if-changed is the default)
+donkey publish . --always   # publish even when the digest matches the latest version
+donkey publish . --json     # each asset with its status and detail (publish_format: 1)
+```
+
+Without `--dry-run`, `donkey publish` registers each MCP server in the plan as
+an Exchange asset of type `mcp`, in the group and at the version you declared.
+It runs from CI with the control-plane credentials: `ANYPOINT_CLIENT_ID`,
+`ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID`. The connected app needs
+the `manage:exchange` scope on that business group: with `edit:exchange` or
+`create:exchange` only, a version can be published but its endpoint cannot be
+registered. See [Connected-app scopes](/reference/scopes). Publishing has been checked against a live sandbox
+with a connected app's token.
+
+Each asset is published with:
+
+- its name and description. Exchange keeps the ones an asset's first version
+  was published with, so when a later version declares a different name or
+  description, `donkey publish` sets it on the asset after publishing the
+  version. A description you don't declare leaves the asset's as it is.
+- the digest, stored with the asset so the next run can compare it,
+- an `mcp-metadata` file: the transport, the tools with their descriptions and
+  an input schema from their parameters, the capabilities (tools, and no
+  resources, prompts or logging, since scan sees only tools), the protocol
+  version and provider you declared, and the asset's coordinates. A
+  parameter annotated `str`, `int`, `float`, `bool`, `list` or `dict` gets that
+  JSON Schema type; any other parameter accepts any value. No parameter is
+  marked required, because scan does not record defaults.
+- the endpoint you declared in `[donkey.mcp_servers]`, if any, registered as an
+  external instance. Exchange keeps instances per minor version, so a new patch
+  version reuses the existing one.
+- a Home page, generated in Markdown. Agent Fabric shows it as the asset's
+  Documentation section. Every page has the same sections: an Overview with
+  the description (or "No description is declared.") followed by your
+  `documentation` file; the tools, each with its description, the `approval`
+  and `risk` it declares, and a table of its parameters; on a new version of
+  an existing asset, "Changes since" the latest published version (tools
+  added or removed, a description changed, a parameter added, removed or given
+  another type), which a first publish leaves out; how to connect
+  (transport, endpoint, protocol version); and provenance: the asset ID and version, the content digest and, when the
+  publish runs in GitHub Actions, the repository, the commit and a link to the
+  run. It never includes credentials or your org ID. Only a new version gets a
+  page; an unchanged asset keeps the one it has. A rerun that
+  [finishes a publish](#when-a-publish-fails) writes the page the first run
+  would have, with "Changes since" the published version before it.
+
+A publish is safe to repeat:
+
+- With `--if-changed`, an asset whose latest published version has the same
+  digest is left alone. A merge that changes nothing, or that only bumps the
+  version, publishes nothing.
+- Exchange never overwrites a version. If you change an MCP server without
+  bumping its version, `donkey publish` stops before sending and tells you to
+  bump it. The same happens if the version is already published with other
+  content.
+- A rerun finishes a publish that stopped partway. See below.
+
+### When a publish fails
+
+Assets are published one at a time, in plan order. When Exchange refuses a
+call, `donkey publish` stops. The assets published before it stay published,
+and `--json` still prints every asset with its `status` and `detail`:
+
+| `status` | Meaning |
+|---|---|
+| `published` | A new version was published, or a rerun finished an `incomplete` one. |
+| `unchanged` | The latest version already has this digest, and its publish is complete. |
+| `incomplete` | The version is published, but registering its endpoint, writing its page, or setting the asset's name and description was refused. |
+| `failed` | Exchange refused the asset, and nothing was published for it. |
+| `not_attempted` | An earlier asset failed, or an issue stopped the publish, so this one was not tried. |
+
+When the scan or the declaration has an issue, nothing is sent: `--json`
+prints every asset `not_attempted`, with the issues, and the command exits
+`1`. Each `--json` document carries a format key; see
+[JSON output](/cli#json-output).
+
+The refusal and its fix go to stderr, and a refused asset's `detail` ends with
+the same fix. A common one: a connected app without `manage:exchange` can
+publish a version but not register its endpoint, so the asset is `incomplete`.
+
+Fix what was reported and run `donkey publish` again, with the same version.
+A version that has the planned digest counts as `unchanged` only once its
+publish is complete. If it is not, the rerun does whatever is missing:
+
+- registers the endpoint, when the version's instances don't list it,
+- writes and publishes the Home page, when the version has no published one
+  (for an MCP server, it first reads the tools of the published version
+  before it, for the page's "Changes since"),
+- sets the declared name and description, when the asset's differ,
+
+and reports the asset `published`, with a detail such as `finished publishing
+1.0.0: registered its endpoint`. Nothing is published twice, and a complete
+version gets no write. Checking the page reads the version's portal draft, one
+more read per unchanged asset.
+
+`donkey publish` exits `0` when every asset is `published` or `unchanged`. It
+exits `1` when the plan has an issue (nothing is sent) or an asset is `failed`
+or `incomplete`, and `2` when the path doesn't exist, the config is invalid,
+or the control-plane credentials are missing.
+
+## Publishing agents
+
+The same `donkey publish` registers each agent as an Exchange asset of type
+`agent`, with the same credentials, the same digest check and the same
+version-bump rule. Each agent asset is published with:
+
+- its name and description, as for an MCP server. An agent's description
+  defaults to its docstring.
+- the digest, and the protocol you declared (`other` when you declared none),
+  stored with the asset. Exchange stores an `a2a_v1` agent's protocol as `a2a`,
+  with the version carried by its A2A 1.0 card, so the agent is listed as
+  protocol `a2a`, version `v1`. That is the form the gateway accepts when
+  [`donkey expose`](/a2a) fronts the agent.
+- an `agent-metadata` file: the protocol, the agent's name and description,
+  and its asset coordinates.
+- for an `a2a_v1` agent, an **A2A agent card** (`a2a-v1-card`): the name,
+  description, version, skills, input and output modes and the endpoint, as an
+  A2A 1.0 card. It is built from the same `@donkey.agent` record as the card
+  [`donkey.serve()`](/a2a) serves, so the two match.
+- the endpoint, if you declared one, registered as an external instance.
+- a Home page with the same Overview and provenance as an MCP server's, the
+  agent's skills, and how to connect (protocol and endpoint).
+
+Publishing agents has been checked against a live sandbox, as for MCP servers.
+
+## From GitHub Actions
+
+The scan-and-publish action runs `donkey publish` in a workflow. It lives in
+the SDK repository's `action/` folder, so you pin it like any action, to a
+release tag or a commit SHA. The action at a ref installs donkey-kit from the
+same ref, into its own virtual environment. Your job's Python is left as it
+was.
+
+```yaml
+# .github/workflows/publish.yml
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Donkey-Development-Kit/donkey-development-kit/action@<ref>
+        with:
+          # On a pull request: plan only, with no credentials.
+          dry-run: ${{ github.event_name == 'pull_request' }}
+          client-id: ${{ secrets.ANYPOINT_CLIENT_ID }}
+          client-secret: ${{ secrets.ANYPOINT_CLIENT_SECRET }}
+          org-id: ${{ secrets.ANYPOINT_ORG_ID }}
+```
+
+A dry run needs no credentials, so it works on pull requests from forks, which
+get no secrets. Set `group_id` in `[donkey.publication]` so the plan doesn't
+need the org ID either. The action passes the credentials to `donkey` only
+through the environment. A credential input left empty keeps the `ANYPOINT_*`
+variable your job already sets.
+
+<Callout type="warning">
+Pass `client-secret` from a `secrets.*` value only. GitHub masks secrets before
+any step runs. The action masks the input in its first step, but the runner
+prints that step's environment before the mask takes effect, so a value from a
+variable or another step's output shows in the log once.
+</Callout>
+
+| Input | Default | |
+| --- | --- | --- |
+| `path` | `.` | The directory (or one `.py` file) to scan and publish. |
+| `dry-run` | `false` | `true` plans and sends nothing (`--dry-run`). |
+| `if-changed` | `true` | `false` publishes even when the digest matches (`--always`). |
+| `client-id`, `client-secret`, `org-id` | empty | `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, `ANYPOINT_ORG_ID`. |
+| `python-version` | `3.12` | The Python that runs donkey-kit (3.10 or later). |
+| `donkey-kit` | empty | A pip requirement to install instead, such as `donkey-kit[cli]==X.Y.Z`. |
+
+The job summary shows a table of the assets: each one's digest on a dry run,
+and each one's status and detail after a publish, including one that failed
+partway. The step's outputs are the `published`, `unchanged`, `incomplete`,
+`failed` and `not-attempted` counts, and `result`, the path of the
+JSON that `donkey publish --json` printed. A failed publish fails the step with
+`donkey`'s exit code, and each line `donkey` printed to stderr becomes an error
+annotation, so the fix shows on the run's page. Re-running the failed job
+finishes the publish (see [When a publish fails](#when-a-publish-fails)).
+What `donkey` prints comes from the repository it scans, so the summary shows
+every field as plain text, and the stderr echo can't run a workflow command.
+
+The action reads only the document of its own release: `plan_format: 1` on a
+dry run, `publish_format: 1` otherwise (see [JSON output](/cli#json-output)).
+If the `donkey-kit` input installs a release that prints another, the action
+writes no summary and no outputs. It fails the step with an annotation that
+names the format it found, even when the publish succeeded.
+
+## From GitLab CI
+
+There is no GitLab component yet, so run `donkey publish` in a job of your
+own. This one plans on merge requests and publishes from the default branch:
+
+```yaml
+# .gitlab-ci.yml
+donkey-publish:
+  image: python:3.12-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      variables:
+        DONKEY_ARGS: "--dry-run"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      variables:
+        DONKEY_ARGS: ""
+  script:
+    - pip install "donkey-kit[cli]==X.Y.Z"
+    - donkey publish . $DONKEY_ARGS --json > donkey-publish.json
+  artifacts:
+    when: always
+    paths:
+      - donkey-publish.json
+```
+
+Add `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID` as
+CI/CD variables under **Settings > CI/CD > Variables**. Mask the secret and
+protect all three: a protected variable reaches only pipelines on protected
+branches, so the default branch gets the credentials and a merge request
+doesn't. The dry run needs none; set `group_id` in `[donkey.publication]` so
+it doesn't need the org ID either.
+
+`donkey publish` prints the JSON on stdout, which the job keeps as the
+`donkey-publish.json` artifact, even when the job fails. Any issue or refusal
+goes to stderr, so it shows in the job log, and the exit code fails the job.
+
+## From Bitbucket Pipelines
+
+There is no Bitbucket Pipe yet, so run `donkey publish` in a step of your
+own. This one plans on pull requests and publishes from `main`:
+
+```yaml
+# bitbucket-pipelines.yml
+image: python:3.12-slim
+
+definitions:
+  steps:
+    - step: &donkey-plan
+        name: donkey publish (plan)
+        script:
+          - pip install "donkey-kit[cli]==X.Y.Z"
+          - donkey publish . --dry-run --json > donkey-publish.json
+        artifacts:
+          - donkey-publish.json
+
+pipelines:
+  pull-requests:
+    "**":
+      - step: *donkey-plan
+  branches:
+    main:
+      - step:
+          name: donkey publish
+          deployment: production
+          script:
+            - pip install "donkey-kit[cli]==X.Y.Z"
+            - donkey publish . --json > donkey-publish.json
+          artifacts:
+            - donkey-publish.json
+```
+
+Add `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID` as
+secured variables of the `production` deployment environment under
+**Repository settings > Deployments**. Deployment variables reach only steps
+that name that environment, so the `main` step gets the credentials and the
+pull-request step doesn't. The dry run needs none; set `group_id` in
+`[donkey.publication]` so it doesn't need the org ID either.
+
+As on GitLab, the JSON goes to the artifact, any issue or refusal to the step
+log, and the exit code fails the step.
+
+On GitLab and Bitbucket, the generated Home page leaves out the commit and
+run links: `donkey publish` reads them only from GitHub Actions.
 
 ## Scope: code-first assets
 
@@ -38,18 +500,20 @@ It is not for assets the platform already owns. An MCP server created by MCP
 Bridge from an existing API is already in Exchange; publishing a second,
 code-derived descriptor would create two catalog entries for one capability.
 
-### Collision check
+### Collision check <Badge tone="roadmap">Roadmap</Badge>
 
-Before publishing, the SDK searches Exchange for an existing asset with the
-same endpoint, name, or derived tool signature. On a probable match it
-**refuses** and prints the existing asset's coordinates. Override with an
-explicit `--allow-duplicate`, which logs at `WARNING`.
+`donkey publish` doesn't run this check yet. As planned, before publishing the
+SDK will search Exchange for an existing asset with the same endpoint, name, or
+derived tool signature. On a probable match it will **refuse** and print the
+existing asset's coordinates, and a planned `--allow-duplicate` flag will
+override it with a `WARNING`.
 
 ## The `Publication` object
 
 The publication types are in `donkey_kit.experimental`, not `donkey_kit`, until
-the Exchange publication API is verified. They may change in any release until
-then.
+descriptor derivation (`preview()` and `export()`) is verified. They may change
+in any release until then. [`verify()`](#verifying-at-runtime-verify) works
+today; `preview()` and `export()` raise `NotImplementedError`.
 
 ```python
 from donkey_kit.experimental import Contact, Publication, PublicationAssetType
@@ -81,7 +545,8 @@ pub = Publication(
 )
 ```
 
-`asset_type` determines which descriptor is required and how it is generated:
+As planned, `asset_type` will determine which descriptor is required and how it
+is generated <Badge tone="roadmap">Roadmap</Badge>:
 
 | `asset_type` | Descriptor | Generated from |
 |---|---|---|
@@ -90,9 +555,10 @@ pub = Publication(
 | `AGENT` | agent descriptor (no A2A surface) | framework introspection, best-effort |
 | `API` | OpenAPI / AsyncAPI | user-supplied file; no generation |
 
-## `descriptor="auto"` — deriving the spec from code
+## `descriptor="auto"` — deriving the spec from code <Badge tone="roadmap">Roadmap</Badge>
 
-Hand-maintained catalog descriptors go stale within a sprint, so generation is
+This section is the planned design: a `Publication` doesn't derive its
+descriptor yet. Hand-maintained catalog descriptors go stale within a sprint, so generation is
 the core of this feature.
 
 Every supported framework already derives JSON Schema from function signatures,
@@ -107,7 +573,6 @@ re-deriving it, so the catalog documents exactly the schema the model sees.
 ```python
 descriptor="auto"          # object introspection — the default
 descriptor="auto:live"     # live protocol introspection — highest fidelity
-descriptor="auto:static"   # AST only — lowest fidelity, no code execution
 descriptor="auto:check"    # generate, diff against committed file, fail on mismatch
 ```
 
@@ -118,7 +583,8 @@ descriptor="auto:check"    # generate, diff against committed file, fail on mism
 - **`auto`** (the default) imports your module, locates the tool and agent
   objects, and reads their already-computed schemas. No server, no network,
   works in CI. Importing user code executes it, so tool definitions must be
-  import-safe; declare explicit entrypoints rather than scanning whole packages:
+  import-safe; you will declare explicit entrypoints rather than scanning whole
+  packages, in a planned table such as:
 
   ```toml
   [publication.entrypoints]
@@ -126,26 +592,103 @@ descriptor="auto:check"    # generate, diff against committed file, fail on mism
   "hr-agent"     = "acme.hr.agent:build_agent" # a zero-arg factory also works
   ```
 
-- **`auto:static`** parses decorators, signatures, and docstrings via AST
-  without executing anything — for environments where importing user code is
-  unacceptable. It cannot see tools registered in a loop, from config or a
-  database, behind a feature flag, attached dynamically at startup, or built
-  from imported/generated pydantic models, so it emits a completeness warning
-  whenever it hits a pattern it cannot resolve. It is never the default.
 - **`auto:check`** generates the descriptor, diffs it against the committed
   file, and fails on mismatch — useful as a CI gate.
 
-`donkey publish --cross-check` runs `auto` and `auto:live` and diffs them. A
-disagreement means either dynamic registration the object graph does not
-reflect, or a broken framework adapter.
+There is no AST-only mode. Parsing source can name a tool but cannot produce
+its schema without re-deriving it. Where importing your code is not acceptable,
+`donkey scan` (above) is the static, no-execution view.
+
+A planned `donkey publish --cross-check` will run `auto` and `auto:live` and diff
+them. A disagreement will mean either dynamic registration the object graph does
+not reflect, or a broken framework adapter.
 
 <Callout type="info">
   Type hints give the **shape**, not the **meaning** — `department: str` becomes
   `{"type": "string"}` and says nothing about which departments are valid, or
-  when to use this tool over a similar one. `auto` fails publication on a
-  description that is tautological or missing, and `preview()` reports
-  description quality.
+  when to use this tool over a similar one. `auto` will fail publication on a
+  description that is tautological or missing, and `preview()` will report
+  description quality. Today `donkey scan` already fails on such a description.
 </Callout>
+
+## Verifying at runtime: `verify()`
+
+`Publication.verify(donkey)` is the read-only runtime check that a live MCP
+server or A2A agent still matches what its version was published with. It writes nothing:
+there is no runtime publish.
+
+```python
+from donkey_kit import Donkey
+from donkey_kit.experimental import Publication, PublicationAssetType
+
+pub = Publication(
+    asset_type=PublicationAssetType.MCP_SERVER,
+    group_id="${ANYPOINT_ORG_ID}",
+    asset_id="hr-tools-mcp",
+    version="1.3.0",
+    name="HR Tools",
+    description="Employee lookup and leave-balance tools for HR agents.",
+)
+
+async with Donkey.from_env() as donkey:
+    drift = await pub.verify(donkey)                     # warns, returns the differences
+    await pub.verify(donkey, raise_on_drift=True)        # raises PublicationDrift instead
+```
+
+It reads the `tools` of the version's `mcp-metadata` file from Exchange, and
+lists the live server's tools through its gateway instance, with the same
+governance check and credential as a [`donkey.tools`](/tool-access) binding:
+an ungoverned server raises `UngovernedMcpServer` and is sent nothing. A tool
+added or removed, a changed description, or a changed set of parameter names
+is drift. Parameter types are not compared, because `donkey publish` records
+only the plain annotations it reads without running your code.
+
+For an `AGENT` (or `A2A_AGENT`) publication it reads the card the version was
+published with (its `a2a-v1-card` file, or the `a2a-card` of a version published
+before A2A 1.0) and the card the agent serves at
+`.well-known/agent-card.json` through its gateway instance, with the same
+governance check and gateway credential: an ungoverned agent raises
+`RegistryError` and is sent nothing, and so does one whose gateway URL is not
+[`https://`](/tool-access/discovery#resolving-an-mcp-server). A changed card description, a changed set
+of default input or output modes, a skill added or removed, or a skill whose
+description changed is drift. The fields that say where and how this deployment
+serves the agent are not compared: `url`, `supportedInterfaces`,
+`preferredTransport`, `protocolVersion`, `version` (your code's version, not the
+asset's) and the security fields (`securitySchemes`, `security`,
+`securityRequirements`), which the upstream declares and the gateway enforces.
+
+You can read the live side yourself, with the same governance check and
+credential and no cache: `live_tools()` returns what the MCP server's
+`tools/list` returns now, and `live_card()` the card the A2A agent serves now.
+Each takes the asset version as `group_id/asset_id/version`:
+
+```python
+tools = await donkey.tools.live_tools("${ANYPOINT_ORG_ID}/hr-tools-mcp/1.3.0")
+card = await donkey.tools.live_card("${ANYPOINT_ORG_ID}/hr-agent/0.1.0")
+```
+
+Both methods are **provisional**: unlike the rest of `donkey.tools`, they may
+change in a minor release, with a migration note in the release notes. See
+[Stability](/reference/api#stability).
+
+By default each difference is logged at `WARNING` and returned, so a drifted
+catalog is loud without taking down production traffic. With
+`raise_on_drift=True` it raises `PublicationDrift`, whose message
+lists every difference. `API` publications are not verified and raise
+`NotImplementedError`.
+
+[`donkey verify`](/cli#donkey-verify) runs the same check from CI, for every MCP
+server and `a2a_v1` agent in the repository.
+
+Both read the live side at a gateway URL that discovery read from the control
+plane at `base_url`, so the gateway credential follows `base_url`'s rule. If
+`base_url` comes from the working directory's `.donkey-kit.toml` or
+`.donkey-kit.local.toml` and isn't a regional Anypoint host, the credential is
+sent only when it comes from those files too, or when `DONKEY_TRUST_PROJECT_CONFIG`
+is set. Otherwise `verify()` raises `ConfigError` before anything is sent, and
+`donkey verify` reports each such asset as an `error` with that message and
+exits `1`. See
+[Which credentials a URL receives](/reference/configuration#which-credentials-a-url-receives).
 
 ## Related
 

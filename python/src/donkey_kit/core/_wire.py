@@ -51,6 +51,11 @@ LLM_PROXY_WALLET_CLIENT_ID_HEADER = "X-Client-Id"
 LLM_PROXY_WALLET_JWT_HEADER = "Authorization"
 LLM_PROXY_WALLET_JWT_SCHEME = "Bearer"
 
+# On-behalf-of user token (BG §2.4, #215; docs/verified-apis.md §13): the Omni
+# Gateway JWT Validation and OBO credential-injection policies read the incoming
+# ``Authorization`` bearer.
+USER_TOKEN_HEADER = "Authorization"
+
 # --- Response headers --------------------------------------------------------
 
 # Standard HTTP headers the refusal classifier reads (docs/verified-apis.md §4).
@@ -71,11 +76,20 @@ RATELIMIT_HEADER = "x-llm-proxy-ratelimit"
 # Request-rate-limit window (docs/verified-apis.md §4): the stock
 # ``rate-limiting`` policy's trio, sent only with ``exposeHeaders: true``. The
 # reset is milliseconds until the window ends. These unsuffixed names are the
-# gateway's; the upstream's own ``x-ratelimit-*-requests`` / ``-tokens``
-# passthrough is a different window and is not read.
+# gateway's; the upstream's own suffixed passthrough below is a different window.
 REQUEST_LIMIT_HEADER = "x-ratelimit-limit"
 REQUEST_REMAINING_HEADER = "x-ratelimit-remaining"
 REQUEST_RESET_HEADER = "x-ratelimit-reset"
+
+# The upstream provider's own quota, passed through the gateway
+# (docs/verified-apis.md §4, "Upstream provider window", #1025). The reset is a
+# Go duration string (``12ms``, ``0s``), not a ms count.
+UPSTREAM_REQUEST_LIMIT_HEADER = "x-ratelimit-limit-requests"
+UPSTREAM_REQUEST_REMAINING_HEADER = "x-ratelimit-remaining-requests"
+UPSTREAM_REQUEST_RESET_HEADER = "x-ratelimit-reset-requests"
+UPSTREAM_TOKEN_LIMIT_HEADER = "x-ratelimit-limit-tokens"
+UPSTREAM_TOKEN_REMAINING_HEADER = "x-ratelimit-remaining-tokens"
+UPSTREAM_TOKEN_RESET_HEADER = "x-ratelimit-reset-tokens"
 
 # The prefix every LLM proxy policy header shares.
 LLM_PROXY_HEADER_PREFIX = "x-llm-proxy-"
@@ -105,3 +119,8 @@ AZURE_CONTENT_SAFETY_ACTION_HEADER = "x-llm-proxy-azure-content-safety-action"
 AZURE_CONTENT_SAFETY_REASON_HEADER = "x-llm-proxy-azure-content-safety-reason"
 BEDROCK_GUARDRAIL_ACTION_HEADER = "x-llm-proxy-bedrock-guardrail-action"
 BEDROCK_GUARDRAIL_REASON_HEADER = "x-llm-proxy-bedrock-guardrail-reason"
+MODEL_ARMOR_ACTION_HEADER = "x-llm-proxy-model-armor-action"
+MODEL_ARMOR_REASON_HEADER = "x-llm-proxy-model-armor-reason"
+# Read from the CrowdStrike AIDR policy's source, not captured live (§4, ADR 0016).
+CROWDSTRIKE_AIDR_ACTION_HEADER = "x-llm-proxy-crowdstrike-aidr-action"
+CROWDSTRIKE_AIDR_REASON_HEADER = "x-llm-proxy-crowdstrike-aidr-reason"

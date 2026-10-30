@@ -19,8 +19,10 @@ cut a release.
 - [Versioning & naming](#versioning--naming)
   - [The pre-release ladder](#the-pre-release-ladder)
   - [Tags](#tags)
-  - [The version string lives in two files](#the-version-string-lives-in-two-files)
+  - [The version string lives in one file](#the-version-string-lives-in-one-file)
 - [How a release reaches PyPI](#how-a-release-reaches-pypi)
+- [Release gates](#release-gates)
+  - [The acceptance run](#the-acceptance-run)
 - [Hotfix releases](#hotfix-releases)
   - [Merge mechanics](#merge-mechanics)
   - [Docs hotfix: no version](#docs-hotfix-no-version)
@@ -43,11 +45,13 @@ of the **milestone being shipped**. The milestone titles are the ground truth
 | `Phase 1.2 — Stabilize the MVP (0.1.2)` | `0.1.2` |
 | `Phase 1.3 — Stabilize the MVP (0.1.3)` | `0.1.3` |
 | `Phase 2 — Differentiate, go beyond (0.2.0)` | `0.2.0` |
+| `Phase 2.1 — Consolidate Phase 2 (0.2.1)` | `0.2.1` |
+| `Phase 2.2 — Consolidate Phase 2 (0.2.2)` | `0.2.2` |
 | `Phase 3 — Platform capabilities (0.3.0)` | `0.3.0` |
 | `Phase 4 — Enterprise readiness (0.4.0)` | `0.4.0` |
 | `Phase 5 — Complete rollout (1.0.0)` | `1.0.0` |
 
-Patch milestones (`Phase 1.N`) are added as they're created, so keep this
+Patch milestones (`Phase N.M`) are added as they're created, so keep this
 table in step with them: add a row for each new milestone, and rename the rows
 when a [package hotfix](#package-hotfix-next-patch-milestones-shift) shifts
 their versions.
@@ -69,9 +73,11 @@ X.Y.Z.dev0  <  X.Y.Z.dev1  <  …  <  X.Y.Za1  <  X.Y.Zb1  <  X.Y.Zrc1  <  X.Y.Z
    dev0            devN            alpha 1       beta 1      rc 1        final
 ```
 
-Each rung maps to a different publish outcome. Only `.devN` builds reach
-TestPyPI, and only a final `X.Y.Z` reaches production PyPI. Amber boxes are
-indexes a build lands on. The grey box is the dead end for pre-release
+Every rung can reach TestPyPI, by a manual dispatch from `develop`: `.devN`
+snapshots, `aN` / `bN` / `rcN` candidates, and a final `X.Y.Z` staged there
+for the acceptance run before its production upload. Only a final `X.Y.Z`
+reaches production PyPI, through a non-pre-release GitHub Release. Amber boxes
+are indexes a build lands on. The grey box is the dead end for pre-release
 GitHub Releases.
 
 ```mermaid
@@ -84,6 +90,10 @@ flowchart LR
 
   dev0 -.->|manual dispatch| testpypi[("TestPyPI")]
   devN -.->|manual dispatch| testpypi
+  a1 -.->|manual dispatch| testpypi
+  b1 -.->|manual dispatch| testpypi
+  rc1 -.->|manual dispatch| testpypi
+  final -.->|manual dispatch, staging| testpypi
   a1 -.->|pre-release Release| nowhere["Publishes nowhere"]
   b1 -.->|pre-release Release| nowhere
   rc1 -.->|pre-release Release| nowhere
@@ -124,7 +134,8 @@ version of its own again.
 Bump it on `develop`, in the PR that finishes a version's work, **before** the
 promotion PR — so the code on `main` already reads the version its tag will
 carry. `scripts/bump-version.sh` does the bump: it asks for the issue that
-tracks it (`--issue N`), names the branch `chore/<issue#>-bump-version-<version>`
+tracks it (`--issue N`) or, given none, files one (`chore(release): bump
+version to <version>`, reusing an open issue with that title), names the branch `chore/<issue#>-bump-version-<version>`
 per the branch convention, edits `__version__`, and opens the PR that closes
 that issue. It links the PR to the release's milestone (`--milestone`, else the
 issue's milestone, else the open milestone titled for the new version, else it
@@ -145,7 +156,7 @@ overlap:
 flowchart TD
   start{What are you shipping?}
 
-  start -->|dev snapshot| bump["Bump .devN in __version__<br/>and land it on develop"]
+  start -->|any ladder version<br/>to TestPyPI| bump["Bump __version__<br/>and land it on develop"]
   bump --> dispatch["Actions → Publish to TestPyPI<br/>→ Run workflow"]
   dispatch --> ref{Dispatched from develop?}
   ref -->|no| skipped["publish job skipped"]
@@ -170,18 +181,19 @@ flowchart TD
   class skipped,nowhere dead
 ```
 
-- **Dev snapshots → TestPyPI, via `publish-testpypi.yml`'s manual
-  `workflow_dispatch`.** Dev builds are deliberately **not** GitHub Releases —
-  the Releases page is reserved for real releases. To dry-run: bump the
-  `.devN` counter (see [Versioning & naming](#versioning--naming)) in
-  `__version__` (`scripts/bump-version.sh`), land it on `develop`, then
-  **Actions → Publish to TestPyPI → Run workflow** on `develop`. The publish
-  job is guarded to `refs/heads/develop` — a dispatch from any other ref is
-  skipped. It
-  publishes to `https://test.pypi.org/legacy/` via OIDC — the same
-  trusted-publishing path prod uses. Each dry-run needs a fresh `.devN`: a
-  filename, once uploaded to TestPyPI, can never be reused, even after
-  deletion.
+- **Any ladder version → TestPyPI, via `publish-testpypi.yml`'s manual
+  `workflow_dispatch`.** The workflow takes whatever `__version__` reads, as
+  long as it is a normalised ladder version: a `.devN` snapshot, an
+  `aN` / `bN` / `rcN` candidate, or a final `X.Y.Z` staged for its acceptance
+  run before the production upload. None of these builds is a GitHub Release, because the Releases page is
+  reserved for tagged releases on `main`. To publish one: bump `__version__` (see
+  [Versioning & naming](#versioning--naming); `scripts/bump-version.sh`), land
+  it on `develop`, then **Actions → Publish to TestPyPI → Run workflow** on
+  `develop`. The publish job is guarded to `refs/heads/develop` — a dispatch
+  from any other ref is skipped. It publishes to
+  `https://test.pypi.org/legacy/` via OIDC — the same trusted-publishing path
+  prod uses. Each upload needs a version TestPyPI has not seen: a filename,
+  once uploaded to TestPyPI, can never be reused, even after deletion.
 - **Final release → production PyPI, via `publish-pypi.yml` reacting to a
   published GitHub Release.** The **first published GitHub Release is
   `0.1.0`**; that and every later final `X.Y.Z` route to prod. Finish the
@@ -238,6 +250,7 @@ workflows; the last two are human.
 | Gate | Where | Fails when |
 | --- | --- | --- |
 | Test suite at the release commit | `test` job | `pytest -q` fails on the exact commit being uploaded (same install as `ci.yml`'s `test` job, 3.11). |
+| Commit on `main` | `publish-pypi.yml`'s `build` job, `git merge-base --is-ancestor` | A non-pre-release Release's tagged commit is not on `main` (checked before the build). |
 | One version, matching tag | `build` job, `scripts/check_release_version.py` | A built dist's metadata carries a version other than `__version__`, or the version isn't a normalised ladder version. On `publish-pypi.yml`, also when the tag isn't exactly `v<version>`, or a non-pre-release Release carries a pre-release version. |
 | `twine check`, no tenant identifiers, floors never ceilings | `build` job | The long description doesn't render, a dist carries a tenant identifier or live platform host, or the built metadata has an upper pin. |
 | Clean-install smoke test | `build` job, `scripts/smoke_test_wheel.py` | The built wheel doesn't install into a fresh virtualenv, or `import donkey_kit` there fails, imports from anywhere but that virtualenv, or reports a `__version__` other than the installed version. |
@@ -256,7 +269,7 @@ green and consumers still can't use the package.
 Half of it runs itself (#1082). After the TestPyPI upload,
 `publish-testpypi.yml`'s `acceptance` job dispatches the suite's offline groups
 (public surface, packaging, verification-blocked surfaces: no credentials, no
-gateway) against the `.devN` it just published, waits for them, and posts the
+gateway) against the version it just published, waits for them, and posts the
 result as the `acceptance (published)` commit status on the published commit.
 That commit is the promotion PR's head, so the PR shows the result. A red,
 errored or missing status blocks the promotion the same way a failed run does.
@@ -264,7 +277,7 @@ If `develop` moved after the publish, the status sits on the older commit:
 publish again from the new tip, or check the status on that commit.
 
 The live groups stay manual, because they call a real gateway. Run them
-against the same `.devN` before you open the promotion PR. How to run them, and
+against the same version before you open the promotion PR. How to run them, and
 how to tell a run that tested something from one that skipped everything, is
 documented in that repository.
 

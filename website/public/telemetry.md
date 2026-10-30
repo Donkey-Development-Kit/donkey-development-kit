@@ -17,9 +17,12 @@ for the governance layer that generic instrumentation cannot know about:
 
 ```
 donkey.policy.decision      = allow | refuse
-donkey.policy.type          = pii_detected | token_budget | request_rate_limit | injection | agent_killed | …
+donkey.policy.type          = pii_detected | token_budget | request_rate_limit | injection | agent_killed | approval_denied | content_safety | …
+donkey.policy.provider      = google-model-armor  # who blocked it (provider-backed refusals only)
+donkey.policy.categories    = [rai_dangerous]     # why: the provider's flagged categories
 donkey.budget.remaining     = 18450
 donkey.correlation_id       = …
+donkey.correlation_id.source = adopted       # adopted | minted, inside donkey.run_from_headers() only
 donkey.cost.team            = support
 donkey.cost.project         = triage-v2
 donkey.cost.env             = prod
@@ -34,6 +37,22 @@ donkey.usage.cache_write_tokens   = 128
 donkey.usage.reasoning_tokens     = 96
 ```
 
+A refusal typed by a [custom policy registration](https://docs.donkey-kit.dev/custom-policies.md) records its
+slug verbatim as `donkey.policy.type`, for example `acme_salary_block`, so the
+span and your policy's own logs share one string.
+
+A refusal made by an external moderation provider also says **who** blocked the
+call and **why**. `donkey.policy.provider` is the provider's stable slug
+(`azure-content-safety`, `bedrock-guardrails`, `google-model-armor` or
+`crowdstrike-aidr`, whose shape is read from the policy's source and not
+captured live), and `donkey.policy.categories` is a string array of the
+categories it flagged. They are the same values as `ContentSafetyBlocked.provider`
+and `.categories` on the [exception](https://docs.donkey-kit.dev/errors.md). Both are omitted on every other
+refusal, such as a PII block or a budget refusal. The categories are the
+provider's fixed filter names, not request content, so they are safe to export.
+Group refusals by `donkey.policy.provider` to compare how often each provider
+blocks you, and by `donkey.policy.categories` to see which categories trip most.
+
 The three `donkey.usage.*` counts carry the cost-relevant detail tokens the
 semantic conventions have no pinned key for — cached / cache-write prompt tokens
 and reasoning-model thinking tokens. They are read from the response `usage`
@@ -44,6 +63,18 @@ client, the same counts are exposed per-call on `donkey.last_call`.
 A **refused** request still produces a span, with `donkey.policy.decision=refuse`
 and `otel.status_code=ERROR`. A streaming response produces **exactly one** span,
 with token counts filled in at stream end.
+
+A [tool that needs approval](https://docs.donkey-kit.dev/hitl.md) records each step of its approval as a
+`donkey.tool.approval` span with one event (`donkey.approval.pending`,
+`.approved`, `.rejected` or `.timed_out`). The event names the approver and
+carries `donkey.correlation_id`, but never the tool's arguments.
+
+Each [tool discovery](https://docs.donkey-kit.dev/tool-access/discovery.md) is a `donkey.tools.discover` span,
+and each `donkey.tools.warm()` a `donkey.tools.warm` span. `donkey.discover.cache`
+is `hit` when the set came from the cache and `miss` when the registry was read.
+`donkey.discover.servers` counts the servers in the set, and
+`donkey.discover.left_out` the MCP assets left out as ungoverned. A failed read
+sets `error.type` to the exception's class name, never its message.
 
 Export goes over OTLP to wherever you already send spans. **Nothing in the
 emit path is Anypoint-specific**, so if your team already runs Grafana, Elastic,
@@ -103,11 +134,35 @@ With the flag on and an endpoint set, the first `Donkey()` installs its provider
 as the global one, unless your process already set one. The flag does nothing
 without an endpoint.
 
-DDK's own provider flushes its pending spans when the interpreter exits. If you
-need to flush earlier with `trace.get_tracer_provider().force_flush()`, for
-example in a serverless handler or a script that checks its collector before it
-exits, that call only reaches DDK's spans when they go through the global
-provider. Turn the flag on, or set your own provider.
+DDK's own provider flushes its pending spans when the interpreter exits. To
+flush earlier, call `donkey.flush_telemetry()`. Use it in a serverless handler
+before the runtime freezes the process, or in a script that checks its collector
+before it exits:
+
+```python nocheck
+def handler(event, context):
+    try:
+        return run_agent(event)
+    finally:
+        donkey.flush_telemetry(timeout_s=2.0)
+```
+
+It flushes the provider DDK built, scoped or installed as the global by the
+flag, and waits up to `timeout_s` (default 2 seconds). It returns `True` once
+the spans are exported, or when DDK built no provider, and `False` if the flush
+timed out or failed. An export failure never raises. The call blocks, so from
+async code use `await asyncio.to_thread(donkey.flush_telemetry)`.
+
+When your process sets its own provider, DDK's spans ride it, and flushing them
+is yours: `trace.get_tracer_provider().force_flush()`. `flush_telemetry()`
+leaves that provider alone. `trace.get_tracer_provider().force_flush()` does not
+reach DDK's scoped provider.
+
+One exit is flushed for you. When the gateway's Agent Kill Switch refuses a call,
+DDK force-flushes both DDK's own provider and the global one before
+[`AgentKilled`](https://docs.donkey-kit.dev/errors.md) reaches your code, waiting up to 2 seconds for each. So
+the kill's own span, and the spans before it, are exported even if the agent exits
+straight away. A failed export never replaces the `AgentKilled`.
 
 Opt out of telemetry entirely with a single flag:
 
@@ -523,11 +578,100 @@ function, and concurrent runs never leak into each other. It works with or
 without OpenTelemetry installed. `donkey.run(...)` is a **dual sync/async**
 context manager (plain `with` works too); nested blocks rebind then restore.
 
+**Concurrent fan-out.** Every call in a fan-out started inside `donkey.run()`
+(`asyncio.gather`, parallel nodes, tool calls on child tasks) carries exactly
+one correlation id. Each task copies the context when it is created, so this
+holds even for a task that outlives the block, and a task that opens its own
+`donkey.run()` changes only its own id, never its parent's or a sibling's.
+Threads do not inherit the context: run them under `contextvars.copy_context()`
+or open a `donkey.run()` inside the thread. **Outside** a run nothing is
+grouped. Each call gets its own fresh id, so N concurrent calls send N ids.
+
 A refusal leaving the block is re-raised as its typed `DonkeyError`, whichever
 framework wrapped it on the way out, so `except PIIDetected` works the same
 around every framework. See
 [Typed refusals at the framework boundary](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary);
 `donkey.run(typed_refusals=False)` turns it off.
+
+### Across agent hops
+
+An agent that serves requests can **join** its caller's run instead of starting
+a fresh one. `donkey.run_from_headers()` reads the configured correlation header
+from the inbound request, adopts the caller's id when it is well-formed
+(`[A-Za-z0-9._:-]`, at most 128 characters), and mints a fresh one otherwise. A
+malformed id is never forwarded. Every governed call in the block then carries
+it, exactly as inside `donkey.run(id=…)`.
+
+```python nocheck
+@app.post("/tasks")
+async def handle(request: Request, task: Task):
+    async with donkey.run_from_headers(request.headers):
+        return await agent.run(task)
+```
+
+For an outbound hop the governed transport does not carry, such as another
+agent's endpoint or an MCP server reached on your own HTTP client, pass
+`donkey.correlation_headers()`. It returns the bound run id under the configured
+header, or `{}` outside a run, and never the gateway credentials.
+
+```python nocheck
+async with donkey.run(id=ticket.id):
+    await agents.post(sub_agent_url, json=task, headers=donkey.correlation_headers())
+```
+
+The sub-agent's spans and the gateway's record then share one id end to end. The
+GenAI span inside `run_from_headers()` records `donkey.correlation_id.source`:
+`adopted` when the caller supplied the id, `minted` when it did not. A served
+[A2A task](https://docs.donkey-kit.dev/tool-access/a2a.md) applies the same rule on its own.
+
+### Run ledger
+
+`donkey.last_call` keeps only the most recent call. A `donkey.run()` block also
+keeps a **run ledger**: every governed model call made in the run, every refusal
+the gateway returned, and the run's token totals. Read it inside the block at
+`donkey.current_run`. Keep the scope to read it after the block ends:
+
+```python
+from donkey_kit import PIIDetected
+
+scope = donkey.run(id=ticket.id)
+async with scope as run_id:                 # still the run's id, a str
+    await triage_agent.run(ticket)
+    run = donkey.current_run
+    if any(r.is_a(PIIDetected) for r in run.refusals):
+        ...                                 # redact the later prompts
+
+ledger = scope.ledger                       # still readable after the block
+ledger.call_count                           # every governed model call in the run
+ledger.usage.total_tokens                   # summed across them, cached and reasoning tokens too
+[c.served_model for c in ledger.calls]      # each entry is that call's last_call record
+```
+
+| Field | What it holds |
+|---|---|
+| `calls` | Each call's [`last_call` record](https://docs.donkey-kit.dev/reference/last-call.md), oldest first: served model and provider, fallback, request id, usage, semantic-cache and semantic-routing outcome |
+| `refusals` | A `RunRefusal` for each policy refusal (`PIIDetected`, `TokenBudgetExceeded`, …) the gateway returned on a call in the run, **even when a framework caught it**, and for any `ModelSubstituted` the SDK raised: its `kind`, `policy`, `status_code`, the three ids and, for PII, the entity types. Test it with `r.is_a(PIIDetected)` |
+| `usage` | A `RunUsage` with the run's `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens`, `cache_write_tokens` and `reasoning_tokens`, and `calls_with_usage` |
+| `call_count`, `refusal_count` | Totals for the whole run |
+| `dropped` | Calls and refusals the cap dropped from `calls` and `refusals` |
+| `available`, `surface` | `False`, with the adapter names, when nothing used can feed the ledger |
+
+Each read returns a frozen snapshot, so read again for newer state. The ledger
+holds metadata only, never prompt or completion text. A refusal is recorded as a
+`RunRefusal`, not the exception, because the exception's `.response` keeps the
+gateway's body, which can echo the values a policy blocked.
+
+- **Scope.** The ledger follows the run's correlation id. Framework-spawned
+  tasks append to their run's ledger, concurrent runs never see each other's,
+  and a nested `donkey.run()` keeps its own and restores the outer one on exit.
+  Appends are thread-safe for threads run under `contextvars.copy_context()`.
+- **Bounded memory.** `calls` and `refusals` each keep the newest 1000 entries
+  (`donkey.run(ledger_max_entries=…)`). Older ones are counted in `dropped`. The
+  totals keep counting past the cap, so a long run's cost stays exact.
+- **Same reach as `last_call`.** Only responses through the SDK's shared HTTP
+  client reach it. When every adapter used routes outside that client (CrewAI
+  today), `available` is `False` and `surface` names them: the ledger is
+  unavailable, not empty. See [When `last_call` is unavailable](#when-last_call-is-unavailable).
 
 ### The decorator form
 
@@ -599,6 +743,50 @@ something of your own reads them.
   `"enduser.id"` in `[donkey.cost]`, or `donkey.run(enduser_id=…)`), drop the
   attribute in your collector, or turn spans off with `DONKEY_TELEMETRY=false`.
 
+### Per-request attribution
+
+One process often serves several tenants or teams: a shared agent platform, a
+multi-tenant SaaS agent, or one job that spans two cost centres. Keep one
+`Donkey` (one client, pool, auth cache and budget) and say per request which
+group a call belongs to:
+
+```python
+async def handle(tenant: str, prompt: str):
+    with donkey.attribution(business_group=tenant):
+        return await model.ainvoke(prompt)
+```
+
+`donkey.attribution(business_group=…, team=…, project=…, env=…, enduser_id=…)`
+attributes every governed call in its block, on both the async and the blocking
+client. The business group replaces the configured `business_group` for the
+block. The precedence is this scope, then the `Donkey` config, then
+`DONKEY_BUSINESS_GROUP`, then the config file. The cost tags merge per field
+over any already bound by an enclosing block.
+
+It doesn't start a run, so the correlation ID stays the same and one run can
+span two cost centres:
+
+```python
+async with donkey.run(id=job.id):
+    with donkey.attribution(business_group="risk-eu"):
+        await score(job)
+    with donkey.attribution(business_group="risk-us"):
+        await score(job)
+```
+
+`donkey.run(business_group=…)` and `@donkey.governed(business_group=…)` take
+the same argument when the group belongs to the whole run. Like the run ID, the
+binding is contextvar-based: it reaches framework-spawned tasks, concurrent
+tasks never see each other's group, and nested blocks restore the outer value
+on exit. The value is validated like a cost tag, and an invalid one raises
+`ConfigError` where you set it.
+
+  **Adapters that get only a `default_headers` snapshot don't follow the
+  scope.** They captured the configured business group when they were built, so
+  they keep sending it. Adapters with transport injection send the scoped value.
+  The header name, `X-Anypoint-Business-Group`, is still an unverified
+  placeholder; see [Configuration](https://docs.donkey-kit.dev/reference/configuration.md#optional-attribution).
+
 ### The question this answers
 
 Finance asks what the support agent cost last month versus the HR bot. Without
@@ -644,6 +832,7 @@ such as `donkey_kit.core.auth`, instead of the package.
 | An auth provider in a `ChainedAuth` failing over to the next one (type names only) | `donkey_kit.core.auth` |
 | The OTLP export bootstrap: inert, kept your `TracerProvider`, or installed (global or DDK-scoped) | `donkey_kit.core.telemetry` |
 | How many tool descriptors a `ToolSet` exposes after its filter, out of the total | `donkey_kit.tools.session` |
+| A rate-limit reset header that was ignored as negative or out of range, naming the budget window (never the value) | `donkey_kit.core._window` |
 | A best-effort step that failed and was skipped (with the traceback), e.g. a refusal translator or recording usage on a span | the module that skipped it |
 
   **A log record never carries a credential.** Records name a request by

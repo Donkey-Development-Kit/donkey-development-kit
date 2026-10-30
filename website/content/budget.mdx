@@ -54,6 +54,30 @@ donkey.budget.requests.fraction_used  # 0.0–1.0
 All of them are `None` until a response carrying the trio is observed. Unlike
 the token trio, the gateway sends this one on every `200` as well as the `429`.
 
+The upstream provider's own quota, which OpenAI and Azure OpenAI pass through
+the gateway as `x-ratelimit-{limit,remaining,reset}-requests` (and `-tokens`), is
+a separate source: `donkey.budget.upstream.requests` and
+`donkey.budget.upstream.tokens`, each an `UpstreamWindow` with the same five
+fields plus `provider` (the upstream it came from):
+
+```python
+donkey.budget.upstream.requests.remaining      # e.g. 4999 of 5000
+donkey.budget.upstream.requests.reset_at       # from a Go duration such as "12ms"
+donkey.budget.upstream.requests.provider       # "openai"
+donkey.budget.upstream.tokens.fraction_used
+```
+
+- It is **observe-only**: `pace()` does not guard on it. It is the provider
+  key's quota, shared by everything the gateway sends through that key, not
+  your allowance, and on a routed proxy the next call can go to another
+  upstream. Read `fraction_used` if you want to act on it.
+- Each response replaces the whole window, so one upstream's reset is never
+  paired with another's count.
+- The reset is a Go duration (`12ms`, `0s`, `1m30s`). Azure OpenAI sends a bare
+  `0` with no unit even while the window is part-spent, so its `reset_at` stays
+  `None`.
+- Bedrock and Gemini send no such headers, so the window stays `None`.
+
 And two helpers that use it:
 
 ```python
@@ -107,6 +131,15 @@ If a partial observation reports usage without a `reset_at`, the loop above
 re-raises `BudgetReserveReached` after one attempt instead of calling
 `wait_for_reset()` and spinning at zero delay. Preserve the last checkpoint and
 escalate rather than crossing the reserve.
+
+If an administrator kills the agent with the gateway's Agent Kill Switch, the
+loop ends too. The kill reaches `enrich()` as
+[`AgentKilled`](/errors), which is not a `BudgetReserveReached`, so the loop
+lets it propagate. From then on, `pace()` and `wait_for_reset()` on that
+`Donkey` raise `AgentKilled`. A sibling task that is asleep in
+`wait_for_reset()` wakes and raises it too, instead of sleeping until the
+window resets. A new `Donkey`, created after the agent has been restored,
+starts without the kill.
 
 ## Example: a dashboard that prevents the outage
 
@@ -190,13 +223,19 @@ transport does not see the context variable, so its calls are not steered.
 - A semantic-cache hit does not update either window. Whether a hit counts
   against the gateway's request limit is `UNVERIFIED`.
 - The upstream provider's suffixed `x-ratelimit-limit-requests` / `-tokens`
-  headers are a different window and are not read.
+  headers are a different window. They fill `donkey.budget.upstream` (below),
+  never `donkey.budget.requests` or the token window.
 
 ## Behaviour guarantees
 
 - The reset value (milliseconds *until* reset, in both `x-token-reset` and the
   prose `Reset in …ms`) is converted to a `datetime` anchored to
   `observed_at`, accurate to the second.
+- A malformed reset header never fails the call that carried it. A reset that
+  is negative, not a number, or too far away for a `datetime` to hold is
+  treated as if the header were absent. The window's other fields still
+  update, and a [DEBUG record](/telemetry#debug-logging) notes it without the
+  header value.
 - `pace()` raises before the request that would cross the reserve, never after
   a `429`.
 - After `reset_at`, `pace()` no longer refuses, so a wait-and-retry loop can
@@ -205,4 +244,7 @@ transport does not see the context variable, so its calls are not steered.
   once instead of spinning at zero delay.
 - A semantic-cache **hit** is a verbatim replay with no provider round-trip, so
   it never advances the budget window — the replayed `usage` is not fresh spend.
+- Once the gateway kills the agent, `pace()` and `wait_for_reset()` raise
+  `AgentKilled` on that `Donkey`, and a task already asleep in
+  `wait_for_reset()` wakes and raises it, whichever thread received the kill.
 - Budget state is per-`Donkey` instance.

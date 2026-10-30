@@ -3,6 +3,27 @@
 <!-- toc -->
 **Contents**
 
+- [0.2.0: governed tools, publishing, approvals and more typed refusals](#020-governed-tools-publishing-approvals-and-more-typed-refusals)
+  - [1. A CIBA approval response is GatewayApprovalPending or GatewayApprovalDenied](#1-a-ciba-approval-response-is-gatewayapprovalpending-or-gatewayapprovaldenied)
+  - [2. Google Model Armor and CrowdStrike AIDR blocks are ContentSafetyBlocked](#2-google-model-armor-and-crowdstrike-aidr-blocks-are-contentsafetyblocked)
+  - [3. classify is a Classifier object](#3-classify-is-a-classifier-object)
+  - [4. donkey publish and donkey verify run, and no longer exit 3](#4-donkey-publish-and-donkey-verify-run-and-no-longer-exit-3)
+  - [5. Registry, discovery and ToolSet calls reach Anypoint](#5-registry-discovery-and-toolset-calls-reach-anypoint)
+  - [6. donkey.tools.discover() defaults to governed=True](#6-donkeytoolsdiscover-defaults-to-governedtrue)
+  - [7. Import GovernanceCriteria from donkey_kit again](#7-import-governancecriteria-from-donkey_kit-again)
+  - [8. [cli] needs newer typer and rich, and no longer installs click](#8-cli-needs-newer-typer-and-rich-and-no-longer-installs-click)
+  - [9. The mcp and a2a extras are back, and [all] and [adk] install more](#9-the-mcp-and-a2a-extras-are-back-and-all-and-adk-install-more)
+  - [10. An AgentKilled stops that Donkey for good](#10-an-agentkilled-stops-that-donkey-for-good)
+  - [11. refusal_translator leaves two adapters' __all__](#11-refusal_translator-leaves-two-adapters-__all__)
+  - [12. A configured URL with a user name or password is refused](#12-a-configured-url-with-a-user-name-or-password-is-refused)
+  - [Budget headers (not breaking)](#budget-headers-not-breaking)
+  - [ADK gemini() and model() return subclasses (not breaking)](#adk-gemini-and-model-return-subclasses-not-breaking)
+  - [OpenAI Agents SDK is a conformance-tested adapter (not breaking)](#openai-agents-sdk-is-a-conformance-tested-adapter-not-breaking)
+  - [New public names (not breaking)](#new-public-names-not-breaking)
+  - [If you used a 0.2.0 pre-release](#if-you-used-a-020-pre-release)
+- [0.1.3: no breaking changes](#013-no-breaking-changes)
+  - [Typed refusals through ADK model() (not breaking)](#typed-refusals-through-adk-model-not-breaking)
+  - [CA and JP control-plane hosts (not breaking)](#ca-and-jp-control-plane-hosts-not-breaking)
 - [0.1.2: public API surface, removed control plane and typed errors](#012-public-api-surface-removed-control-plane-and-typed-errors)
   - [1. donkey_kit.provisioning and donkey_kit.governance are gone](#1-donkey_kitprovisioning-and-donkey_kitgovernance-are-gone)
   - [2. Hidden CLI commands validate, plan, apply, drift, lint, generate are removed](#2-hidden-cli-commands-validate-plan-apply-drift-lint-generate-are-removed)
@@ -43,6 +64,550 @@
   - [16. An Agent Kill Switch block raises AgentKilled](#16-an-agent-kill-switch-block-raises-agentkilled)
   - [17. donkey-kit[all] leaves out the seven connection_kwargs() frameworks](#17-donkey-kitall-leaves-out-the-seven-connection_kwargs-frameworks)
 <!-- tocstop -->
+
+## 0.2.0: governed tools, publishing, approvals and more typed refusals
+
+Changes since `0.1.3` that can affect existing code. 0.2.0 implements much of
+what 0.1.x left `blocked on verification`: governed MCP discovery and binding,
+`donkey publish` and `donkey verify`, the A2A server (`donkey.serve()`) and
+human approvals. It also gives three more gateway refusals their own types.
+
+- Sections 1 to 3 change what `classify()` returns, or what it is.
+- Sections 4 to 6 cover calls that raised `NotImplementedError` in 0.1.3 and
+  now run.
+- Section 7 still works but emits a `DeprecationWarning`.
+- Sections 8 and 9 change what `pip` installs.
+- Sections 10 to 12 change runtime behaviour, two adapters' `__all__` and
+  which configured URLs are accepted.
+
+The names 0.1.2 deprecated (its sections 4 to 6 and 11) still work in 0.2.0
+and still warn. The one exception is `GovernanceCriteria`, which is back in
+`donkey_kit` without a warning (section 7). The release that removes the
+others says so here and in its Release notes' Breaking changes section.
+
+If you wrote code against a 0.2.0 pre-release (`0.2.0.devN` or `0.2.0rcN`
+from TestPyPI), also read [If you used a 0.2.0 pre-release](#if-you-used-a-020-pre-release).
+
+### 1. A CIBA approval response is `GatewayApprovalPending` or `GatewayApprovalDenied`
+
+**Who:** code that calls a proxy whose OAuth 2.0 OBO policy asks the user to
+approve a call on another device (CIBA), and catches `AuthError` or reads
+`PolicyViolation.policy` (#1320).
+
+**Symptom:** `classify()` checks both shapes before its `401` and `403` rules.
+
+- A `401` whose body is `{"error": "authorization_pending"}` was an
+  `AuthError`. It is now `GatewayApprovalPending`, a `DonkeyError` that is
+  neither an `AuthError` nor a `PolicyViolation`: nothing has been refused
+  yet. Its `retry_after` is the wait the gateway asked for, and the same
+  request succeeds once the user approves. An `except AuthError:` block no
+  longer catches it.
+- A `403` whose body is `{"error": "access_denied"}` was a `PolicyViolation`
+  with `policy == "unknown"`, or an `AuthError` when it carried a
+  `WWW-Authenticate` header. It is now `GatewayApprovalDenied`, a
+  `PolicyViolation` with `policy == "oauth2-obo-ciba"`, and also an
+  `ApprovalError`, the base it shares with `ApprovalRejected` (#1423).
+  `donkey.policy.type` reads `approval_denied`. It is terminal and never
+  retried.
+
+**Fix:** catch the new types ahead of `AuthError`. Don't refresh or replace
+the credentials on `GatewayApprovalPending`, because they were accepted.
+Re-send the same request after `retry_after` seconds.
+
+```python
+from donkey_kit import AuthError, GatewayApprovalDenied, GatewayApprovalPending
+
+try:
+    ...
+except GatewayApprovalPending as exc:
+    wait = exc.retry_after
+except GatewayApprovalDenied:
+    ...
+except AuthError:
+    ...
+```
+
+### 2. Google Model Armor and CrowdStrike AIDR blocks are `ContentSafetyBlocked`
+
+**Who:** code that catches a Model Armor or CrowdStrike AIDR block as a plain
+`PolicyViolation` and branches on `exc.policy == "unknown"`, or dashboards
+that count it by `donkey.policy.type` (#1178, #1176).
+
+**Symptom:** a `403` carrying `x-llm-proxy-model-armor-action: reject` or
+`x-llm-proxy-crowdstrike-aidr-action: reject` was the generic
+`PolicyViolation` with `policy == "unknown"`. It is now `ContentSafetyBlocked`,
+with `policy == "content-safety"`, a `provider` (`google-model-armor` or
+`crowdstrike-aidr`) and the flagged `categories`. `donkey.policy.type` reads
+`content_safety` instead of `policy_violation`, and the span gains
+`donkey.policy.provider` and `donkey.policy.categories` (#1183). The AIDR
+shape is read from the policy's source, not captured live (ADR 0016).
+`except PolicyViolation:` still catches both, and neither is retried.
+
+**Fix:** catch `ContentSafetyBlocked` and read `exc.provider` in place of the
+`policy == "unknown"` check. A `donkey.on(ContentSafetyBlocked)` handler now
+fires for these blocks too.
+
+### 3. `classify` is a `Classifier` object
+
+**Who:** code that treats `donkey_kit.classify` or `donkey_kit.core.classify`
+as a plain function (`inspect.isfunction()`, for example), or wraps it to add
+mappings for its own gateway policies (#1152).
+
+**Symptom:** it is now a `Classifier` instance. Calling it works as before,
+with the same arguments, but `inspect.isfunction(classify)` is `False`. It
+gains `register()`, `unregister()` and `registered()`. A registered rule
+applies process-wide, after the built-in shapes and before the generic
+upstream-error rule. `donkey_kit.core.errors.classify` is still a plain
+function.
+
+**Fix:** keep calling it. To type a custom policy's refusal, register the
+shape on `classify` rather than wrapping it. The rule needs a `status` and at
+least one header or body condition. It raises your own `PolicyViolation`
+subclass, which must define its own `remediation`:
+
+```python
+from donkey_kit import PolicyViolation, classify
+
+
+class OrderLimitExceeded(PolicyViolation):
+    policy = "order-limit"
+    remediation = "Split the order, or ask an admin to raise the order limit."
+
+
+classify.register(
+    match={"status": 403, "headers": {"x-order-limit": "exceeded"}},
+    raises=OrderLimitExceeded,
+)
+```
+
+### 4. `donkey publish` and `donkey verify` run, and no longer exit 3
+
+**Who:** CI steps or scripts that run `donkey publish` or `donkey verify` and
+rely on their 0.1.3 behaviour: hidden from `donkey --help`, and an immediate
+exit 3 with `blocked on verification` (#218, #1352).
+
+**Symptom:** both are now visible and do the work. `donkey publish` scans the
+repository and publishes its MCP servers and agents to Exchange, at the
+coordinates `[donkey.publication]` declares. `donkey verify` compares each
+published MCP server and A2A agent with the live one, and writes nothing.
+Each exits 0 on success, 1 on an issue or a failed asset, and 2 when there
+is nothing at the path or the config lacks the control-plane credentials.
+`donkey verify` also exits 2 when an asset needs a live read and there is no
+gateway credential. A step that ran either one as a no-op now publishes or
+fails. `donkey status` is still hidden and still exits 3.
+
+**Fix:** remove the step if it was a placeholder. To keep it, give it the
+connected-app credentials and the scopes in
+[`docs/scopes.md`](docs/scopes.md), plus the gateway credential for
+`donkey verify`, and treat exit 1 as a failure. Run
+`donkey publish --dry-run` first to see the plan without sending anything.
+
+### 5. Registry, discovery and `ToolSet` calls reach Anypoint
+
+**Who:** code that calls one of these and catches `NotImplementedError`
+around it, or that never ran them because they always raised.
+
+| Call | 0.1.3 | 0.2.0 |
+| --- | --- | --- |
+| `donkey.tools.discover()` | raised `NotImplementedError` | lists the MCP servers in Exchange (section 6) |
+| `donkey.registry.search()` | raised | searches Exchange |
+| `donkey.registry.resolve_mcp()` / `resolve_agent()` | raised | resolve an asset to its gateway endpoint |
+| `donkey.registry.explain()` | raised | reads governed state from API Manager, Exchange and API Governance |
+| `Publication.verify()` | raised | compares a published MCP server or A2A agent with the live one |
+| The `ToolSet` binding methods | raised | bind the discovered servers to your framework |
+| `derive_descriptor()`, `mode="auto"`, `"auto:live"`, `"auto:check"` | raised | read the schema the framework already computed |
+
+**Symptom:** an `except NotImplementedError:` fallback around these calls is
+no longer reached. They make control-plane calls with your connected app,
+which needs the scopes in [`docs/scopes.md`](docs/scopes.md). A gateway whose
+public URL is plain `http://` to a non-loopback host is refused, unless
+`DONKEY_ALLOW_HTTP=1` is set. `derive_descriptor(mode="auto:static")`
+now raises `ValueError`: that mode was dropped (#1252).
+
+The gateway credential follows the endpoint rule of 0.1.1 section 2 (ADR 0019,
+#1479). A discovered `ToolSet`, `donkey.tools.live_card()`,
+`Publication.verify()` and `donkey verify` raise `ConfigError`, before
+anything is sent, when all of these hold:
+
+- `base_url` comes from `./.donkey-kit.toml` or `.donkey-kit.local.toml`;
+- it is not a regional Anypoint host;
+- the gateway credential (`llm_proxy_client_id` / `_secret`, an `llm_auth`
+  token, a `discover(auth=...)` credential or the `as_user()` token) does not
+  come from those same files.
+
+`donkey verify` reports such an asset as `error` and exits 1. Set
+`ANYPOINT_BASE_URL` in the environment (or `base_url` in code), move the
+gateway pair into `.donkey-kit.local.toml`, or set
+`DONKEY_TRUST_PROJECT_CONFIG=1` for a checkout you trust.
+
+**Fix:** remove the fallback, or keep it only for the calls that still raise
+`NotImplementedError` in 0.2.0. Those are `donkey.tools.lock()`,
+`discover(locked=True)`, `donkey.registry.search(domain=)`,
+`search(governed=)` or `search(environment=)`, `donkey.registry.warm()`,
+`Publication.preview()`, `Publication.export()`, `publish_if_changed()`,
+`Publication.verify()` for assets other than MCP servers and A2A agents, and
+`donkey status`.
+
+### 6. `donkey.tools.discover()` defaults to `governed=True`
+
+**Who:** code that calls `discover()` without `governed=` and expects the
+unfiltered list the 0.1.3 signature promised (ADR 0017, #1424).
+
+**Symptom:** the set holds only the servers that pass the default
+`GovernanceCriteria`, and each server left out is logged with its reasons.
+When none pass, the set is empty, with a log line saying why, not an error.
+`donkey.tools.warm()` uses the same default.
+
+**Fix:** pass `governed=None` to list every server, with each verdict on
+`McpServerHandle.governance`. The `ToolSet` binding methods still refuse a
+set that holds an ungoverned server, with `UngovernedMcpServer`.
+
+```diff
+- tools = await donkey.tools.discover()
++ tools = await donkey.tools.discover(governed=None)   # every server, as 0.1.3 documented
+```
+
+### 7. Import `GovernanceCriteria` from `donkey_kit` again
+
+**Who:** code that imports `GovernanceCriteria` from `donkey_kit.experimental`,
+as 0.1.2 section 4 told you to (#1425).
+
+**Symptom:** `DeprecationWarning: donkey_kit.experimental.GovernanceCriteria
+is deprecated; import it from donkey_kit`. The name is back in
+`donkey_kit.__all__`, and `donkey_kit.GovernanceCriteria` no longer warns.
+`STRICT`, `AssetRef` and `RegistryError` stay in `donkey_kit.experimental`.
+
+**Fix:**
+
+```diff
+- from donkey_kit.experimental import GovernanceCriteria
++ from donkey_kit import GovernanceCriteria
+```
+
+### 8. `[cli]` needs newer typer and rich, and no longer installs click
+
+**Who:** an environment that pins `typer` below 0.26.0 or `rich` below 13.8.0
+next to `donkey-kit[cli]`, or code that imports `click` and relied on
+`donkey-kit[cli]` to install it (#1196).
+
+**Symptom:** the `[cli]` floors move from `typer>=0.15.4` and `rich>=13.0` to
+`typer>=0.26.0` and `rich>=13.8.0`, so `pip` reports a conflict with those
+pins. Every typer up to 0.25.1 drops a command argument's help text under
+click 8.5. typer 0.26.0 vendors click and no longer depends on it, so a fresh
+install of `donkey-kit[cli]` has no `click`.
+
+**Fix:** raise or drop the pins. If your own code imports `click`, depend on
+it directly.
+
+### 9. The `mcp` and `a2a` extras are back, and `[all]` and `[adk]` install more
+
+**Who:** anyone who installs `donkey-kit[all]` or `donkey-kit[adk]`, or who
+dropped `mcp` and `a2a` from an install line after 0.1.2 section 10.
+
+**Symptom:** these extras change:
+
+| Extra | 0.1.3 | 0.2.0 |
+| --- | --- | --- |
+| `mcp` | not provided | `mcp>=1.24`, for the `ToolSet` binding (#221) |
+| `a2a` | not provided | `a2a-sdk[http-server]>=1.2.0` and `uvicorn>=0.30`, for `donkey.serve()` (#224) |
+| `all` | `llm`, `langgraph`, `otel`, `cli`, `local` | adds `a2a` and `mcp` (#1436) |
+| `adk` | `google-adk>=2.4`, `litellm>=1.84` | `litellm[mcp]>=1.84`: from litellm 1.106 a request with tools imports `mcp` (#1267) |
+
+The base dependencies and `requires-python` are unchanged.
+
+**Fix:** none needed unless your environment can't take the extra packages.
+In that case install the extras you need instead of `[all]`. Add
+`donkey-kit[mcp]` to bind discovered tools, and `donkey-kit[a2a]` to serve an
+agent over A2A.
+
+### 10. An `AgentKilled` stops that `Donkey` for good
+
+**Who:** code that catches `AgentKilled` and keeps using the same `Donkey`, for
+example to wait and retry once an administrator restores the agent (#220).
+
+**Symptom:** a kill is terminal for the `Donkey` that saw it. From then on its
+`donkey.budget.pace()` and `donkey.budget.wait_for_reset()` raise
+`AgentKilled`, and a `wait_for_reset()` already asleep, on any event loop,
+wakes and raises it. With telemetry on, DDK flushes its spans before the
+`AgentKilled` reaches you, which can take up to 2 seconds per flush. The flush
+is best effort.
+
+**Fix:** let the process stop. If it must carry on after an administrator
+restores the agent, build a new `Donkey`, which starts with a fresh budget.
+
+### 11. `refusal_translator` leaves two adapters' `__all__`
+
+**Who:** code that gets `refusal_translator` from
+`from donkey_kit.integrations.agent_framework import *` or
+`from donkey_kit.integrations.strands import *` (#1422).
+
+**Symptom:** it is no longer in either module's `__all__`, so a star import
+leaves it out and type checkers flag a direct import. A direct
+`from donkey_kit.integrations.strands import refusal_translator` still works.
+The typed-refusal bridge (`donkey.run()`, `@donkey.governed`,
+`typed_refusals()`) calls it for you.
+
+**Fix:** let the bridge do the translation. If you call it directly, import
+it by name and expect it to change without notice.
+
+### 12. A configured URL with a user name or password is refused
+
+**Who:** anyone whose `llm_proxy_url`, `base_url`, connected-app token
+endpoint, or a URL passed in code to `donkey.llm.client()` or an adapter
+factory, carries a user name or password, as in `https://user:pass@host/`
+(#1478).
+
+**Symptom:** building the client raises `ConfigError`, before anything is
+sent: `llm_proxy_url carries a user name or password (host llm.example.test).`
+The message names the setting and the host, never the user name or password.
+Neither `DONKEY_ALLOW_HTTP=1` nor a loopback host exempts it. Before, the URL
+was accepted, and httpx sent the user name and password to the host as
+`Authorization: Basic`.
+
+**Fix:** remove the user name and password from the URL. The SDK sends its
+own credentials.
+
+### Budget headers (not breaking)
+
+A rate-limit reset header that is negative, NaN, infinite or too large for a
+`datetime` no longer makes `send()` raise `OverflowError`. It is ignored, and
+the response's other budget headers still apply (#1444). A response that
+arrives after a newer one no longer moves `donkey.budget` backwards (#311).
+`pace()` is an admission check, not a reservation: tasks that enter it
+together are admitted together, so size `reserve` to the width of your
+fan-out.
+
+A `Retry-After`, `x-token-reset` or `x-ratelimit-reset` value that isn't a
+finite number (`inf`, `nan`, `1e400`) now gives `retry_after is None`, and the
+transport retries with its normal jittered backoff (#1447). Before, `inf` gave
+`retry_after == inf` (the retry sleep capped it at 30 seconds) and `nan` gave
+`0.0`, an immediate retry. This applies to `TokenBudgetExceeded`,
+`RequestRateLimitExceeded` and `GatewayApprovalPending`. Code that already
+handles `None` needs no change.
+
+### ADK `gemini()` and `model()` return subclasses (not breaking)
+
+`donkey.adk.gemini()` and `donkey.adk.model()` return a subclass of ADK's
+`Gemini` and `LiteLlm`, which carries `donkey.last_call` into an
+`after_model_callback` on google-adk 2.13 and later (#1207).
+`isinstance(llm, LiteLlm)` still holds, but `type(llm) is LiteLlm` does not.
+The classes are reachable by name on `donkey_kit.integrations.adk`, though not
+in its `__all__`: `GovernedLiteLlm`, `GovernedGemini`, and
+`GovernedLiteLLMClient`, which is `model()`'s `llm_client`. That lets pickle
+find them. An instance from `model()` or `gemini()` still holds its HTTP
+client, so the instance itself can't be pickled (#1447).
+`donkey_kit.integrations.adk.last_call_bridged()` gives the same bridge to a
+model class of your own.
+
+### OpenAI Agents SDK is a conformance-tested adapter (not breaking)
+
+`donkey.openai_agents` moves to the conformance-tested tier next to LangGraph
+(#223). Nothing about its factories changes. The OpenAI Agents SDK traces
+every run by default, and whenever an OpenAI API key is available it sends
+model inputs and outputs to OpenAI, outside the gateway and its policies. DDK
+doesn't change that global setting for you (ADR 0010). Turn it off with
+`agents.set_tracing_disabled(True)`, `RunConfig(tracing_disabled=True)` or
+`OPENAI_AGENTS_DISABLE_TRACING=1` (#1434).
+
+### New public names (not breaking)
+
+Import these from `donkey_kit`:
+
+- **Errors:** `GatewayApprovalPending`, `GatewayApprovalDenied` (#1320),
+  `ApprovalError`, `ApprovalNotFound`, `ApprovalRequired`,
+  `ApprovalRejected`, `ApprovalTimedOut`, `ToolNotInProfile` and
+  `UngovernedMcpServer`.
+- **Approvals:** `Approval` and `Approvals` (`donkey.approvals`).
+- **Tools and registry:** `ToolSet`, `McpAuth` and `GovernanceCriteria`.
+- **Agents and A2A:** `AgentSpec`, `registered_agents`, `A2AResult` and
+  `A2ATask` (also in `donkey_kit.a2a`).
+- **Runs and identity:** `RunLedger`, `RunRefusal` (`donkey.current_run()`),
+  `AttributionScope` (`donkey.attribution()`), `UserScope`
+  (`donkey.as_user()`), `OnRefusal` (`donkey.on()`) and `Classifier`.
+- **Budget:** `UpstreamQuota` and `UpstreamWindow` (`donkey.budget.upstream`,
+  the upstream provider's own passthrough quota, read but never paced on)
+  (#1025).
+
+`donkey_kit.core` adds `PolicyRegistration`, `RefusalContext`, `RunUsage` and
+`current_business_group`. The LangGraph, OpenAI Agents SDK, ADK and Strands
+modules add approval helpers (`pending_approvals`, `approve`, `reject`).
+`donkey_kit.integrations.strands` also adds `ApprovalHook` and
+`GovernedToolHook`, which raises a governed refusal inside a tool as its typed
+error (#1446). `donkey_kit.experimental` adds `tool_access_denial` and
+`DescriptorMismatch`.
+
+`Donkey` gains `on()`, `attribution()`, `run(business_group=)`,
+`run_from_headers()`, `correlation_headers()`, `as_user()`, `approvals`,
+`serve()`, `agent()`, `current_run()`, `flush_telemetry()`,
+`tools.warm()` and `tools.refresh()`, and `@donkey.tool` takes `approval=`.
+`donkey.tools.live_tools()` and `donkey.tools.live_card()` read the live side
+of a published MCP server or agent. They are Provisional (ADR 0020): they may
+change in a minor release, with a migration note (#1499).
+`DonkeyConfig` gains `llm_proxy_key_header`, `user_token_header`,
+`tool_warn_count` and `tool_warn_tokens`. The CLI gains `donkey --version`
+and the `dev`, `scan`, `expose` and `preflight` commands, and `donkey mock`
+gains a `ciba:` scenario. The conformance plugin gains `--donkey-mode` and the
+`donkey_classify_registry` fixture.
+
+### If you used a 0.2.0 pre-release
+
+These changes landed between 0.2.0 pre-releases. They only affect code written
+against one, because the surface was new in 0.2.0 or raised
+`NotImplementedError` in 0.1.3.
+
+- **`as_user(id_token=)` is `as_user(token=)`.** `token_exchange_path` and
+  `DONKEY_TOKEN_EXCHANGE_PATH` are gone (#1420). `as_user()` also works as a
+  plain `with` block in client-id mode (#1436).
+- **`ToolSet.openai()` is `ToolSet.openai_agents()`,** with no alias. It
+  returns the same list of servers (#1421).
+- **Import `ToolNotInProfile` and `UngovernedMcpServer` from `donkey_kit`.**
+  Their `donkey_kit.experimental` spellings emit a `DeprecationWarning`
+  (#1425).
+- **`discover()` and `tools.warm()` default to `governed=True`** (section 6).
+  Pass `governed=None` for the old default (#1424).
+- **`donkey dev --version X` is `--agent-version X`.** The old flag exits 2.
+  The GitHub Action's `skipped` output is gone (#1428).
+- **Pass the Action's `client-secret` from a `secrets.*` value.** A value
+  from a variable or another step's output shows once in the log before the
+  Action can mask it (#1442).
+- **`--json` documents carry their own format key.** `publish --json` and
+  `verify --json` carry `publish_format: 1` and `verify_format: 1` in place
+  of `plan_format`. Only `publish --dry-run` keeps `plan_format`.
+  `expose --json` and `preflight --json` carry `expose_format: 1` and
+  `issues`. On a declaration issue each prints its own document, with every
+  asset `not_attempted`. A script should check the format key before it
+  reads a document (#1427).
+- **`publish --json` prints its outcome document when the publish fails.**
+  Each asset's `status` can be `incomplete`, `failed` or `not_attempted`, and
+  the command exits 1. Rerun it to finish an `incomplete` publish.
+  `donkey_kit.registry.exchange_publish.publish_plan()` returns a refusal on
+  `outcome.error` instead of raising it (#1426).
+- **Adapter approval helpers return `Approval` objects.** On Strands, ADK and
+  the OpenAI Agents SDK, `pending_approvals()` returns `Approval` objects
+  with the framework's own object on `.native`, and `approve()` and
+  `reject()` return an `Approval`. Resume with the `.native` of each decided
+  approval. Compare OpenAI Agents SDK approvals with `==`, not `is`.
+  LangGraph gains the same helpers. `approved_call` and `approval_interrupt`
+  are no longer in any adapter's `__all__` (#1422).
+- **A resumed approval runs as the user who asked for it,** with that user's
+  token, cost tags and business group. Resolving or resuming it inside
+  `as_user()` with a different token raises `AuthError`, the tool doesn't
+  run, and the approval stays pending. A call requested with no user bound
+  is refused inside any `as_user()` block. Resume outside `as_user()`, or
+  inside it with the requester's own token (#1416).
+- **A per-tool MCP binding stays with its user.** A tool from `langgraph()`,
+  `llamaindex()` or `anthropic()` raises `AuthError` when called under a
+  different `as_user()` user from the one it was bound for. Bind the
+  `ToolSet` inside the `as_user()` block that runs the agent, once per user
+  or request (#1418).
+- **A Strands approval covers exactly one call.** A nested call of the same
+  tool from inside an approved call raises `ApprovalRequired` and waits for
+  its own decision, as on ADK and the OpenAI Agents SDK (#1438).
+- **`as_user()` refuses an `llm_proxy_url` from the working-directory config
+  files** with a `ConfigError`. A `ToolSet` used inside the block refuses a
+  `base_url` from those files that isn't a regional Anypoint host. Set the
+  URL in the environment (`DONKEY_LLM_PROXY_URL`, `ANYPOINT_BASE_URL`) or in
+  code, or set `DONKEY_TRUST_PROJECT_CONFIG=1` if you trust the checkout
+  (#1439).
+- **A gateway with a plain `http://` public URL is refused.** `resolve_mcp()`,
+  `resolve_agent()`, `discover()` and `Publication.verify()` refuse a gateway
+  whose public URL is `http://` to a non-loopback host, or carries a user name
+  or password. `discover()` lists a server behind one with a failed
+  `resolve_mcp` check and doesn't bind it. Give the gateway an `https://`
+  public URL, or set `DONKEY_ALLOW_HTTP=1` on a network you control (#1417).
+- **`ToolSet` bindings don't follow redirects** through their own HTTP
+  client, or send the gateway credential to another origin. With Strands on
+  `mcp` 2.1.1, an endpoint URL without its trailing slash now fails to
+  connect. Use the trailing-slash URL, the only one the gateway routes
+  (#1415).
+- **`serve()` on a non-loopback host emits a `ConfigWarning`.** Filter it if
+  you bind `0.0.0.0` on purpose behind a gateway. `donkey scan` fails on an
+  endpoint whose query string carries a credential-named parameter, so move
+  the credential out of the URL. A served A2A agent keeps only the 1000 most
+  recent finished tasks for `GetTask` (#1443).
+- **`ToolSet.wait_for_gateway_approval()` warns above two minutes.** It
+  emits a `ConfigWarning` for a longer timeout, because the gateway
+  re-prompts the user after about two minutes. When one MCP server's listing
+  fails, the other servers' waits are cancelled instead of running to their
+  timeout (#1437).
+- **`tools.refresh()` also drops the registry's cached lookups,** and
+  `tools.warm()` drops them before it reads, so both return current
+  governance verdicts. A `donkey.registry.refresh()` call next to
+  `donkey.tools.refresh()` is no longer needed (#1419).
+- **CrowdStrike AIDR is `ContentSafetyBlocked` again,** after a pre-release
+  that left it a generic `PolicyViolation` (#1429). A
+  `classify.register()` rule that matches the AIDR header now raises
+  `ValueError` at registration, because the built-in rule shadows it. Delete
+  the rule and catch `ContentSafetyBlocked`.
+- **Strands tool refusals propagate** as their typed error instead of
+  becoming a tool result, through `ApprovalHook` or, for an agent with no
+  gated tools, `GovernedToolHook` (#1237, #1446).
+- **`donkey.approvals` is per client** (ADR 0018, #1423). Each `Donkey`
+  resolves only the approvals its own calls recorded. The module-level
+  `donkey_kit.core.approvals.approvals` instance is gone. A gated call
+  records on the client whose `donkey.run()`, `run_from_headers()` or
+  `as_user()` block runs it. Outside a block, it records on the client it was
+  declared on: `@donkey.tool` on an instance, or the client whose
+  `discover()` built the `ToolSet`. A class-level
+  `@Donkey.tool(approval="required")` called outside every block raises
+  `ConfigError`, so call it inside a block or declare it on an instance.
+- **The approval errors are typed.** An unknown or already-decided approval
+  id raises `ApprovalNotFound`, which is still a `KeyError`.
+  `ApprovalRejected` and `GatewayApprovalDenied` share the new
+  `ApprovalError` base. `DescriptorMismatch` is a `DonkeyError`, still a
+  `ValueError`, and is exported from `donkey_kit.experimental` (#1423).
+- **`require_approval()` on a whole-server binding raises `ConfigError`**
+  instead of `NotImplementedError`. The whole-server bindings are ADK,
+  Strands, the OpenAI Agents SDK, Agent Framework and CrewAI. Bind with
+  `langgraph()`, `llamaindex()` or `anthropic()` to gate a discovered tool,
+  or use the framework's own approval (#1423).
+- **The gateway credential is held back from a project-file `base_url`.** A
+  discovered `ToolSet`, `donkey.tools.live_card()`, `Publication.verify()`
+  and `donkey verify` raise `ConfigError` when `base_url` comes from the
+  working-directory files, isn't a regional Anypoint host, and the gateway
+  credential comes from somewhere else. See section 5 for the fix (#1479).
+- **The ADK, LangGraph and Agent Framework helpers raise the install-hint
+  `ImportError`.** Without the extra, these used to raise a bare
+  `ModuleNotFoundError`: ADK's `last_call_bridged()`, `approval_plugin()`,
+  `approve()` and `reject()`, and LangGraph's `approve()`, `reject()` and
+  `approval_interrupt()`. They now raise an `ImportError` naming the
+  `pip install "donkey-kit[...]"` line. `ImportError` is the parent class, so
+  `except ImportError:` still catches it but `except ModuleNotFoundError:`
+  no longer does. Catch `ImportError` (#1440, #1502). A standalone
+  `AgentFrameworkAdapter(...).policy_middleware()` without `agent_framework`
+  installed raises the same `ImportError`. It used to raise
+  `NotImplementedError`, in 0.1.3 too, so `except NotImplementedError:` no
+  longer catches it (#1503).
+- **`donkey verify` exits 2 when it has no gateway credential.** It checks
+  for one before any read when an asset needs a live read: an MCP server or
+  an `a2a_v1` agent. The message names `DONKEY_LLM_PROXY_CLIENT_ID` and
+  `DONKEY_LLM_PROXY_CLIENT_SECRET`. Before, each such asset failed on its own
+  and the command exited 1. In `jwt` or `bearer` mode the CLI has no token,
+  so set `DONKEY_LLM_PROXY_AUTH=client-id` with the pair, or call
+  `Publication.verify()` from code with `Donkey(llm_auth=...)`. A plan with
+  nothing to read live still needs no gateway credential (#1447).
+
+## 0.1.3: no breaking changes
+
+Changes since `0.1.2` that you might notice. None of them breaks existing
+code.
+
+### Typed refusals through ADK `model()` (not breaking)
+
+A gateway refusal on a `donkey.adk.model()` call inside `donkey.run()` or
+`@donkey.governed` now leaves the block as the SDK's typed error, such as
+`PIIDetected`, as 0.1.2 section 16 describes for the other adapters (#969).
+Before, it left as LiteLLM's own error. Pass `typed_refusals=False` to get
+LiteLLM's errors as before. A `LiteLlm` built from `connection_kwargs()`, or a
+`model()` given your own `llm_client`, still raises LiteLLM's error.
+
+### CA and JP control-plane hosts (not breaking)
+
+The `ca` and `jp` regions now point at `ca1.platform.mulesoft.com` and
+`jp1.platform.mulesoft.com`. Before, they pointed at `ca1.anypoint.` and
+`jp1.anypoint.`, which don't exist, so every control-plane call in those
+regions failed. Choosing a region no longer emits an `UnverifiedValueWarning`
+(#22).
 
 ## 0.1.2: public API surface, removed control plane and typed errors
 
@@ -97,9 +662,9 @@ exited 3 with `blocked on verification`.
 
 **Symptom:** `No such command 'plan'.` and exit status 2.
 
-**Fix:** remove the call. `donkey status`, `donkey publish` and `donkey verify`
-are still there, hidden, and still exit 3 until Exchange publication (BG §2.5)
-is verified.
+**Fix:** remove the call. `donkey status` is still there, hidden, and still
+exits 3 until its platform reads (BG §2.5) are verified. `donkey publish` (#218)
+and `donkey verify` (#1352) have since been implemented.
 
 ### 3. Three errors are removed
 

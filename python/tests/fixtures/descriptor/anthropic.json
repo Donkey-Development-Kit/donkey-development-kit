@@ -1,0 +1,61 @@
+{
+  "framework": "anthropic",
+  "distribution": "anthropic",
+  "version": "2.3.0",
+  "python": "3.12",
+  "captured": "2026-10-26",
+  "capture": "python scripts/capture_descriptor_fixtures.py --write",
+  "object": "anthropic.lib.tools._beta_functions.BetaFunctionTool",
+  "reads": {
+    ".to_dict()['name']": "lookup_employee",
+    ".to_dict()['description']": "Look up an employee record by ID.",
+    ".to_dict()['input_schema']": {
+      "additionalProperties": false,
+      "properties": {
+        "employee_id": {
+          "description": "The employee's ID.",
+          "title": "Employee Id",
+          "type": "string"
+        },
+        "include_manager": {
+          "default": false,
+          "description": "Whether to include the manager.",
+          "title": "Include Manager",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "employee_id"
+      ],
+      "type": "object"
+    }
+  },
+  "descriptor": {
+    "tools": [
+      {
+        "name": "lookup_employee",
+        "description": "Look up an employee record by ID.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "employee_id": {
+              "description": "The employee's ID.",
+              "title": "Employee Id",
+              "type": "string"
+            },
+            "include_manager": {
+              "default": false,
+              "description": "Whether to include the manager.",
+              "title": "Include Manager",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "employee_id"
+          ],
+          "type": "object"
+        }
+      }
+    ]
+  }
+}

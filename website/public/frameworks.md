@@ -45,7 +45,7 @@ depth is the adapter roster's `conformance_tested`.
 | [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `donkey.adk.gemini()` | `connection_kwargs()` | Live-verified |
 | [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `donkey.strands.model()` | `connection_kwargs()` | Live-verified |
 | [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `donkey.agent_framework.chat_client()` | `connection_kwargs()` | Live-verified |
-| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `donkey.openai_agents.model()` | `connection_kwargs()` | Live-verified |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `donkey.openai_agents.model()` | Conformance-tested | Live-verified |
 | [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `donkey.anthropic.client()` | `connection_kwargs()` | Live-verified |
 | [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `donkey.crewai.llm()` | `connection_kwargs()` | Live-verified |
 | [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `donkey.llamaindex.llm()` | `connection_kwargs()` | Live-verified |
@@ -186,7 +186,7 @@ for it: pick the adapter that matches your proxy.
 |---|---|
 | **OpenAI** | `donkey.llm.client()` or any framework adapter. Default DDK proxies are `Format=OpenAI`. |
 | **Anthropic** | `donkey.anthropic.client()` (native `AsyncAnthropic`). The proxy serves the native Messages route at `POST /<base-path>/v1/messages`; OpenAI-shape `/chat/completions` returns 404. |
-| **Gemini** | `donkey.adk.gemini("gemini-2.5-flash")` (ADK's native `Gemini` model — see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini)). The proxy serves `POST /<base-path>/models/<model>:generateContent` and `:streamGenerateContent`. There is no standalone `google-genai` adapter; you can also reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
+| **Gemini** | `donkey.adk.gemini("gemini-3.8-flash")` (ADK's native `Gemini` model — see [Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini)). The proxy serves `POST /<base-path>/models/<model>:generateContent` and `:streamGenerateContent`. There is no standalone `google-genai` adapter; you can also reach Gemini as an upstream provider behind an OpenAI-format proxy (see below). |
 
   **Ingress Format is not the same as the upstream provider.** The ingress
   Format is the wire protocol *your request* speaks to the proxy. The upstream

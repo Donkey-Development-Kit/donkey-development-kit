@@ -1,29 +1,35 @@
 ---
 description: Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
-status: roadmap
+status: live
 ---
 
 import { Callout } from 'nextra/components'
+import { Badge } from '../../components'
 
 # Discovery, search & filter
 
-This capability is on the [Roadmap](/roadmap); the API shown here is the planned design.
+`donkey.tools.discover()` composes three live registry reads:
+[`donkey.registry.search()`](#registry-search),
+[`donkey.registry.explain()`](#explain--why-a-tool-was-included-or-excluded) and
+[`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server). What it returns
+has been bound and called through the governed gateway with every supported
+framework (see [Framework binding](/tool-access/binding)).
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
-to bind. It narrows the catalog by **governance**, domain and tags, so an agent
+to bind. It narrows the catalog by **governance** and tags, so an agent
 binds only the tools it needs rather than the entire catalog. It returns a
 [`ToolSet`](/tool-access/binding) whose per-framework methods hand back native
-tool objects. Name search, asset type and environment are filters on the
-lower-level [`donkey.registry.search()`](#registry-search).
+tool objects. Name search and asset type are filters on the lower-level
+[`donkey.registry.search()`](#registry-search).
 
 ## The two most common calls
 
 ```python
-# 1. Everything governed in a domain:
-tools = await donkey.tools.discover(domain="hr", governed=True)
+# 1. Every governed MCP server (governed=True is the default):
+tools = await donkey.tools.discover()
 
-# 2. Governed tools in a domain that carry a tag:
-tools = await donkey.tools.discover(domain="hr", tags=["approved"], governed=True)
+# 2. Governed MCP servers that carry a tag:
+tools = await donkey.tools.discover(tags=["approved"])
 ```
 
 ## Filter reference
@@ -33,38 +39,107 @@ semantics:
 
 ```python
 tools = await donkey.tools.discover(
-    domain="hr",             # catalog domain
     tags=["approved"],       # all tags must be present
-    governed=True,           # True = default criteria; or an explicit GovernanceCriteria
-    locked=False,            # True = resolve only what donkey.lock pins
+    governed=True,           # the default: default criteria; or an explicit GovernanceCriteria
+    auth=None,               # None = the data-plane consumer credential
 )
 ```
 
 | Argument | Type | Meaning |
 |---|---|---|
-| `domain` | `str \| None` | Catalog domain. |
+| `domain` | `str \| None` | Catalog domain. Raises `NotImplementedError` for now: Exchange has no domain filter. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
-| `governed` | `bool \| GovernanceCriteria \| None` | `True` applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered (the default). |
-| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](/tool-access/lockfile)). Default `False`. |
+| `governed` | `bool \| GovernanceCriteria \| None` | `True` (the default) applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered. |
+| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](/tool-access/lockfile)). Raises `NotImplementedError` for now. Default `False`. |
+| `auth` | `McpAuth \| None` | The gateway credential bindings send. `None` uses the data-plane consumer credential; see [Auth](/tool-access/binding#auth). |
+
+It reads at most 200 MCP assets, and logs a warning when it reaches that limit;
+narrow it with `tags=`. A server that does not resolve to exactly one deployed
+MCP instance in the environment is listed with a failed `resolve_mcp` check, so
+`governed=True` leaves it out and binding refuses it.
 
 ## Registry search
 
-`discover(...)` is the high-level facade over the registry. When you need name
-search, asset types, an explicit environment or a result limit, call
-`donkey.registry.search()` directly. It returns `AssetRef` handles rather than a
-bindable `ToolSet`:
+`donkey.registry.search()` is <Badge tone="live">Live</Badge>. `discover(...)`
+is the high-level facade over the registry. When you need name search, asset
+types or a result limit, call `donkey.registry.search()` directly. It returns
+`AssetRef` handles rather than a bindable `ToolSet`:
 
 ```python
 refs = await donkey.registry.search(
-    query="*accounts*",       # glob over asset name + description; None = no text filter
-    asset_types=["mcp"],      # restrict to MCP servers, agents, etc.
-    tags=["approved"],
-    domain="hr",
-    environment="Production", # environment-scoped governance
-    governed=True,
+    query="*accounts*",       # a glob over asset ID, name and description; None = no text filter
+    asset_types=["mcp"],      # "mcp", "agent" or "api"
+    tags=["approved"],        # all tags must be present
     limit=50,                 # max results (default 50)
 )
+for ref in refs:
+    print(ref.coordinates, ref.name, ref.type, ref.tags)
 ```
+
+It searches the business group in `ANYPOINT_ORG_ID` and returns each asset's
+latest version:
+
+- A `query` without `*`, `?` or `[` is matched by Exchange: whole words and
+  word prefixes of the asset ID, name or description, ignoring case. `"sku"`
+  and `"look"` find `SKU Lookup MCP Server`; `"ku-loo"` does not.
+- A `query` with `*`, `?` or `[` is a glob, matched by the SDK against the
+  asset ID, name and description, ignoring case. Exchange does not match
+  inside words, so a glob query reads the group's assets that pass the other
+  filters, 250 at a time, until it has `limit` matches.
+- `asset_types` and `tags` are applied by Exchange. `"api"` covers Exchange's
+  REST, HTTP and SOAP API types. A tag is an Exchange tag.
+- `domain`, `environment`, `governed` and the `"a2a-agent"` type raise
+  `NotImplementedError` for now. Exchange has no domain filter, and
+  `environment` and `governed` need the governed-state join below.
+
+## Resolving an MCP server
+
+`donkey.registry.resolve_mcp()` is <Badge tone="live">Live</Badge>. It turns an
+MCP server asset into the gateway URL an agent connects to:
+
+```python
+server = await donkey.registry.resolve_mcp("<group-id>/sku-lookup-mcp/1.1.0")
+print(server.endpoint_url)   # https://<gateway-host>/<instance-path>/
+```
+
+It looks for the asset version's API Manager instance in the environment set by
+`ANYPOINT_ENV` (default `Sandbox`) that is deployed to a gateway, and joins the
+gateway's public URL with the instance's path. The URL ends in `/`: the gateway
+routes the path only with the trailing slash.
+
+- It raises `RegistryError` when the environment does not exist, when the
+  version has no deployed MCP instance there, or when it has more than one.
+- The gateway URL receives the gateway credential, so it follows the same rule
+  as the URLs you configure (see
+  [Endpoints must use `https://`](/reference/configuration#endpoints-must-use-https)):
+  it must be `https://`. Plain `http://` is accepted for a loopback host, and
+  for any other host only with `DONKEY_ALLOW_HTTP=1` in the environment, with a
+  `ConfigWarning`. A gateway public URL that is not, or that carries a user name
+  or password, raises `RegistryError`. `discover()` then lists the server with
+  a failed `resolve_mcp` check, and binding refuses it.
+- It does not open a connection or send the gateway's client credentials.
+  Calls through the URL need them, because the gateway's Client ID Enforcement
+  policy refuses a call without them.
+- The returned handle's `governance` is `None`: whether the instance is
+  governed comes from [`explain()`](#explain--why-a-tool-was-included-or-excluded).
+- Results are cached like the other registry lookups; see
+  [Registry caching](/tool-access/lockfile#registry-caching).
+
+## Resolving an A2A agent
+
+`donkey.registry.resolve_agent()` is <Badge tone="live">Live</Badge>. It does
+for an A2A agent asset what `resolve_mcp()` does for an MCP server, with the
+same reads, and finds the version's deployed A2A instance:
+
+```python
+agent = await donkey.registry.resolve_agent("<group-id>/claims-triage-agent/1.0.0")
+print(agent.endpoint_url)   # https://<gateway-host>/<instance-path>/
+```
+
+The agent's card is at `endpoint_url` + `.well-known/agent-card.json`. It raises
+`RegistryError` in the same cases as `resolve_mcp()`, including a gateway URL
+that is not `https://`, and like it sends no gateway credential. Calling the agent as a tool, `AgentHandle.as_tool()`, is on
+the [Roadmap](/tool-access/a2a).
 
 ## "Governed" is a computed predicate
 
@@ -72,11 +147,12 @@ Publication to Exchange says nothing about whether an asset is fronted by a
 gateway, has policies applied, or passes the org's rulesets — there is no single
 boolean to query. "Governed" is **computed** by joining state across systems,
 and it is **environment-scoped**: an asset governed in Production may be
-ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit. It
-and `STRICT` are in `donkey_kit.experimental` until discovery is verified:
+ungoverned in Sandbox. `GovernanceCriteria` makes every condition explicit. The
+stricter preset, `STRICT`, is in `donkey_kit.experimental`:
 
 ```python
-from donkey_kit.experimental import STRICT, GovernanceCriteria
+from donkey_kit import GovernanceCriteria
+from donkey_kit.experimental import STRICT
 
 @dataclass(frozen=True)
 class GovernanceCriteria:
@@ -85,7 +161,7 @@ class GovernanceCriteria:
     require_any_policy: bool = True       # at least one policy applied
     required_policies: list[str] = ...    # e.g. ["client-id-enforcement"]
     forbidden_policies: list[str] = ...
-    require_governance_pass: bool = False  # passes org rulesets with no `error` findings
+    require_governance_pass: bool = False  # every API Governance report is Conformant
     require_gateways: list[str] = ...      # only assets behind these named gateways
     require_tags: list[str] = ...
     require_lifecycle: list[str] = ...     # e.g. ["published", "approved"]
@@ -102,7 +178,7 @@ STRICT = GovernanceCriteria(
 Pass it straight through:
 
 ```python
-tools = await donkey.tools.discover(domain="hr", governed=STRICT)
+tools = await donkey.tools.discover(governed=STRICT)
 ```
 
 <Callout type="warning">
@@ -114,31 +190,98 @@ tools = await donkey.tools.discover(domain="hr", governed=STRICT)
 
 ## `explain()` — why a tool was included or excluded
 
-Without it, `governed=True` returning an empty list is indistinguishable
-from a broken credential. `explain()` reports every check:
+`donkey.registry.explain()` is <Badge tone="live">Live</Badge>. Without it,
+`governed=True` returning an empty list is indistinguishable from a broken
+credential. `explain()` reports every check the criteria turn on:
 
 ```python
-report = await donkey.registry.explain(ref, criteria=STRICT)
+report = await donkey.registry.explain(
+    "<group-id>/sku-lookup-mcp/1.1.0", criteria=STRICT
+)
 # GovernanceReport(governed=False, checks=[
-#     Check("api_instance_exists", True,  "instance 19283 in Sandbox"),
-#     Check("deployed",            True,  "gateway managed-omni-eu-1"),
-#     Check("required_policies",   False, "missing: client-id-enforcement"),
-#     Check("governance_pass",     None,  "UNKNOWN: rulesets API returned 403"),
+#     Check("api_instance_exists", True,  "instances sku-lookup in environment 'Sandbox'"),
+#     Check("deployed",            True,  "deployed: sku-lookup"),
+#     Check("any_policy",          True,  "a policy on each"),
+#     Check("required_policies",   False, "sku-lookup is missing client-id-enforcement"),
+#     Check("governance_pass",     None,  "UNKNOWN: no governance profile has evaluated <group-id>/sku-lookup-mcp/1.1.0"),
 # ])
+print(report.reasons_failed())
 ```
 
 Each check is `True` (passed), `False` (failed, with the reason), or `None`
-(couldn't be evaluated — resolved via `allow_unknown`). The empty-result warning
-message points you to `explain()`.
+(couldn't be evaluated, resolved by `allow_unknown`). When `discover()` keeps
+no server, it logs why at info level, pointing you to `explain()`.
+
+It reads the asset version's API Manager instances in the environment set by
+`ANYPOINT_ENV`, and only what the criteria ask about:
+
+| Check | Criteria | Passes when |
+|---|---|---|
+| `api_instance_exists` | `require_api_instance` | the version has an API Manager instance in the environment |
+| `deployed` | `require_deployed` | at least one instance is deployed to a gateway |
+| `any_policy` | `require_any_policy` | every deployed instance has a policy |
+| `required_policies` | `required_policies` | every deployed instance has each named policy |
+| `forbidden_policies` | `forbidden_policies` | no deployed instance has a named policy |
+| `gateways` | `require_gateways` | every deployed instance is on a named gateway |
+| `tags` | `require_tags` | the Exchange asset version has each tag, ignoring case |
+| `lifecycle` | `require_lifecycle` | the version's Exchange status is one of those named |
+| `governance_pass` | `require_governance_pass` | every API Governance report for the version is `Conformant` |
+
+- Policies are matched by their asset ID, such as `client-id-enforcement`, and
+  gateways by name.
+- A version with no deployed instance fails the policy and gateway checks.
+- `governance_pass` reads the reports of the business group's API Governance
+  profiles. It is `False` when a report is `NonConformant`. It is UNKNOWN when
+  no profile has evaluated the version, when a report is pending or failed, or
+  when the read is refused. API Governance evaluates an asset version when it
+  is published, so a profile created later does not report on it.
+- A refused Exchange read makes `tags` and `lifecycle` UNKNOWN. A refused API
+  Manager read raises `RegistryError`.
+- Results are cached per asset version and criteria, like the other registry
+  lookups; see [Registry caching](/tool-access/lockfile#registry-caching).
 
 ## Defaults and performance
 
-- **Unfiltered by default.** `governed` defaults to `None`, and a startup
-  log line states that discovery is unfiltered. Changing the default to `True`
-  is reserved for a future major version.
-- **Warm the index.** The governance join is a bulk operation, not one API call
-  per asset. A long-running agent can build the index at startup with
-  `donkey.registry.warm(environment=...)` so the first discovery is fast.
+- **Governed by default.** `governed` defaults to `True`, so the set holds
+  only the servers that pass the default `GovernanceCriteria`, and you can bind
+  it as a whole. Each server it leaves out is logged with its failed checks.
+- **Unfiltered is listed, not bindable.** `governed=None` lists every MCP
+  server, and the first unfiltered call logs that discovery is unfiltered. It
+  still lists a server the gateway does not govern, with its `explain()` report
+  on the handle (`McpServerHandle.governance`), so you can audit the catalog.
+  Binding refuses such a set with `UngovernedMcpServer` (see
+  [Only governed servers are bound](/tool-access/binding#only-governed-servers-are-bound)).
+- **Nothing found is not an error.** When no server is left, `discover()`
+  returns an empty `ToolSet` and logs why: no MCP asset matched, or none was
+  governed.
+- **Cached, with a staleness check.** A discovery is cached for
+  `registry_cache_ttl_s` seconds (default 300), per environment, tags and
+  criteria. `ToolSet.discovered_at` says when the registry was read and
+  `ToolSet.is_stale` turns true once the TTL has passed.
+  `donkey.tools.refresh()` drops the cached discoveries and the registry's
+  cached `search()`, `explain()` and `resolve_mcp()` lookups, so the next
+  `discover()` reads the governance verdicts from API Manager again.
+  `DONKEY_NO_CACHE=1` turns both caches off. Each call records a `donkey.tools.discover` span whose
+  `donkey.discover.cache` attribute is `hit` or `miss` (see
+  [Telemetry](/telemetry)).
+- **No connection.** `discover()` opens no MCP connection. The tools are listed
+  when you bind, or call `describe()`.
+- **Bounded fan-out.** The `explain()` and `resolve_mcp()` reads for each asset
+  run at most eight at a time.
+- **Warm the cache at startup.** `await donkey.tools.warm(...)` takes the same
+  `domain`, `tags` and `governed` arguments as `discover()`, does the same reads
+  and fills the same cache entry, so the first matching `discover()` does not
+  wait on the registry. It always reads: it drops the registry's cached
+  lookups first, as `donkey.registry.refresh()` does, so the verdicts it caches
+  are current. It returns how many servers it cached.
+  Anypoint has no bulk read of applied policies, so the cost grows with the
+  catalog: one search, then one `explain()` per MCP asset. Measured at about 20
+  policy reads a second, 200 servers take roughly 10 seconds cold.
+
+```python
+await donkey.tools.warm(tags=["erp"])
+tools = await donkey.tools.discover(tags=["erp"])  # cache hit
+```
 
 ## Related
 

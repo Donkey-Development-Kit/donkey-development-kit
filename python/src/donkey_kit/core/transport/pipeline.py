@@ -18,13 +18,14 @@ from __future__ import annotations
 import logging
 import ssl
 from collections.abc import Mapping
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypeAlias, TypedDict
 
 import httpx
 
 from ..budget import Budget
 from ..config import DonkeyConfig
 from ..errors import (
+    AgentKilled,
     ConfigError,
     DonkeyError,
     GatewayUnavailable,
@@ -32,7 +33,9 @@ from ..errors import (
     PolicyViolation,
     classify,
 )
+from ..reactions import RefusalHandlers
 from ..refusals import capturing, record_outcome
+from ..runledger import record_refusal
 from ..telemetry import GenAiSpan
 from .failures import _gateway_unavailable, _lifecycle_error
 from .headers import (
@@ -41,6 +44,7 @@ from .headers import (
     _CheckedEndpoints,
     _request_correlation_id,
     _resolve_header_names,
+    credential_headers,
     effective_cost_tags,
 )
 from .observe import _log_finish, _log_retry, _record_response
@@ -49,14 +53,23 @@ from .policy import (
     Retry,
     RetryDecision,
     _mark_terminal,
+    _request_model,
     _substitution_error,
     decide_retry,
     refusal,
 )
 
-__all__ = ["AsyncClientOptions", "ClientOptions"]
+if TYPE_CHECKING:
+    from httpx._client import UseClientDefault
+    from httpx._types import AuthTypes
+
+__all__ = ["AsyncClientOptions", "ClientOptions", "SendOptions"]
 
 _log = logging.getLogger(__name__)
+
+
+#: One ``send()``'s ``(stream, auth, follow_redirects)``, reused by a re-send.
+SendOptions: TypeAlias = "tuple[bool, AuthTypes | UseClientDefault | None, bool | UseClientDefault]"
 
 
 class _CommonOptions(TypedDict, total=False):
@@ -94,6 +107,7 @@ class _GovernedPipeline(_CheckedEndpoints):
     _control_plane: bool
     _correlation_header: str
     _call_id_header: str
+    _reactions: RefusalHandlers
 
     def _init_pipeline(
         self,
@@ -102,10 +116,19 @@ class _GovernedPipeline(_CheckedEndpoints):
         budget: Budget | None,
         control_plane: bool,
         origins: set[Origin] | None,
+        reactions: RefusalHandlers | None = None,
     ) -> None:
         self._cfg = cfg
+        # The ``donkey.on(...)`` handlers the ``_on_refusal`` hook runs (BG §2.1,
+        # #208). A client built without them gets an empty set, so it reacts to
+        # nothing: the control plane, and a standalone ``LLMClient``.
+        self._reactions = reactions if reactions is not None else RefusalHandlers()
         self._control_plane = control_plane
-        self._init_origins(cfg.control_plane_url if control_plane else cfg.llm_proxy_url, origins)
+        self._init_origins(
+            cfg.control_plane_url if control_plane else cfg.llm_proxy_url,
+            origins,
+            credential_headers(cfg),
+        )
         # The two correlation request-header NAMES, resolved once (config override
         # → UNVERIFIED placeholder). The one-time verification-discipline warning
         # for an un-overridden name fires here, at construction, not per request
@@ -188,6 +211,20 @@ class _GovernedPipeline(_CheckedEndpoints):
             return typed
         return None
 
+    def _observe_kill(self, violation: PolicyViolation | None) -> bool:
+        """Whether ``violation`` is the gateway's kill switch (BG §2.6, #220),
+        handing it to the budget first so every ``pace()`` loop on it stops.
+        Called once a send has settled and its span is closed. ``True`` means
+        the client flushes spans next, so the kill's own span is exported
+        before the agent exits; with telemetry off there are none to flush.
+        The kill is never retried: :func:`~.policy.decide_retry` finishes on
+        any 4xx, and ``_mark_terminal`` tells the provider SDK not to retry."""
+        if not isinstance(violation, AgentKilled):
+            return False
+        if self._budget is not None:
+            self._budget.observe_refusal(violation)
+        return self._cfg.telemetry
+
     def _settle(
         self, request: httpx.Request, response: httpx.Response, gspan: GenAiSpan
     ) -> tuple[PolicyViolation | None, ModelSubstituted | None]:
@@ -211,6 +248,11 @@ class _GovernedPipeline(_CheckedEndpoints):
             cost_tags=effective_cost_tags(self._cfg),
         )
         substitution = _substitution_error(self._cfg, request, response)
+        # The run ledger keeps every refusal on a model call, caught or not (#613).
+        if _request_model(request) is not None:
+            for outcome in (violation, substitution):
+                if outcome is not None:
+                    record_refusal(outcome)
         if capturing():
             _record_settled(response, substitution)
         return violation, substitution

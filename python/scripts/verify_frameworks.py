@@ -67,9 +67,10 @@ from typing import Any
 # (framework key, factory import path, factory fn, expected native module.Class,
 #  the distribution the framework's extra installs — "installed" means it is present)
 # This stays the FULL eight-framework roster so the offline signature check can be
-# run on demand for any of them. Only LangGraph is conformance-tested and carried
-# in the nightly matrix (BG §1.8, #197); the other seven are supported at
-# connection_kwargs() only. `--only <fw>` targets one framework.
+# run on demand for any of them. Only LangGraph and the OpenAI Agents SDK are
+# conformance-tested and carried in the nightly matrix (BG §1.8, #197, #223); the
+# other six are supported at connection_kwargs() only. `--only <fw>` targets one
+# framework.
 FRAMEWORKS: list[tuple[str, str, str, str, str]] = [
     (
         "langgraph",
@@ -158,7 +159,7 @@ MODEL = os.environ.get("DEMO_MODEL", "gpt-4o")
 # adk.gemini needs a Format=Gemini proxy; the default DDK proxies are Format=OpenAI.
 # Its live round-trip runs only when this points at one (same consumer creds).
 GEMINI_PROXY_ENV = "DONKEY_GEMINI_PROXY_URL"
-GEMINI_MODEL = os.environ.get("DEMO_GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.environ.get("DEMO_GEMINI_MODEL", "gemini-3.8-flash")
 # The Anthropic client speaks the native Messages API, which needs a
 # Format=Anthropic proxy; its live turn runs only when this points at one.
 ANTHROPIC_PROXY_ENV = "DONKEY_ANTHROPIC_PROXY_URL"

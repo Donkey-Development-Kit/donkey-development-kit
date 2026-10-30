@@ -30,10 +30,11 @@ curl -s http://localhost:8080/responses \
 The selectable shapes are `token-rate-limit`, `pii-detected`,
 `injection-protection`, `regex-prompt-guard`, `content-safety`,
 `content-moderation`, `agent-killed`, `model-not-found`, `upstream-5xx`,
-`client-id-missing`, `model-not-routable`, and `request-rate-limit` — the ten documented rejections
-(including the request-rate-limit `429`, `RequestRateLimitExceeded`) plus the
-consumer-auth `401` and the gateway's `400` for a bare model name on a
-multi-provider proxy (`ModelNotRoutable`). One happy-path
+`client-id-missing`, `model-not-routable`, `request-rate-limit`, `ciba-pending`, and
+`ciba-denied` — the ten documented rejections (including the request-rate-limit `429`,
+`RequestRateLimitExceeded`) plus the consumer-auth `401`, the gateway's `400` for a bare
+model name on a multi-provider proxy (`ModelNotRoutable`), and the OAuth2 OBO policy's two
+CIBA step-up answers (`GatewayApprovalPending`, `GatewayApprovalDenied`). One happy-path
 variant is selectable the same way: `donkey-sim/success-semantic` replays the
 captured **semantic-routing** `200` (`routing_type == "Semantic"`), so
 `donkey.last_call.matched_topic` and `routing_score` light up offline (see
@@ -192,6 +193,24 @@ accepts `ms`, `s`, or `m` (a bare number is seconds).
   `x-llm-proxy-ratelimit` header only on the `200` — matching the real gateway.
   The simulator never emits a header shape the gateway does not.
 
+### `ciba:pending=[,then=approve|deny]`
+
+Plays the OAuth2 OBO policy's CIBA step-up. The first `N` calls get the captured `401`
+`authorization_pending` (a typed [`GatewayApprovalPending`](https://docs.donkey-kit.dev/errors.md), with its
+`retry_after`). Then the user "answers": with `then=approve` (the default) every later call
+goes through, and with `then=deny` it gets the `403` `access_denied`
+([`GatewayApprovalDenied`](https://docs.donkey-kit.dev/errors.md)).
+
+```bash
+donkey mock --scenario ciba:pending=2,then=approve
+```
+
+The count is the scenario's own. The simulator does not model the live policy's per-user
+cache or its silent expiry, so test your own deadline separately. The two answers were
+captured on an A2A `message/send` and an MCP `tools/call`, not on an LLM proxy route; the
+simulator serves the same bytes on its model routes so your error handling can be tested
+offline.
+
 ### `request_limit:limit=<requests>,window=<duration>`
 
 Runs a **request counter** for the gateway's `rate-limiting` policy, which
@@ -250,6 +269,8 @@ guardrailed bot is exercised before it faces a real attack.
 
 ## Related
 
+- [Simulated ingress](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) — `donkey dev`, which replays these
+  rejections on inbound A2A calls to your agent.
 - [Testing & conformance](https://docs.donkey-kit.dev/testing.md) — `simulate()` for in-process unit tests,
   and the `gateway` pytest fixture that runs this simulator on an ephemeral port.
 - [Error taxonomy](https://docs.donkey-kit.dev/errors.md) — the typed exceptions each shape maps to.

@@ -18,7 +18,10 @@ stays generic, not a captured policy shape (#253). Row 9 (Agent Kill Switch,
 nested ``error.code == "agent_killed"``) was live-captured 2026-09-29 against
 ``ddk-agent-kill-switch`` (instance 21206201, #694). Row 10 (request rate
 limit, the unsuffixed ``x-ratelimit-*`` trio on a 429) was live-captured
-2026-10-07 against ``ddk-request-rate-limit`` (instance 21188400, #974).
+2026-10-07 against ``ddk-request-rate-limit`` (instance 21188400, #974). The two
+OAuth2 OBO CIBA step-up answers (#1320, a flat-string ``error`` of
+``authorization_pending`` on a 401 and ``access_denied`` on a 403) were live-captured
+2026-10-28 (provisioning #96); they are not policy-rejection rows, like the auth 401.
 The discriminator is the error ``type`` + specific headers, NEVER the status code
 alone — which is exactly why rows 7/8 (both 403) must not be swallowed by the
 401/403 → auth rule.
@@ -30,6 +33,7 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 
 from donkey_kit.core.errors import (
     AgentKilled,
@@ -44,6 +48,7 @@ from donkey_kit.core.errors import (
     UpstreamRequestError,
     classify,
 )
+from donkey_kit.core.step_up import GatewayApprovalDenied, GatewayApprovalPending
 from donkey_kit.simulator.fixtures import parse_headers
 
 _FIXTURES = Path(__file__).resolve().parents[2] / "src" / "donkey_kit" / "simulator" / "_fixtures"
@@ -154,6 +159,66 @@ def test_row8_bedrock_guardrails_variant_is_content_safety_blocked() -> None:
     assert err.remediation  # required, non-empty
 
 
+def test_row8_google_model_armor_variant_is_content_safety_blocked() -> None:
+    # The Google Model Armor sibling of row 8: the x-llm-proxy-model-armor-*
+    # header family, live-captured against ddk-google-model-armor on 2026-10-19
+    # (#1178) — a request-phase block whose three matched filters are the
+    # categories. Like the Bedrock sibling it is a classify()-contract fixture,
+    # not a simulator-served shape, so it is absent from fixtures.lock.
+    err = classify(_response(REJECTIONS, "content-safety-model-armor", 403))
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.policy == "content-safety"
+    assert err.categories == ["rai_harassment", "rai_dangerous", "pi_and_jailbreak"]
+    assert "Google Model Armor" in str(err)
+    assert err.remediation  # required, non-empty
+
+
+def test_row8_crowdstrike_aidr_variant_is_content_safety_blocked() -> None:
+    # The CrowdStrike AIDR sibling of row 8: the x-llm-proxy-crowdstrike-aidr-*
+    # header family, VERIFIED (POLICY SOURCE): derived from
+    # crowdstrike-aidr-guardrails-policy 1.0.0, not captured live (ADR 0016,
+    # #1176/#1429; the capture is #1184). The categories are the triggered
+    # detectors. A classify()-contract fixture, unserved and absent from
+    # fixtures.lock like the other siblings.
+    err = classify(_response(REJECTIONS, "content-safety-crowdstrike-aidr", 403))
+    assert isinstance(err, ContentSafetyBlocked)
+    assert err.policy == "content-safety"
+    assert err.provider == "crowdstrike-aidr"
+    assert err.categories == ["malicious_prompt", "pii"]
+    assert "CrowdStrike AIDR" in str(err)
+    assert "policy source" in err.remediation  # states its evidence class (ADR 0016)
+
+
+@pytest.mark.parametrize(
+    ("slug", "provider", "categories"),
+    [
+        ("content-safety", "azure-content-safety", ["severity_hate", "severity_violence"]),
+        ("content-safety-bedrock", "bedrock-guardrails", ["content_filter"]),
+        (
+            "content-safety-model-armor",
+            "google-model-armor",
+            ["rai_harassment", "rai_dangerous", "pi_and_jailbreak"],
+        ),
+        ("content-safety-crowdstrike-aidr", "crowdstrike-aidr", ["malicious_prompt", "pii"]),
+    ],
+)
+def test_row8_content_safety_reports_the_provider_slug(
+    slug: str, provider: str, categories: list[str]
+) -> None:
+    # #1183: each vendor's block carries its stable provider slug (public API, the
+    # value of donkey.policy.provider), so a caller can tell the vendors apart
+    # without parsing .response headers.
+    err = classify(_response(REJECTIONS, slug, 403))
+    assert isinstance(err, ContentSafetyBlocked)
+    assert (err.provider, err.categories) == (provider, categories)
+
+
+def test_non_provider_refusal_has_no_provider() -> None:
+    err = classify(_response(LIVE, "pii-detected", 403))
+    assert isinstance(err, PIIDetected)
+    assert getattr(err, "provider", None) is None
+
+
 def test_row9_agent_kill_switch_is_agent_killed_not_upstream_or_auth() -> None:
     # docs/verified-apis.md §4, live capture 2026-09-29 (#694): the kill switch
     # rejects with a 403 whose nested error carries `code: agent_killed` and no
@@ -187,3 +252,25 @@ def test_row10_request_rate_limit_is_its_own_type_not_token_budget() -> None:
     assert isinstance(err, RequestRateLimitExceeded)
     assert not isinstance(err, TokenBudgetExceeded)
     assert err.policy == "request-rate-limit"
+
+
+def test_ciba_pending_401_is_approval_pending_not_auth() -> None:
+    # docs/verified-apis.md §4 (#1320): the OBO policy's CIBA 401 carries no
+    # www-authenticate; the body ``error`` is the discriminator. The credential was
+    # accepted, so an AuthError ("check your client_id") would send the caller the
+    # wrong way.
+    headers = _headers(REJECTIONS / "reject.ciba-pending.headers.txt")
+    assert "www-authenticate" not in headers
+    err = classify(_response(REJECTIONS, "ciba-pending", 401))
+    assert isinstance(err, GatewayApprovalPending)
+    assert not isinstance(err, (AuthError, PolicyViolation))
+    assert err.retry_after == 5.0
+    assert err.remediation.strip()
+
+
+def test_ciba_denied_403_is_a_terminal_policy_violation() -> None:
+    err = classify(_response(REJECTIONS, "ciba-denied", 403))
+    assert isinstance(err, GatewayApprovalDenied)
+    assert isinstance(err, PolicyViolation)
+    assert not isinstance(err, AuthError)
+    assert err.policy == "oauth2-obo-ciba"

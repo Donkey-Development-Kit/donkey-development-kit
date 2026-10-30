@@ -1,10 +1,12 @@
 """The CLI's command set after the legacy quarantine (#730, ADR 0008 in docs/adr/).
 
-Four commands are visible: ``init``, ``doctor``, ``mock`` and ``test``. Three
-hidden ones (``status``, ``publish``, ``verify``, BG §2.5) are
-verification-blocked and exit 3 with a ``blocked on verification`` message
-(§0.3). The refused provisioning control plane's commands were removed, so
-typer rejects them as unknown (exit 2), not as blocked (exit 3).
+Ten commands are visible: ``init``, ``doctor``, ``mock``, ``dev``, ``test``, ``scan``
+(#217), ``publish`` (#218, unhidden by #1260, ``test_cli_publish.py``), ``verify``
+(#1352, ``test_cli_verify.py``), ``expose`` and ``preflight`` (#226, #1279,
+``test_cli_expose.py``). One is hidden: ``status`` (BG §2.5), which is
+verification-blocked and exits 3 with a ``blocked on verification`` message (§0.3). The
+refused provisioning control plane's commands were removed, so typer rejects
+them as unknown (exit 2), not as blocked (exit 3).
 """
 
 from __future__ import annotations
@@ -18,34 +20,37 @@ from donkey_kit.cli import app
 runner = CliRunner()
 
 
-def test_visible_commands_are_init_doctor_mock_test() -> None:
+def test_visible_commands() -> None:
     commands = typer.main.get_command(app).commands
     visible = {name for name, command in commands.items() if not command.hidden}
 
-    assert visible == {"init", "doctor", "mock", "test"}
+    assert visible == {
+        "init",
+        "doctor",
+        "mock",
+        "dev",
+        "test",
+        "scan",
+        "publish",
+        "verify",
+        "expose",
+        "preflight",
+    }
 
 
-def test_hidden_commands_are_only_the_blocked_platform_ones() -> None:
+def test_hidden_commands_are_the_blocked_platform_ones() -> None:
     commands = typer.main.get_command(app).commands
     hidden = {name for name, command in commands.items() if command.hidden}
 
-    assert hidden == {"status", "publish", "verify"}
+    assert hidden == {"status"}
 
 
-@pytest.mark.parametrize("command", ["status", "publish", "verify"])
-def test_platform_commands_are_honestly_blocked(command: str) -> None:
-    result = runner.invoke(app, [command])
+def test_status_is_honestly_blocked() -> None:
+    result = runner.invoke(app, ["status"])
 
     assert result.exit_code == 3
     assert "blocked on verification:" in result.output
     assert "See docs/verified-apis.md" in result.output
-
-
-def test_publish_if_changed_is_blocked_too() -> None:
-    result = runner.invoke(app, ["publish", "--if-changed"])
-
-    assert result.exit_code == 3
-    assert "blocked on verification:" in result.output
 
 
 @pytest.mark.parametrize("command", ["plan", "apply", "drift", "lint", "generate", "validate"])

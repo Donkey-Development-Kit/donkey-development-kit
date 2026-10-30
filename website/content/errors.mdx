@@ -28,13 +28,15 @@ specific headers.
 | Agent kill switch | `403` | nested `{"error":{code:"agent_killed"}}`, **no** `type`, **no** `www-authenticate` | `AgentKilled` |
 | Injection protection | `400` | header `x-injection-protection: blocked` (**not** the status) | `PromptInjectionBlocked` |
 | Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) |
-| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | `ContentSafetyBlocked` (parses `categories`) |
+| Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR). The CrowdStrike AIDR shape is read from the policy's source, not captured from a live gateway. The same header on a `503` is the policy failing closed (its moderation service was unreachable): an `UpstreamModelError` | `ContentSafetyBlocked` (sets `provider`, parses `categories`) |
 | Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) |
 | Request rate limit | `429` | body `{"error":"Too Many Requests"}`; `x-ratelimit-limit`/`-remaining`/`-reset` headers (ms), **no** `x-token-*`, **no** `retry-after` | `RequestRateLimitExceeded` (`retry_after` derived) |
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` |
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
 | Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) |
 | Bare model name on a multi-provider proxy | `400` | flat `{"error":"…"}` saying the model "is not in the known unique model map" | `ModelNotRoutable` (`.model`) |
+| OAuth2 OBO step-up (CIBA), waiting for the user | `401` | flat `{"error":"authorization_pending"}` + `retry-after`, **no** `www-authenticate` | `GatewayApprovalPending` (`retry_after`) |
+| OAuth2 OBO step-up (CIBA), user denied | `403` | flat `{"error":"access_denied"}`, **no** `www-authenticate` | `GatewayApprovalDenied` (`policy="oauth2-obo-ciba"`) |
 
 `PIIDetected`, `AgentKilled`, the regex-prompt-guard check, and the content-safety
 check are all evaluated **before** the generic 401/403→auth rule, because each is
@@ -42,7 +44,9 @@ a `403` (or `4xx`) that is *not* an auth failure. `AgentKilled` is also checked
 before the upstream-4xx rule: its nested `error` object would otherwise read as
 an upstream request mistake, when the upstream was never called. Likewise the injection check gates on the
 `x-injection-protection` header, so an ordinary malformed `400` stays an
-ordinary refusal.
+ordinary refusal. The two CIBA step-up answers are checked before the auth rule
+too: the gateway accepted the credential and is asking the user to approve the
+call on another device, so an `AuthError` would point you at the wrong fix.
 
 `classify()` checks the policy discriminators first, whatever the status, and
 only then falls back to the status code. Within each step the first match wins,
@@ -56,6 +60,8 @@ flowchart TD
     D -->|"x-llm-proxy-*-action: reject"| X3["ContentSafetyBlocked"]
     D -->|"top-level matched_patterns"| X4["PromptInjectionBlocked<br/>regex-prompt-guard"]
     D -->|"x-injection-protection: blocked"| X5["PromptInjectionBlocked"]
+    D -->|"401 + flat error = authorization_pending"| X14["GatewayApprovalPending"]
+    D -->|"403 + flat error = access_denied"| X15["GatewayApprovalDenied"]
     D -->|none| S{"2 · Status"}
     S -->|"401, or 403 + www-authenticate"| X6["AuthError"]
     S -->|429| Q{"x-ratelimit-limit and -remaining,<br/>no x-token-limit?"}
@@ -72,6 +78,13 @@ flowchart TD
 `GatewayUnavailable` never reaches `classify()`: it is raised when there is no
 response to classify.
 
+A gateway policy of your own, such as a PDK policy, sends a shape none of these
+rules know, so it lands on one of the "other 4xx" rows. Register the shape with
+`classify.register()` to type it as an exception you define. A registered shape
+is checked after every built-in policy rule and before the `UpstreamRequestError`
+and unconfirmed-`PolicyViolation` rows, so a built-in shape always wins. See
+[Custom policies](/custom-policies).
+
 `RequestRateLimitExceeded` is the `429` of the gateway's stock `rate-limiting`
 policy, which counts requests rather than tokens. It is a subclass of
 `PolicyViolation` and a sibling of `TokenBudgetExceeded`, not a subclass of it.
@@ -83,10 +96,32 @@ A `429` carrying `x-ratelimit-limit` and `x-ratelimit-remaining` and no
 and is classified as `TokenBudgetExceeded`. `retry_after` comes from
 `retry-after` if present, else from `x-ratelimit-reset` (milliseconds). The
 upstream provider's suffixed `x-ratelimit-limit-requests` / `-tokens` headers are
-a different window and are not read.
+a different window: they fill `donkey.budget.upstream` and play no part in
+classification.
 
 Client-ID enforcement (`401`) is a **consumer-auth** case, not one of the ten
 policy-rejection rows.
+
+The CIBA step-up rows come from the OAuth2 OBO Credential Injection policy with
+`cibaEnabled`. While the user hasn't answered, every call gets a `401`
+`authorization_pending` with a `retry-after` (the policy's poll interval plus
+two seconds); once they approve, the same request succeeds. A request nobody
+answers is never reported as expired: the policy starts a new approval flow and
+keeps answering "pending", so keep your own deadline. After a deny, the gateway
+caches the decision; on OBO policy 1.1.3 it does so per user, not per
+conversation, for up to an hour. The policy's initiation failure (`502`,
+`ciba_initiation_failed`) has no type of its own and is an
+`UpstreamModelError`, like any other `5xx`.
+
+The SDK does not retry a pending approval on its own. To wait for one while listing an
+MCP server's tools, use `toolset.wait_for_gateway_approval("2m")`: it re-sends the
+`tools/list` after each `retry_after` until the user approves, raises
+`GatewayApprovalDenied` at once if they deny, and raises the last
+`GatewayApprovalPending` when the timeout passes. A tool *call* is not retried: the
+framework MCP clients lose the response body that tells a pending approval from a bad
+credential, so handle `GatewayApprovalPending` where your framework lets you. `donkey mock
+--scenario ciba:pending=2` plays the sequence offline. [Gateway step-up](/hitl#gateway-step-up)
+covers the whole flow.
 
 The Injection Protection shape is live-verified against a deployed proxy
 (#669); `classify()` keys on the header discriminator alone for it, not the
@@ -94,7 +129,7 @@ body.
 
 ## The exception tree
 
-All importable from `donkey_kit`, along with `classify`, except the three Roadmap-surface errors on the last line, which are in `donkey_kit.experimental`:
+All importable from `donkey_kit`, along with `classify`, except the Roadmap-surface errors on the last line, which are in `donkey_kit.experimental`:
 
 ```
 DonkeyError                     # base of the whole tree
@@ -103,18 +138,28 @@ DonkeyError                     # base of the whole tree
 ├─ PolicyViolation              # base for every governance rejection
 │  ├─ PIIDetected               # 403, type=pii_detected; .entities, .gateway_message
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
+│  ├─ GatewayApprovalDenied     # 403, error=access_denied — the user denied the CIBA step-up; also an ApprovalError
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
 │  ├─ RequestRateLimitExceeded  # 429, rate-limiting policy; .retry_after (seconds); sibling of TokenBudgetExceeded
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
-│  └─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails vendor reject header; .categories
+│  ├─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR (policy source) 403 reject header; .provider, .categories
+│  └─ ToolNotInProfile          # MCP tools/call refused: JSON-RPC -32008 "Unable to access"; .tool_name, .server
+├─ GatewayApprovalPending       # 401, error=authorization_pending — waiting for the user's CIBA approval; .retry_after
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
 ├─ ModelNotRoutable             # 400, bare model name on a multi-provider proxy; .model
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at/.window
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
-└─ ToolInvocationError, RegistryError, PublicationDrift
-                                # tool access, registry and publishing (Roadmap surfaces;
+├─ ApprovalRequired             # client-side: an approval-gated tool was called, not run; .approval
+├─ ApprovalError                # an approval was refused, so the call did not happen
+│  ├─ ApprovalRejected          # client-side: a reviewer refused a framework-paused tool; .approval
+│  └─ GatewayApprovalDenied     # (also under PolicyViolation, above)
+├─ ApprovalTimedOut             # client-side: nobody decided before approval_timeout; .approval
+├─ ApprovalNotFound             # client-side, also a KeyError: no such pending approval on this Donkey; .approval_id
+├─ UngovernedMcpServer          # client-side: a ToolSet binding refused an ungoverned server; .servers, .reasons
+└─ ToolInvocationError, RegistryError, PublicationDrift, DescriptorMismatch
+                                # tool calls, registry and publishing (Roadmap surfaces;
                                 # import them from donkey_kit.experimental)
 ```
 
@@ -134,20 +179,26 @@ never burn an exhausted budget or replay a blocked prompt.
 
 | Exception | Discriminator | Retryable? | Next step (`.remediation`) |
 |---|---|---|---|
-| `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. |
+| `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails, or a registry read is refused (`401`/`403`) because the connected app lacks a scope. Inside [`donkey.as_user()`](/identity#no-silent-fallback-a-deliberate-hard-failure): a missing `token` — never a fallback to the service identity. An approved tool [resumed](/hitl#who-a-resumed-call-runs-as) inside `as_user()` with a token other than its requester's: the tool is not run. A per-tool MCP binding [called under a different user](/tool-access/binding#acting-for-a-user) from the one it was bound for: the call is not sent. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. A refused registry read names the missing scope; see [Connected-app scopes](/reference/scopes). `as_user()`: pass the signed-in user's current token. A refused resume: resume outside `as_user()`, so the tool runs as its requester. A refused MCP tool call: bind the `ToolSet` inside the `as_user()` block that runs the agent. |
 | `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
-| `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. | Ask an administrator to restore this agent's model access in Governance > Security. |
+| `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. It also stops [`donkey.budget.pace()`](/budget) loops, and spans are flushed before it reaches you. | Ask an administrator to restore this agent's model access in Governance > Security. |
+| `GatewayApprovalPending` | `401`, flat `error: "authorization_pending"`, **no** `www-authenticate` | **Yes, after `.retry_after`** — never auto-retried; the same request succeeds once the user approves. | Re-send after `.retry_after` seconds; don't change or refresh the credentials, they were accepted. |
+| `GatewayApprovalDenied` | `403`, flat `error: "access_denied"` | **No** — a `PolicyViolation`, never retried; the gateway keeps answering with the denial until its cached decision expires. | Tell the user the action was not authorized. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `RequestRateLimitExceeded` | `429` with `x-ratelimit-limit` and `x-ratelimit-remaining` and **no** `x-token-limit` | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
-| `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager. |
+| `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR, whose shape is read from the policy's source and not captured live) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager (for Google Model Armor, the template's filters in Google Cloud; for CrowdStrike AIDR, the collector's AIDR policy in the Falcon console). |
+| `ToolNotInProfile` | An MCP `tools/call` answered with HTTP `200` and the JSON-RPC error `-32008` `"Unable to access"` (the gateway's MCP Global Access or Attribute-Based Access Control policy). Not an HTTP error, so `classify()` never sees it; the LangGraph, LlamaIndex and Anthropic `ToolSet` bindings raise it, and `tool_access_denial(exc)` converts the error elsewhere. See [Tools outside your access profile](/tool-access/binding#tools-outside-your-access-profile). | **No** — a `PolicyViolation`, never retried; a configuration problem that no retry or rephrasing fixes. | Ask the server's owner to grant the tool (`.tool_name`) in the MCP access policy on its API instance in API Manager, or stop offering it to the agent. |
 | `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider) | **No** — a client configuration mistake, terminal; the upstream was never called. | Use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries a `503`, and a `502` / `504` too unless the request was a model call (set `retry_model_calls_on_gateway_errors` to include those); a persistent `5xx` is safe for you to retry once you accept a possible second charge. | Transient provider failure — retry, then escalate if it persists. |
 | `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](/cli). |
+| `ApprovalError` | client-side base of `ApprovalRejected` (a reviewer refused a [framework-paused](/hitl#the-framework-approval-helpers) tool) and `GatewayApprovalDenied` (the user refused the gateway's step-up). Catch it to handle both refusals at once. | **No** — the call was refused at its approval step. | Tell the user or the agent that the action was not authorized; don't retry it unchanged. |
+| `ApprovalNotFound` | client-side, also a `KeyError`: `donkey.approvals.get`, `resolve` or `reject` of an id this `Donkey` holds no pending approval for. It was already decided, [another `Donkey` recorded it](/hitl#resolving), or the process restarted. `.approval_id` is the id. | **No** — the same id is never pending again. | Decide each approval once, on the `Donkey` that recorded it. After a restart, call the tool again to ask for a fresh decision. |
+| `DescriptorMismatch` | client-side, also a `ValueError`, from `donkey_kit.experimental`: `derive_descriptor(..., mode="auto:check")` derived a descriptor that differs from the committed file. | **No** — the code and the file disagree until one changes. | Regenerate the committed descriptor with `mode="auto"` if the change is intended, or fix the tool definition. |
 
-Two more `DonkeyError`s are **client-side signals**, not gateway refusals, so
+More `DonkeyError`s are **client-side signals**, not gateway refusals, so
 they sit outside the retry question. `BudgetReserveReached` is raised *before* a
 call by [`donkey.budget.pace()`](/budget) and is meant to be recovered from
 (`await donkey.budget.wait_for_reset()`, then continue) when its `.reset_at` is
@@ -156,6 +207,14 @@ immediately and an unconditional retry would spin. Its `.remediation` carries
 that branch as an inspectable next step, so you don't have to parse the
 exception message. `ModelSubstituted` reports that a call *succeeded* against a
 different model than requested (opt-in via `on_model_substitution="raise"`).
+`ApprovalRequired` and `ApprovalTimedOut` come from a
+[`@donkey.tool(approval="required")`](/hitl) tool: the first means the tool is
+waiting for a human decision, the second that nobody decided in time.
+`ApprovalRejected` comes from a gated tool that LangGraph paused and a reviewer
+refused on resume. None of them is a `PolicyViolation`, and refusal handlers
+never see them. `ApprovalRejected` shares the `ApprovalError` base with the
+gateway's `GatewayApprovalDenied`, and `ApprovalNotFound` means the id is not
+pending on this `Donkey` (see [Resolving](/hitl#resolving)).
 `ConfigError` is raised locally, before any request. It reports every missing
 field at once, and it also reports an endpoint that may not receive the
 configured credentials: a non-`https://` URL, or a URL from the project's config
@@ -180,7 +239,9 @@ an LLM-proxy response use the canonical consumer-credential guidance that
 [`donkey doctor`](/cli) also prints. Control-plane token failures override that
 default with guidance for the provider that failed: connected-app errors point
 to the Anypoint credentials and scopes, while an exhausted `ChainedAuth` points
-to each configured provider's credential or token source.
+to each configured provider's credential or token source. A registry read the
+connected app is not allowed to make names the scope it needs and the business
+group to grant it on; see [Connected-app scopes](/reference/scopes).
 
 ## When the gateway can't be reached at all
 
@@ -224,6 +285,9 @@ a canonical default. For the refusals:
   entity list in API Manager.
 - `AgentKilled` → ask an administrator to restore this agent's model access in
   Governance > Security.
+- `GatewayApprovalPending` → re-send the same request after `retry_after`
+  seconds; it succeeds once the user approves.
+- `GatewayApprovalDenied` → tell the user the action was not authorized.
 - `TokenBudgetExceeded` → wait for the window to reset (see `retry_after`) or
   request an increase.
 - `RequestRateLimitExceeded` → wait for the window to reset (see
@@ -255,6 +319,13 @@ Request blocked: personally identifiable information detected (403): 1 entity (E
 `str()` or `repr()`. Both carry the blocked content, so handle them like the
 prompt itself. The other refusal messages are built from status codes,
 headers, category names and policy pattern names, never from the request.
+
+`ContentSafetyBlocked.provider` names the moderation provider that blocked the
+call, as a stable slug: `azure-content-safety`, `bedrock-guardrails`,
+`google-model-armor` or `crowdstrike-aidr`. `.categories` lists what it flagged
+(`["rai_dangerous"]`). The refusal's span carries the same two values as
+`donkey.policy.provider` and `donkey.policy.categories`
+([Telemetry](/telemetry#opentelemetry-genai-spans)).
 
 A traceback also prints every chained exception, and a framework's own error
 usually repeats the gateway's text. So when the SDK maps a framework error to
@@ -411,6 +482,9 @@ except openai.APIStatusError as e:
         print("blocked, entities:", governed.entities)
 ```
 
+A shape registered with [`classify.register()`](/custom-policies) comes back as
+its registered type here too.
+
 The blocking client from `donkey.llm.client(sync=True)` behaves identically here.
 Drop the `await`: it is the same OpenAI SDK raising the same
 `openai.APIStatusError`, and `classify()` reads the response the same way.
@@ -424,12 +498,17 @@ billed it. Every 4xx is terminal — **including a 429**: on this proxy a 429 is
 token-budget refusal (`TokenBudgetExceeded`) or a request-rate-limit refusal
 (`RequestRateLimitExceeded`), so retrying it would only burn the
 same already-exhausted window. `retry_after` is still surfaced for you to pace
-against, but the transport never silently retries it.
+against, but the transport never silently retries it. To wait out the reset,
+or to react to any other refusal, register a [refusal handler](/refusal-handlers)
+(`donkey.on(TokenBudgetExceeded).wait_for_reset(max_wait="45m")`). It is
+opt-in and bounded, and it re-sends only as a new governed request.
 
 In `jwt` mode the async client additionally refreshes the wallet JWT and
 retries **once** on a 401. In the default client-id mode the data-plane client
 holds no token, so a 401 is terminal, as it is on the blocking client, and
-surfaces immediately as `AuthError`. The Anypoint control-plane credential
+surfaces immediately as `AuthError`. A CIBA `401` (`GatewayApprovalPending`) is
+not a credential failure, but in `jwt` mode it still triggers that one refresh
+and re-send before it reaches you; the re-send just gets "pending" again. The Anypoint control-plane credential
 lives on a separate client: model calls never fetch, send or refresh it. See
 [What the SDK sends where](/reference/configuration#what-the-sdk-sends-where).
 
@@ -443,7 +522,21 @@ an auth provider falling through to the next one.
 Any content-moderation or federated-guardrail response that matches none of the
 discriminators above falls through to a generic `PolicyViolation` rather than an
 invented type. DDK only types a refusal by a discriminator it can identify
-reliably; everything else stays inspectable via `.response`.
+reliably; everything else stays inspectable via `.response`. The message says
+the shape is unconfirmed and names the status and any `x-llm-proxy-*` headers
+it carried.
+
+The CrowdStrike AIDR Guardrails policy is the one typed shape that has not been
+captured from a live gateway. No proxy running it is available yet, so DDK read
+its `x-llm-proxy-crowdstrike-aidr-*` headers and body from the policy's own
+source (`crowdstrike-aidr-guardrails-policy` 1.0.0) and types an AIDR `403` as
+`ContentSafetyBlocked(provider="crowdstrike-aidr")`. The
+[verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)
+records it at `VERIFIED (POLICY SOURCE)` until a live capture replaces it. If
+your proxy sends a different shape, the call falls through to a generic
+`PolicyViolation` here; please file an issue with its status and headers.
+Because the shape is built in, `classify.register()` refuses a rule that
+matches it.
 
 One `400` that used to land here is now typed: a bare model name (`gpt-5-mini`)
 sent to a model-based proxy with more than one provider. The gateway rejects it

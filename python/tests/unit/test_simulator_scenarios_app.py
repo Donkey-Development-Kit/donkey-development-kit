@@ -170,3 +170,21 @@ async def test_scenarios_apply_to_chat_completions() -> None:
     assert isinstance(classify(blocked), PromptInjectionBlocked)
     assert isinstance(classify(pii), PIIDetected)
     assert pii.headers[SIMULATOR_HEADER] == "true"
+
+
+async def test_budget_window_off_serves_the_success_as_captured() -> None:
+    # #322: a proxy with no llm-token-rate-limit policy sends no budget window,
+    # so the captured success is served without the synthesised prose header.
+    on = httpx.AsyncClient(transport=httpx.ASGITransport(app=build_app()), base_url="http://sim")
+    off = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=build_app(SimulatorConfig(budget_window=False))),
+        base_url="http://sim",
+    )
+    async with on, off:
+        with_window = await on.post("/v1/responses", json={"model": "gpt-5.1"})
+        without = await off.post("/v1/responses", json={"model": "gpt-5.1"})
+    assert with_window.status_code == without.status_code == 200
+    assert "x-llm-proxy-ratelimit" in with_window.headers
+    assert "x-llm-proxy-ratelimit" not in without.headers
+    assert not any(name.startswith("x-token-") for name in without.headers)
+    assert without.headers[SIMULATOR_HEADER] == "true"

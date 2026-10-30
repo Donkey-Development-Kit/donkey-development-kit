@@ -42,7 +42,8 @@ __all__ = ["Gateway", "RecordedRequest", "start_gateway"]
 # + uvicorn (the server). Both live in `[local]`, so the hint names that extra —
 # not `[test]`, which ships the fixture itself but not the server it drives.
 _LOCAL_EXTRA_HINT = (
-    "The `gateway` fixture needs the local simulator server extra "
+    "Server mode (the `gateway` fixture, `--donkey-mode server` or "
+    '`run_conformance(mode="server")`) needs the local simulator server extra '
     "(starlette + uvicorn). Install it with:\n"
     '    pip install "donkey-kit[local]"'
 )
@@ -147,7 +148,13 @@ class Gateway:
         single-use, so this builds a fresh simulator each call; the request log is
         left untouched (use :meth:`reset` to clear it)."""
         parsed = tuple(parse_scenario(s) if isinstance(s, str) else s for s in scenarios)
-        self._recorder.app = build_app(SimulatorConfig(scenarios=parsed))
+        self.configure(SimulatorConfig(scenarios=parsed))
+
+    def configure(self, config: SimulatorConfig | None = None) -> None:
+        """Swap in a fresh simulator built from ``config`` (the defaults when
+        ``None``), live: same port, same request log. :meth:`set_scenarios` is the
+        scenarios-only shorthand; this also takes the budget-window tunables."""
+        self._recorder.app = build_app(config)
 
     def reset(self) -> None:
         """Clear the recorded-request log (the running server is left alone)."""

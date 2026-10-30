@@ -5,7 +5,8 @@ matrix (``tests/conformance/``). Install ``donkey-kit[test]`` and run::
 
     pytest --donkey-conformance --donkey-agent=my_app.agent:build
 
-- :mod:`~donkey_kit.conformance.suite` — the four scenarios and their types.
+- :mod:`~donkey_kit.conformance.suite` — the four scenarios, their types, and
+  the two observation modes (``in-process``/``server``, #322).
 - :mod:`~donkey_kit.conformance.harness` — the observable ``Donkey`` the
   scenarios run against, plus :func:`run_conformance` for programmatic use.
 - :mod:`~donkey_kit.conformance.report` — the dependency-free status table.
@@ -28,9 +29,11 @@ from typing import TYPE_CHECKING, Any
 
 from .report import StatusCounts, count_statuses, render_report
 from .suite import (
+    MODES,
     PROBE_CORRELATION_ID,
     SCENARIO_NAMES,
     SCENARIOS,
+    Mode,
     Observation,
     Outcome,
     Result,
@@ -48,11 +51,13 @@ if TYPE_CHECKING:  # for type-checkers only; not imported at runtime module top
     )
 
 __all__ = [
+    "MODES",
     "PROBE_CORRELATION_ID",
     "SCENARIOS",
     "SCENARIO_NAMES",
     "ConformanceHarness",
     "ConformanceUsageError",
+    "Mode",
     "Observation",
     "Outcome",
     "Result",

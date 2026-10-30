@@ -1,7 +1,7 @@
 """Regression coverage for verification-blocked SDK surfaces (§0.3).
 
-CLI blocked commands are intentionally not duplicated here: ``status``,
-``publish`` and ``verify`` are covered by ``test_cli_blocked_commands.py``.
+CLI blocked commands are intentionally not duplicated here: ``status`` is
+covered by ``test_cli_blocked_commands.py``.
 The refused governance/provisioning stubs were deleted, not kept blocked (#730). When a surface is
 verified, remove its row here in the same change that records the VERIFIED date
 and source in ``docs/verified-apis.md``.
@@ -38,7 +38,7 @@ _SYNC_BLOCKED_SURFACES: tuple[tuple[str, Callable[[Donkey], object]], ...] = (
 )
 
 _ASYNC_BLOCKED_SURFACES: tuple[tuple[str, Callable[[Donkey], Awaitable[object]]], ...] = (
-    ("Donkey.tools.discover", lambda donkey: donkey.tools.discover()),
+    ("Donkey.tools.discover(locked=True)", lambda donkey: donkey.tools.discover(locked=True)),
     (
         "publish_if_changed",
         lambda donkey: publish_if_changed(_PUBLICATION, donkey),

@@ -3,8 +3,8 @@
 Status: Live. Shipped, and verified against a real governed gateway.
 
 Two on-ramps to the SDK: decorators that govern a function in one line, and a
-four-command CLI for setup, diagnosis, local simulation, and conformance
-testing.
+CLI for setup, diagnosis, local simulation, conformance testing, and scanning,
+publishing, verifying and exposing your agents and tools.
 
 ## Decorators
 
@@ -45,8 +45,38 @@ process-global registry you read with `registered_tools()`. Both `ToolSpec` and
 A tool with **no docstring is rejected at decoration time** (`ValueError`) — an
 undescribed tool is useless to a model and to a registry.
 
-The same markers are what the planned [scanner](https://docs.donkey-kit.dev/publishing.md) and
-[A2A](https://docs.donkey-kit.dev/a2a.md) agent-card generator read, so marking tools now carries forward.
+`@donkey.tool(approval="required", risk="financial")` gates the tool behind a
+human decision: a call raises `ApprovalRequired` instead of running, and
+`donkey.approvals.resolve(...)` runs it once someone approves. The approval is
+client-side and advisory. See [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md).
+
+`@donkey.tool(server="sku-manager")` attributes the tool to the MCP server it
+belongs to, by that server's **service ID**: lowercase kebab-case, recorded as
+`ToolSpec.server`. The ID is permanent once a service is registered, so it is
+always set by you and never inferred from a module path or function name. A
+tool without `server=` is reported as **unattributed**, not guessed. Anything
+else raises `ValueError` at decoration time.
+
+### `@donkey.agent`
+
+```python
+@donkey.agent(name="support-triage", skills=["triage", "draft-reply"])
+async def handle(task):
+    """Triage a support ticket and draft a reply for a human to send."""
+    ...
+```
+
+Marks an agent entry point, again **without changing how it's called**. It
+returns the same function with a `__donkey_agent__` marker and records an
+`AgentSpec` (name, qualname, docstring, skills, `is_async`) that you read with
+`registered_agents()`; both are exported from `donkey_kit`. `name` is the
+agent's service ID, with the same kebab-case rule as `server=`. The docstring is
+required, because it is the agent's description. A blank or repeated skill
+raises `ValueError`.
+
+[`donkey scan`](#donkey-scan) reads the `@donkey.tool` and `@donkey.agent`
+markers, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) generates its A2A agent card from the same
+`@donkey.agent` record, so the scan and the card can't drift.
 
 ## The CLI
 
@@ -58,14 +88,21 @@ pip install "donkey-kit[cli]"
 donkey init          # writes a commented .donkey-kit.toml, names every missing env var at once
 donkey doctor        # checks creds, reaches the gateway, reports budget state
 donkey mock          # the local simulator — --scenario scripts failures
+donkey dev my:agent  # serves an @donkey.agent behind a simulated A2A ingress
 donkey test          # a thin front end to pytest --donkey-conformance
+donkey scan          # finds your agents, tools and MCP servers, without running your code
+donkey publish       # registers them in Exchange; --dry-run prints the plan and sends nothing
+donkey verify        # checks published MCP servers and agents against their live side; reads only
+donkey preflight     # checks, read-only, that a service can be put behind its gateway
+donkey expose        # puts one MCP server or A2A agent behind an existing gateway
 ```
 
 ### Global flags
 
-Three global flags precede the subcommand:
+Four global flags precede the subcommand:
 
 ```bash
+donkey --version                  # print the donkey-kit version and exit
 donkey --config ./cfg.toml init   # write the generated config file to a non-default path
 donkey --config ./cfg.toml doctor # diagnose against this project config file
 donkey --env Sandbox init         # write this Anypoint environment into the generated file
@@ -79,19 +116,46 @@ local overlay, the named file, user config, then defaults. `--env` applies to
 `init` only; set `ANYPOINT_ENV` for `doctor`. Other commands reject these flags
 with exit `2` rather than silently ignore them.
 
+`--version` prints the version alone, such as `0.2.0`, and exits `0` without
+running a command. It prints the same plain line with `--json`, since it is not
+one of the [JSON documents](#json-output). The card version of `donkey dev` is
+its own flag, `--agent-version`.
+
 ### Exit codes
 
 Every command exits non-zero on failure, so any of them drops into CI as a
 preflight. A command that needs an optional extra (`donkey mock` → `[local]`,
 `donkey test` → `[test]`, `donkey doctor` → `[llm]`) prints the exact
-`pip install` line and exits `1` — never a stack trace. A command whose platform
-API is not verified yet exits `3` with `blocked on verification`, so a script can
-tell "blocked" from "failed".
+`pip install` line and exits `1` — never a stack trace. The one command still
+blocked, the hidden `donkey status`, exits `3` with `blocked on verification`,
+so a script can tell "blocked" from "failed".
 
 The CLI lives in the `donkey_kit.cli` package. Earlier releases also shipped
 hidden provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
 `generate`); they were removed with the refused provisioning control plane, and
 typer now rejects them as unknown commands (exit `2`).
+
+### JSON output
+
+Each document that `scan`, `publish`, `verify`, `preflight` and `expose` print
+with `--json` carries its own format key. A script reads the key before it reads
+the rest. The number goes up only when the shape changes in a way that breaks an
+existing reader:
+
+| Command | Format key | What it prints |
+|---|---|---|
+| `donkey scan` | `scan_format: 1` | The scan model. |
+| `donkey publish --dry-run` | `plan_format: 1` | The plan: the assets a publish would register, and the issues. |
+| `donkey publish` | `publish_format: 1` | The plan's assets, each with a `status` and a `detail`, and the issues. |
+| `donkey verify` | `verify_format: 1` | The plan's assets, each with a `status`, a `detail` and its `differences`, and the issues. |
+| `donkey preflight`, `donkey expose` | `expose_format: 1` | `ok`, `dry_run`, the `url`, one entry per step, and the issues. |
+
+A declaration issue still prints the document, so stdout is JSON whenever
+the command got as far as reading the declaration. Nothing is sent then. A
+`publish` or `verify` reports every asset `not_attempted`, an `expose`
+report has `ok: false` and no steps, and every document lists the issues.
+The issues also go to stderr, and the command exits `1`. A missing path or
+invalid config exits `2` with no document.
 
 ### Command reference
 
@@ -101,9 +165,20 @@ Global options go before the command (`donkey --json init`):
 
 | Option | Default | Meaning |
 |---|---|---|
+| `--version` | off | Print the donkey-kit version and exit. |
 | `--config` | none | Where `init` writes .donkey-kit.toml, or the project config file `doctor` reads. |
 | `--env` | none | Anypoint environment `init` writes (e.g. Sandbox). init only. |
 | `--json` | off | Emit machine-readable JSON where the command supports it. |
+
+`donkey dev`: Serve an agent over A2A behind a simulated gateway ingress.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `target` | none | The @donkey.agent handler, as module:attribute. |
+| `--port` | `8000` | TCP port to bind. |
+| `--host` | `127.0.0.1` | Host/interface to bind. |
+| `--agent-version` | `0.0.0` | The agent version the card advertises. |
+| `--scenario` | none | Inbound rejection rule, repeatable. e.g. 'pii_block:every=5', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
 
 `donkey doctor`: Diagnose governed access: config, credentials, gateway, model, budget.
 
@@ -111,6 +186,17 @@ Global options go before the command (`donkey --json init`):
 |---|---|---|
 | `--model` | `gpt-4o` | Model id to test against the proxy allow-list. |
 | `--json` | off | Emit machine-readable JSON. |
+
+`donkey expose`: Expose one MCP server or A2A agent through an existing gateway.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `service` | none | The service ID to expose; optional when the project has exactly one. |
+| `--path` | `.` | The repository (or one .py file) to scan. |
+| `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
+| `--target` | none | The gateway's name; overrides the declared target. |
+| `--dry-run` | off | Only read: print what would be created, and change nothing. |
+| `--json` | off | Emit the report as JSON. |
 
 `donkey init`: Bootstrap a commented `.donkey-kit.toml` from the resolved config.
 
@@ -124,13 +210,46 @@ Global options go before the command (`donkey --json init`):
 |---|---|---|
 | `--port` | `8080` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
-| `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
+| `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous', 'ciba:pending=2,then=approve'. |
+
+`donkey preflight`: Check, read-only, that a service can be exposed.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `service` | none | The service ID to expose; optional when the project has exactly one. |
+| `--path` | `.` | The repository (or one .py file) to scan. |
+| `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
+| `--target` | none | The gateway's name; overrides the declared target. |
+| `--json` | off | Emit the report as JSON. |
+
+`donkey publish`: Publish code-first assets to Exchange.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to publish. |
+| `--dry-run` | off | Print the assets and digests it would publish; no network call. |
+| `--if-changed` / `--always` | on | Skip an asset whose latest published version has the same digest. |
+| `--json` | off | Emit the plan, or what was published, as JSON. |
+
+`donkey scan`: Find @donkey.agent and @donkey.tool markers statically and report them.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--json` | off | Emit the canonical scan model as JSON. |
 
 `donkey test`: Run the conformance suite against your agent.
 
 | Option | Default | Meaning |
 |---|---|---|
 | `--agent` | none | Import path to your agent factory, e.g. my.pkg:make_agent. |
+
+`donkey verify`: Check published MCP servers and A2A agents against their live side, read-only.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to verify. |
+| `--json` | off | Emit the plan with each asset's outcome as JSON. |
 
 ### `donkey init`
 
@@ -255,6 +374,27 @@ programmatic entry point and the `0.0.0.0` caveat.
 
 An invalid `--scenario` exits with code `2`.
 
+### `donkey dev`
+
+Serves a `@donkey.agent` handler over A2A behind a simulated gateway ingress,
+which rejects inbound calls with the simulator's fixtures. Needs the `[a2a]`
+and `[local]` extras.
+
+```bash
+donkey dev my_agent:handle --port 8000 --scenario pii_block:every=5
+```
+
+`TARGET` is `module:attribute`, imported from the current directory. The
+ingress, the rules it takes and where its rejection shapes come from are in
+[Simulated ingress](https://docs.donkey-kit.dev/a2a.md#simulated-ingress). A target that can't be loaded or
+isn't marked with `@donkey.agent`, and an invalid `--scenario` (including
+`budget`), exit with code `2`.
+
+`--host` defaults to `127.0.0.1`. A host that isn't loopback, such as
+`0.0.0.0`, still binds, but `donkey dev` prints a warning on stderr. Nothing
+authenticates the caller, so anyone who can reach the port can call the agent.
+The ingress answers a request body over 4 MiB with a `413`.
+
 ### `donkey test`
 
 A thin front end to `pytest --donkey-conformance` — it does not re-implement the
@@ -264,18 +404,185 @@ straight through; pytest's exit code becomes `donkey test`'s own. Needs the
 
 ```bash
 donkey test --agent my.pkg:make_agent -k governance -x
+donkey test --agent my.pkg:make_agent --donkey-mode server   # over a real port; needs [local]
 ```
 
 See [Testing & conformance](https://docs.donkey-kit.dev/testing.md) for what the suite checks.
+
+### `donkey scan`
+
+Reads your repository's source and reports every `@donkey.agent`, every
+`@donkey.tool`, and the MCP servers those tools name with `server=`. The scan is
+**static**: it parses each `.py` file and never imports or runs it, so a module
+with side effects at import time is safe to scan. It needs no extra and no
+credentials, and it writes no file.
+
+```
+$ donkey scan .
+  agent  support-triage  (app/main.py:13)
+  mcp    sku-manager  (1 tool: lookup_sku)  streamable-http https://sku-manager.acme.com/mcp
+  unattributed  issue_refund  (set @donkey.tool(server=...))
+found 1 agent, 2 tools, 1 MCP server
+1 issue
+  app/main.py:9  tautological  tool issue_refund: description equals identifier 'issue_refund'
+```
+
+- A marker counts only when its receiver is a `Donkey`: the class imported from
+  `donkey_kit`, an instance built with `Donkey(...)` or `Donkey.from_env()`, or
+  such an instance imported from another module in the repository. Other
+  frameworks' `@mcp.tool()` decorators are ignored.
+- Decorator arguments are read only when they are **literals**.
+  `server=SERVER_ID` is reported as a `non-literal-argument` issue rather than
+  guessed.
+- A tool without `server=` is listed as **unattributed**. Scan never infers a
+  server from a module or function name.
+- How each MCP server is reached, its transport and endpoint, comes from a
+  `[donkey.mcp_servers.<id>]` table in `.donkey-kit.toml`, never from code. A
+  server without one is shown as `transport undeclared`, which is not an issue.
+  See [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
+- An agent's protocol and endpoint come the same way from a
+  `[donkey.agents.<name>]` table. See
+  [Declaring how an agent is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-agent-is-reached).
+- Issues cover a missing, tautological or too-short description, an invalid
+  service ID or skill list, a service ID used twice, two tools with the same
+  name on one server, a file that fails to parse, and an invalid
+  `[donkey.mcp_servers]` or `[donkey.agents]` declaration. `donkey scan` exits `1`
+  when it finds any of them, so it works as a CI gate, `0` when there are none,
+  and `2` when the path does not exist.
+
+`donkey scan --json` (or the global `donkey --json scan`) prints the model as
+canonical JSON: keys and entries are sorted and paths are relative, so the same
+code always gives the same bytes and a CI diff shows only real changes. The
+`digest` field hashes what would be published and leaves out file paths and
+line numbers, so moving code around does not change it.
+
+Scan is the first half of [Scan & publish](https://docs.donkey-kit.dev/publishing.md): the model it builds is
+the input `donkey publish` reads.
+
+### `donkey publish`
+
+```bash
+donkey publish --dry-run .   # the assets a publish would register; no network call
+donkey publish .             # publish the MCP servers and agents that changed
+```
+
+Registers each MCP server and agent that `donkey scan` finds as an Exchange
+asset, in the group and at the version declared in `[donkey.publication]`. An
+asset whose latest published version has the same digest is left unchanged;
+one changed without a version bump is refused before anything is published. It reads
+the `ANYPOINT_*` control-plane credentials.
+
+With `--json` it prints the publish document (`publish_format: 1`; with
+`--dry-run`, the plan, `plan_format: 1`). Each asset carries a `status` and a
+`detail`, also when the publish fails:
+
+| `status` | Meaning |
+|---|---|
+| `published` | A new version was published, or a rerun finished an `incomplete` one. |
+| `unchanged` | The latest version already has this digest, and its publish is complete. |
+| `incomplete` | The version is published, but its endpoint, page, or name and description were refused. A rerun finishes it. |
+| `failed` | Exchange refused the asset, and nothing was published for it. The detail ends with the fix. |
+| `not_attempted` | An earlier asset failed, or an issue stopped the publish, so this one was not tried. |
+
+It exits `0` when every asset is `published` or `unchanged`, `1` on an issue
+or when an asset is `failed` or `incomplete` (what was published before stays
+published), and `2` on a missing path, invalid config or missing credentials.
+See [Scan & publish](https://docs.donkey-kit.dev/publishing.md#when-a-publish-fails).
+
+### `donkey verify`
+
+```bash
+donkey verify .          # each published MCP server and A2A agent against its live side
+donkey --json verify .   # the same, with each asset's outcome as JSON
+```
+
+Runs [`Publication.verify()`](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify) on each
+MCP server and `a2a_v1` agent `donkey publish` would register, at the version
+declared in `[donkey.publication]`: the tools an MCP server's version was
+published with against the tools it lists through its gateway, and the card an
+agent's version was published with against the card it serves there. It writes
+nothing. Each asset is reported as `match`, `drift` (with each difference) or
+`error`; an agent with protocol `other` or none declared is `skipped`, since it
+has no card to compare. With `--json` it prints the verify document
+(`verify_format: 1`), where a declaration issue makes every asset
+`not_attempted`.
+
+It reads the `ANYPOINT_*` control-plane credentials for Exchange and the
+gateway credential (`DONKEY_LLM_PROXY_CLIENT_ID` and
+`DONKEY_LLM_PROXY_CLIENT_SECRET`) for the live side, and exits `0` when every
+verified asset matches, `1` on drift, a failed read or a declaration issue
+(nothing is read then), and `2` on a missing path, invalid config, or missing
+control-plane credentials or gateway credential. The CLI has no token
+provider, so in `jwt` or `bearer` mode it has no gateway credential: verify
+with `DONKEY_LLM_PROXY_AUTH=client-id`, or call `Publication.verify()` from
+code.
+Run it in CI after a deploy to catch a server that changed without a new
+published version.
+
+### `donkey expose`
+
+```bash
+donkey preflight sku-manager           # what expose would do; reads only
+donkey expose sku-manager --dry-run    # the same
+donkey expose sku-manager              # publish, create, add policies, deploy
+```
+
+Puts one MCP server or A2A agent behind a gateway that already exists, in the
+environment `ANYPOINT_ENV` (or `--env`) names. It runs one step at a time and
+prints one line per step:
+
+```
+  ✓ environment         present  Sandbox (…)
+  ✓ gateway             present  shared-omni-gateway, ingress port 8081
+  ✓ registry            created  sku-manager: published 1.0.0
+  ✓ instance            created  sku-manager (21262612), upstream https://sku.example.com/mcp
+  ✓ policy mcp-support  created  inbound mcp-support 1.1.1
+  ✓ deployment          created  applied on shared-omni-gateway
+MCP server sku-manager is exposed at https://<gateway>/sku-manager/
+```
+
+- **registry** publishes the service's Exchange asset, as `donkey publish`
+  does.
+- **instance** creates the API Manager instance for that version, labelled
+  with the service ID unless the declaration sets a `label`, and proxying to the
+  service's `endpoint` unless it sets an `upstream`.
+- **policy** adds each declared policy the instance lacks. Policies come only
+  from the declaration: there are no defaults.
+- **deployment** deploys the instance to the gateway and waits until the gateway
+  has applied it.
+
+What the run needs comes from the `[donkey.expose]` table in
+`.donkey-kit.toml`; see [A2A agents](https://docs.donkey-kit.dev/a2a.md) for the keys.
+
+The command adds what is missing and nothing else:
+
+- A re-run changes nothing that is there; each step reports `present`.
+- It never deletes, never edits a policy's configuration, and never moves an
+  instance to another gateway. Something that is there but differs from the
+  declaration, such as another upstream or a policy at another version, is
+  reported as `differs` and left alone, and the command exits `1`.
+- It never creates the environment or the gateway. A missing one is reported as
+  `missing`, with where to create it, and nothing else is tried.
+- A failed step is reported as `failed`, with what to do, and the steps after it
+  are `skipped`. A step that did not happen is never reported as done.
+
+`donkey preflight`, like `--dry-run`, makes only the reads and reports what
+would be created as `planned`. Run it in CI before a deploy: it exits `1` when
+the gateway, the environment or a connected-app scope is missing.
+
+Both exit `0` when every step is present, created or planned; `1` when a step
+is missing, differs or failed, or the declaration has an issue (nothing is
+sent then); and `2` on a missing path, invalid config or missing control-plane
+credentials. With `--json` both print the report (`expose_format: 1`), with
+the declaration's issues when it has any. The connected-app scopes they need are in
+[Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose).
 
 ## Planned commands Roadmap
 
 These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and are not available in the
 CLI yet:
 
-- `donkey scan` and `donkey publish` — derive a manifest and agent card from
-  your code and register them with Exchange. See [Scan & publish](https://docs.donkey-kit.dev/publishing.md).
-- `donkey serve`, `donkey expose`, and `donkey dev` — serve your agent over
-  A2A and expose it through the gateway. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
+- `donkey serve` — serve your agent over A2A from the command line. In code,
+  `donkey.serve()` does it today. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
   Run `donkey --help` to see the commands available in your installed version.

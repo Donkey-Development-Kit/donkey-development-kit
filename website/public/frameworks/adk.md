@@ -41,7 +41,9 @@ from donkey_kit.integrations.adk import model
 llm = model("gpt-4o")
 ```
 
-`llm` is a real `google.adk.models.lite_llm.LiteLlm` instance. The model string
+`llm` is a real `google.adk.models.lite_llm.LiteLlm` instance (a subclass that
+carries `donkey.last_call` to your callbacks; see
+[Native Gemini](#native-gemini)). The model string
 is prefixed with `openai/` before it reaches LiteLLM (`openai/gpt-4o`), which
 is the prefix LiteLLM's OpenAI-compatible route expects — you don't add it
 yourself.
@@ -98,6 +100,16 @@ async with Donkey.from_env() as donkey:
     llm = LiteLlm(model="openai/gpt-4o", **donkey.adk.connection_kwargs())
 ```
 
+To read `donkey.last_call` in an `after_model_callback` on `google-adk` 2.13
+and later, build it from `last_call_bridged(LiteLlm)` instead (see
+[Native Gemini](#native-gemini)):
+
+```python
+from donkey_kit.integrations.adk import last_call_bridged
+
+llm = last_call_bridged(LiteLlm)(model="openai/gpt-4o", **donkey.adk.connection_kwargs())
+```
+
 ## Manual equivalent
 
 ```python
@@ -145,17 +157,17 @@ from google.adk.models import Gemini
 
 async with Donkey.from_env() as donkey:
     # 1. Off a shared Donkey instance
-    llm = donkey.adk.gemini("gemini-2.5-flash")
+    llm = donkey.adk.gemini("gemini-3.8-flash")
 
     # 3. Governed kwargs, native constructor
-    llm = Gemini(model="gemini-2.5-flash", **donkey.adk.gemini_connection_kwargs())
+    llm = Gemini(model="gemini-3.8-flash", **donkey.adk.gemini_connection_kwargs())
 ```
 
 ```python
 # 2. Module-level factory
 from donkey_kit.integrations.adk import gemini
 
-llm = gemini("gemini-2.5-flash")
+llm = gemini("gemini-3.8-flash")
 ```
 
 **Pointing at the Gemini proxy.** `DONKEY_LLM_PROXY_URL` usually names a
@@ -165,7 +177,7 @@ proxy, and the URL must pass the
 [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https):
 
 ```python
-llm = donkey.adk.gemini("gemini-2.5-flash", base_url="https://…/ddk-gemini-inbound/")
+llm = donkey.adk.gemini("gemini-3.8-flash", base_url="https://…/ddk-gemini-inbound/")
 ```
 
 Any other keyword is passed to ADK's `Gemini` and overrides the governed
@@ -177,7 +189,7 @@ default — for example `retry_options`, or your own `client_kwargs`.
 from google.adk.models import Gemini
 
 llm = Gemini(
-    model="gemini-2.5-flash",
+    model="gemini-3.8-flash",
     base_url=...,  # the Format=Gemini proxy URL
     client_kwargs={
         "api_key": ...,  # a placeholder; google-genai requires one
@@ -192,8 +204,10 @@ llm = Gemini(
 )
 ```
 
-`client_kwargs` replaces ADK's default HTTP options wholesale, so all five
-`http_options` keys are passed together. `google-genai` requires an API key and
+All five `http_options` keys are passed together, because ADK builds its client
+from `client_kwargs`. The `base_url`, `api_version` and `headers` you set are
+kept, and ADK adds its own `x-goog-api-client` and `user-agent` tracking values
+to the headers. `google-genai` requires an API key and
 always sends it as `x-goog-api-key`; the gateway authenticates on the
 `client_id`/`client_secret` pair and ignores it.
 
@@ -208,7 +222,12 @@ populated.
 
 `last_call` is contextvar-scoped, and ADK's `Runner` makes the model call in a
 task of its own, so the caller of `runner.run_async(...)` reads `UNOBSERVED`.
-Read it in an `after_model_callback`, which runs in the same task as the call:
+Read it in an `after_model_callback`. Both `gemini()` and `model()` return a
+subclass of the ADK class that carries the record from the model call to the
+callback, including on `google-adk` 2.13 and later, which runs the model call in
+a copy of the agent's context. For a model you build yourself,
+`last_call_bridged(...)` returns that subclass of any ADK model class, your own
+subclass included:
 
 ```python
 from google.adk.agents import LlmAgent
@@ -220,13 +239,15 @@ def record_usage(callback_context, llm_response):
 
 agent = LlmAgent(
     name="assistant",
-    model=donkey.adk.gemini("gemini-2.5-flash"),
+    model=donkey.adk.gemini("gemini-3.8-flash"),
     after_model_callback=record_usage,
 )
 ```
 
-When streaming, the callback runs once per partial response; usage lands on the
-last one.
+When streaming, the callback runs once per partial response and once more for
+the complete response. The token counts land when the stream ends, so only the
+complete response's callback reads them. In the partial callbacks they are
+`None`.
 
 **Errors.** `google-genai` raises its own `google.genai.errors.APIError`
 (`ClientError` for a 4xx) and the SDK does not wrap it. The error's `.response`
@@ -254,7 +275,12 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   correlation ID bound by `donkey.run()` reaches every request.
 - **`donkey.last_call` is set in the context that made the call.** ADK's
   `Runner` calls the model in a task of its own, so read it in an
-  `after_model_callback` (see [Native Gemini](#native-gemini)). A cold read on
+  `after_model_callback` (see [Native Gemini](#native-gemini)). The factories'
+  models carry the record to that callback. A `LiteLlm` or `Gemini` you build
+  from `connection_kwargs()` or `gemini_connection_kwargs()` carries it only
+  when its class is `last_call_bridged(LiteLlm)` or `last_call_bridged(Gemini)`.
+  Built from the plain class, its callback reads `UNOBSERVED` on `google-adk`
+  2.13 and later. A cold read on
   a `Donkey` that resolved only ADK reports `UNOBSERVED`, and `OBSERVED` after
   a call, for `model()` as well as `gemini()`.
 - **Refusals on the `model()` path are typed inside `donkey.run()` and
@@ -267,6 +293,13 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   place, with LiteLLM's error on `framework_error`. Outside those scopes, and
   without `typed_refusals()`, you get LiteLLM's error unchanged; see the
   [ADK examples](https://docs.donkey-kit.dev/examples/adk.md).
+- **Approval-gated tools pause the run.** Add `approval_plugin()` from
+  `donkey_kit.integrations.adk` to the `App`'s `plugins`, and a
+  `@donkey.tool(approval="required")` call pauses with ADK's own tool
+  confirmation. `pending_approvals(events)` returns each paused call as an
+  `Approval`; resume the run on a user message whose parts are
+  `approve(...).native` or `reject(...).native`, the `types.Part` each helper
+  returns on the `Approval`. See [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-google-adk-app).
 - **`gemini()` needs the `adk` extra's minimum `google-adk`** (see
   [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)), the first release whose
   `Gemini` accepts `client_kwargs`. On an older
@@ -276,6 +309,11 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
 - The `adk` extra's `litellm` requirement is a floor, not a ceiling (see
   [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)) — pin your own upper
   bound if you need one.
+- The `adk` extra installs `litellm[mcp]`, not plain `litellm`. From litellm
+  1.106, any request that carries tools imports the `mcp` package, which plain
+  `litellm` does not install, so an agent with tools fails with "No module
+  named 'mcp'". If you install `litellm` yourself rather than through the
+  extra, install `litellm[mcp]`.
 
 See the [error taxonomy](https://docs.donkey-kit.dev/errors.md) for how proxy rejections surface through
 ADK's `LiteLlm` model, and [Native Gemini](#native-gemini) for `gemini()`.

@@ -3,9 +3,10 @@
 DDK is delivered in five phases. Each phase is a GitHub milestone with a clear
 goal; the progress bars and issue lists below are loaded from those milestones
 when you open the page. Phase 1 shipped as `donkey-kit` 0.1.0, and its
-stabilisation releases, 0.1.1, 0.1.2 and 0.1.3, followed. 0.1.3 is the current
-release on [PyPI](https://pypi.org/project/donkey-kit/), and Phase 2 comes
-next.
+stabilisation releases, 0.1.1, 0.1.2 and 0.1.3, followed. The newest release is
+the one on [PyPI](https://pypi.org/project/donkey-kit/), with its notes on the
+[release notes](https://docs.donkey-kit.dev/release-notes.md) page. The status pill on each phase below shows
+which one is in progress.
 
   Complete every issue in the milestone is closed ·{' '}
   In progress work has landed and more is open ·{' '}
@@ -148,7 +149,10 @@ reachable and typed, not to reproduce it:
 - Client-side policy enforcement — the gateway is the enforcement point.
 - Client-side semantic caching — DDK steers the gateway's semantic cache and
   reports hits, but never caches responses itself.
-- A provisioning control plane competing with API Manager or Terraform.
+- A provisioning control plane competing with API Manager or Terraform. The
+  one thing DDK creates is the gateway instance in front of your own agent
+  or MCP server (`donkey expose`); everything else stays with your platform's
+  infrastructure-as-code.
 - Re-implementations of Agent Scanners, Kill Switch or Trusted Agent Identity.
 - An approval UI or queue.
 - An evaluation framework.

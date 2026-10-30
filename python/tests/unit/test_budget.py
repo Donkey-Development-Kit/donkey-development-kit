@@ -11,8 +11,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
+import pytest
 
 from donkey_kit import Budget, Donkey
+from donkey_kit.core._window import Window, record
 from donkey_kit.core.budget import Budget as CoreBudget
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import DonkeyAsyncClient, DonkeyClient
@@ -198,6 +200,106 @@ def test_partial_prose_is_a_noop() -> None:
     assert b.remaining is None
     assert b.reset_at is None
     assert b.observed_at is None
+
+
+# --- an out-of-range reset is no signal, never a crash (#1444) -------------
+
+# A reset no ``datetime`` can hold.
+_HUGE_RESET_MS = [
+    "9" * 25,  # the issue's reproduction: past what a timedelta holds
+    "100000000000000000",  # fits a timedelta; reset_at lands past datetime.max
+    "1730000000000000",  # an epoch timestamp in microseconds, read as a ms delta
+]
+# A time until reset is never negative.
+_NEGATIVE_RESET_MS = ["-" + "9" * 25, "-5000", "-1"]
+_BAD_RESET_MS = _HUGE_RESET_MS + _NEGATIVE_RESET_MS
+# Not an int at all: parse_int already reads each as no value.
+_NOT_A_NUMBER = ["nan", "inf", "-inf", "1e400", "Infinity"]
+
+
+@pytest.mark.parametrize("raw", _BAD_RESET_MS + _NOT_A_NUMBER)
+@pytest.mark.parametrize(
+    ("limit", "remaining", "reset"),
+    [
+        ("x-token-limit", "x-token-remaining", "x-token-reset"),
+        ("x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset"),
+    ],
+    ids=["tokens", "requests"],
+)
+def test_an_out_of_range_numeric_reset_is_ignored(
+    raw: str, limit: str, remaining: str, reset: str
+) -> None:
+    """The counts still apply; only the reset is dropped."""
+    b = Budget()
+    b.observe(_resp(**{limit: "1000", remaining: "250", reset: raw}), now=_FIXED_NOW)
+    window = b if reset == "x-token-reset" else b.requests
+    assert (window.limit, window.remaining) == (1000, 250)
+    assert window.reset_at is None
+    assert window.observed_at == _FIXED_NOW
+
+
+@pytest.mark.parametrize("raw", _HUGE_RESET_MS)
+def test_an_out_of_range_prose_reset_is_ignored(raw: str) -> None:
+    """The prose regex takes unsigned digits, so only a huge value reaches the window."""
+    prose = f"Token rate limit: 42 tokens remaining of 100 limit. Reset in {raw}ms."
+    b = Budget()
+    b.observe(_resp(**{"x-llm-proxy-ratelimit": prose}), now=_FIXED_NOW)
+    assert (b.limit, b.remaining) == (100, 42)
+    assert b.reset_at is None
+
+
+@pytest.mark.parametrize("raw", _BAD_RESET_MS)
+def test_a_response_whose_only_signal_is_a_bad_reset_observes_nothing(raw: str) -> None:
+    b = Budget()
+    b.observe(_resp(**{"x-token-reset": raw, "x-ratelimit-reset": raw}), now=_FIXED_NOW)
+    assert b.observed_at is None
+    assert b.requests.observed_at is None
+
+
+def test_a_bad_reset_keeps_the_reset_already_observed() -> None:
+    """A field that fails to parse leaves that field as it was, as an absent one does."""
+    b = Budget()
+    b.observe(_resp(**{"x-token-limit": "1000", "x-token-reset": "60000"}), now=_FIXED_NOW)
+    later = _FIXED_NOW + timedelta(seconds=1)
+    b.observe(_resp(**{"x-token-remaining": "10", "x-token-reset": "9" * 25}), now=later)
+    assert b.remaining == 10
+    assert b.observed_at == later
+    assert b.reset_at == _FIXED_NOW + timedelta(milliseconds=60000)
+
+
+@pytest.mark.parametrize(
+    "reset_ms",
+    [float("nan"), float("inf"), float("-inf"), -0.5, 10**400, -(10**400)],
+    ids=["nan", "inf", "-inf", "negative", "huge", "-huge"],
+)
+def test_record_ignores_a_non_finite_or_out_of_range_reset(reset_ms: float) -> None:
+    """``record()`` is the guard every window shares, so it holds for any float a
+    parser hands it, including the ``inf`` a Go duration with 400 digits sums to."""
+    window = Window()
+    assert record(window, None, None, reset_ms, _FIXED_NOW) is False
+    assert window.observed_at is None
+    assert record(window, 5, None, reset_ms, _FIXED_NOW) is True
+    assert (window.limit, window.reset_at) == (5, None)
+
+
+@pytest.mark.parametrize(
+    ("limit", "remaining", "used"),
+    [(1, -(10**400), 1.0), (10**400, 0, 1.0), (10**400, 10**400, 0.0), (4, 10**400, 0.0)],
+    ids=["huge-negative-remaining", "huge-limit-spent", "huge-limit-unspent", "huge-remaining"],
+)
+def test_fraction_used_clamps_before_it_divides(limit: int, remaining: int, used: float) -> None:
+    window = Window()
+    window.limit, window.remaining = limit, remaining
+    assert window.fraction_used == used
+
+
+def test_record_still_takes_a_zero_and_the_latest_representable_reset() -> None:
+    window = Window()
+    record(window, None, None, 0, _FIXED_NOW)
+    assert window.reset_at == _FIXED_NOW
+    edge = (datetime.max.replace(tzinfo=timezone.utc) - _FIXED_NOW) // timedelta(milliseconds=1)
+    record(window, None, None, edge - 1000, _FIXED_NOW)
+    assert window.reset_at is not None and window.reset_at.year == 9999
 
 
 def test_observes_from_committed_pii_fixture() -> None:

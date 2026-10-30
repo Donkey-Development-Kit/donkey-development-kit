@@ -80,15 +80,19 @@ The jobs, grouped by what they protect:
   `llamaindex-transport`, `agents-strands-last-call`) cover tests that only
   mean something with that framework present.
 - **Promises made in the docs.** `benchmark` enforces the < 1 ms span overhead
-  (BG §1.6) and trends it across runs. `quickstart` and `langgraph-demo` run
-  the documented examples against the local simulator. `docs-llms-drift`
+  (BG §1.6) and trends it across runs. `quickstart`, `langgraph-demo` and
+  `openai-agents-demo` run the documented examples against the local simulator. `docs-llms-drift`
   regenerates `llms.txt` and fails on any diff. `docs-site` builds the site
-  and checks its internal links and anchors (#759).
+  and checks its internal links and anchors (#759). `action-self-test` dry-runs
+  the scan-and-publish action from the checkout on Linux, macOS and Windows
+  (#219). Like `docs-site`, it has a job-level path test (convention 8): its
+  steps no-op on a PR that leaves `action/**`, `python/src/**`,
+  `python/pyproject.toml` and `ci.yml` alone (#1442).
 - **Supply chain.** `pip-audit` audits a fresh resolve of the base install
   and of `.[all]` for known vulnerabilities, blocking (#757).
   `dependency-review` flags a PR that adds a vulnerable dependency or one
   under a GPL/AGPL licence, and runs on PRs only. `workflow-lint` runs
-  actionlint and zizmor over `.github/` (convention 7).
+  actionlint and zizmor over `.github/`, and zizmor over `action/` (convention 7).
 - **The gate itself.** `ci-ok` needs every other job and fails unless each one
   succeeded or was skipped. It is the one required status check (convention 2).
 
@@ -96,7 +100,7 @@ The jobs, grouped by what they protect:
 
 The nightly run resolves fresh against the newest upstream releases, with no
 constraints (ADR 0007 rule 4). `matrix` re-verifies the conformance-tested
-adapter (LangGraph) against §8 signatures, and `framework-legs` runs every
+adapters (LangGraph, the OpenAI Agents SDK) against the [`verified-apis.md` §8](verified-apis.md) signatures, and `framework-legs` runs every
 `ADAPTERS` entry (#748). `lowest-direct` installs base, the framework-free
 extras and each framework extra at their declared floors (`uv pip install
 --resolution lowest-direct`, Python 3.10), runs their suites, and fails a leg
@@ -116,7 +120,10 @@ issue once the nightly is green again.
 
 After every green nightly on `develop`, and on manual dispatch, this workflow
 reruns `python scripts/compile_constraints.py` on `develop` (#763,
-[ADR 0011](adr/0011-nightly-lock-refresh-pr.md)). When any file under
+[ADR 0011](adr/0011-nightly-lock-refresh-pr.md)). The script also moves the
+ruff-pre-commit `rev:` and the lint-imports hook's `import-linter` pin in
+`.pre-commit-config.yaml` to the new typecheck-and-lint lock, so a ruff release
+doesn't fail `tests/unit/test_noxfile.py` on the bump PR (#1206). When any file under
 `python/constraints/` changed, it regenerates the docs that restate the lock
 (`python scripts/generate_docs.py`, which writes the
 [framework version pages](framework-support.md), #1068) and the site's llms
@@ -482,7 +489,9 @@ exceptions are named in that test and in the noxfile's docstring:
   locally it installs pip-audit and audits the list itself.
   `dependency-review` is a single action with no checkout, and the dependency
   graph diff it reads exists only on GitHub, so its job calls no session. The
-  session of the same name only skips, saying so.
+  session of the same name only skips, saying so. `action-self-test` is the
+  same: its point is running the composite action (`uses: ./action`), which
+  only a runner can do, so its session skips too (#1442).
 - **The site's `npm ci`.** `docs-site` installs nothing through
   `CI_INSTALLS`: its session runs `npm ci` itself, under `--no-install` too,
   so the job keeps only its Node setup.
@@ -537,7 +546,8 @@ into a `run:` body. In place:
   `python/scripts/`, `python/src/donkey_kit/core/` and `python/tests/fixtures/`.
   The owners' review is required once the branch rules turn on
   "Require review from Code Owners".
-- `ci.yml`'s `workflow-lint` runs actionlint and zizmor over `.github/`.
+- `ci.yml`'s `workflow-lint` runs actionlint and zizmor over `.github/`, and zizmor
+  over `action/` (#219).
 - `tests/unit/test_workflow_supply_chain.py` fails on an unpinned `uses:`, a
   checkout that keeps the token, an OIDC or Pages grant outside the publish
   and deploy jobs, or a missing Dependabot, CODEOWNERS or binary-image rule.
@@ -572,7 +582,8 @@ The version is declared once, as `__version__` in
 `python/src/donkey_kit/__init__.py`; `pyproject.toml` reads it from there.
 Before either publish workflow uploads anything, its `test` job runs the suite
 at that commit, and its `build` job checks that every built dist carries the
-declared version (and, on `publish-pypi.yml`, that the tag equals
+declared version (and, on `publish-pypi.yml`, that a final Release's tagged
+commit is on `main`, checked before the build (#1442), that the tag equals
 `v<version>` and a final Release carries a final `X.Y.Z`), then installs the
 built wheel into a clean virtualenv and imports it. The upload generates PEP
 740 attestations. The acceptance run against the TestPyPI build is a listed
@@ -620,7 +631,7 @@ The same rules apply in every Donkey-Development-Kit repo:
 - A new `uses:` is pinned to the full commit SHA of a release, with the
   release's `# vX.Y.Z` as a trailing comment, and a new checkout sets
   `persist-credentials: false` (convention 7). Run `actionlint` and
-  `zizmor .github/` locally before pushing a workflow change; `workflow-lint`
+  `zizmor .github/ action/` locally before pushing a workflow change; `workflow-lint`
   runs both on the PR.
 - A change to which tests run where updates the test-surface table in
   [`CONTRIBUTING.md` §2](../CONTRIBUTING.md#2-testing-strategy).

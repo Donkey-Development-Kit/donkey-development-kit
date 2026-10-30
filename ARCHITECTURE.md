@@ -62,7 +62,9 @@ layer may import a higher one.**
 
 ```
 integrations/   per-framework adapters — return NATIVE framework objects, never wrappers
-      ↓         (langgraph · adk · strands · agent_framework · openai_agents · anthropic · crewai · llamaindex)
+      |         (langgraph · adk · strands · agent_framework · openai_agents · anthropic · crewai · llamaindex)
+a2a/            beside integrations, independent of it: the donkey.serve() listener over the official a2a-sdk (ADR 0014)
+      ↓
 tools/          MCP session management, tool discovery/filtering — resolves registry handles
       ↓
 registry/       Exchange discovery, typed governed-state assets
@@ -77,16 +79,21 @@ linear stack:
 
 - **The `donkey` CLI** lives in `donkey_kit/cli/` (console script
   `donkey = "donkey_kit.cli:main"`), one module per command: `init`, `doctor`,
-  `mock`, `test`. It is a front end over the library: it may import any layer,
-  and an import-linter contract forbids every library module from importing it
-  back, so typer (the `[cli]` extra) never reaches the base `import donkey_kit`
-  path. Three hidden commands, `status`, `publish` and `verify` (BG §2.5), are
-  `_verify.blocked` and exit 3.
-- **`donkey_kit.experimental`** re-exports the types that exist only for a
-  verification-blocked surface (`AssetRef`, `Publication`, `GovernanceCriteria`,
-  `STRICT`, `RegistryError`, …). They are importable, but they are not in
-  `donkey_kit.__all__` and carry no stability promise until their surface is
-  verified.
+  `mock`, `dev`, `test`, `scan`, `publish`, `verify` and `expose` (whose module
+  also registers `preflight`). It is a front end over the library: it may import
+  any layer, and an import-linter contract forbids every library module from
+  importing it back, so typer (the `[cli]` extra) never reaches the base
+  `import donkey_kit` path. One hidden command, `status`, is `_verify.blocked`
+  and exits 3.
+- **`donkey_kit.experimental`** re-exports the types outside the stable
+  namespace (`AssetRef`, `Publication`, `STRICT`, `RegistryError`, …). Most
+  serve a surface still blocked on verification, such as the lockfile or the
+  governed-state search join; the registry and tool-call types those surfaces
+  share have no settled tier yet. They are importable, but they are not in
+  `donkey_kit.__all__` and may change in any release (ADR 0006) until their
+  tier is settled. A name that moves up to `donkey_kit` keeps a deprecated
+  `experimental` alias (`GovernanceCriteria`, `ToolNotInProfile` and
+  `UngovernedMcpServer`, #1425).
 
 The refused declarative control plane (the old `provisioning/` package:
 specs, plan/diff/apply, drift, governance lint, and `governance.py`) is on the
@@ -96,6 +103,17 @@ commands (`validate`, `plan`, `apply`, `drift`, `lint`, `generate`) and its
 errors (`ProvisioningError`, `GovernanceDrift`, `PlatformTeamOnly`). The
 reasoning is ADR 0008 in [`docs/adr/`](docs/adr/) (legacy quarantine and the
 CLI's home, #730).
+
+**The provisioning boundary** ([ADR 0015](docs/adr/0015-provisioning-boundary.md),
+#319). The SDK never holds desired state. Its one write path to the control
+plane is `donkey expose` (BG §2.9.2, #226; `donkey_kit.registry.expose`): one
+API Manager instance in front of the developer's own A2A agent or MCP server,
+the policies declared for it, its registry entry and its deployment to an
+existing gateway. Creation is additive and idempotent by `instanceLabel`, with
+a dry run and no deletes; `donkey preflight` (#1279) makes only the reads. Gateways, targets, LLM proxies,
+org-wide policy, connected apps and scopes belong to the platform and its IaC:
+the SDK reads and reports them, never creates them. A second write path needs
+a new ADR.
 
 **The hard rule (the layered architecture):** `core/` has no dependency on any agent framework.
 Each `integrations/*` adapter may depend on exactly one framework, and nothing
@@ -117,8 +135,14 @@ bottom:
 cli                                 the `donkey` console script (#730)
 conformance → simulator → _testing  dev-only siblings
 donkey | experimental               experimental: non-first-class names (ADR 0008)
-integrations → tools → registry → llm → core
+integrations | a2a → tools → registry → llm → core
 ```
+
+`a2a` (`donkey.serve()`, BG §2.9.1, #224) sits beside `integrations`, not in
+it: it is the inbound A2A listener, not a framework adapter. It wraps the
+official `a2a-sdk` (the `[a2a]` extra). The layers contract lists the two as
+independent siblings (`integrations | a2a`), so neither may import the other
+(ADR 0014).
 
 It is `exhaustive`, so a new top-level module fails `lint-imports` until it is
 placed. Its one ignored import is `Donkey.simulate()`'s lazy import of
@@ -139,14 +163,50 @@ Beside it:
   allowlist twin is `test_core_depends_only_on_httpx_and_the_stdlib`
   (`tests/unit/test_architecture.py`): httpx and the stdlib backfills at module
   level, plus the optional `opentelemetry` lazily.
-- **core is layered too:** `runtime` → `transport` → `budget | cache |
-  cachecontrol | telemetry | toolspec` → `auth | correlation` → `config` →
-  `cost | endpoints | header_names | refusals` → `errors` → `_refusal_body |
-  lastcall | masking` → `_verify` → `_wire`.
+- **core is layered too:** `runtime` → `transport | approvals | inbound` → `budget | cache |
+  cachecontrol | identity | telemetry | toolspec` → `auth | correlation | spanflush` → `config` →
+  `classifier | cost | endpoints | header_names | reactions | refusals` →
+  `_policy_spec` → `runledger | step_up | tool_access` → `approval_types` → `errors` →
+  `_refusal_body | lastcall | masking` → `_verify` →
+  `_wire | _response | _budget_headers | _window`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
-  through it. `_refusal_body` holds the refusal-body parsers (`errors`' JSON
+  through it. `runledger` holds the run ledger (#613): `correlation` binds one per
+  `donkey.run()` block and the transport appends each call's `lastcall` record and
+  each typed refusal to it. `reactions` holds the `donkey.on(...)` refusal handlers (#208):
+  sans-IO, it decides each next step and the clients sleep and send.
+  `approvals` holds the `@donkey.tool(approval="required")` gate and the
+  `Approvals` registry each `Donkey` owns (#211, ADR 0018): it reads correlation, errors, identity and
+  telemetry, sits beside `transport`, and neither imports the other. A gated
+  call records on the registry `correlation` binds for the client's
+  `donkey.run()` / `donkey.as_user()` block, else on the client it was declared
+  on. `approval_types` holds the `Approval` value object and the approval
+  errors, below `step_up`, whose `GatewayApprovalDenied` is also an
+  `ApprovalError` (#1423). A resumed
+  tool's model calls go through the transport like any other, so an approval
+  never overrides a refusal. A resumed tool runs as its requester: `identity`
+  captures the user and attribution bound when the call was asked for, and
+  re-binds them on resume (#1416). Inside a LangGraph graph the gate pauses with `interrupt()` instead
+  (#212): `donkey.py` passes the LangGraph adapter's hook into `gate(natives=...)`,
+  so core still imports no framework.
+  `inbound` binds the run for one inbound A2A task (#225): it adopts the
+  caller's `X-Correlation-Id` or mints one, enters `run_scope`, and opens the
+  `donkey.a2a.task` span. It takes headers as a plain mapping, so it imports no
+  `a2a-sdk` or `starlette`; `a2a` calls it, and so could another inbound surface.
+  `spanflush` flushes the span providers on a kill (#220); it imports nothing
+  from core, so the transport reaches it without telemetry exposing its provider.
+  `_refusal_body` holds the refusal-body parsers (`errors`' JSON
   envelope and PII-span helpers), split out to keep `errors` under its size
-  ceiling. This contract is exhaustive too.
+  ceiling. `_budget_headers` holds `budget`'s header parsers and the
+  receive-time stamp the governed transports put on each response (#311), so
+  concurrent responses are ordered by arrival at the wire; it imports nothing
+  from core, and is split out to keep `budget` under the size budget. `classifier` holds the `classify.register()` registry (#210, ADR
+  0012) over `_policy_spec`, its match-spec checks; it fills a hook slot in
+  `errors`, so `errors` never imports it. `step_up` (#1320) holds the OAuth2
+  OBO policy's CIBA step-up types, which subclass `errors`' own, and fills a
+  second hook slot there the same way, ahead of the auth rule. `tool_access`
+  (#312) holds the MCP tool-access denial: `ToolNotInProfile`, a `PolicyViolation`
+  read from a JSON-RPC error rather than an HTTP response, so it fills no hook
+  slot. This contract is exhaustive too.
 
 Two rules the import graph can't express are tests in
 `tests/unit/test_architecture.py`:
@@ -319,7 +379,18 @@ request either plane sends passes the same origin check.
   is set in the environment. The check runs before a credential leaves on
   either plane: in `validated()` for model calls and the registry, before each
   control-plane token fetch, and before a `Donkey(auth=…)` provider's token is
-  requested.
+  requested. The `donkey.as_user()` token counts as set in code too, and is
+  checked against `llm_proxy_url` when the scope is built (#1439). A URL
+  derived from a configured endpoint is held to the rule of the endpoint it
+  came from (ADR 0019, #1479). Discovery reads the MCP and A2A gateway URLs
+  from the control plane at `base_url`. So before a discovered `ToolSet` lists
+  or binds, and before `Discovery.agent_card()` reads a card,
+  `tools.auth.check_gateway_endpoint` checks against `base_url` whatever is
+  about to go: the service's gateway credential (the
+  `llm_proxy_client_id`/`llm_proxy_client_secret` pair, weighed by its source;
+  the `llm_auth` token; or a `discover(auth=…)` credential, set in code) and,
+  inside a block, the `as_user()` token. A hand-built `ToolSet` has its URLs
+  in code and is not checked.
   Provenance stores a keyed digest of each loaded value (the key is random per
   process), so `asdict()` copies no secret and a config rebuilt in another
   process keeps its URL sources but treats its credentials as set in code. A
@@ -346,7 +417,7 @@ request either plane sends passes the same origin check.
   | --- | --- | --- |
   | `_inject_headers` | every attempt (an httpx request event hook, so every retry and redirect hop) | correlation, call-id, attribution, cache-control and opt-in cost-tag headers (`BG §1.7`); the plane's credentials, on checked endpoints only |
   | `_on_response` | once, on the final response (in `_finish()`) | `Budget` parse from `x-token-*` (`BG §1.3`); the `donkey.last_call` record (#362) |
-  | `_on_refusal` | once, when the final response is a policy refusal, with the `PolicyViolation` `classify()` made of it, after the span is recorded | typed-refusal reaction handlers (`BG §1.2`, #208); the default does nothing and the refusal is still returned. The typed-refusal bridge (`core/refusals.py`, #724) maps refusals at the framework boundary without it |
+  | `_on_refusal` | once, when the final response is a policy refusal, with the `PolicyViolation` `classify()` made of it, after the span is recorded | the `donkey.on(...)` refusal handlers (`BG §2.1`, #208, `core/reactions.py`): a reaction either lets the refusal propagate or sends a **new** governed request through `_governed_send` (new span and call id, same correlation id), never a success for the refused one (#209). With no handler registered it returns the refusal unchanged. The typed-refusal bridge (`core/refusals.py`, #724) maps refusals at the framework boundary without it |
   | `governed_transport.replace_inner()` | fixture seam | `simulate()` (#190) and the conformance harness (#191) swap a fixture in, only through the private `donkey_kit._testing` seam module (#719) (`BG §1.4`/`BG §1.5`). Each client's transport is a `GovernedTransport` (`GovernedSyncTransport` on the sync twin) that owns the inner transport; the constructors fold httpx's proxy mounts into it, so a swap covers every route and fails closed if a mount appears later (#801, #728) |
 
   There is no per-`send()` request hook: the old no-op `_on_request` was
@@ -422,9 +493,9 @@ is the single home for every value that the verification discipline says must be
 Anypoint sandbox before it can be trusted, and it offers exactly two mechanisms:
 
 - **`blocked("…")`** returns a `NotImplementedError("blocked on verification: …")`.
-  It is used where there is no defensible placeholder at all — e.g. the MCP-bridge
-  tool-discovery and the Exchange publication endpoints. The SDK raises
-  rather than guesses. **Do not replace a `blocked(...)` guard with a guess.**
+  It is used where there is no defensible placeholder at all — e.g. a
+  `Publication`'s descriptor derivation and the lockfile's resolution API. The
+  SDK raises rather than guesses. **Do not replace a `blocked(...)` guard with a guess.**
 - **`Unverified(...)`** placeholder constants hold a documented best-guess that is
   fully overridable via config/env, and emit a one-time `UnverifiedValueWarning`
   the first time they are read — so a value can be *used* without ever being
@@ -440,18 +511,33 @@ what is verified and the worklist of what is still blocked. Code outside
 `core/_verify.py` cites it (`docs/verified-apis.md §N`) and never restates a
 status or a date; `scripts/check_verification_claims.py` enforces that in CI.
 
+**A response shape no proxy can produce.** `classify()` may also type a gateway
+rejection shape read from the policy's own source, at `VERIFIED (POLICY SOURCE)`,
+when its ledger row names the source and version, its fixture says it is derived
+and not captured, and its remediation and docs say so too
+([ADR 0016](docs/adr/0016-policy-source-evidence-class.md)). That class types a
+shape only; it never lifts a `blocked(...)` guard or flips an `Unverified(...)`
+value.
+
 What is verified today: the LLM-proxy data plane (its base-URL shape — note there
 is **no `/v1`** — the `client_id`/`client_secret` request-header pair, streaming,
-and the live rejection shapes), the OAuth2 control-plane token path, and the
-CLI-plugin REST contract (from static analysis). Still blocked: Exchange→MCP tool
-discovery and Exchange publication (BG §2.5). The framework adapters are not
+and the live rejection shapes), the OAuth2 control-plane token path, the
+CLI-plugin REST contract (from static analysis), Exchange search and the
+publication of scanned MCP servers and agents with `donkey publish` and
+`donkey verify` (`docs/verified-apis.md` §7), MCP tool discovery and the
+`ToolSet` bindings through the governed gateway (`docs/verified-apis.md` §9),
+and the `as_user()` user-token header (`docs/verified-apis.md` §13). Still
+blocked: a `Publication`'s descriptor derivation (`preview()`, `export()`,
+BG §2.5), the lockfile (`donkey.tools.lock()`, `discover(locked=True)`,
+BG §2.7), the governed-state search filters (`search(governed=, environment=,
+domain=)`) and the hidden `donkey status`. The framework adapters are not
 blocked. They build their native object directly, and an adapter refuses with
 `blocked(...)` only when the installed framework version lacks the class or
-field it depends on. Their status, generated from the ledger's §8 rows (§8.4
-maps each factory to its row):
+field it depends on. Their status, generated from the ledger's §8 rows (the
+ledger's §8.4 maps each factory to its row):
 
 <!-- BEGIN GENERATED: framework-status-summary (edit docs/verified-apis.md §8, then run python/scripts/generate_docs.py) -->
-LangGraph is conformance-tested against the simulator in CI.
+LangGraph and OpenAI Agents SDK are conformance-tested against the simulator in CI.
 Each adapter factory's constructor row in §8 of the ledger reads **live-verified**.
 <!-- END GENERATED: framework-status-summary -->
 
@@ -465,7 +551,7 @@ the SDK's clearest value over raw HTTP. Two invariants govern the taxonomy in
 
 1. **A policy refusal is never retried.** `PolicyViolation` (and its subclasses —
    `TokenBudgetExceeded`, `RequestRateLimitExceeded`, `PIIDetected`,
-   `PromptInjectionBlocked`, `ContentSafetyBlocked`, `AgentKilled`) must be distinguishable from a transient error at the
+   `PromptInjectionBlocked`, `ContentSafetyBlocked`, `AgentKilled`, `GatewayApprovalDenied`) must be distinguishable from a transient error at the
    framework boundary, so a host framework never silently retries a governance
    refusal. The transport treats these as terminal
    (`test_429_is_terminal_but_5xx_still_retries` and
@@ -496,6 +582,8 @@ flowchart TD
   sig -->|"nested error code<br/>agent_killed"| AgentKilled
   sig -->|"x-llm-proxy-*-action:<br/>reject"| ContentSafetyBlocked
   sig -->|"top-level matched_patterns,<br/>or x-injection-protection: blocked"| PromptInjectionBlocked
+  sig -->|"401 + flat error<br/>authorization_pending"| GatewayApprovalPending
+  sig -->|"403 + flat error<br/>access_denied"| GatewayApprovalDenied
   sig -->|none| status{"status?"}
 
   status -->|"401, or 403 with<br/>www-authenticate"| AuthError
@@ -503,6 +591,7 @@ flowchart TD
   r429 -->|yes| RequestRateLimitExceeded
   r429 -->|"no (empty body, x-token-* headers)"| TokenBudgetExceeded
   status -->|"any other 4xx"| c4xx{"body?"}
+  c4xx -->|"a classify.register() shape<br/>(checked first, #210)"| Registered["your registered type"]
   c4xx -->|"nested provider error object"| UpstreamRequestError
   c4xx -->|"flat error: not in the known<br/>unique model map"| ModelNotRoutable
   c4xx -->|"anything else, incl. a 403<br/>without www-authenticate"| PV["PolicyViolation<br/>(policy=unknown, shape unconfirmed)"]
@@ -511,8 +600,8 @@ flowchart TD
 
   classDef refusal fill:#fde2e2,stroke:#c0392b,color:#000
   classDef other fill:#e8f0fe,stroke:#3367d6,color:#000
-  class PIIDetected,AgentKilled,ContentSafetyBlocked,PromptInjectionBlocked,RequestRateLimitExceeded,TokenBudgetExceeded,PV refusal
-  class AuthError,UpstreamRequestError,ModelNotRoutable,UpstreamModelError,DonkeyError other
+  class PIIDetected,AgentKilled,GatewayApprovalDenied,ContentSafetyBlocked,PromptInjectionBlocked,RequestRateLimitExceeded,TokenBudgetExceeded,PV,Registered refusal
+  class AuthError,GatewayApprovalPending,UpstreamRequestError,ModelNotRoutable,UpstreamModelError,DonkeyError other
 ```
 
 Red marks a policy refusal (a `PolicyViolation`, never retried); blue is
@@ -525,6 +614,19 @@ everything else. The captures established, for example, that:
 - An **Agent Kill Switch** block is a **403** whose nested error carries
   `code: "agent_killed"` (no `type`, no `www-authenticate`) → `AgentKilled`
   (#694). It is keyed on the body `code`, ahead of the auth and generic-4xx rules.
+  It also stops the agent (#220): the transport hands it to the `Budget`,
+  which latches it, so `pace()` and `wait_for_reset()` raise it and any
+  sibling task asleep in `wait_for_reset()` wakes and raises it. With
+  telemetry on, the transport then force-flushes the span providers
+  (`core/spanflush.py`, bounded at 2s per provider) before the response
+  returns, so the kill's span is exported before the agent exits.
+- An **OAuth2 OBO CIBA step-up** answer is a **401** (`error: "authorization_pending"`,
+  with `retry-after`) while the user hasn't approved the call on their device,
+  and a **403** (`error: "access_denied"`) once they deny it. Neither carries
+  `www-authenticate`, and the credential was accepted, so both are decided ahead
+  of the auth rule: `GatewayApprovalPending` (not a refusal; the same request
+  succeeds after approval) and `GatewayApprovalDenied` (a `PolicyViolation`).
+  The types live in `core/step_up.py` (#1320).
 - A **content-safety / guardrail** block (Azure Content Safety, Amazon Bedrock
   Guardrails) is a **403** with a vendor `x-llm-proxy-<vendor>-…-action: reject`
   header → `ContentSafetyBlocked`, its flagged categories parsed from the sibling
@@ -558,6 +660,16 @@ a generic `PolicyViolation` (`policy="unknown"`) whose message *says so* rather
 than pretending to a precision the captures don't yet support — the same
 verification-discipline honesty as the verification ledger. All errors subclass `DonkeyError`, which carries the
 correlation/request IDs and the raw response for inspection.
+
+**A customer's own policy shape is registered, not captured (#210, ADR 0012).**
+A custom (PDK) policy sends a shape no capture of ours can contain.
+`classify.register(match=..., raises=...)` in `core/classifier.py` maps it to a
+`PolicyViolation` subclass the customer defines. `classify()` tries the
+registry after every built-in policy rule and before the upstream-envelope and
+unconfirmed fall-through rules, and `register()` rejects any spec a built-in
+rule would claim, so the fixture-driven rules above always win. The registry is
+process-wide, because `classify()` also runs where no `Donkey` exists, and a
+registered type's slug is recorded verbatim as `donkey.policy.type`.
 
 **Typed refusals cross the framework boundary in one place (#724, ADR 0002).**
 A framework's client re-wraps what the transport raised: the OpenAI and
@@ -610,11 +722,11 @@ Not every framework gets the same CI guarantee, and the roster is deliberately
 scoped rather than exhaustive. The former Tier 1 / Tier 2 split is **retired**
 along with the eight-adapter roster (#197):
 
-- **Deep — conformance-tested against the simulator:** LangGraph, and only
-  LangGraph (alongside the raw client). Held to the conformance suite; the
-  `ADAPTERS` registry marks it `conformance_tested=True`.
+- **Deep — conformance-tested against the simulator:** LangGraph and the
+  OpenAI Agents SDK (alongside the raw client). Held to the conformance suite;
+  the `ADAPTERS` registry marks them `conformance_tested=True`.
 - **Supported at `connection_kwargs()`:** Google ADK, Strands, Microsoft Agent
-  Framework, OpenAI Agents SDK, Anthropic SDK, CrewAI, LlamaIndex. None is
+  Framework, Anthropic SDK, CrewAI, LlamaIndex. None is
   conformance-tested, and none is carried in the nightly framework matrix — a
   demoted framework returns with its own conformance run when demand justifies it.
 - **Out of scope:** AutoGen and Semantic Kernel — Microsoft positions Agent
@@ -626,9 +738,14 @@ constructor is in [Verification discipline](#verification-discipline) above,
 generated from §8.
 
 This makes `connection_kwargs()` *more* load-bearing, not less: it is the
-entire supported surface for seven of the eight. A second framework is
-promoted to deep support from demand evidence, one at a time — never guessed
-up front. The demotion landed in #197; deepening LangGraph is tracked in #198.
+entire supported surface for six of the eight. A framework is promoted to deep
+support from demand evidence, one at a time — never guessed up front. The
+demotion landed in #197 and deepening LangGraph in #198; the OpenAI Agents SDK
+was promoted second, on Phase 1 demand (#223), and the next promotion is #244.
+It records no asserted exemption: an approval-gated `@donkey.tool` wrapped by
+`openai_agents.function_tool` sets the SDK's own `needs_approval`, so
+`Runner.run` pauses into `RunState` interruptions, and `approve` / `reject`
+record the decision before the run resumes (#213).
 
 **Conformance is how "supported" is proven, not asserted.** One suite
 (`python/tests/conformance/suite.py`) runs identically against every adapter. A
@@ -653,8 +770,19 @@ keeps the table and each adapter's `AdapterCapabilities` equal:
 `typed_refusal_bridged` when `typed_refusals` is false, and `jwt_token_refreshed`
 when `transport` is `"framework"`.
 
+The four tool-binding scenarios (`single_tool_call`, `multi_tool_multi_server`,
+`tool_filtering`, #991, and `tool_access_denied_typed`, #312) run every
+`ToolSet` binding against two local MCP servers
+(`tests/conformance/test_tool_binding.py`). They record two exemptions that are
+not about the transport, both for the whole-server bindings (ADK, Strands, the
+OpenAI Agents SDK, Agent Framework, CrewAI). Those bindings cannot rename one
+tool, so `multi_tool_multi_server` is asserted as a `ConfigError` refusal for
+them. They also leave each tool call to the framework, so the gateway's
+tool-access denial never reaches the SDK as `ToolNotInProfile`, and
+`tool_access_denied_typed` records what each framework does with it instead.
+
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
-matrix shrinks to LangGraph, and the deliverable becomes the **customer-facing
+matrix shrinks to the deep adapters, and the deliverable becomes the **customer-facing
 pytest plugin** users run against their own agent (#191).
 
 ---

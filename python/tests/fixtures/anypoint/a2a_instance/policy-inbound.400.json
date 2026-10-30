@@ -1,0 +1,4 @@
+{
+  "name": "PolicyValidationError",
+  "message": "This policy can not be applied as inbound"
+}

@@ -23,6 +23,8 @@ introduced the policy) — no longer left open as "no URL recorded" (#253):
 | LLM Token Rate Limit (row 1) | https://docs.mulesoft.com/gateway/latest/policies-included-llm-token-rate-limit | v1.11.0 |
 | Azure Content Safety (row 8) | https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety | v1.13.0 |
 | Amazon Bedrock Guardrails (row 8, sibling) | https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails | v1.13.0 |
+| Google Model Armor Guardrails (row 8, sibling) | https://docs.mulesoft.com/gateway/latest/policies-included-google-model-armor-guardrails | v1.14.0 |
+| CrowdStrike AIDR Guardrails (row 8, sibling; derived from the policy source, see below) | https://docs.mulesoft.com/gateway/latest/policies-included-crowdstrike-aidr-guardrails | v1.14.0 |
 
 **Live-capture status (#253, 2026-09-22):** rows 7 and 8 were re-confirmed
 against the deployed provisioning proxies — `ddk-injection-guard` (Regex Prompt
@@ -37,8 +39,8 @@ shared-omni-gateway) — a `400` carrying a real **79-byte** body,
 `{"message":"Injection attack detected - Rule: 'SQL Injection', Location: Body"}`,
 replacing the honest empty placeholder. Row 4 (the content-moderation
 fall-through) stays documented-only: no policy proxy produces an
-"unrecognised refusal" on demand, so its bytes remain an honest placeholder,
-and it is the sole residual keeping #253 open.
+"unrecognised refusal" on demand, so its bytes remain an honest placeholder.
+It has no known contract by design (#184), and #253 closed without it.
 
 **Bedrock Guardrails sibling (#568, 2026-09-24):** row 8's second vendor was
 live-captured against `ddk-bedrock-guardrails` — a `403` carrying
@@ -52,6 +54,40 @@ This sibling is a **classify()-contract fixture only** — it is *not* wired int
 vendor `…-action: reject` header family), so, unlike every served fixture, it is
 deliberately **absent from `fixtures.lock`**; the contract test's assertions
 guard its bytes instead.
+
+**Google Model Armor sibling (#1178, 2026-10-19):** row 8's third vendor was
+live-captured against `ddk-google-model-armor` (OpenAI ingress, Gemini upstream,
+instance 21244069, shared-omni-gateway) — a request-phase `403` carrying
+`x-llm-proxy-model-armor-action: reject` / `-phase: request` /
+`-reason: rai_harassment,rai_dangerous,pi_and_jailbreak` and a byte-faithful
+116-byte `{"error":"Content blocked by Google Model Armor","categories":[…]}`
+body. It lives as `reject.content-safety-model-armor.{headers.txt,body.json}`,
+asserted by `test_row8_google_model_armor_variant_is_content_safety_blocked`, and
+like the Bedrock sibling is a classify()-contract fixture only, absent from
+`fixtures.lock`. The policy's fail-closed `503` (Model Armor or the OAuth token
+call failed) sends the same `action: reject` header; it is typed from the policy
+source as the retryable 5xx (row 6), not row 8, and is not captured.
+
+**CrowdStrike AIDR sibling — VERIFIED (POLICY SOURCE) (#1176, #1429, ADR 0016):**
+row 8's fourth vendor is **derived from the policy source, not captured**. No
+DDK proxy runs the CrowdStrike AIDR Guardrails policy, because it needs a
+CrowdStrike AIDR for Agents subscription; the live capture stays open as #1184.
+The source is `crowdstrike-aidr-guardrails-policy` 1.0.0, read 2026-10-20, for
+the header names and the body; the public policy page (v1.14.0) documents the
+`403` reject and the fail-closed `503`. A block is a `403` carrying
+`x-llm-proxy-crowdstrike-aidr-action: reject` / `-phase: request|response` /
+`-reason: <detectors, comma-joined>` and a
+`{"detectors":[…],"error":"Content blocked by CrowdStrike Falcon AIDR","message":…}`
+body (keys in the policy's serialisation order; `message` is AIDR's summary, empty
+when AIDR gives none, as in the fixture). These bytes were written from that
+source, not recorded off a gateway. They live as
+`reject.content-safety-crowdstrike-aidr.{headers.txt,body.json}`, asserted by
+`test_row8_crowdstrike_aidr_variant_is_content_safety_blocked`. Like the
+Bedrock and Model Armor siblings, this is a classify()-contract fixture only:
+the simulator does not serve it, so it is absent from `fixtures.lock`, which
+covers served files. #1184 replaces it with a capture. Its fail-closed `503`
+also sends `action: reject` (reason `auth_failed`, `timeout`, `indeterminate`,
+…) and is typed as row 6.
 
 **Agent Kill Switch capture (#694, 2026-09-29):** row 9 was live-captured
 against `ddk-agent-kill-switch` (DDK / Sandbox, API instance 21206201,
@@ -71,11 +107,11 @@ capture (the JWT was a request header, never written to disk).
 | 1 | Token rate limit | `../anypoint/llm_proxy/reject.token-rate-limit.{headers.txt,body.empty}` | `TokenBudgetExceeded` | 429 + `x-token-limit`/`-remaining`/`-reset`, empty body | LIVE, 2026-08-28 (`llm-token-rate-limit` 1.0.2) |
 | 2 | PII detection | `../anypoint/llm_proxy/reject.pii-detected.{headers.txt,body.json}` | `PIIDetected` | nested `error.type == "pii_detected"`, no `www-authenticate` | LIVE, 2026-08-28 (`llm-pii-detection-policy` 1.0.0) |
 | 3 | Injection protection | `reject.injection-protection.{headers.txt,body.json}` | `PromptInjectionBlocked` | header `x-injection-protection: blocked` (not status) | **VERIFIED (LIVE), 2026-09-27 (#669)** — real 79-byte body captured against `ddk-injection-protection` (instance 21200898). [Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection) (v1.12.0). |
-| 4 | Content moderation / federated guardrails | `reject.content-moderation.{headers.txt,body.empty}` | generic `PolicyViolation` | falls through (no nested error, no injection/guard/safety discriminator) | **UNDER-DOCUMENTED** — minimal 4xx proving the fall-through stays generic. Blocked on #253. |
+| 4 | Content moderation / federated guardrails | `reject.content-moderation.{headers.txt,body.empty}` | generic `PolicyViolation` | falls through (no nested error, no injection/guard/safety discriminator) | **UNDER-DOCUMENTED** — minimal 4xx proving the fall-through stays generic. No known contract by design (#184); federated-guardrail verdicts are tracked in #305. |
 | 5 | Upstream provider 4xx | `../anypoint/llm_proxy/reject.model-not-found.body.json` | `UpstreamRequestError` | non-429 4xx, nested `error` with `code`/`type`/`param` | LIVE, 2026-08-28 (OpenAI passthrough) |
 | 6 | Upstream 5xx | `reject.upstream-5xx.{headers.txt,body.empty}` | `UpstreamModelError` (retryable) | 5xx status range (no competing discriminator) | **SYNTHETIC** — status-range classification only; no live capture, no invented body. |
 | 7 | Regex Prompt Guard | `reject.regex-prompt-guard.{headers.txt,body.json}` | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | 403 + top-level `matched_patterns` list (flat-string `error`) | **VERIFIED (LIVE), 2026-09-22 (#253)** — body matches the live capture byte-for-byte against `ddk-injection-guard` (instance 21179713). [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4). |
-| 8 | Content safety / guardrails | `reject.content-safety.{headers.txt,body.json}` (Azure); `reject.content-safety-bedrock.{headers.txt,body.json}` (Bedrock sibling) | `ContentSafetyBlocked` (parses `categories`) | 403 + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails) | **VERIFIED (LIVE)** — Azure 2026-09-22 (#253): discriminator headers + body shape confirmed against `ddk-azure-content-safety` (instance 21180957), `.body.json`/`-reason` hold a live-captured set (`severity_hate,severity_violence`; categories are prompt-dependent). Bedrock Guardrails 2026-09-24 (#568): same `…-action: reject` family confirmed against `ddk-bedrock-guardrails` (`content_filter`). [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0). |
+| 8 | Content safety / guardrails | `reject.content-safety.{headers.txt,body.json}` (Azure); `reject.content-safety-bedrock.{headers.txt,body.json}` (Bedrock sibling); `reject.content-safety-model-armor.{headers.txt,body.json}` (Model Armor sibling); `reject.content-safety-crowdstrike-aidr.{headers.txt,body.json}` (CrowdStrike AIDR sibling, derived, not captured) | `ContentSafetyBlocked` (parses `categories`) | 403 + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR) | **VERIFIED (LIVE)** for Azure, Bedrock and Model Armor; CrowdStrike AIDR is **VERIFIED (POLICY SOURCE)**, from `crowdstrike-aidr-guardrails-policy` 1.0.0 (see above; capture #1184) — Azure 2026-09-22 (#253): discriminator headers + body shape confirmed against `ddk-azure-content-safety` (instance 21180957), `.body.json`/`-reason` hold a live-captured set (`severity_hate,severity_violence`; categories are prompt-dependent). Bedrock Guardrails 2026-09-24 (#568): same `…-action: reject` family confirmed against `ddk-bedrock-guardrails` (`content_filter`). Google Model Armor 2026-10-19 (#1178): same family confirmed against `ddk-google-model-armor` (`rai_harassment,rai_dangerous,pi_and_jailbreak`). [Azure Content Safety policy](https://docs.mulesoft.com/gateway/latest/policies-included-azure-content-safety) (v1.13.0); [Amazon Bedrock Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-bedrock-guardrails) (v1.13.0); [Google Model Armor Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-google-model-armor-guardrails) (v1.14.0); [CrowdStrike AIDR Guardrails policy](https://docs.mulesoft.com/gateway/latest/policies-included-crowdstrike-aidr-guardrails) (v1.14.0). |
 | 9 | Agent Kill Switch | `reject.agent-killed.{headers.txt,body.json}` | `AgentKilled` (`policy="agent-kill-switch"`) | nested `error.code == "agent_killed"` (no `type`, no `www-authenticate`) | **VERIFIED (LIVE), 2026-09-29 (#694)** — captured against `ddk-agent-kill-switch` (instance 21206201) with a quarantined agent's JWT. |
 | 10 | Request rate limit | `../anypoint/request_rate_limit/reject.request-rate-limit.{headers.txt,body.json}` | `RequestRateLimitExceeded` (`policy="request-rate-limit"`) | 429 + unsuffixed `x-ratelimit-limit`/`-remaining`, no `x-token-limit` (body `{"error":"Too Many Requests"}`) | **VERIFIED (LIVE), 2026-10-07 (#974)** — captured against `ddk-request-rate-limit` (instance 21188400, stock `rate-limiting` 1.5.1, `exposeHeaders: true`). With `exposeHeaders: false` the headers are absent; that shape is not captured and classifies as row 1. |
 
@@ -86,7 +122,9 @@ not (yet) live-captured; its body is a zero-byte `.body.empty` placeholder —
 the honest "shape unknown" marker, never a guessed body. Row 6 (upstream 5xx)
 is synthetic by design (status-range classification only), not pending capture.
 
-Rows 3, 7, and 8 (#289, #669) also live here and are now **VERIFIED (LIVE)**:
+Rows 3, 7, and 8 (#289, #669) also live here and are now **VERIFIED (LIVE)**
+(row 8's CrowdStrike AIDR sibling excepted: it is derived from the policy
+source, above):
 their discriminators (the `x-injection-protection: blocked` header, the
 `matched_patterns` list, the vendor `…-action: reject` header) were confirmed
 against the deployed provisioning proxies — Injection Protection on 2026-09-27
@@ -105,6 +143,17 @@ row 3's discriminator is the header alone, so its body is carried on
 Client-ID enforcement (401 + `www-authenticate` → `AuthError`) is a separate
 **consumer-auth** case, deliberately **not** one of the ten policy-rejection
 rows.
+
+The OAuth2 OBO Credential Injection policy's two **CIBA step-up answers**
+(#1320) live here too, also outside the ten rows: `reject.ciba-pending.*` (`401`,
+`retry-after: 5`, flat-string `error: "authorization_pending"`, no
+`www-authenticate` → `GatewayApprovalPending`) and `reject.ciba-denied.*`
+(`403`, flat-string `error: "access_denied"` → `GatewayApprovalDenied`). Both are
+**VERIFIED (LIVE), 2026-10-28**: captured on an A2A `message/send` to the
+Cumulus Bank `trusted-agent-id-core-banking-agent` instance (20825039, OBO
+`1.1.3`, provisioning #96), bodies byte-faithful, no token written to disk. The
+`retry-after` value is the capture's (the policy's 3s poll interval plus its 2s
+buffer), which is why `replay_headers()` keeps that header.
 
 ## Which headers each `.headers.txt` records (#670)
 

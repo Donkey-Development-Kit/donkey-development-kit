@@ -104,6 +104,8 @@ is the framework's own runtime.
 
 ## Where to go next
 
+- [Support triage with the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md)
+  — the same job on the second deep adapter, through `Runner.run`.
 - [Nightly batch](https://docs.donkey-kit.dev/scenarios/nightly-batch.md) — the same governance, applied to an
   unattended overnight job that paces itself against a budget window.
 - [Typed refusals](https://docs.donkey-kit.dev/errors.md) — the full exception taxonomy the block above lands

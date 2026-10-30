@@ -24,6 +24,7 @@ for example
 ## Which version you have
 
 ```bash
+donkey --version                   # with the [cli] extra
 python -c "import donkey_kit; print(donkey_kit.__version__)"
 pip index versions donkey-kit      # the versions published on PyPI
 ```

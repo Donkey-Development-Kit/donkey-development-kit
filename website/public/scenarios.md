@@ -11,7 +11,7 @@ terminal before it ever runs on a customer's data.
 
 | Scenario | The job | What it exercises |
 | --- | --- | --- |
-| [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) | Draft replies to a queue of support tickets; one carries PII | Typed refusals ([`PIIDetected`](https://docs.donkey-kit.dev/errors.md)), [correlation IDs](https://docs.donkey-kit.dev/telemetry.md), [OTel spans](https://docs.donkey-kit.dev/telemetry.md) — the shipped LangGraph demo, end to end |
+| [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) | Draft replies to a queue of support tickets; one carries PII | Typed refusals ([`PIIDetected`](https://docs.donkey-kit.dev/errors.md)), [correlation IDs](https://docs.donkey-kit.dev/telemetry.md), [OTel spans](https://docs.donkey-kit.dev/telemetry.md) — the shipped LangGraph demo, end to end, and the same job [on the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md) |
 | [Nightly batch](https://docs.donkey-kit.dev/scenarios/nightly-batch.md) | Enrich 50,000 records overnight against a windowed budget, unattended | [Budget pacing](https://docs.donkey-kit.dev/budget.md) (`pace()` / `wait_for_reset()`) and resume, driven by the [simulator's `budget` scenario](https://docs.donkey-kit.dev/simulator.md#scenario-scripting) |
 | [Internal copilot](https://docs.donkey-kit.dev/scenarios/internal-copilot.md) | An internal assistant whose output must clear a content-safety guardrail | [`ContentSafetyBlocked`](https://docs.donkey-kit.dev/errors.md) via the `donkey-sim/content-safety` sentinel, plus per-run correlation |
 

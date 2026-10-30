@@ -31,7 +31,8 @@ Linux runner (locally, put the versions that job pins on your PATH). A
 list with pypa/gh-action-pip-audit, so locally the session runs pip-audit
 itself. dependency-review is GitHub's dependency-graph diff, with no checkout
 and nothing to run locally, so its job calls no session and its session only
-skips, saying so.
+skips, saying so. action-self-test runs the scan-and-publish action
+(``uses: ./action``), which only a runner can do, so the same holds for it.
 
 In CI the job installs into the runner's Python itself (that is where its cache
 and lock steps live) and then runs ``nox --no-venv --no-install -s <job>``: the
@@ -99,7 +100,7 @@ CI_INSTALLS: dict[str, str | None] = {
     "commit-identities": None,
     "test": (
         "python -m pip install --upgrade pip && "
-        'pip install -e ".[llm,cli,local,otel]" --group dev '
+        'pip install -e ".[llm,cli,local,otel,a2a]" --group dev '
         '-c "constraints/test-py${PYTHON_VERSION}.txt"'
     ),
     "openai-1x": (
@@ -132,6 +133,7 @@ CI_INSTALLS: dict[str, str | None] = {
     "adapter-contract": (
         "python -m pip install --upgrade pip && "
         'pip install -e ".[llm,local,$DONKEY_CONTRACT_EXTRA]" --group dev '
+        '--group "contract-$DONKEY_CONTRACT_EXTRA" '
         '-c "constraints/adapter-contract-${DONKEY_CONTRACT_EXTRA}-py3.12.txt"'
     ),
     "benchmark": (
@@ -144,11 +146,17 @@ CI_INSTALLS: dict[str, str | None] = {
         'pip install -e ".[llm,langgraph,local,otel]" --group dev '
         "-c constraints/langgraph-demo-py3.11.txt"
     ),
+    "openai-agents-demo": (
+        "python -m pip install --upgrade pip && "
+        'pip install -e ".[llm,openai-agents,local,otel]" --group dev '
+        "-c constraints/openai-agents-demo-py3.11.txt"
+    ),
     "docs-llms-drift": None,
     "docs-site": None,
     "pip-audit": "python -m pip install --upgrade pip",
     "dependency-review": None,
     "workflow-lint": None,
+    "action-self-test": None,
 }
 
 # The matrices of ci.yml's matrix jobs, in its order (test_noxfile.py checks).
@@ -311,6 +319,11 @@ def typecheck_and_lint(session: nox.Session) -> None:
         session.run("mypy", "-p", f"examples.{example.name}")
     session.run("ruff", "check", ".")
     session.run("ruff", "format", "--check", ".")
+    # #219: the scan-and-publish action's runner lives beside python/, under
+    # the same config.
+    session.run("mypy", "../action/run.py")
+    session.run("ruff", "check", "--config", "pyproject.toml", "../action")
+    session.run("ruff", "format", "--check", "--config", "pyproject.toml", "../action")
     session.run("lint-imports")  # framework-free core, §1.1
     session.run("python", "scripts/check_verification_claims.py")  # #718
     session.run("python", "scripts/check_doc_links.py")  # #785
@@ -437,7 +450,8 @@ def anthropic_stacks(session: nox.Session, spec: str) -> None:
 @nox.session(name="adk-stacks", python="3.12")
 @nox.parametrize("spec", ADK_SPECS, ids=ADK_SPECS)
 def adk_stacks(session: nox.Session, spec: str) -> None:
-    """google-adk at its floor and its newest release (#735)."""
+    """google-adk at its floor and its newest release (#735), approvals included
+    (#1235)."""
     _install(session, "adk-stacks", ADK_SPEC=spec)
     _framework_tests(
         session,
@@ -446,7 +460,9 @@ def adk_stacks(session: nox.Session, spec: str) -> None:
         "tests/unit/test_framework_redirects.py",
         "tests/unit/test_adapter_async_last_call.py",
         "tests/unit/test_transport_injection.py",
+        "tests/unit/test_adk_approvals.py",
         "tests/conformance/test_typed_refusal_bridge.py",
+        "tests/conformance/test_approval_round_trip.py",
     )
 
 
@@ -519,19 +535,42 @@ def quickstart(session: nox.Session) -> None:
 
 @nox.session(name="langgraph-demo", python="3.11")
 def langgraph_demo(session: nox.Session) -> None:
-    """Scenario A end to end against the simulator, then through conformance (#199, BG §1.8)."""
+    """Scenario A end to end against the simulator, then through conformance in both
+    modes, in-process and against the out-of-process simulator (#199, BG §1.8)."""
     _install(session, "langgraph-demo")
     session.run("mypy", "-p", "examples.langgraph")
     _bounded(session, 120, "-m", "examples.langgraph.main")
     # `python -m pytest` puts python/ on sys.path, so `examples` imports.
-    session.run(
-        "python",
-        "-m",
-        "pytest",
-        "-q",
-        "--donkey-conformance",
-        "--donkey-agent=examples.langgraph.main:build",
-    )
+    for mode in ("in-process", "server"):
+        session.run(
+            "python",
+            "-m",
+            "pytest",
+            "-q",
+            "--donkey-conformance",
+            "--donkey-agent=examples.langgraph.main:build",
+            f"--donkey-mode={mode}",
+        )
+
+
+@nox.session(name="openai-agents-demo", python="3.11")
+def openai_agents_demo(session: nox.Session) -> None:
+    """The second deep adapter's Scenario A, then through conformance in both modes
+    (#223, BG §1.8)."""
+    _install(session, "openai-agents-demo")
+    # No mypy step: agents.* is follow_imports = "skip", so typecheck-and-lint
+    # already covers examples.openai_agents (unlike langgraph-demo, #721).
+    _bounded(session, 120, "-m", "examples.openai_agents.main")
+    for mode in ("in-process", "server"):
+        session.run(
+            "python",
+            "-m",
+            "pytest",
+            "-q",
+            "--donkey-conformance",
+            "--donkey-agent=examples.openai_agents.main:build",
+            f"--donkey-mode={mode}",
+        )
 
 
 @nox.session(name="docs-llms-drift", venv_backend="none")
@@ -639,7 +678,7 @@ def dependency_review(session: nox.Session) -> None:
 
 @nox.session(name="workflow-lint", venv_backend="none")
 def workflow_lint(session: nox.Session) -> None:
-    """actionlint and zizmor over .github/ (#757).
+    """actionlint over .github/, and zizmor over .github/ and the action (#757, #219).
 
     Runs the tools on PATH: in CI, the copies the job fetched and verified by
     sha256; locally, install the ``ACTIONLINT_VERSION`` and ``ZIZMOR_VERSION``
@@ -648,4 +687,17 @@ def workflow_lint(session: nox.Session) -> None:
     """
     session.chdir(_PYTHON_DIR.parent)
     session.run("actionlint", "-color", env={"GH_TOKEN": None}, external=True)
-    session.run("zizmor", "--format=github", ".github/", external=True)
+    session.run("zizmor", "--format=github", ".github/", "action/", external=True)
+
+
+@nox.session(name="action-self-test", venv_backend="none")
+def action_self_test(session: nox.Session) -> None:
+    """Runner-only: the scan-and-publish action, dry-run against its fixture (#219, #1442).
+
+    The job runs the composite action from the checkout (``uses: ./action``) on
+    Linux, macOS and Windows, which only a GitHub runner can do, so it calls no
+    session. Locally, ``test-3.11`` runs tests/unit/test_action.py over
+    ``action/run.py``. The session exists so every ci.yml job has one; ``nox``
+    lists it and skips it.
+    """
+    session.skip("Runner-only: action-self-test runs the composite action with `uses: ./action`")

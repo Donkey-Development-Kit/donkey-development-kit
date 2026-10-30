@@ -31,7 +31,7 @@ attaches there once, so you never wire it call by call.
 |---|---|---|
 | LangGraph | `donkey.langgraph.chat_model("gpt-4o")` | `langchain_openai.ChatOpenAI` |
 | Google ADK | `donkey.adk.model("gpt-4o")` | `LiteLlm` |
-| Google ADK on a `Format=Gemini` proxy | `donkey.adk.gemini("gemini-2.5-flash")` | `google.adk.models.Gemini` |
+| Google ADK on a `Format=Gemini` proxy | `donkey.adk.gemini("gemini-3.8-flash")` | `google.adk.models.Gemini` |
 | Strands | `donkey.strands.model("gpt-4o")` | `OpenAIModel` |
 | MS Agent Framework | `donkey.agent_framework.chat_client("gpt-4o")` | Agent Framework chat client |
 | LlamaIndex | `donkey.llamaindex.llm("gpt-4o")` | `OpenAILike` |
@@ -56,20 +56,28 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     policy `429` is never retried.
   
   
+    **Purpose:** register a reaction to a typed refusal once with
+    `donkey.on(...)`: wait for the reset, mask and resend, fall back to another
+    model, or escalate. **Goal:** one PII handler instead of one per graph node.
+    **Advantage:** applied at the transport and bounded, and no handler can turn
+    a refusal into a success.
+  
+  
     **Purpose:** expose the gateway's token window as a `Budget` object.
     **Goal:** stop *before* the limit, not after it. **Advantage:**
     `pace(reserve=)` and `wait_for_reset()` let an overnight batch slow down
     instead of dying at 2am.
   
   
-    **Purpose:** on-behalf-of token exchange. **Goal:** per-user policy
+    **Purpose:** on-behalf-of user identity. **Goal:** per-user policy
     reaches the gateway. **Advantage:** requests never silently fall back to
     the service identity.
   
   
-    **Purpose:** one vocabulary for "pause and ask a human". **Advantage:**
-    mapped onto each framework's native interrupt, so approval flows look the
-    same everywhere.
+    **Purpose:** one vocabulary for "pause and ask a human".
+    **Goal:** `@donkey.tool(approval="required")` pauses the call until someone
+    decides. **Advantage:** the approver lands on the span next to the
+    correlation ID. Client-side and advisory; it never overrides a refusal.
   
   
     **Purpose:** read the policy set in force. **Advantage:** skip calls that
@@ -109,8 +117,9 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     **Advantage:** the PII branch is tested before production, not in it.
   
   
-    **Purpose:** `donkey init`, `doctor`, `mock` and `test`, plus
-    `@donkey.governed` and `@donkey.tool`. **Advantage:** `doctor` tells wrong
+    **Purpose:** `donkey init`, `doctor`, `mock`, `dev`, `test`, `scan`,
+    `publish`, `verify`, `preflight` and `expose`, plus
+    `@donkey.governed`, `@donkey.tool` and `@donkey.agent`. **Advantage:** `doctor` tells wrong
     credentials from wrong URL from model-not-allowed; one decorator gives a
     function a run scope, span and typed refusals.
   
@@ -124,18 +133,23 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
 
   
     **Purpose:** discover governed MCP tools from the catalog and bind them as
-    native framework tools. **Advantage:** allow/deny filtering, pinning and a
-    lockfile — only governed tools reach your agent.
+    native framework tools. **Advantage:** allow/deny filtering and approval
+    gates, with pinning and a lockfile on the Roadmap — only governed tools
+    reach your agent.
   
   
-    **Purpose:** `serve`, `expose` and `dev` make your agent callable by other
-    agents, on the official `a2a-sdk`. **Advantage:** inbound tasks are
-    governed with the same correlation, spans and refusals.
+    **Purpose:** `donkey.serve()` makes your agent callable by other agents in
+    one line, on the official `a2a-sdk`; `donkey expose` puts it behind a
+    gateway instance with its policies; `donkey dev` puts a simulated gateway in
+    front of it on your laptop. **Advantage:** the agent card is generated from your code, and
+    inbound tasks are governed with the same correlation, spans and
+    refusals.
   
   
-    **Purpose:** derive a manifest and agent card from your code and register
-    them in the Agent Fabric registry. **Advantage:** the catalog stays in sync
-    from CI, not by hand.
+    **Purpose:** `donkey scan` derives a model of your agents, tools and
+    MCP servers from code; `donkey publish` registers it in Exchange, and
+    `donkey verify` checks the live servers and agents against what was
+    published. **Advantage:** the catalog stays in sync from CI, not by hand.
   
 
 ## What DDK leaves to the platform

@@ -4,7 +4,8 @@ Status: Offline-verified. Shipped and verified offline; no live gateway round-tr
 
 `donkey.langgraph("…")` returns a real `langchain_openai.ChatOpenAI` with
 `use_responses_api=False`, so calls go to `/chat/completions`, the route every
-upstream serves, on the governed transport. It is the one deep, conformance-gated adapter:
+upstream serves, on the governed transport. It is the first deep, conformance-gated adapter
+(the [OpenAI Agents SDK](https://docs.donkey-kit.dev/examples/openai-agents.md) is the second):
 `donkey.langgraph.typed_refusals()` turns the openai error a graph node raises
 back into the SDK's typed refusal.
 

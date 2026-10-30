@@ -23,6 +23,13 @@ model call the simulator serves (``POST /responses`` and
   ``request-rate-limit`` **429** with the trio recomputed, until the window
   rolls over. The live window is aligned to the gateway's clock; this one
   starts on the first call.
+- ``ciba:pending=N[,then=approve|deny]`` — the OAuth2 OBO policy's CIBA step-up (#214):
+  the first ``N`` calls are served the ``ciba-pending`` **401** (with its
+  ``Retry-After``), as the gateway answers while the user has not approved. Then
+  ``then=approve`` (the default) lets every later call through, and ``then=deny``
+  serves the ``ciba-denied`` **403** from then on. The count is the scenario's own:
+  the simulator cannot tell a retry from a new call, and does not model the
+  per-user cache or the silent expiry the live policy has (docs/verified-apis.md §4).
 
 **Verification discipline (#352/#353/#354).** The live happy-path ``200``
 carries the budget window as the prose ``x-llm-proxy-ratelimit`` header, *not*
@@ -63,6 +70,7 @@ from .fixtures import (
 
 __all__ = [
     "BudgetScenario",
+    "CibaScenario",
     "FaultScenario",
     "InjectionScenario",
     "PiiBlockScenario",
@@ -83,6 +91,8 @@ _PII_SHAPE = "pii-detected"
 _INJECTION_SHAPE = "injection-protection"
 _BUDGET_SHAPE = "token-rate-limit"
 _REQUEST_LIMIT_SHAPE = "request-rate-limit"
+_CIBA_PENDING_SHAPE = "ciba-pending"
+_CIBA_DENIED_SHAPE = "ciba-denied"
 
 # Fallback per-call cost if the success fixture carries no usage total — a
 # defensible non-zero default so the counter still moves (see _default_cost).
@@ -189,6 +199,36 @@ class PiiBlockScenario:
         self._count += 1
         if self._count % self._every == 0:
             return ScenarioHit(_PII_SHAPE)
+        return None
+
+
+class CibaScenario:
+    """The OBO policy's CIBA step-up: ``pending`` calls get the ``ciba-pending`` 401, then
+    the user approves (calls pass) or denies (calls get the ``ciba-denied`` 403).
+
+    Both shapes were captured on an A2A ``message/send`` and an MCP ``tools/call``
+    (docs/verified-apis.md §4, #1320), not on an LLM-proxy route. The simulator
+    serves the same bytes on its model routes, so a client's handling of them can
+    be tested offline; that an LLM proxy answers the same way is not verified."""
+
+    name = "ciba"
+
+    def __init__(self, pending: int, then: str = "approve") -> None:
+        if pending < 0:
+            raise ScenarioError(f"ciba: pending must be >= 0, got {pending}")
+        if then not in ("approve", "deny"):
+            raise ScenarioError(f"ciba: then must be 'approve' or 'deny', got {then!r}")
+        self._pending = pending
+        self._then = then
+        self._count = 0
+
+    def on_call(self, text: str) -> ScenarioHit | None:  # noqa: ARG002 - Scenario protocol
+        """Serve the pending 401 for the first calls, then the user's answer."""
+        self._count += 1
+        if self._count <= self._pending:
+            return ScenarioHit(_CIBA_PENDING_SHAPE)
+        if self._then == "deny":
+            return ScenarioHit(_CIBA_DENIED_SHAPE)
         return None
 
 
@@ -383,6 +423,7 @@ def parse_scenario(spec: str) -> FaultScenario:
     - ``injection:on-pattern=<substr>``
     - ``budget:limit=<tokens>,window=<dur>[,cost=<tokens>]``
     - ``request_limit:limit=<requests>,window=<dur>``
+    - ``ciba:pending=N[,then=approve|deny]``
     """
     name, sep, rest = spec.partition(":")
     name = name.strip()
@@ -413,8 +454,11 @@ def parse_scenario(spec: str) -> FaultScenario:
         if window_raw is None:
             raise ScenarioError("request_limit: missing required param 'window'")
         return RequestLimitScenario(limit, _parse_duration_ms(window_raw, "request_limit"))
+    if name == "ciba":
+        params = _parse_params(rest)
+        return CibaScenario(_parse_int(params, "pending", "ciba"), params.get("then", "approve"))
     raise ScenarioError(
-        f"unknown scenario {name!r}; supported: injection, pii_block, budget, request_limit"
+        f"unknown scenario {name!r}; supported: injection, pii_block, budget, request_limit, ciba"
     )
 
 

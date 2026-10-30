@@ -33,7 +33,7 @@ never a misleading zero.
 
 Both the numeric ``x-token-reset`` and the prose ``Reset in … ms`` are
 **milliseconds *to* reset** — a delta, not an epoch (docs/verified-apis.md §4) —
-so ``reset_at`` is anchored to ``observed_at`` the same way ``errors._retry_after``
+so ``reset_at`` is anchored to ``observed_at`` the same way ``_refusal_body.retry_after``
 treats the header.
 
 A second, independent window counts **requests** rather than tokens (#974):
@@ -43,20 +43,43 @@ from the stock ``rate-limiting`` policy's ``x-ratelimit-limit`` /
 the gateway sends it on every ``200`` as well as on its ``429`` (when the policy
 sets ``exposeHeaders: true``, docs/verified-apis.md §4). :meth:`Budget.pace`
 refuses when *either* window has reached the reserve.
+
+A third source is the **upstream provider's** own quota (#1025),
+``donkey.budget.upstream.requests`` and ``.tokens`` (each an
+:class:`UpstreamWindow`), from the suffixed ``x-ratelimit-*-requests`` /
+``-tokens`` headers the gateway passes through. It is labelled apart and never
+mixed into the gateway's windows, and :meth:`Budget.pace` does not guard on it.
+
+A gateway kill ends pacing for good (BG §2.6, #220). The transport hands every
+:class:`~donkey_kit.core.errors.AgentKilled` refusal to
+:meth:`Budget.observe_refusal`, after which :meth:`Budget.pace` and
+:meth:`Budget.wait_for_reset` raise it instead of pacing, and a task already
+asleep in :meth:`Budget.wait_for_reset` wakes and raises it. So one task's kill
+stops every pace loop on the same ``Donkey``, not just its own, and none of them
+sends again to find out.
 """
 
 from __future__ import annotations
 
 import asyncio
-import re
+import contextlib
+import copy
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import httpx
 
 from . import _wire
-from .errors import BudgetReserveReached
+from ._budget_headers import parse_go_duration as _parse_go_duration
+from ._budget_headers import parse_int as _parse_int
+from ._budget_headers import parse_ratelimit_prose as _parse_ratelimit_prose
+from ._budget_headers import received_at as _received_at
+from ._window import Window as _Window
+from ._window import reached as _reached
+from ._window import record as _record
+from .errors import AgentKilled, BudgetReserveReached, DonkeyError
 from .lastcall import is_cache_hit
 
 __all__ = [
@@ -69,6 +92,8 @@ __all__ = [
     "RESET_HEADER",
     "Budget",
     "RequestWindow",
+    "UpstreamQuota",
+    "UpstreamWindow",
 ]
 
 # The three numeric budget headers of the token-rate-limit policy
@@ -90,14 +115,17 @@ REQUEST_LIMIT_HEADER = _wire.REQUEST_LIMIT_HEADER
 REQUEST_REMAINING_HEADER = _wire.REQUEST_REMAINING_HEADER
 REQUEST_RESET_HEADER = _wire.REQUEST_RESET_HEADER
 
-# Matches `… 10000 tokens remaining of 10000 limit. Reset in 56711ms.`. Requires
-# all three values: a partial or reworded sentence fails to match and is treated
-# as no signal (verification discipline — never guess at an unexpected wire shape). `search`, not
-# `match`, so the leading `Token rate limit:` label is not load-bearing.
-_RATELIMIT_RE = re.compile(
-    r"(?P<remaining>\d+)\s+tokens?\s+remaining\s+of\s+(?P<limit>\d+)\s+limit\b"
-    r".*?reset\s+in\s+(?P<reset>\d+)\s*ms",
-    re.IGNORECASE | re.DOTALL,
+# The upstream provider's passthrough (docs/verified-apis.md §4, "Upstream
+# provider window", #1025): suffixed names, Go-duration resets.
+_UPSTREAM_REQUESTS = (
+    _wire.UPSTREAM_REQUEST_LIMIT_HEADER,
+    _wire.UPSTREAM_REQUEST_REMAINING_HEADER,
+    _wire.UPSTREAM_REQUEST_RESET_HEADER,
+)
+_UPSTREAM_TOKENS = (
+    _wire.UPSTREAM_TOKEN_LIMIT_HEADER,
+    _wire.UPSTREAM_TOKEN_REMAINING_HEADER,
+    _wire.UPSTREAM_TOKEN_RESET_HEADER,
 )
 
 
@@ -105,84 +133,10 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _parse_int(raw: str | None) -> int | None:
-    """A budget header as an int, or ``None`` if absent or non-numeric. Garbage is
-    ignored rather than fatal (verification discipline: never let an unexpected wire value crash the
-    caller's request path)."""
-    if raw is None:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        return None
-
-
-def _parse_ratelimit_prose(raw: str | None) -> tuple[int | None, int | None, int | None]:
-    """The prose ``x-llm-proxy-ratelimit`` header as ``(limit, remaining, reset_ms)``,
-    or an all-``None`` tuple when the header is absent, partial, or reworded.
-
-    Like :func:`_parse_int` this never raises on unexpected input (verification discipline): an
-    unparseable sentence is simply "no signal", never a crash on the caller's
-    request path. All three values must be present in the recognised shape or the
-    whole header is discarded — a half-parsed budget is worse than none."""
-    if raw is None:
-        return None, None, None
-    m = _RATELIMIT_RE.search(raw)
-    if m is None:
-        return None, None, None
-    return int(m["limit"]), int(m["remaining"]), int(m["reset"])
-
-
-class _Window:
-    """One rate-limit window's observed state: the five fields both windows
-    share."""
-
-    def __init__(self) -> None:
-        self.limit: int | None = None
-        self.remaining: int | None = None
-        self.reset_at: datetime | None = None
-        self.observed_at: datetime | None = None
-
-    @property
-    def fraction_used(self) -> float | None:
-        """Fraction of the window consumed, ``0.0``-``1.0``, or ``None`` while
-        unobserved or when ``limit`` is non-positive (no window to divide by).
-        Clamped: a ``remaining`` above ``limit`` (a window that reset between
-        calls) reports ``0.0`` rather than a negative fraction."""
-        if self.limit is None or self.remaining is None or self.limit <= 0:
-            return None
-        used = (self.limit - self.remaining) / self.limit
-        return min(1.0, max(0.0, used))
-
-
-def _record(
-    window: _Window,
-    limit: int | None,
-    remaining: int | None,
-    reset_ms: int | None,
-    ts: datetime,
-) -> None:
-    """Apply whichever fields resolved to ``window``. All ``None`` is a no-op, so
-    a response without this window's signal leaves ``observed_at`` untouched."""
-    if limit is None and remaining is None and reset_ms is None:
-        return
-    window.observed_at = ts
-    if limit is not None:
-        window.limit = limit
-    if remaining is not None:
-        window.remaining = remaining
-    if reset_ms is not None:
-        window.reset_at = ts + timedelta(milliseconds=reset_ms)
-
-
-def _reached(window: _Window, reserve: float, current: datetime) -> float | None:
-    """``window``'s used fraction if it has reached ``1.0 - reserve`` and has not
-    yet reset, else ``None``."""
-    used = window.fraction_used
-    expired = window.reset_at is not None and current >= window.reset_at
-    if used is not None and used >= 1.0 - reserve and not expired:
-        return used
-    return None
+def _wake(future: asyncio.Future[None]) -> None:
+    """End a :meth:`Budget.wait_for_reset` sleep, at most once."""
+    if not future.done():
+        future.set_result(None)
 
 
 class RequestWindow(_Window):
@@ -197,8 +151,53 @@ class RequestWindow(_Window):
     the trio; the policy sends it only with ``exposeHeaders: true``.
 
     The upstream provider's own ``x-ratelimit-*-requests`` headers are a
-    different window (the provider's quota, not the gateway's) and are not read.
+    different window (the provider's quota, not the gateway's), read into
+    :attr:`Budget.upstream` instead (#1025).
     """
+
+
+class UpstreamWindow(_Window):
+    """One window of the upstream provider's own quota, as the gateway passes it
+    through (#1025): ``donkey.budget.upstream.requests`` or ``.tokens``.
+
+    Read from the suffixed ``x-ratelimit-{limit,remaining,reset}-requests``
+    headers (or ``-tokens``), which OpenAI and Azure OpenAI send. The five fields
+    mean what they mean on :class:`Budget`; :attr:`provider` names the upstream.
+    The reset is a Go duration (``12ms``, ``1m30s``); one with no unit, like Azure
+    OpenAI's ``0``, is not read. Each observation replaces the whole window, so a
+    routed proxy never pairs one provider's reset with another's count.
+
+    This is the provider key's quota, shared by everything the gateway sends
+    through it, not this client's allowance, so :meth:`Budget.pace` does not
+    guard on it. Read :attr:`fraction_used` to act on it yourself.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        #: The upstream the last observation came from, e.g. ``"openai"``.
+        self.provider: str | None = None
+
+
+class UpstreamQuota:
+    """The upstream provider's quota windows, ``donkey.budget.upstream`` (#1025),
+    kept apart from the gateway's so neither source overwrites the other."""
+
+    def __init__(self) -> None:
+        #: Requests per window (``x-ratelimit-*-requests``).
+        self.requests = UpstreamWindow()
+        #: Tokens per window (``x-ratelimit-*-tokens``).
+        self.tokens = UpstreamWindow()
+
+
+def _observe_upstream(
+    window: UpstreamWindow, headers: httpx.Headers, names: tuple[str, str, str], ts: datetime
+) -> None:
+    """Replace ``window`` with this response's upstream signal, if it has one that
+    is not older than the last (#311)."""
+    limit, remaining = (_parse_int(headers.get(name)) for name in names[:2])
+    reset_ms = _parse_go_duration(headers.get(names[2]))
+    if _record(window, limit, remaining, reset_ms, ts, replace=True):
+        window.provider = headers.get(_wire.LLM_PROVIDER_HEADER)
 
 
 class Budget(_Window):
@@ -210,16 +209,72 @@ class Budget(_Window):
     Per-``Donkey``, never global: two instances with different credentials hold
     independent state. Construct empty (unobserved); :meth:`observe` mutates it
     from a response. Reads are cheap attribute/property access — no I/O.
+
+    **Concurrency contract (#311).** One ``Budget`` is shared by every call on its
+    ``Donkey``: ``asyncio.gather`` fan-out, LangGraph parallel nodes, and threads
+    on the sync client. Two guarantees hold under any interleaving:
+
+    - It reflects the freshest observation, ordered by when each response's
+      headers arrived, not by when its hooks ran (:meth:`observe`). A stale
+      response landing late never moves it backwards.
+    - :meth:`pace` decides on one consistent snapshot. Tasks that enter it
+      together get the same decision from the same state.
+
+    :meth:`pace` is an admission check on the last observation, not a
+    reservation: it cannot know what calls already in flight will spend. Ten
+    tasks entering together before any of them returns all pass, so size
+    ``reserve`` to cover the width of the fan-out.
     """
 
     def __init__(self) -> None:
         super().__init__()
         #: The gateway's request-count window (``x-ratelimit-*``).
         self.requests = RequestWindow()
+        #: The upstream provider's own quota, passed through (#1025).
+        self.upstream = UpstreamQuota()
         # The window the last pace() refusal named; wait_for_reset() waits on it.
         # Sticky: a later pass through pace() leaves it alone, so a concurrent
         # task's success cannot redirect another task's pending wait.
         self._tripped: _Window = self
+        # The gateway's kill-switch refusal, once one has arrived (BG §2.6,
+        # #220). Terminal for this Budget's lifetime: nothing un-kills it.
+        self._killed: AgentKilled | None = None
+        # The wait_for_reset() sleeps a kill cuts short, with their event loops:
+        # the kill can arrive from another loop, or from the sync client's thread.
+        self._sleeps: set[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = set()
+        self._sleeps_lock = threading.Lock()
+        # Guards the window fields: observe() writes both windows under it and
+        # pace() decides under it, so neither sees a half-applied response. The
+        # sync client feeds this object from its callers' threads (#311).
+        self._state_lock = threading.Lock()
+
+    def observe_refusal(self, refusal: DonkeyError) -> None:
+        """Note a typed refusal the gateway sent, as :meth:`observe` notes its
+        headers. The transport calls it; only an
+        :class:`~donkey_kit.core.errors.AgentKilled` changes anything (BG §2.6,
+        #220).
+
+        A kill is terminal and sticky. From then on :meth:`pace` and
+        :meth:`wait_for_reset` raise it, and every :meth:`wait_for_reset` already
+        asleep, on any event loop, wakes now and raises it. The first kill is the
+        one kept. A ``Donkey`` built after an administrator restores the agent
+        starts with a fresh ``Budget``."""
+        if not isinstance(refusal, AgentKilled):
+            return
+        with self._sleeps_lock:
+            if self._killed is not None:
+                return
+            self._killed = refusal
+            sleeps, self._sleeps = self._sleeps, set()
+        for loop, future in sleeps:
+            with contextlib.suppress(RuntimeError):  # that loop has closed: nothing to wake
+                loop.call_soon_threadsafe(_wake, future)
+
+    def _raise_if_killed(self) -> None:
+        if self._killed is not None:
+            # A copy per raise: tasks re-raising one instance would all write
+            # to its __traceback__.
+            raise copy.copy(self._killed)
 
     def observe(self, response: httpx.Response, *, now: datetime | None = None) -> None:
         """Update from a response's budget headers.
@@ -234,13 +289,29 @@ class Budget(_Window):
         exactly as it was (``observed_at`` unchanged), so a happy-path call without
         budget headers never resets freshness or raises. If any field is resolved,
         ``observed_at`` is stamped and each resolved field is applied; a missing or
-        unparseable value leaves that field untouched.
+        unparseable value, or a reset that is negative or out of range (#1444),
+        leaves that field untouched.
 
         The same response also fills :attr:`requests` from the ``x-ratelimit-*``
         trio, independently: either window can be observed without the other.
+        The upstream provider's suffixed ``x-ratelimit-*-requests`` / ``-tokens``
+        headers fill :attr:`upstream` the same way, and touch neither (#1025).
 
-        ``now`` is injectable for tests; production passes nothing and the wall
-        clock (UTC) is used.
+        **Ordering (#311): the freshest observation wins, not the last to
+        arrive.** A response's observation time is when its headers came back
+        from the wire, stamped by the governed transport before the body is read
+        or any hook runs. An observation older than a window's ``observed_at``
+        leaves that window as it is, so concurrent calls finishing out of order
+        never move :attr:`fraction_used` backwards. A later observation of a
+        window that has reset (a higher ``remaining``, a new ``reset_at``) is
+        newer, so it applies. Each window is ordered on its own, and the update
+        is atomic: a thread reading :meth:`pace` never sees half of one response.
+        Ordering follows the system clock, so a clock stepped backwards drops
+        observations until it catches up with ``observed_at``.
+
+        ``now`` is injectable for tests and overrides the transport's stamp; a
+        response that did not come through a governed transport has no stamp, and
+        the wall clock (UTC) at the call is used.
 
         A semantic-cache **hit** is a verbatim replay with no provider round-trip
         and no fresh spend (docs/verified-apis.md §2, #587) — so it never advances
@@ -267,15 +338,17 @@ class Budget(_Window):
             if reset_ms is None:
                 reset_ms = p_reset
 
-        ts = now if now is not None else _utcnow()
-        _record(self, limit, remaining, reset_ms, ts)
-        _record(
-            self.requests,
+        ts = now if now is not None else (_received_at(response) or _utcnow())
+        requests = (
             _parse_int(headers.get(REQUEST_LIMIT_HEADER)),
             _parse_int(headers.get(REQUEST_REMAINING_HEADER)),
             _parse_int(headers.get(REQUEST_RESET_HEADER)),
-            ts,
         )
+        with self._state_lock:
+            _record(self, limit, remaining, reset_ms, ts)
+            _record(self.requests, *requests, ts)
+            _observe_upstream(self.upstream.requests, headers, _UPSTREAM_REQUESTS, ts)
+            _observe_upstream(self.upstream.tokens, headers, _UPSTREAM_TOKENS, ts)
 
     @asynccontextmanager
     async def pace(
@@ -324,29 +397,39 @@ class Budget(_Window):
         When both have reached the reserve, the exception names the one that
         releases last (one with no known reset first). ``now`` is injectable for
         tests; production passes nothing and the wall clock (UTC) is used.
+
+        Once the gateway has killed the agent (see :meth:`observe_refusal`),
+        :meth:`pace` raises :class:`~donkey_kit.core.errors.AgentKilled` on
+        entry and the guarded block never runs. It is not a
+        :class:`BudgetReserveReached`, so the loop above ends instead of waiting
+        (BG §2.6, #220).
         """
         if not 0.0 <= reserve <= 1.0:
             raise ValueError(f"reserve must be within [0.0, 1.0], got {reserve!r}")
+        self._raise_if_killed()
         current = now if now is not None else _utcnow()
-        reached = [
-            (name, window, used)
-            for name, window in (("tokens", self), ("requests", self.requests))
-            if (used := _reached(window, reserve, current)) is not None
-        ]
+        # One snapshot of both windows: a sync-client thread observing between
+        # the two reads cannot mix two responses into one decision (#311).
+        with self._state_lock:
+            reached: list[tuple[str, _Window, float, datetime | None]] = []
+            for label, candidate in (("tokens", self), ("requests", self.requests)):
+                fraction = _reached(candidate, reserve, current)
+                if fraction is not None:
+                    reached.append((label, candidate, fraction, candidate.reset_at))
+            if reached:
+                # The window that releases last: an unknown reset outranks any time.
+                name, window, used, reset_at = max(
+                    reached, key=lambda r: (r[3] is None, r[3] or current)
+                )
+                self._tripped = window
         if reached:
-            # The window that releases last: an unknown reset outranks any time.
-            name, window, used = max(
-                reached,
-                key=lambda r: (r[1].reset_at is None, r[1].reset_at or current),
-            )
-            self._tripped = window
             unit = "token" if name == "tokens" else "request"
             raise BudgetReserveReached(
                 f"Budget reserve reached: {used:.1%} of the {unit} window used, "
                 f"reserve is {reserve:.1%} (trips at {1.0 - reserve:.1%}).",
                 fraction_used=used,
                 reserve=reserve,
-                reset_at=window.reset_at,
+                reset_at=reset_at,
                 window=name,
             )
         yield
@@ -370,7 +453,12 @@ class Budget(_Window):
         an unconditional wait-and-retry loop cannot make progress. ``now`` is
         injectable for tests; production passes nothing and the wall clock (UTC)
         is used.
+
+        Raises :class:`~donkey_kit.core.errors.AgentKilled` once the gateway has
+        killed the agent, whether the kill came before the call or during the
+        sleep: the kill wakes it early (BG §2.6, #220).
         """
+        self._raise_if_killed()
         if window is None:
             target = self._tripped
         elif window == "tokens":
@@ -385,4 +473,22 @@ class Budget(_Window):
         current = now if now is not None else _utcnow()
         delay = (reset_at - current).total_seconds()
         if delay > 0:
-            await asyncio.sleep(delay)
+            await self._sleep(delay)
+
+    async def _sleep(self, delay: float) -> None:
+        """``asyncio.sleep(delay)``, cut short by :meth:`observe_refusal`."""
+        loop = asyncio.get_running_loop()
+        killed: asyncio.Future[None] = loop.create_future()
+        sleep = (loop, killed)
+        with self._sleeps_lock:
+            if self._killed is not None:
+                _wake(killed)  # killed since the check on entry
+            self._sleeps.add(sleep)
+        timer = asyncio.ensure_future(asyncio.sleep(delay))
+        try:
+            await asyncio.wait((timer, killed), return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            timer.cancel()
+            with self._sleeps_lock:
+                self._sleeps.discard(sleep)
+        self._raise_if_killed()

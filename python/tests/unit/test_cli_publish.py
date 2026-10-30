@@ -1,0 +1,293 @@
+"""``donkey publish`` CLI wiring (#218): ``--dry-run`` prints the planned
+Exchange assets offline and exits 1 on an issue; without it the command
+publishes to a fake Exchange (``_fake_exchange``) that replays sandbox captures.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from _fake_exchange import ORG, FakeExchange
+from _json_shapes import PLAN_ASSET_KEYS, PLAN_KEYS, PUBLISH_ASSET_KEYS, PUBLISH_KEYS, assert_shape
+from typer.testing import CliRunner
+
+from donkey_kit.cli import _common as cli_common
+from donkey_kit.cli import app
+from donkey_kit.cli import publish as publish_command
+from donkey_kit.core.auth import StaticToken
+from donkey_kit.core.config import DonkeyConfig
+from donkey_kit.core.errors import AuthError
+from donkey_kit.core.runtime import Runtime
+
+runner = CliRunner()
+
+SOURCE = '''\
+from donkey_kit import Donkey
+
+donkey = Donkey.from_env()
+
+
+@donkey.tool(server="sku-manager")
+def lookup_sku(sku: str) -> dict:
+    """Look up a SKU's price and stock level by its code."""
+'''
+
+
+@pytest.fixture
+def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ANYPOINT_ORG_ID", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    (tmp_path / "app.py").write_text(SOURCE, encoding="utf-8")
+    (tmp_path / ".donkey-kit.toml").write_text(
+        '[donkey.publication]\nversion = "1.0.0"\n', encoding="utf-8"
+    )
+    return tmp_path
+
+
+def test_dry_run_prints_the_plan(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANYPOINT_ORG_ID", "org-123")
+
+    result = runner.invoke(app, ["publish", "--dry-run", str(repo)])
+
+    assert result.exit_code == 0, result.output
+    assert "mcp    org-123:sku-manager:1.0.0  sku-manager  sha256:" in result.output
+    assert "would publish 1 asset (dry run: nothing was sent)" in result.output
+
+
+def test_dry_run_json(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANYPOINT_ORG_ID", "org-123")
+
+    result = runner.invoke(app, ["--json", "publish", "--dry-run", str(repo)])
+
+    assert result.exit_code == 0, result.output
+    document = json.loads(result.output)
+    assert_shape(document, PLAN_KEYS, "assets", PLAN_ASSET_KEYS)
+    assert document["assets"][0]["group_id"] == "org-123"
+
+
+def test_the_org_id_in_the_scanned_roots_config_is_the_default_group(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path_factory.mktemp("elsewhere"))
+    (repo / ".donkey-kit.toml").write_text(
+        '[donkey]\norg_id = "from-file"\n\n[donkey.publication]\nversion = "1.0.0"\n',
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["--json", "publish", "--dry-run", str(repo)])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["assets"][0]["group_id"] == "from-file"
+
+
+def test_dry_run_issues_exit_1(repo: Path) -> None:
+    result = runner.invoke(app, ["publish", "--dry-run", str(repo)])
+
+    assert result.exit_code == 1
+    assert "<group_id>:sku-manager:1.0.0" in result.output
+    assert "missing-group-id  donkey.publication" in result.output
+
+
+def test_dry_run_json_issues_go_to_stderr_too(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANYPOINT_ORG_ID", "org-123")
+    (repo / ".donkey-kit.toml").write_text("[donkey.publication]\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["--json", "publish", "--dry-run", str(repo)])
+
+    assert result.exit_code == 1
+    document = json.loads(result.stdout)
+    assert_shape(document, PLAN_KEYS, "assets", PLAN_ASSET_KEYS)
+    assert [i["kind"] for i in document["issues"]] == ["missing-version"]
+    assert "1 issue" in result.stderr
+    assert "missing-version  donkey.publication" in result.stderr
+
+
+def test_dry_run_on_a_missing_path_exits_2(repo: Path) -> None:
+    result = runner.invoke(app, ["publish", "--dry-run", str(repo / "absent")])
+
+    assert result.exit_code == 2
+    assert "nothing to scan" in result.output
+
+
+@pytest.fixture
+def exchange(repo: Path, monkeypatch: pytest.MonkeyPatch) -> FakeExchange:
+    """A fake Exchange behind the command's control-plane client, with the
+    control-plane credentials set."""
+    monkeypatch.setenv("ANYPOINT_ORG_ID", ORG)
+    monkeypatch.setenv("ANYPOINT_CLIENT_ID", "cid")
+    monkeypatch.setenv("ANYPOINT_CLIENT_SECRET", "secret")
+    fake = FakeExchange()
+
+    def runtime(cfg: DonkeyConfig) -> Runtime:
+        rt = Runtime(cfg, auth=StaticToken("tok"))
+        rt.control_http.governed_transport.replace_inner(fake.transport())
+        return rt
+
+    monkeypatch.setattr(publish_command, "_runtime", runtime)
+    return fake
+
+
+def test_publish_then_rerun_publishes_once(repo: Path, exchange: FakeExchange) -> None:
+    first = runner.invoke(app, ["publish", str(repo)])
+    again = runner.invoke(app, ["publish", str(repo)])
+
+    assert first.exit_code == 0, first.output
+    assert f"published mcp    {ORG}:sku-manager:1.0.0  published 1.0.0" in first.output
+    assert "published 1 asset" in first.output
+    assert again.exit_code == 0, again.output
+    assert "unchanged mcp" in again.output
+    assert "published 0 assets" in again.output
+    assert list(exchange.assets[(ORG, "sku-manager")]) == ["1.0.0"]
+
+
+def test_publish_json_reports_each_assets_outcome(repo: Path, exchange: FakeExchange) -> None:
+    runner.invoke(app, ["publish", str(repo)])
+
+    result = runner.invoke(app, ["--json", "publish", str(repo)])
+
+    assert result.exit_code == 0, result.output
+    document = json.loads(result.stdout)
+    assert_shape(document, PUBLISH_KEYS, "assets", PUBLISH_ASSET_KEYS)
+    (asset,) = document["assets"]
+    assert (asset["asset_id"], asset["status"], asset["detail"]) == (
+        "sku-manager",
+        "unchanged",
+        "1.0.0 is already published",
+    )
+
+
+def test_new_content_under_a_published_version_exits_1(repo: Path, exchange: FakeExchange) -> None:
+    runner.invoke(app, ["publish", str(repo)])
+    (repo / "app.py").write_text(
+        SOURCE.replace("price and stock level", "price, stock level and bin"), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["publish", str(repo)])
+
+    assert result.exit_code == 1
+    assert "sku-manager:1.0.0 is already published with other content" in result.output
+    assert "Bump the version" in result.output
+
+
+def test_a_failed_publish_prints_each_assets_outcome_and_exits_1(
+    repo: Path, exchange: FakeExchange
+) -> None:
+    """#1426: the outcome document is printed when the publish fails, too."""
+    exchange.fail_pages = True
+
+    result = runner.invoke(app, ["--json", "publish", str(repo)])
+
+    assert result.exit_code == 1
+    document = json.loads(result.stdout)
+    assert_shape(document, PUBLISH_KEYS, "assets", PUBLISH_ASSET_KEYS)
+    (asset,) = document["assets"]
+    assert asset["status"] == "incomplete"
+    assert asset["detail"].startswith("1.0.0 is published, but its publish did not finish")
+    assert asset["detail"].endswith("Fix what Exchange reported, then re-run donkey publish.")
+    assert "Exchange refused writing the page of" in result.stderr
+    assert "re-run donkey publish" in result.stderr
+
+
+def test_a_rerun_finishes_an_incomplete_publish(repo: Path, exchange: FakeExchange) -> None:
+    exchange.fail_pages = True
+    first = runner.invoke(app, ["publish", str(repo)])
+    exchange.fail_pages = False
+
+    rerun = runner.invoke(app, ["--json", "publish", str(repo)])
+
+    assert first.exit_code == 1
+    assert "incomplete mcp" in first.stdout
+    assert "published 0 assets; 1 incomplete" in first.stdout
+    assert rerun.exit_code == 0, rerun.output
+    (asset,) = json.loads(rerun.stdout)["assets"]
+    assert (asset["status"], asset["detail"]) == (
+        "published",
+        "finished publishing 1.0.0: published its page",
+    )
+    assert list(exchange.assets[(ORG, "sku-manager")]) == ["1.0.0"]
+
+
+def test_a_refusal_before_any_asset_reports_every_asset_not_attempted(
+    repo: Path, exchange: FakeExchange, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refused(cfg: DonkeyConfig) -> Runtime:
+        raise AuthError("no token", remediation="Check the connected app.")
+
+    monkeypatch.setattr(publish_command, "_runtime", refused)
+
+    result = runner.invoke(app, ["--json", "publish", str(repo)])
+
+    assert result.exit_code == 1
+    (asset,) = json.loads(result.stdout)["assets"]
+    assert (asset["status"], asset["detail"]) == ("not_attempted", "not attempted: no token")
+    assert "Check the connected app." in result.stderr
+
+
+def test_a_plan_with_issues_publishes_nothing(repo: Path, exchange: FakeExchange) -> None:
+    (repo / ".donkey-kit.toml").write_text("[donkey.publication]\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["publish", str(repo)])
+
+    assert result.exit_code == 1
+    assert "missing-version" in result.output
+    assert "nothing was published" in result.output
+    assert exchange.requests == []
+
+
+def test_publish_json_with_issues_reports_every_asset_not_attempted(
+    repo: Path, exchange: FakeExchange
+) -> None:
+    """#1427: the publish document, not the plan, also when an issue stops it."""
+    (repo / ".donkey-kit.toml").write_text("[donkey.publication]\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["publish", "--json", str(repo)])
+
+    assert result.exit_code == 1
+    document = json.loads(result.stdout)
+    assert_shape(document, PUBLISH_KEYS, "assets", PUBLISH_ASSET_KEYS)
+    (asset,) = document["assets"]
+    assert (asset["status"], asset["detail"]) == (
+        "not_attempted",
+        "not attempted: the plan has issues",
+    )
+    assert [i["kind"] for i in document["issues"]] == ["missing-version"]
+    assert "missing-version  donkey.publication" in result.stderr
+    assert exchange.requests == []
+
+
+def test_publish_without_control_plane_credentials_exits_2(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ANYPOINT_ORG_ID", "org-123")
+    monkeypatch.delenv("ANYPOINT_CLIENT_ID", raising=False)
+    monkeypatch.delenv("ANYPOINT_CLIENT_SECRET", raising=False)
+
+    result = runner.invoke(app, ["publish", str(repo)])
+
+    assert result.exit_code == 2
+    assert "client_id" in result.output
+
+
+def test_the_page_source_comes_from_github_actions(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    assert cli_common.ci_source() is None
+
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_SERVER_URL": "https://github.example.invalid",
+        "GITHUB_REPOSITORY": "acme/sku",
+        "GITHUB_SHA": "a" * 40,
+        "GITHUB_REF_NAME": "main",
+        "GITHUB_RUN_ID": "42",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    source = cli_common.ci_source()
+
+    assert source is not None
+    assert source.repository_url == "https://github.example.invalid/acme/sku"
+    assert (source.commit, source.ref) == ("a" * 40, "main")
+    assert source.run_url == "https://github.example.invalid/acme/sku/actions/runs/42"

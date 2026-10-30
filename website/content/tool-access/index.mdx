@@ -1,13 +1,14 @@
 ---
 description: Discover the governed MCP tools your organisation publishes in Exchange and bind them into any framework as native tool objects.
-status: roadmap
+status: live
 ---
 
 import { Card, CardGrid } from '../../components'
 
 # Tool access
 
-This capability is on the [Roadmap](/roadmap); the API shown here is the planned design.
+Discovery and binding run end to end through the governed gateway, with
+every supported framework; see [Framework binding](/tool-access/binding).
 
 Governed tool access lets an agent discover the MCP tools your organisation has
 published and governed, filter them down to what it actually needs, and bind
@@ -17,8 +18,8 @@ tool objects** — the same "no wrapper" approach as [model access](/frameworks)
 ## Two lines from catalog to agent
 
 ```python
-tools = await donkey.tools.discover(domain="hr", tags=["approved"])
-agent = create_react_agent(donkey.langgraph.chat_model("gpt-4o"), tools.langgraph())
+tools = await donkey.tools.discover(tags=["approved"])
+agent = create_react_agent(donkey.langgraph.chat_model("gpt-4o"), await tools.langgraph())
 ```
 
 Everything else in this section — search filters, session management,
@@ -28,19 +29,18 @@ hold up in production.
 ## Discover and filter
 
 `donkey.tools.discover(...)` is also the filter entry point. One call narrows
-the catalog by governance, domain and tags, so an agent binds only the tools it
+the catalog by governance and tags, so an agent binds only the tools it
 needs:
 
 ```python
 tools = await donkey.tools.discover(
-    domain="hr",
     tags=["approved"],
-    governed=True,           # default criteria, or a GovernanceCriteria
+    governed=True,           # the default: default criteria; or an explicit GovernanceCriteria
 )
 ```
 
-Name search, asset type and environment filters live one layer down, on
-`donkey.registry.search()`.
+Name search and asset type filters live one layer down, on
+`donkey.registry.search()`, which is live.
 
 "Governed" is a computed, environment-scoped predicate rather than a flag in
 Exchange — see [Discovery, search & filter](/tool-access/discovery).
@@ -49,7 +49,7 @@ Exchange — see [Discovery, search & filter](/tool-access/discovery).
 
 <CardGrid columns={2}>
   <Card title="Discovery, search & filter" href="/tool-access/discovery">
-    Narrow the catalog by governance, domain and tags, or search it by name and asset type.
+    Narrow the catalog by governance and tags, or search it by name and asset type.
   </Card>
   <Card title="Framework binding" href="/tool-access/binding">
     Turn a `ToolSet` into each framework's own native tool objects.

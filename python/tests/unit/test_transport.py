@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import warnings
+from pathlib import Path
 
 import httpx
 import pytest
@@ -36,6 +37,7 @@ from donkey_kit.core.transport import (
     effective_cost_tags,
     proxy_auth_headers,
 )
+from donkey_kit.simulator.fixtures import parse_headers
 
 
 def _client(handler, cfg=None, auth=None) -> DonkeyAsyncClient:
@@ -58,8 +60,9 @@ class _RecordingAsync(DonkeyAsyncClient):
     async def _on_response(self, request: httpx.Request, response: httpx.Response) -> None:
         self.responses.append(response.status_code)
 
-    async def _on_refusal(self, violation: PolicyViolation) -> None:
+    async def _on_refusal(self, request, response, violation, options) -> httpx.Response:
         self.refusals.append(violation)
+        return await super()._on_refusal(request, response, violation, options)
 
 
 class _RecordingSync(DonkeyClient):
@@ -71,8 +74,9 @@ class _RecordingSync(DonkeyClient):
     def _on_response(self, request: httpx.Request, response: httpx.Response) -> None:
         self.responses.append(response.status_code)
 
-    def _on_refusal(self, violation: PolicyViolation) -> None:
+    def _on_refusal(self, request, response, violation, options) -> httpx.Response:
         self.refusals.append(violation)
+        return super()._on_refusal(request, response, violation, options)
 
 
 async def test_correlation_and_attribution_headers_injected() -> None:
@@ -483,7 +487,7 @@ _PII_REFUSAL = {"error": {"type": "pii_detected", "message": "PII detected."}}
 
 async def test_overridden_header_names_survive_classify_round_trip() -> None:
     """#363: with the header names overridden, the ids the transport SENT are the
-    ids ``classify()`` reads back — not ``None`` because ``_sent_ids`` looked up
+    ids ``classify()`` reads back — not ``None`` because ``sent_ids`` looked up
     the default placeholder names. The transport stamps the resolved names on
     ``request.extensions``; read-back honours them without importing config.
 
@@ -786,19 +790,24 @@ async def test_openai_default_retries_do_not_resend_unsafe_model_post(status: in
 # --- lifecycle hooks (BG §1.1, #179) --------------------------------------
 # The seams every Phase 1 feature attaches to: _inject_headers stamps each
 # logical send, _on_response fires exactly once per logical send(), _on_refusal
-# fires once with the classified PolicyViolation (#208), and the inner transport
+# fires once with the classified PolicyViolation and returns what send() returns
+# (#208, its handlers are in test_refusal_handlers.py), and the inner transport
 # is swappable on a live client through GovernedTransport.replace_inner() (#728).
 # The unused _on_request seam was deleted (#728).
 
 
 async def test_default_hooks_are_noop_seams() -> None:
     """The seams exist and the defaults are no-ops (byte-identical behaviour to
-    a hookless client — the rest of this module asserts that)."""
+    a hookless client — the rest of this module asserts that). With no
+    ``donkey.on(...)`` handler, ``_on_refusal`` returns the refusal as it is."""
     async with _client(lambda r: httpx.Response(200)) as client:
         req = httpx.Request("GET", "https://x")
+        refused = httpx.Response(429, request=req)
         assert not hasattr(client, "_on_request")
         assert await client._on_response(req, httpx.Response(200)) is None
-        assert await client._on_refusal(TokenBudgetExceeded("over")) is None
+        options = (False, httpx.USE_CLIENT_DEFAULT, httpx.USE_CLIENT_DEFAULT)
+        violation = TokenBudgetExceeded("over")
+        assert await client._on_refusal(req, refused, violation, options) is refused
 
 
 @pytest.mark.parametrize("status", [200, 503, 500])
@@ -1505,7 +1514,51 @@ async def test_pii_refusal_span_has_refuse_decision_and_error_status(monkeypatch
     attrs = dict(span.attributes)
     assert attrs["donkey.policy.decision"] == "refuse"
     assert attrs["donkey.policy.type"] == "pii_detected"
+    # Not a provider-backed refusal: no provider or categories on the span (#1183).
+    assert "donkey.policy.provider" not in attrs
+    assert "donkey.policy.categories" not in attrs
     assert span.status.status_code is StatusCode.ERROR
+
+
+_REJECTIONS = Path(__file__).resolve().parents[2] / "src/donkey_kit/simulator/_fixtures/rejections"
+
+
+@pytest.mark.parametrize(
+    ("slug", "provider", "categories"),
+    [
+        ("content-safety", "azure-content-safety", ("severity_hate", "severity_violence")),
+        ("content-safety-bedrock", "bedrock-guardrails", ("content_filter",)),
+        (
+            "content-safety-model-armor",
+            "google-model-armor",
+            ("rai_harassment", "rai_dangerous", "pi_and_jailbreak"),
+        ),
+        ("content-safety-crowdstrike-aidr", "crowdstrike-aidr", ("malicious_prompt", "pii")),
+    ],
+)
+async def test_content_safety_refusal_span_names_the_provider_and_categories(
+    monkeypatch, slug: str, provider: str, categories: tuple[str, ...]
+) -> None:
+    # #1183: the refusal span says which vendor blocked the call and why, from the
+    # same reject.content-safety-* fixtures the classify() contract reads.
+    exporter = _use_tracer(monkeypatch)
+    headers = parse_headers((_REJECTIONS / f"reject.{slug}.headers.txt").read_text())
+    body = _REJECTIONS / f"reject.{slug}.body.json"
+    content = body.read_bytes() if body.exists() else b""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, headers=headers, content=content)
+
+    client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
+    async with client:
+        await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": "hi"})
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    assert attrs["donkey.policy.decision"] == "refuse"
+    assert attrs["donkey.policy.type"] == "content_safety"
+    assert attrs["donkey.policy.provider"] == provider
+    assert tuple(attrs["donkey.policy.categories"]) == categories
 
 
 async def test_transport_error_span_has_error_status(monkeypatch) -> None:
@@ -2289,14 +2342,14 @@ def test_sync_on_model_substitution_raise_is_silent_for_a_provider_prefixed_matc
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
-            headers={_LLM_MODEL_HEADER: "gemini-2.5-flash", "x-llm-proxy-llm-provider": "gemini"},
-            json={"model": "gemini-2.5-flash"},
+            headers={_LLM_MODEL_HEADER: "gemini-3.8-flash", "x-llm-proxy-llm-provider": "gemini"},
+            json={"model": "gemini-3.8-flash"},
         )
 
     cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")
     with _sync_client(handler, cfg) as client:
         resp = client.post(
-            "https://proxy/chat", json={"model": "gemini/gemini-2.5-flash", "input": "hi"}
+            "https://proxy/chat", json={"model": "gemini/gemini-3.8-flash", "input": "hi"}
         )
     assert resp.status_code == 200
 
@@ -2311,11 +2364,11 @@ async def test_model_substituted_message_names_a_fallback_only_when_the_gateway_
         return httpx.Response(
             200,
             headers={
-                _LLM_MODEL_HEADER: "gemini-2.5-flash",
+                _LLM_MODEL_HEADER: "gemini-3.8-flash",
                 "x-llm-proxy-llm-provider": "gemini",
                 _ROUTING_FALLBACK: fallback,
             },
-            json={"model": "gemini-2.5-flash"},
+            json={"model": "gemini-3.8-flash"},
         )
 
     cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")

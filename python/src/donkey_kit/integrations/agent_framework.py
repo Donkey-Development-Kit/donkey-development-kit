@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 
     from ..core.errors import DonkeyError
 
-__all__ = ["AgentFrameworkAdapter", "ChatAPI", "chat_client", "refusal_translator"]
+__all__ = ["AgentFrameworkAdapter", "ChatAPI", "chat_client"]
 
 ChatAPI = Literal["responses", "chat_completions"]
 # The agent-framework.openai class each ``api=`` value builds (docs/verified-apis.md §8).
@@ -198,18 +198,29 @@ class AgentFrameworkAdapter(Adapter):
         The client sends through the shared client with retries off, so the
         refused request is sent once. Marked with ``@chat_middleware``, confirmed
         offline against agent-framework 1.19.0 (docs/verified-apis.md §8).
+
+        Raises:
+            ImportError: ``agent_framework`` (or a module it needs) is not
+                installed; the message carries the install command.
+            NotImplementedError: The installed version no longer exports
+                ``chat_middleware`` (blocked on verification, §0.3).
         """
-        try:
-            from agent_framework import (
-                chat_middleware,  # confirmed offline: docs/verified-apis.md §8 (1.19.0)
-            )
-        except ImportError as exc:
-            raise _verify.blocked(
-                "agent_framework.chat_middleware import (docs/verified-apis.md §8). "
-                "The decorator is confirmed offline against agent-framework 1.19.0; an "
-                "ImportError here means the package is absent or has renamed it. "
-                "Install 'agent-framework' or confirm the name against your installed version."
-            ) from exc
+        # A missing module is the curated install hint; a missing name in a
+        # module that imports is a rename.
+        with self._native_import():
+            try:
+                from agent_framework import (
+                    chat_middleware,  # confirmed offline: docs/verified-apis.md §8 (1.19.0)
+                )
+            except ImportError as exc:
+                if isinstance(exc, ModuleNotFoundError):
+                    raise
+                raise _verify.blocked(
+                    "agent_framework.chat_middleware import (docs/verified-apis.md §8). "
+                    "The decorator is confirmed offline against agent-framework 1.19.0; an "
+                    "ImportError here means the installed version has renamed it. Confirm "
+                    "the name against your installed version."
+                ) from exc
 
         async def donkey_policy_middleware(
             context: Any, call_next: Callable[[], Awaitable[None]]

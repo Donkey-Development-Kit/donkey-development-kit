@@ -240,12 +240,13 @@ jobs:
       # green without starlette/uvicorn). [otel] likewise: the GenAI-span
       # assertions (BG §1.6, #192) importorskip opentelemetry.sdk, so they only
       # actually execute in this job — the typecheck job stays [llm,cli] and
-      # relies on the absence-only opentelemetry mypy override.
+      # relies on the absence-only opentelemetry mypy override. [a2a] the same
+      # way: donkey.serve()'s round-trip tests (#224) importorskip a2a.
       # -c locks the resolve per Python version (ADR 0007 rule 3, #948);
       # refresh with scripts/compile_constraints.py (combo "test").
       - run: >-
           python -m pip install --upgrade pip &&
-          pip install -e ".[llm,cli,local,otel]" --group dev -c "constraints/test-py${PYTHON_VERSION}.txt"
+          pip install -e ".[llm,cli,local,otel,a2a]" --group dev -c "constraints/test-py${PYTHON_VERSION}.txt"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -528,9 +529,11 @@ jobs:
       # Dev tooling is the `dev` dependency group (#943), not an extra.
       # -c locks the resolve (ADR 0007 rule 3, #948), one file per matrix leg
       # (combo "adapter-contract-<extra>"); refresh with scripts/compile_constraints.py.
+      # The contract-<extra> group adds the leg's MCP binding packages (#1318).
       - run: >-
           python -m pip install --upgrade pip &&
           pip install -e ".[llm,local,$DONKEY_CONTRACT_EXTRA]" --group dev
+          --group "contract-$DONKEY_CONTRACT_EXTRA"
           -c "constraints/adapter-contract-${DONKEY_CONTRACT_EXTRA}-py3.12.txt"
       - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -539,8 +542,9 @@ jobs:
           key: ${{ steps.pip-cache.outputs.cache-primary-key }}
       # #748: the whole suite (`python -m pytest -q`), not a file list, so every
       # test that needs this leg's framework runs against the real install
-      # instead of skipping. For LangGraph, the one deep adapter (BG §1.8), that
-      # includes its refusal mapping, run correlation and conformance tests.
+      # instead of skipping. For the deep adapters (BG §1.8), LangGraph and the
+      # OpenAI Agents SDK, that includes their refusal mapping, run correlation
+      # and conformance tests.
       # Then the strict example smoke: build the example's native object and
       # drive it through the conformance kit in-process, with no network.
       - name: whole suite and strict example smoke
@@ -597,7 +601,7 @@ jobs:
         run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s benchmark
       - name: Upload the benchmark result for trending (#753)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: benchmark-result
           path: ${{ env.DONKEY_BENCHMARK_JSON }}
@@ -688,9 +692,48 @@ jobs:
       - name: typecheck, run, and conformance-test the Scenario-A demo
         run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s langgraph-demo
 
+  openai-agents-demo:
+    # #223 / BG §1.8: the second deep adapter's worked demo, the counterpart of
+    # langgraph-demo. examples/openai_agents/main.py triages the same five
+    # support tickets through a real agents.Agent under Runner.run against the
+    # simulator only, blocks the PII-laden one as a typed PIIDetected (the
+    # pii_block:every=5 scenario on /chat/completions), and exports every call's
+    # span to a bundled local OTLP collector. Timed on a clean runner, then the
+    # same build() factory is re-run through the customer-facing conformance
+    # plugin. Unlike langgraph-demo there is no separate mypy step: `agents.*`
+    # stays in pyproject's follow_imports = "skip" list (src/ imports it
+    # statically), so typecheck-and-lint already checks examples.openai_agents.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - id: pip-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.11-${{ github.job }}-${{ hashFiles('python/constraints/openai-agents-demo-py3.11.txt') }}
+          restore-keys: pip-${{ runner.os }}-py3.11-${{ github.job }}-
+      # -c locks the resolve (ADR 0007 rule 3, #948); refresh with scripts/compile_constraints.py.
+      - run: python -m pip install --upgrade pip && pip install -e ".[llm,openai-agents,local,otel]" --group dev -c constraints/openai-agents-demo-py3.11.txt
+      - if: github.event_name == 'push' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.pip-cache.outputs.cache-primary-key }}
+      # The demo under a 120 s bound, then conformance against its build()
+      # factory: the `--donkey-conformance` invocation a team runs on its agent.
+      - name: run and conformance-test the Scenario-A demo
+        run: pipx run --spec "nox==$NOX_VERSION" nox --no-venv --no-install -s openai-agents-demo
+
   # The nightly framework matrix (§8.4) is .github/workflows/nightly-matrix.yml.
   # It resolves fresh against the newest upstream releases: `matrix` re-checks
-  # LangGraph, the one conformance-tested adapter, against §8 signatures, and
+  # LangGraph and the OpenAI Agents SDK, the conformance-tested adapters,
+  # against §8 signatures, and
   # `framework-legs` runs every ADAPTERS entry (#748). A red run opens or
   # updates one `nightly-failure` tracking issue (#755).
 
@@ -872,12 +915,82 @@ jobs:
           python -m pip install --require-hashes --no-deps -r "$RUNNER_TEMP/zizmor.txt"
       # The two installs above are this job's alone (tests/unit/test_noxfile.py
       # lists them as CI-only); the session runs the tools on PATH.
-      - name: actionlint and zizmor over .github/ (nox -s workflow-lint)
+      - name: actionlint over .github/, zizmor over .github/ and action/ (nox -s workflow-lint)
         env:
           # Read-only token for zizmor's online audits (impostor commits,
           # known-vulnerable actions); the session withholds it from actionlint.
           GH_TOKEN: ${{ github.token }}
         run: pipx run --spec "nox==$NOX_VERSION" nox -f python/noxfile.py --no-venv --no-install -s workflow-lint
+
+  action-self-test:
+    # #219: runs the scan-and-publish action (action/) from this checkout, as a
+    # user's workflow would, against action/tests/fixture. A dry run, so it
+    # needs no credentials and runs on fork PRs too. A ci.yml job so ci-ok
+    # gates it (#1442), with docs-site's job-level path test: the job always
+    # starts and its steps no-op when the PR leaves the action, the SDK it
+    # installs and this file alone. Pushes to main/develop always run it.
+    # `uses: ./action` runs only on a runner, so the job calls no session
+    # (python/noxfile.py's action-self-test session skips, saying so);
+    # tests/unit/test_action.py covers run.py itself. `./action`, not GitHub's
+    # `$/action` self-repository form that zizmor suggests: the actionlint
+    # workflow-lint pins does not parse `$/` yet.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: .
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Two commits, so HEAD^1 (the base tip of a PR merge commit) exists.
+          fetch-depth: 2
+      - name: does this change touch the action?
+        id: scope
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only HEAD^1 HEAD | grep -qE '^(action/|python/src/|python/pyproject\.toml$|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No action/**, python/src/** or pyproject.toml changes; skipping the self-test."
+          fi
+      - id: plan
+        if: steps.scope.outputs.run == 'true'
+        uses: ./action # zizmor: ignore[self-repository]
+        with:
+          path: action/tests/fixture
+          dry-run: "true"
+      - name: check the outputs and the result
+        if: steps.scope.outputs.run == 'true'
+        env:
+          PUBLISHED: ${{ steps.plan.outputs.published }}
+          RESULT: ${{ steps.plan.outputs.result }}
+        run: |
+          test "$PUBLISHED" = 0
+          jq -e '[.assets[].asset_id] == ["sku-manager"] and .issues == []' "$RESULT"
+      # A path with nothing to scan: the step fails, and the job goes on to
+      # check that it did. Its error annotation is expected.
+      - id: missing
+        if: steps.scope.outputs.run == 'true'
+        uses: ./action # zizmor: ignore[self-repository]
+        continue-on-error: true
+        with:
+          path: action/tests/no-such-directory
+          dry-run: "true"
+      - name: check that the missing path failed the step
+        if: steps.scope.outputs.run == 'true'
+        env:
+          OUTCOME: ${{ steps.missing.outcome }}
+        run: test "$OUTCOME" = failure
 
   ci-ok:
     # #755: the one required status check. Branch protection requires only this
@@ -905,11 +1018,13 @@ jobs:
       - benchmark
       - quickstart
       - langgraph-demo
+      - openai-agents-demo
       - docs-llms-drift
       - docs-site
       - pip-audit
       - dependency-review
       - workflow-lint
+      - action-self-test
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:

@@ -14,6 +14,11 @@ live-verified `/responses` route and the SDK owns the transport.
 `donkey.openai_agents.model()` builds a chat-completions model instead. The
 `Runner` re-raises the openai error unchanged, so `classify()` types it.
 
+The Agents SDK is a deep, conformance-gated adapter (`BG §1.8`, #223). For the
+end-to-end walkthrough, a ticket queue with a PII block, correlation and OTel
+spans against the simulator, see
+[Support triage with the OpenAI Agents SDK](/scenarios/support-triage-agents-sdk).
+
 | # | Script | Shows | Needs |
 | --- | --- | --- | --- |
 | 01 | `agent-and-tool.py` | An `Agent` with a `@function_tool` run by `Runner.run` | Proxy credentials (live only) |

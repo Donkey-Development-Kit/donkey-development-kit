@@ -16,6 +16,7 @@ from .. import _verify
 from ..cachecontrol import current_cache_controls
 from ..config import TOKEN_AUTH_MODES, DonkeyConfig
 from ..correlation import (
+    current_business_group,
     current_correlation_id,
     current_cost_tags,
     new_call_id,
@@ -23,7 +24,8 @@ from ..correlation import (
 )
 from ..cost import CostTags
 from ..endpoints import require_secure_url
-from ..masking import SENSITIVE_NAMES, masked
+from ..identity import user_token_header
+from ..masking import SENSITIVE_NAMES, Secret, masked
 
 __all__ = [
     "CALL_ID_HEADER",
@@ -33,6 +35,7 @@ __all__ = [
     "Origin",
     "attribution_headers",
     "cost_headers",
+    "credential_headers",
     "effective_cost_tags",
     "origin_of",
     "proxy_api_key",
@@ -110,7 +113,8 @@ def attribution_headers(cfg: DonkeyConfig) -> dict[str, str]:
     snapshot cannot see a later ``donkey.run(...)`` override — that binding is a
     contextvar the live client reads per send — so the snapshot path carries the
     set-once tags only, a documented degradation (like the per-run correlation
-    ID, BG §1.8)."""
+    ID, BG §1.8). The same holds for a per-request business group (#310): the
+    snapshot carries the configured one."""
 
     headers: dict[str, str] = {}
     if cfg.application_name:
@@ -141,11 +145,18 @@ def proxy_auth_headers(cfg: DonkeyConfig) -> dict[str, str]:
     * ``bearer`` mode (#836): no consumer-auth header at all. The token is
       injected per-send exactly like the ``jwt`` one, with no wallet selector.
 
+    In ``client-id`` and ``bearer`` mode, ``llm_proxy_key`` also rides in the
+    header ``llm_proxy_key_header`` names, when both are set: the header a
+    Dynamic API Key route reads the provider key from (#367). A model wallet
+    holds its own provider keys, so ``jwt`` mode never sends it.
+
     Returns a :class:`~donkey_kit.core.masking.MaskedDict`: a plain ``dict`` in
-    use, but printing it shows ``'***'`` for the secret header.
+    use, but printing it shows ``'***'`` for the secret headers.
     """
 
     headers = masked(attribution_headers(cfg))
+    if cfg.llm_proxy_key_header and cfg.llm_proxy_key and cfg.llm_proxy_auth != "jwt":
+        headers[cfg.llm_proxy_key_header] = Secret(cfg.llm_proxy_key)
     if cfg.llm_proxy_auth == "jwt":
         if cfg.llm_proxy_wallet_client_id:
             headers[_verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER] = cfg.llm_proxy_wallet_client_id
@@ -194,9 +205,20 @@ def origin_of(url: str | httpx.URL) -> Origin | None:
     return (parsed.scheme, parsed.host.lower(), port)
 
 
-def strip_credential_headers(request: httpx.Request) -> None:
-    """Remove every :data:`CREDENTIAL_HEADERS` header from ``request``."""
-    for name in [n for n in request.headers if n.lower() in CREDENTIAL_HEADERS]:
+def credential_headers(cfg: DonkeyConfig) -> frozenset[str]:
+    """:data:`CREDENTIAL_HEADERS` plus ``cfg``'s provider-key header (#367) and
+    user-token header (BG §2.4), where set: the lower-cased names a client
+    strips off an unchecked origin."""
+    names = (cfg.llm_proxy_key_header, cfg.user_token_header)
+    return CREDENTIAL_HEADERS | {name.lower() for name in names if name}
+
+
+def strip_credential_headers(
+    request: httpx.Request, names: frozenset[str] = CREDENTIAL_HEADERS
+) -> None:
+    """Remove every header in ``names`` (lower-cased) from ``request``: by
+    default :data:`CREDENTIAL_HEADERS`, or a config's :func:`credential_headers`."""
+    for name in [n for n in request.headers if n.lower() in names]:
         del request.headers[name]
 
 
@@ -212,9 +234,16 @@ class _CheckedEndpoints:
     """
 
     _origins: set[Origin]
+    _credential_names: frozenset[str] = CREDENTIAL_HEADERS
 
-    def _init_origins(self, endpoint: str | None, origins: set[Origin] | None) -> None:
+    def _init_origins(
+        self,
+        endpoint: str | None,
+        origins: set[Origin] | None,
+        credential_names: frozenset[str] = CREDENTIAL_HEADERS,
+    ) -> None:
         self._origins = origins if origins is not None else set()
+        self._credential_names = credential_names
         seeded = origin_of(endpoint) if endpoint else None
         if seeded is not None:
             self._origins.add(seeded)
@@ -229,7 +258,8 @@ class _CheckedEndpoints:
         """Let this client send credentials to ``url``'s origin, a URL passed in
         code. Raises :class:`~donkey_kit.core.errors.ConfigError` unless it passes
         the config's https check (``https://``, a loopback host, or any host with
-        ``DONKEY_ALLOW_HTTP=1`` in the environment); ``name`` labels the error."""
+        ``DONKEY_ALLOW_HTTP=1`` in the environment, and no user name or password);
+        ``name`` labels the error."""
         require_secure_url(url, name=name)
         origin = origin_of(url)
         if origin is not None:
@@ -239,7 +269,7 @@ class _CheckedEndpoints:
         """Whether ``request`` may carry credentials. When not, strip any it has."""
         if origin_of(request.url) in self._origins:
             return True
-        strip_credential_headers(request)
+        strip_credential_headers(request, self._credential_names)
         return False
 
 
@@ -276,12 +306,15 @@ def _apply_base_headers(
     run-scope dimension wins for its block (#196). Disabled (the default), no
     cost header is sent; the span attributes still carry every tag.
 
+    A per-request business group (#310) is applied the same way, over the
+    configured one.
+
     On a ``control_plane`` client only the correlation ID is set: the
     attribution, cost-tag and ``x-cache-*`` headers are meant for the LLM proxy
     (docs/verified-apis.md §3) and no Anypoint platform API reads them
     (docs/verified-apis.md §12.2), so they are not sent there (#833)."""
     request.headers[correlation_header] = correlation_id
-    # Stamp the resolved name so read-back (errors._sent_ids) honours a
+    # Stamp the resolved name so read-back (_refusal_body.sent_ids) honours a
     # header-name override without core/errors importing DonkeyConfig (#363).
     # Idempotent across retries — same name each send.
     request.extensions["donkey_correlation_header"] = correlation_header
@@ -289,6 +322,12 @@ def _apply_base_headers(
         return
     for name, value in attribution_headers(cfg).items():
         request.headers[name] = value
+    # A business group bound by ``donkey.run(...)`` / ``donkey.attribution(...)``
+    # replaces the configured one for its block (#310), read per send like the
+    # cost tags below. The header name stays the Unverified placeholder (#21).
+    group = current_business_group()
+    if group is not None:
+        request.headers[_verify.ATTRIBUTION_BUSINESS_GROUP_HEADER.get()] = group
     run = current_cost_tags()
     if run is not None and cfg.send_cost_headers:
         for name, value in cost_headers(cfg, run).items():
@@ -375,3 +414,18 @@ def _apply_auth(
         # Control plane: the OpenAI SDK is not in this path, so yield to any
         # call-site Authorization rather than clobber it.
         request.headers.setdefault(header, value)
+
+
+def _apply_user_token(cfg: DonkeyConfig, request: httpx.Request, token: str) -> None:
+    """Stamp the ``donkey.as_user(...)`` token (BG §2.4, #215) on a data-plane
+    request already cleared by the checked-endpoint guard, after :func:`_apply_auth`.
+
+    In ``Authorization`` (the default, docs/verified-apis.md §13) it
+    rides as a bearer and OVERRIDES what is there: in client-id mode that is the
+    OpenAI SDK's ``api_key`` sentinel, and yielding to it would send the call as
+    the service identity. A ``user_token_header`` override carries the raw token."""
+    header = user_token_header(cfg)
+    if header.lower() == _verify.LLM_PROXY_WALLET_JWT_HEADER.lower():
+        request.headers[header] = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {token}"
+    else:
+        request.headers[header] = token

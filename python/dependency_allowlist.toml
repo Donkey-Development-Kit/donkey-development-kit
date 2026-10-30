@@ -32,7 +32,7 @@ reason = "[llm] and [openai-agents]: the raw OpenAI-compatible proxy client, don
 reviewed = 2026-10-03
 
 [packages.langgraph]
-reason = "[langgraph]: the graph runtime for the deep, conformance-gated adapter (#198)."
+reason = "[langgraph]: the graph runtime for the first deep, conformance-gated adapter (#198)."
 reviewed = 2026-10-03
 
 [packages.langchain-openai]
@@ -56,8 +56,8 @@ reason = "[agent_framework]: Microsoft Agent Framework's OpenAIChatClient and po
 reviewed = 2026-10-03
 
 [packages.openai-agents]
-reason = "[openai-agents]: the OpenAI Agents SDK, supported at connection_kwargs()."
-reviewed = 2026-10-03
+reason = "[openai-agents]: the OpenAI Agents SDK, the second deep, conformance-gated adapter (#223)."
+reviewed = 2026-10-16
 
 [packages.anthropic]
 reason = "[anthropic]: the Anthropic client, supported at connection_kwargs() (#701)."
@@ -75,6 +75,11 @@ reviewed = 2026-10-03
 reason = "[strands]: Strands' OpenAIModel, supported at connection_kwargs()."
 reviewed = 2026-10-03
 
+# --- [mcp]: governed MCP tool binding (#221) ---
+[packages.mcp]
+reason = "[mcp]: the official MCP client ToolSet uses for tools/list and the Anthropic binding's sessions."
+reviewed = 2026-10-28
+
 # --- [local]: the local gateway simulator (BG §1.4) ---
 
 [packages.starlette]
@@ -82,8 +87,14 @@ reason = "[local]: the pure-Python ASGI app donkey mock serves."
 reviewed = 2026-10-03
 
 [packages.uvicorn]
-reason = "[local]: serves the simulator's ASGI app (plain uvicorn, no C extensions)."
+reason = "[local] and [a2a]: serves the simulator's and donkey.serve()'s ASGI apps (plain uvicorn, no C extensions)."
 reviewed = 2026-10-03
+
+# --- [a2a]: donkey.serve(), the inbound A2A listener (BG §2.9.1, #224) ---
+
+[packages.a2a-sdk]
+reason = "[a2a]: the official A2A protocol SDK donkey.serve() wraps; its request handler, task store and routes do the A2A work (ADR 0014)."
+reviewed = 2026-10-24
 
 # --- [otel]: GenAI spans and zero-config export (BG §1.6) ---
 
@@ -179,3 +190,17 @@ reviewed = 2026-10-10
 [packages.uv]
 reason = "lock: `uv pip compile` behind scripts/compile_constraints.py, which lock-refresh.yml runs nightly to refresh constraints/ (#763)."
 reviewed = 2026-10-10
+
+# --- contract-* groups: the adapter-contract legs' MCP bindings (not published, #1318) ---
+
+[packages.langchain-mcp-adapters]
+reason = "contract-langgraph: MultiServerMCPClient, the class ToolSet.langgraph() returns tools from; the leg's tool-binding tests fail without it (#1318)."
+reviewed = 2026-10-29
+
+[packages.llama-index-tools-mcp]
+reason = "contract-llamaindex: BasicMCPClient and McpToolSpec behind ToolSet.llamaindex(); the leg's tool-binding tests fail without it (#1318)."
+reviewed = 2026-10-29
+
+[packages.crewai-tools]
+reason = "contract-crewai: MCPServerAdapter behind ToolSet.crewai(), with its [mcp] extra (mcpadapt); the leg's tool-binding tests fail without it (#1318)."
+reviewed = 2026-10-29

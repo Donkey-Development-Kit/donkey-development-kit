@@ -14,6 +14,7 @@ import httpx
 
 from .._wire import LLM_MODEL_HEADER, LLM_PROVIDER_HEADER, ROUTING_TYPE_HEADER
 from ..budget import Budget
+from ..correlation import current_correlation_source
 from ..cost import CostTags
 from ..errors import PolicyViolation
 from ..lastcall import (
@@ -23,8 +24,9 @@ from ..lastcall import (
     semantic_routing,
     usage_from_response,
 )
+from ..runledger import record_call
 from ..telemetry import POLICY_DECISION_REFUSE, GenAiSpan
-from .policy import Finish, Retry, _request_model, _span_decision
+from .policy import Finish, Retry, _policy_detail, _request_model, _span_decision
 
 __all__: list[str] = []
 
@@ -34,8 +36,8 @@ _log = logging.getLogger(__name__)
 def _observe_final(request: httpx.Request, response: httpx.Response, budget: Budget | None) -> None:
     """Feed the final response to the attached :class:`Budget` from its
     ``x-token-*`` headers (#185), and record a governed model call's gateway
-    identity into ``donkey.last_call`` (#362). Both are no-ops when not
-    applicable.
+    identity into ``donkey.last_call`` (#362) and the run ledger (#613). Each
+    is a no-op when not applicable.
 
     Only a model call feeds ``last_call``: a token fetch or a registry GET
     shares the transport but is not "the last call" a developer means (#362).
@@ -47,7 +49,8 @@ def _observe_final(request: httpx.Request, response: httpx.Response, budget: Bud
         budget.observe(response)
     model = _request_model(request)
     if model is not None:
-        observe_last_call(response, requested_model=model)
+        # The run ledger keeps every record last_call replaces (#613).
+        record_call(observe_last_call(response, requested_model=model))
 
 
 def _log_target(request: httpx.Request) -> str:
@@ -113,6 +116,7 @@ def _record_response(
     the run id is the cross-call join key (BG §1.1, #195)."""
     try:
         decision, policy_type = _span_decision(response, violation)
+        policy_provider, policy_categories = _policy_detail(violation)
         usage = usage_from_response(response)
         matched_topic, routing_score = semantic_routing(response)
         cache_status, cache_score = semantic_cache(response)
@@ -141,8 +145,14 @@ def _record_response(
             reasoning_tokens=usage["reasoning_tokens"],
             decision=decision,
             policy_type=policy_type,
+            # Who blocked it and why, only for a provider-backed refusal (#1183).
+            policy_provider=policy_provider,
+            policy_categories=policy_categories,
             budget_remaining=budget.remaining if budget is not None else None,
             correlation_id=request.headers.get(correlation_header),
+            # Adopted from an inbound request or minted for it (#308); None for
+            # any other run, so the span claims a source only when it knows one.
+            correlation_source=current_correlation_source(),
             # donkey.cost.* carries the FULL tag value regardless of the
             # (unverified) request-header name — the SDK owns the span end to end
             # (#196 AC #4). Merged config⊕run tags, so a run-scope override shows.

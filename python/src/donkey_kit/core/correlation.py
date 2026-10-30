@@ -1,8 +1,11 @@
-"""The run-scoped correlation state (BG §1.1, #195, #196).
+"""The run-scoped correlation state (BG §1.1, #195, #196, #308, #310).
 
-Two contextvars and the ids derived from them: the run correlation id bound by
+The contextvars and the ids derived from them: the run correlation id bound by
 ``donkey.run(...)`` (shared by every request in the block, the client-gateway
-join key), the per-run cost-tag overrides, and the fresh per-request call id.
+join key) and, for a run bound from an inbound request, whether that id was
+adopted from the caller or minted here (#308), the per-run cost-tag overrides,
+the per-request business group (``donkey.run(business_group=...)`` /
+``donkey.attribution(...)``), and the fresh per-request call id.
 Contextvar-bound, so a run's id and overrides reach calls on framework-spawned
 ``asyncio`` tasks, which copy the current context, with no threading through
 framework state.
@@ -16,17 +19,34 @@ from __future__ import annotations
 
 import uuid
 import warnings
+from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
-from .cost import CostTags
+from .cost import CostTags, validate_tag_value
+from .runledger import (
+    DEFAULT_MAX_ENTRIES,
+    RunLedger,
+    bind_run_ledger,
+    checked_max_entries,
+    unbind_run_ledger,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
     from .refusals import TypedRefusals
+    from .runledger import _Ledger
 
 __all__ = [
+    "AttributionScope",
+    "CorrelationSource",
     "RunScope",
+    "attribution_scope",
+    "current_approvals_client",
+    "current_business_group",
     "current_correlation_id",
+    "current_correlation_source",
     "current_cost_tags",
     "new_call_id",
     "new_correlation_id",
@@ -35,12 +55,34 @@ __all__ = [
     "run_scope",
 ]
 
+#: ``"adopted"``: the caller sent the id. ``"minted"``: this process made it.
+CorrelationSource = Literal["adopted", "minted"]
+
 _correlation_id: ContextVar[str | None] = ContextVar("donkey_correlation_id", default=None)
+# Where the bound id came from, for a run bound from an inbound request's headers
+# (#308). ``None`` for any other run: an id the caller's own code passed to
+# ``donkey.run(id=...)`` is neither adopted from a hop nor minted for one.
+_correlation_source: ContextVar[CorrelationSource | None] = ContextVar(
+    "donkey_correlation_source", default=None
+)
 # Per-run cost-tag overrides bound by ``donkey.run(team=..., ...)`` (#196). Like
 # the correlation id it is contextvar-bound, so a run's overrides reach every
 # model call in the block — including calls on framework-spawned asyncio tasks,
 # which copy the current context — with no threading through framework state.
 _cost_tags: ContextVar[CostTags | None] = ContextVar("donkey_cost_tags", default=None)
+# The per-request business group (#310): one process serving several tenants or
+# teams attributes each call to its own group. Read by the transport per send, so
+# it overrides ``DonkeyConfig.business_group`` for the block only.
+_business_group: ContextVar[str | None] = ContextVar("donkey_business_group", default=None)
+# The approvals registry of the client whose ``donkey.run()`` or ``donkey.as_user()``
+# block runs this code (#1423, ADR 0018): a gated tool records its pending call
+# there. Typed ``object``: ``approvals.Approvals`` sits above this module.
+_approvals_client: ContextVar[object | None] = ContextVar("donkey_approvals_client", default=None)
+
+
+def current_approvals_client() -> object | None:
+    """The approvals registry bound by the enclosing client scope, or ``None``."""
+    return _approvals_client.get()
 
 
 def new_correlation_id() -> str:
@@ -62,6 +104,28 @@ def new_call_id() -> str:
 def current_correlation_id() -> str | None:
     """The correlation id bound by the enclosing run scope, or ``None`` outside one."""
     return _correlation_id.get()
+
+
+def current_correlation_source() -> CorrelationSource | None:
+    """``"adopted"`` or ``"minted"`` when the enclosing run was bound from an
+    inbound request's headers, else ``None`` (#308). The GenAI span records it
+    as ``donkey.correlation_id.source``, so a broken chain shows in the trace."""
+    return _correlation_source.get()
+
+
+def current_business_group() -> str | None:
+    """The business group bound by the enclosing ``donkey.run(...)`` or
+    ``donkey.attribution(...)`` block, or ``None`` outside one (#310). The
+    transport sends it in place of the configured ``business_group``."""
+    return _business_group.get()
+
+
+def _checked_group(business_group: str | None) -> str | None:
+    """``business_group`` validated as a header-safe label: it is sent as a
+    request header, so the cost-tag rule applies (#310)."""
+    if business_group is not None:
+        validate_tag_value("business_group", business_group, kind="Attribution")
+    return business_group
 
 
 def current_cost_tags() -> CostTags | None:
@@ -91,46 +155,126 @@ class RunScope:
     Enter and exit happen in the same task/context for both protocols, so the
     ``reset(token)`` is always valid.
 
+    **Concurrency contract (#311).** A fan-out started inside the block
+    (``asyncio.gather``, LangGraph parallel nodes, tool calls on child tasks)
+    sends exactly one correlation ID on every call: each task copies the context
+    when it is created, so it sees the block's ID. That includes a task that
+    outlives the block. A task binding its own scope changes only its copy, never
+    its parent's or a sibling's. A thread does not inherit the context: run it
+    under :func:`contextvars.copy_context` or bind a scope inside it. Without a
+    scope, nothing is grouped. Every logical request gets its own fresh ID
+    (:func:`request_correlation_id`), so N concurrent calls send N IDs, and
+    which task happened to call first changes nothing.
+
     Cost-attribution overrides (#196) layer on as additional bound state:
     ``donkey.run(team=..., project=..., env=..., enduser_id=...)`` binds a
     :class:`~donkey_kit.core.cost.CostTags` for the block, merged over the
     configured tags per field. They ride the same enter/exit token discipline as
     the correlation id, so a nested run's overrides shadow and restore cleanly,
-    and the correlation binding is unaffected when no cost fields are given.
+    and the correlation binding is unaffected when no cost fields are given. A
+    ``business_group`` (#310) binds the same way and replaces the configured
+    group for the block.
 
     With ``refusals`` (the typed-refusal bridge, #724), an exception leaving the
     block is first unbound and then re-raised as its typed
     :class:`~donkey_kit.core.errors.DonkeyError` when it stands for one, exactly
     as :class:`~donkey_kit.core.refusals.TypedRefusals` does on its own.
+
+    The block also binds a **run ledger** (#613): every governed call and
+    refusal in it, read inside at ``donkey.current_run`` and after exit at
+    :attr:`ledger`. A scope that rebinds the enclosing run's own id shares that
+    run's ledger.
+
+    ``donkey.run()`` also binds its client's approvals registry (#1423), so an
+    approval-gated tool called in the block is resolved on that client.
     """
 
-    __slots__ = ("_run_id", "_cost", "_token", "_cost_token", "_refusals")
+    __slots__ = (
+        "_run_id",
+        "_source",
+        "_cost",
+        "_group",
+        "_token",
+        "_source_token",
+        "_cost_token",
+        "_group_token",
+        "_refusals",
+        "_max_entries",
+        "_surface",
+        "_ledger",
+        "_ledger_token",
+        "_client",
+        "_client_token",
+    )
 
     def __init__(
         self,
         run_id: str | None = None,
         cost: CostTags | None = None,
         refusals: TypedRefusals | None = None,
+        business_group: str | None = None,
+        source: CorrelationSource | None = None,
+        ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
+        surface: Callable[[], str | None] | None = None,
+        client: object | None = None,
     ) -> None:
         self._run_id = run_id
+        self._client = client
+        self._client_token: Any = None
+        self._source = source
         self._refusals = refusals
+        self._max_entries = checked_max_entries(ledger_max_entries)
+        self._surface = surface
+        self._ledger: _Ledger | None = None
+        self._ledger_token: Any = None
         # Store only a non-empty override, so a plain ``donkey.run(id=...)`` binds
         # nothing on the cost contextvar and leaves any outer run's tags in place.
         self._cost = cost if (cost is not None and not cost.is_empty) else None
+        self._group = _checked_group(business_group)
         self._token: Any = None
+        self._source_token: Any = None
         self._cost_token: Any = None
+        self._group_token: Any = None
 
     def _bind(self) -> str:
         rid = self._run_id or new_correlation_id()
         self._token = _correlation_id.set(rid)
+        # Always rebound with the id, so a nested ``donkey.run(id=...)`` inside an
+        # inbound run does not report the outer run's source for its own id.
+        self._source_token = _correlation_source.set(self._source)
         if self._cost is not None:
             self._cost_token = _cost_tags.set(self._cost)
+        if self._group is not None:
+            self._group_token = _business_group.set(self._group)
+        self._ledger, self._ledger_token = bind_run_ledger(rid, self._max_entries)
+        if self._client is not None:
+            self._client_token = _approvals_client.set(self._client)
         return rid
 
+    @property
+    def ledger(self) -> RunLedger | None:
+        """A snapshot of this run's ledger (#613), or ``None`` before the block
+        is entered. Still readable after the block exits, for what the run cost."""
+        if self._ledger is None:
+            return None
+        return self._ledger.snapshot(self._surface() if self._surface is not None else None)
+
     def _unbind(self) -> None:
+        if self._client_token is not None:
+            _approvals_client.reset(self._client_token)
+            self._client_token = None
+        if self._ledger_token is not None:
+            unbind_run_ledger(self._ledger_token)
+            self._ledger_token = None
+        if self._group_token is not None:
+            _business_group.reset(self._group_token)
+            self._group_token = None
         if self._cost_token is not None:
             _cost_tags.reset(self._cost_token)
             self._cost_token = None
+        if self._source_token is not None:
+            _correlation_source.reset(self._source_token)
+            self._source_token = None
         if self._token is not None:
             _correlation_id.reset(self._token)
             self._token = None
@@ -158,16 +302,105 @@ class RunScope:
             raise typed from typed.__cause__
 
 
+class AttributionScope:
+    """A **dual sync/async** context manager that attributes the governed calls
+    in its block to a business group and cost tags, without starting a run (#310).
+
+    This is what ``donkey.attribution(...)`` returns. One process serving many
+    tenants or teams keeps one client, pool, auth cache and budget, and states
+    per request which group a call belongs to. It leaves the correlation ID
+    alone, so it composes with ``donkey.run()`` and one run can span two cost
+    centres.
+
+    The business group replaces the configured one for the block. The cost tags
+    merge, per field, over those already bound by an enclosing run or
+    attribution block, so naming one dimension keeps the rest. Both ride
+    contextvars: they reach framework-spawned ``asyncio`` tasks, a concurrent
+    task never sees another's value, and nesting restores the outer value on
+    exit. An empty scope binds nothing.
+    """
+
+    __slots__ = ("_cost", "_group", "_cost_token", "_group_token")
+
+    def __init__(self, cost: CostTags | None = None, business_group: str | None = None) -> None:
+        self._cost = cost if (cost is not None and not cost.is_empty) else None
+        self._group = _checked_group(business_group)
+        self._cost_token: Any = None
+        self._group_token: Any = None
+
+    def _bind(self) -> None:
+        if self._cost is not None:
+            outer = _cost_tags.get()
+            merged = outer.merge(self._cost) if outer is not None else self._cost
+            self._cost_token = _cost_tags.set(merged)
+        if self._group is not None:
+            self._group_token = _business_group.set(self._group)
+
+    def _unbind(self) -> None:
+        if self._group_token is not None:
+            _business_group.reset(self._group_token)
+            self._group_token = None
+        if self._cost_token is not None:
+            _cost_tags.reset(self._cost_token)
+            self._cost_token = None
+
+    def __enter__(self) -> None:
+        self._bind()
+
+    def __exit__(self, *exc: Any) -> None:
+        self._unbind()
+
+    async def __aenter__(self) -> None:
+        self._bind()
+
+    async def __aexit__(self, *exc: Any) -> None:
+        self._unbind()
+
+
+@contextmanager
+def _exact_attribution(cost: CostTags | None, business_group: str | None) -> Iterator[None]:
+    """Bind exactly ``cost`` and ``business_group`` for the block, replacing
+    (not merging over) whatever is bound, and restore on exit. ``None`` binds
+    nothing, so the configured value applies. For a call deferred to another
+    context, which runs with its requester's attribution (#1416)."""
+    cost_token = _cost_tags.set(cost)
+    group_token = _business_group.set(business_group)
+    try:
+        yield
+    finally:
+        _business_group.reset(group_token)
+        _cost_tags.reset(cost_token)
+
+
+def attribution_scope(
+    cost: CostTags | None = None, business_group: str | None = None
+) -> AttributionScope:
+    """Build an :class:`AttributionScope` — the binding behind
+    ``donkey.attribution(...)`` (#310)."""
+    return AttributionScope(cost, business_group)
+
+
 def run_scope(
     run_id: str | None = None,
     cost: CostTags | None = None,
     refusals: TypedRefusals | None = None,
+    business_group: str | None = None,
+    source: CorrelationSource | None = None,
+    ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
+    surface: Callable[[], str | None] | None = None,
+    client: object | None = None,
 ) -> RunScope:
     """Build a :class:`RunScope` — the dual sync/async run correlation binding
     behind ``donkey.run(id=...)`` (BG §1.1, #195), optionally carrying per-run
-    cost-tag overrides (#196) and the typed-refusal bridge applied on exit
-    (#724)."""
-    return RunScope(run_id, cost, refusals)
+    cost-tag overrides (#196), a per-request business group (#310), the
+    typed-refusal bridge applied on exit (#724), and where an inbound run's id
+    came from (#308), with a run ledger of ``ledger_max_entries`` (#613).
+    ``surface`` names the adapters that cannot feed the ledger, if any. ``client``
+    is the approvals registry of the ``Donkey`` opening the run, bound for the
+    block so a gated tool called in it records its approval there (#1423)."""
+    return RunScope(
+        run_id, cost, refusals, business_group, source, ledger_max_entries, surface, client
+    )
 
 
 def run_context(run_id: str | None = None) -> RunScope:

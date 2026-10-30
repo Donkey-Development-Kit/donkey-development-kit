@@ -1,0 +1,8 @@
+# group_id is set here, so the dry run needs no ANYPOINT_ORG_ID.
+[donkey.publication]
+group_id = "ddk-action-self-test"
+version = "1.0.0"
+
+[donkey.mcp_servers.sku-manager]
+transport = "streamable-http"
+endpoint = "https://sku.example.invalid/mcp"

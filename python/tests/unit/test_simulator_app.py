@@ -37,6 +37,7 @@ from donkey_kit.core.errors import (
     UpstreamRequestError,
     classify,
 )
+from donkey_kit.core.step_up import GatewayApprovalDenied, GatewayApprovalPending
 from donkey_kit.simulator import build_app
 from donkey_kit.simulator import fixtures as fx
 from donkey_kit.simulator.app import (
@@ -165,6 +166,8 @@ _CLASSIFY = [
     ("regex-prompt-guard", PromptInjectionBlocked),
     ("content-safety", ContentSafetyBlocked),
     ("agent-killed", AgentKilled),
+    ("ciba-pending", GatewayApprovalPending),
+    ("ciba-denied", GatewayApprovalDenied),
     ("model-not-found", UpstreamRequestError),
     ("model-not-routable", ModelNotRoutable),
     ("upstream-5xx", UpstreamModelError),

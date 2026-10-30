@@ -3,22 +3,17 @@
 OpenTelemetry is an optional dependency (the ``[otel]`` extra). Telemetry is
 **on by default** (``DonkeyConfig.telemetry``), but the export pipeline is
 **inert unless an OTLP endpoint is configured**: :func:`configure_otlp_export`
-builds a real exporter only when ``OTEL_EXPORTER_OTLP_ENDPOINT`` (or the
-traces-specific variant) is set — so a process with no endpoint produces no
-spans, connects to nothing, and prints nothing (BG §1.6 "inert and silent",
-#194). That exporter rides a **DDK-scoped** ``TracerProvider``; the
-process-global provider is never set unless the caller opts in with
-``telemetry_install_global`` (#732), so a host that configures its own provider
-later still gets DDK's spans. This is what makes the zero-config promise hold: set the standard OTel
-endpoint env var and spans flow to your sink with **no SDK-specific env var**.
-Opt out of telemetry entirely with the single flag ``DONKEY_TELEMETRY=false``.
+builds a real exporter only when ``OTEL_EXPORTER_OTLP_ENDPOINT`` (or the traces-specific
+variant) is set — so a process with no endpoint produces no spans, connects to nothing, and
+prints nothing (BG §1.6 "inert and silent", #194). That exporter rides a **DDK-scoped**
+``TracerProvider``; the process-global provider is never set unless the caller opts in with
+``telemetry_install_global`` (#732), so a host that configures its own provider later still
+gets DDK's spans. This is what makes the zero-config promise hold: set the standard OTel
+endpoint env var and spans flow to your sink with **no SDK-specific env var**. Opt out of
+telemetry entirely with the single flag ``DONKEY_TELEMETRY=false``.
 
-The correlation ID lives in a ``contextvar`` so a single agent run's fan-out of
-model calls and tool calls shares one trace ID end to end — letting a developer
-correlate their local trace with what the platform team sees in Omni Gateway's
-observability view (a headline feature, BG §1.6). That state is defined in
-:mod:`donkey_kit.core.correlation`, which the transport's header policy reads
-directly, and is re-exported here so these import paths are unchanged (#728).
+The run correlation ID (BG §1.6) lives in :mod:`donkey_kit.core.correlation`, which the
+transport reads directly; its names are re-exported here, unchanged (#728).
 """
 
 from __future__ import annotations
@@ -30,8 +25,7 @@ import warnings
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
-# The run-scoped correlation state lives in ``core.correlation`` (#728); these
-# names are re-exported so ``donkey_kit.core.telemetry.<name>`` keeps working.
+from . import spanflush
 from .correlation import (
     RunScope,
     current_correlation_id,
@@ -45,27 +39,23 @@ from .correlation import (
 
 if TYPE_CHECKING:
     from .config import DonkeyConfig
-from .errors import (
-    AgentKilled,
-    ContentSafetyBlocked,
-    DonkeyError,
-    PIIDetected,
-    PolicyViolation,
-    PromptInjectionBlocked,
-    RequestRateLimitExceeded,
-    TokenBudgetExceeded,
-)
+# The DONKEY_POLICY_TYPE slug lives beside the refusal registry it consults
+# (#210); re-exported here, where the span code and its callers read it.
+from .classifier import policy_type_slug
 
 __all__ = [
     "DONKEY_BUDGET_REMAINING",
     "DONKEY_CACHE_SCORE",
     "DONKEY_CACHE_STATUS",
     "DONKEY_CORRELATION_ID",
+    "DONKEY_CORRELATION_SOURCE",
     "DONKEY_COST_ENDUSER",
     "DONKEY_COST_ENV",
     "DONKEY_COST_PROJECT",
     "DONKEY_COST_TEAM",
+    "DONKEY_POLICY_CATEGORIES",
     "DONKEY_POLICY_DECISION",
+    "DONKEY_POLICY_PROVIDER",
     "DONKEY_POLICY_TYPE",
     "DONKEY_ROUTING_FALLBACK",
     "DONKEY_ROUTING_MATCHED_TOPIC",
@@ -100,6 +90,7 @@ __all__ = [
     "run_context",
     "run_scope",
     "start_genai_span",
+    "tracer",
 ]
 
 _log = logging.getLogger(__name__)
@@ -154,8 +145,13 @@ GEN_AI_COMPLETION = "gen_ai.completion"
 
 # donkey.* — stable public API (renaming a value here is a breaking change).
 DONKEY_CORRELATION_ID = "donkey.correlation_id"
+DONKEY_CORRELATION_SOURCE = "donkey.correlation_id.source"  # adopted | minted (#225, #308)
 DONKEY_POLICY_DECISION = "donkey.policy.decision"
 DONKEY_POLICY_TYPE = "donkey.policy.type"
+# Who blocked a refusal and why (#1183): the provider's slug and flagged categories (strings).
+# Generic: every provider-backed refusal reuses them (#313, #1177); emitted only when known.
+DONKEY_POLICY_PROVIDER = "donkey.policy.provider"
+DONKEY_POLICY_CATEGORIES = "donkey.policy.categories"
 DONKEY_BUDGET_REMAINING = "donkey.budget.remaining"
 # Cost-attribution dimensions (docs/verified-apis.md §3, BG §1.7, #196). One
 # donkey.cost.* attribute per fixed dimension; ``enduser.id`` keeps its dotted
@@ -165,12 +161,11 @@ DONKEY_COST_TEAM = "donkey.cost.team"
 DONKEY_COST_PROJECT = "donkey.cost.project"
 DONKEY_COST_ENV = "donkey.cost.env"
 DONKEY_COST_ENDUSER = "donkey.cost.enduser.id"
-# Gateway routing & resilience (docs/verified-apis.md §3, #309). The served
-# provider already lands on ``gen_ai.system`` and the served model on
-# ``gen_ai.response.model``; these two carry the gateway-specific routing facts
-# the semconv has no key for. Emitted even when ``fallback`` is ``False`` — "we
-# routed normally" is a signal an operator wants on every span, not just the
-# failover ones.
+# Gateway routing & resilience (docs/verified-apis.md §3, #309). The served provider already
+# lands on ``gen_ai.system`` and the served model on ``gen_ai.response.model``; these two
+# carry the gateway-specific routing facts the semconv has no key for. Emitted even when
+# ``fallback`` is ``False`` — "we routed normally" is a signal an operator wants on every
+# span, not just the failover ones.
 DONKEY_ROUTING_TYPE = "donkey.routing.type"
 DONKEY_ROUTING_FALLBACK = "donkey.routing.fallback"
 # Semantic-routing match detail (docs/verified-apis.md §3, #590). Populated only
@@ -208,11 +203,10 @@ _CONTENT_ATTRIBUTES = frozenset({GEN_AI_PROMPT, GEN_AI_COMPLETION})
 def _tracer() -> Any | None:
     """DDK's tracer, resolved per span (#732).
 
-    A global provider the host has set always wins, even one set after
-    ``Donkey()``: OTel's default proxy provider forwards to it. Only while no
-    global provider is set do spans go to the DDK-scoped provider that
-    :func:`configure_otlp_export` built from an OTLP endpoint. With neither, the
-    default proxy tracer records nothing."""
+    A global provider the host has set always wins, even one set after ``Donkey()``: OTel's
+    default proxy provider forwards to it. Only while no global provider is set do spans go
+    to the DDK-scoped provider that :func:`configure_otlp_export` built from an OTLP
+    endpoint. With neither, the default proxy tracer records nothing."""
     try:
         from opentelemetry import trace
     except ImportError:
@@ -220,6 +214,11 @@ def _tracer() -> Any | None:
     if _scoped_tracer is not None and not _host_provider_set():
         return _scoped_tracer
     return trace.get_tracer("donkey_kit")
+
+
+def tracer() -> Any | None:
+    """:func:`_tracer` for the layers above core, which may not import a private name."""
+    return _tracer()
 
 
 def _host_provider_set() -> bool:
@@ -234,22 +233,14 @@ def _host_provider_set() -> bool:
 
 
 # --- Zero-config OTLP export bootstrap (BG §1.6, #194) -----------------------
-# The span helpers above get their tracer from ``_tracer()``, which rides
-# whatever global TracerProvider the host process installed, or the DDK-scoped
-# provider built below. Without either they export nothing: OpenTelemetry's
-# default is a no-op provider. This is what turns "we build spans" into "spans
-# reach the customer's sink", with the zero-config contract of BG §1.6:
-#   set OTEL_EXPORTER_OTLP_ENDPOINT (the *standard* OTel env var) → spans export.
-#   no SDK-specific env var, and no endpoint set → inert and silent.
-# The provider it builds is DDK-scoped: it carries DDK's own spans and is never
-# made the process-global provider unless ``telemetry_install_global`` is set.
-# OTel lets the global provider be set only once, so taking it implicitly would
-# silently lock out a host that configures its own afterwards (#732,
-# docs/adr/0010-no-hidden-global-side-effects.md). Export I/O runs on the
-# BatchSpanProcessor's background thread, off the request hot path — which is
-# exactly why per-call overhead stays under the 1ms bar (benchmarked in CI,
-# #194): the call site only creates the span, sets attributes and enqueues;
-# the network flush is somebody else's thread.
+# The span helpers above get their tracer from ``_tracer()``: the host's global
+# TracerProvider, else the DDK-scoped one built below, else OTel's no-op default. The
+# zero-config contract of BG §1.6: set OTEL_EXPORTER_OTLP_ENDPOINT (the *standard* OTel
+# env var) and spans export; set nothing and DDK is inert and silent. The scoped provider
+# is never made process-global unless ``telemetry_install_global`` is set, because OTel
+# lets the global be set only once (#732, docs/adr/0010-no-hidden-global-side-effects.md).
+# Export I/O runs on the BatchSpanProcessor's background thread, which is why per-call
+# overhead stays under the 1ms bar (benchmarked in CI, #194).
 
 
 class TelemetryExportWarning(UserWarning):
@@ -262,8 +253,7 @@ class TelemetryExportWarning(UserWarning):
 # Guards ``configure_otlp_export`` to build at most one provider per process
 # (one exporter, one batch thread). Reset by `_reset_for_tests` below.
 _otlp_export_configured = False
-# The DDK-scoped provider's tracer, set when an endpoint is configured and the
-# global provider was neither set by the host nor installed by opt-in.
+# The DDK-scoped provider's tracer, set when neither host nor opt-in set the global one.
 _scoped_tracer: Any | None = None
 # One-time de-dupe for the missing-exporter warning, keyed by protocol.
 _warned_missing_exporter: set[str] = set()
@@ -289,9 +279,8 @@ def _otlp_endpoint_configured() -> bool:
 
 def _otlp_protocol() -> str:
     """The configured OTLP protocol, honouring the standard env vars (traces-
-    specific overrides the generic), defaulting to ``http/protobuf`` — the
-    OTel-recommended default and the one the ``[otel]`` extra ships an exporter
-    for."""
+    specific overrides the generic), defaulting to ``http/protobuf`` — the OTel-recommended
+    default and the one the ``[otel]`` extra ships an exporter for."""
     raw = (
         os.environ.get("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
         or os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL")
@@ -375,10 +364,9 @@ def _build_tracer_provider(config: DonkeyConfig) -> Any | None:
 def configure_otlp_export(config: DonkeyConfig) -> None:
     """Wire a zero-config OTLP exporter for this process, once (BG §1.6, #194).
 
-    Called from ``Runtime.__init__``. Inert and silent (AC #4) when telemetry is
-    off, when no OTLP endpoint env var is set, or when ``[otel]`` is not
-    installed. When an endpoint *is* set, builds a ``TracerProvider`` + OTLP
-    ``BatchSpanProcessor`` and:
+    Called from ``Runtime.__init__``. Inert and silent (AC #4) when telemetry is off, when
+    no OTLP endpoint env var is set, or when ``[otel]`` is not installed. When an endpoint
+    *is* set, builds a ``TracerProvider`` + OTLP ``BatchSpanProcessor`` and:
 
     - if a host already set the global provider (``opentelemetry-instrument``, a
       manual setup), drops it and lets DDK's spans ride the host's;
@@ -413,34 +401,14 @@ def configure_otlp_export(config: DonkeyConfig) -> None:
         _log.debug("OTLP export: keeping the host's TracerProvider; spans ride it")
         return
     if config.telemetry_install_global:
-        trace.set_tracer_provider(provider)
+        trace.set_tracer_provider(spanflush.keep(provider))  # flushed on a kill
         _log.debug("OTLP export installed as the global provider (protocol %s)", _otlp_protocol())
         return
-    _scoped_tracer = provider.get_tracer("donkey_kit")
+    _scoped_tracer = spanflush.keep(provider).get_tracer("donkey_kit")  # flushed on a kill
     _log.debug("OTLP export installed on a DDK-scoped provider (protocol %s)", _otlp_protocol())
 
 
 # --- GenAI chat span (#192, BG §1.6) ----------------------------------------
-# Most-specific subclass first: a PIIDetected is also a PolicyViolation.
-_POLICY_SLUGS: tuple[tuple[type[DonkeyError], str], ...] = (
-    (TokenBudgetExceeded, "token_budget"),
-    (RequestRateLimitExceeded, "request_rate_limit"),
-    (PIIDetected, "pii_detected"),
-    (PromptInjectionBlocked, "injection"),
-    (ContentSafetyBlocked, "content_safety"),
-    (AgentKilled, "agent_killed"),
-    (PolicyViolation, "policy_violation"),
-)
-
-
-def policy_type_slug(error: DonkeyError) -> str | None:
-    """The :data:`DONKEY_POLICY_TYPE` value for a classified refusal, or ``None``
-    for a non-policy error (auth / upstream / transport) that carries no
-    governance allow-or-refuse decision."""
-    for kind, slug in _POLICY_SLUGS:
-        if isinstance(error, kind):
-            return slug
-    return None
 
 
 def build_genai_attributes(
@@ -461,23 +429,25 @@ def build_genai_attributes(
     reasoning_tokens: int | None = None,
     decision: str | None = None,
     policy_type: str | None = None,
+    policy_provider: str | None = None,
+    policy_categories: list[str] | None = None,
     budget_remaining: int | None = None,
     cost_team: str | None = None,
     cost_project: str | None = None,
     cost_env: str | None = None,
     cost_enduser_id: str | None = None,
     correlation_id: str | None = None,
+    correlation_source: str | None = None,
     prompt: str | None = None,
     completion: str | None = None,
 ) -> dict[str, Any]:
     """Assemble the dual-namespace GenAI span attributes, omitting any field left
     ``None``.
 
-    Both the pinned ``gen_ai.*`` keys and the stable ``donkey.*`` keys are built
-    here and land on ONE span (:func:`genai_span`, AC #5). A ``None`` field is
-    an unobserved value: it is dropped, never emitted as a null or a placeholder,
-    so a caller can record what it knows as it learns it (request model first,
-    response fields once the response settles).
+    Both the pinned ``gen_ai.*`` keys and the stable ``donkey.*`` keys are built here and
+    land on ONE span (:func:`genai_span`, AC #5). A ``None`` field is an unobserved value:
+    it is dropped, never emitted as a null or a placeholder, so a caller can record what it
+    knows as it learns it (request model first, response fields once the response settles).
 
     ``prompt`` / ``completion`` are message CONTENT: this function will place
     them under the pinned :data:`GEN_AI_PROMPT` / :data:`GEN_AI_COMPLETION` keys,
@@ -523,6 +493,10 @@ def build_genai_attributes(
         attrs[DONKEY_POLICY_DECISION] = decision
     if policy_type is not None:
         attrs[DONKEY_POLICY_TYPE] = policy_type
+    if policy_provider is not None:
+        attrs[DONKEY_POLICY_PROVIDER] = policy_provider
+    if policy_categories is not None:
+        attrs[DONKEY_POLICY_CATEGORIES] = policy_categories
     if budget_remaining is not None:
         attrs[DONKEY_BUDGET_REMAINING] = budget_remaining
     if cost_team is not None:
@@ -535,6 +509,8 @@ def build_genai_attributes(
         attrs[DONKEY_COST_ENDUSER] = cost_enduser_id
     if correlation_id is not None:
         attrs[DONKEY_CORRELATION_ID] = correlation_id
+    if correlation_source is not None:
+        attrs[DONKEY_CORRELATION_SOURCE] = correlation_source
     if prompt is not None:
         attrs[GEN_AI_PROMPT] = prompt
     if completion is not None:
@@ -550,11 +526,10 @@ class GenAiSpan:
     (telemetry off, or OpenTelemetry not installed) it wraps ``None`` and every
     call is a no-op — telemetry must never be a hard dependency or an error path.
 
-    ``capture_content`` is the per-span copy of ``telemetry_capture_content``
-    (#306): when ``False`` (the default), :meth:`record` drops every
-    content-bearing attribute (:data:`_CONTENT_ATTRIBUTES`) before it touches the
-    span, so prompts/completions never reach the exporter regardless of what a
-    call site passes.
+    ``capture_content`` is the per-span copy of ``telemetry_capture_content`` (#306): when
+    ``False`` (the default), :meth:`record` drops every content-bearing attribute
+    (:data:`_CONTENT_ATTRIBUTES`) before it touches the span, so prompts/completions never
+    reach the exporter regardless of what a call site passes.
     """
 
     __slots__ = ("_span", "_capture_content")
@@ -605,10 +580,9 @@ class GenAiSpan:
 def genai_span(*, enabled: bool, capture_content: bool = False) -> Iterator[GenAiSpan]:
     """The GenAI chat span (:data:`SPAN_LLM_CHAT`) for one governed model call.
 
-    Yields a :class:`GenAiSpan` the caller records onto. Both the pinned
-    ``gen_ai.*`` attributes and the stable ``donkey.*`` attributes go on this one
-    span (AC #5). A no-op (yielding an inert handle, never raising) when
-    telemetry is off or OpenTelemetry is not installed.
+    Yields a :class:`GenAiSpan` the caller records onto. Both the pinned ``gen_ai.*`` attributes
+    and the stable ``donkey.*`` attributes go on this one span (AC #5). A no-op (yielding an
+    inert handle, never raising) when telemetry is off or OpenTelemetry is not installed.
 
     ``capture_content`` carries ``telemetry_capture_content`` down to the yielded
     handle (#306); when ``False`` (default) the handle drops prompt/completion
@@ -633,18 +607,16 @@ def genai_span(*, enabled: bool, capture_content: bool = False) -> Iterator[GenA
 def start_genai_span(*, enabled: bool, capture_content: bool = False) -> GenAiSpan:
     """A DETACHED :data:`SPAN_LLM_CHAT` span the caller must :meth:`GenAiSpan.end`.
 
-    Unlike :func:`genai_span` (a context manager that ends the span on block
-    exit), this returns a live span whose lifetime is *not* bound to a ``with``
-    block. That is what the streaming path needs: the span must outlive
-    ``send()`` so the stream wrapper can fill ``gen_ai.usage.*`` from the terminal
-    SSE event and end the span when the stream closes — on drain, abandonment, or
-    exception (#193). Inert (an end-safe no-op handle, never raising) when
-    telemetry is off or OpenTelemetry is not installed.
+    Unlike :func:`genai_span` (a context manager that ends the span on block exit), this
+    returns a live span whose lifetime is *not* bound to a ``with`` block. That is what the
+    streaming path needs: the span must outlive ``send()`` so the stream wrapper can fill
+    ``gen_ai.usage.*`` from the terminal SSE event and end the span when the stream closes —
+    on drain, abandonment, or exception (#193). Inert (an end-safe no-op handle, never
+    raising) when telemetry is off or OpenTelemetry is not installed.
 
-    The span is deliberately NOT made the current context: a streamed response is
-    consumed long after ``send()`` returns, so there is no live scope to nest
-    under. It records attributes and closes correctly, which is the whole of the
-    span contract #193 requires.
+    The span is deliberately NOT made the current context: a streamed response is consumed
+    long after ``send()`` returns, so there is no live scope to nest under. It records
+    attributes and closes correctly, which is the whole of the span contract #193 requires.
 
     ``capture_content`` carries ``telemetry_capture_content`` to the returned
     handle (#306); when ``False`` (default) the handle drops prompt/completion

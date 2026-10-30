@@ -1,6 +1,10 @@
 # ADR 0006: Three API stability tiers, and a one-minor-release deprecation window during 0.x
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-29, #1425: rules 1, 2, 4 and 6 are in effect,
+  and `tests/unit/test_public_api_snapshot.py` is rule 4's snapshot. Rule 3's
+  `_deprecated()` helper and rule 5's `docs/api-stability.md` are still #236's.)
+- **Amended by:** [ADR 0020](0020-provisional-members-of-stable-classes.md)
+  (2026-10-30, #1499): a public member of a stable class may be provisional.
 - **Date:** 2026-10-03
 - **Issue:** #236 (the public API contract and deprecation policy; the
   architecture review's tiers proposal was folded into it rather than filed
@@ -89,3 +93,11 @@
   importable.
 - New public names get reviewed against the tiers: a name added to
   `__all__` is a stable promise.
+
+## Amendment (2026-10-30, #1499)
+
+[ADR 0020](0020-provisional-members-of-stable-classes.md) adds to rule 1's
+provisional tier: a public member of a stable class is provisional when its
+docstring says `Provisional (ADR 0020)` and the snapshot test lists it in
+`PROVISIONAL_MEMBERS`. The first are `ToolsFacade.live_tools()` and
+`live_card()`. The three tiers and the rest of rule 1 are unchanged.

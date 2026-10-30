@@ -1,0 +1,46 @@
+{
+  "type": "HY",
+  "gatewayVersion": "1.14.2",
+  "targetId": "00000000-0000-4000-8000-d4b0d8dad526",
+  "targetName": "shared-omni-gateway",
+  "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+  "environmentName": "Sandbox",
+  "environmentApiId": 21259411,
+  "releaseChannel": "edge",
+  "targetMetadata": {
+    "target": {
+      "id": "00000000-0000-4000-8000-d4b0d8dad526",
+      "provider": "RR"
+    },
+    "spec": {
+      "target": {
+        "environment": {
+          "target": {
+            "id": "00000000-0000-4000-8000-d4b0d8dad526",
+            "provider": "RR"
+          }
+        },
+        "annotations": {
+          "gateway-manager.mulesoft.com/kind": "managed",
+          "gateway-manager.mulesoft.com/targetType": "shared-space"
+        }
+      }
+    }
+  },
+  "audit": {
+    "created": {
+      "date": "2026-10-27T14:33:53.062Z"
+    },
+    "updated": {
+      "date": "2026-10-27T14:33:54.202Z"
+    }
+  },
+  "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+  "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+  "id": 28482512,
+  "expectedStatus": "deployed",
+  "apiId": 21259411,
+  "applicationId": "00000000-0000-4000-8000-cc690d96060a",
+  "policyConfigRefType": "apiManagerRef",
+  "updatedDate": "2026-10-27T14:33:54.202Z"
+}

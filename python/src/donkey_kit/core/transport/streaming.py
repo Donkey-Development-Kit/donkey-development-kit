@@ -13,7 +13,8 @@ from collections.abc import AsyncIterator, Iterator
 
 import httpx
 
-from ..lastcall import observe_usage, parse_usage, usage_mapping
+from ..lastcall import current_last_call, observe_usage, parse_usage, usage_mapping
+from ..runledger import record_usage
 from ..telemetry import GenAiSpan
 
 __all__: list[str] = []
@@ -219,7 +220,8 @@ class _SpanClosingStream:
         # is consumed in the same context that set the record, so this updates the
         # caller's own donkey.last_call. Outside the telemetry guard: a failing
         # span recorder must not drop the usage (#817).
-        observe_usage(counts)
+        before = current_last_call()
+        record_usage(before, observe_usage(counts))
         self._gspan.end()
 
 

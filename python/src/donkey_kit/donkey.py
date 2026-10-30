@@ -20,20 +20,35 @@ import inspect
 import os
 import sys
 import warnings
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
-from .core import _verify
+from .core import _verify, spanflush
+from .core.approvals import (
+    APPROVAL_TIMEOUT,
+    Approval,
+    ApprovalMode,
+    Approvals,
+    gate,
+    parse_timeout,
+)
 from .core.auth import AuthProvider
 from .core.budget import Budget
 from .core.cachecontrol import CacheControls, CacheScope, cache_scope
+from .core.classifier import Classifier
+from .core.classifier import classify as _classify
 from .core.config import ConfigOverrides, DonkeyConfig
+from .core.correlation import AttributionScope, attribution_scope
 from .core.cost import CostTags
+from .core.identity import UserScope
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
+from .core.reactions import Duration, OnRefusal
+from .core.runledger import DEFAULT_MAX_ENTRIES, RunLedger, current_run_ledger
 from .core.runtime import Runtime
 from .core.telemetry import RunScope, run_scope
-from .core.toolspec import register_tool
+from .core.toolspec import register_agent, register_tool, validate_service_id
 from .core.transport import (
     DonkeyAsyncClient,
     DonkeyAsyncClientView,
@@ -45,6 +60,8 @@ from .integrations import typed_refusals as _typed_refusals
 from .llm.client import LLMClient
 from .registry.criteria import GovernanceCriteria
 from .registry.exchange import ExchangeRegistry
+from .tools.auth import McpAuth, gateway_auth
+from .tools.discovery import Discovery, blocked_lock
 from .tools.session import ToolSet
 
 # Imported at runtime: the public API surface check resolves ``Donkey.from_env``'s
@@ -57,7 +74,7 @@ else:
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
 
-    from .core.errors import DonkeyError
+    from .core.errors import DonkeyError, PolicyViolation
     from .integrations._base import Adapter
     from .integrations.adk import ADKAdapter
     from .integrations.agent_framework import AgentFrameworkAdapter
@@ -74,6 +91,7 @@ __all__ = ["Donkey", "ToolsFacade"]
 _Callable = TypeVar("_Callable", bound=Callable[..., Any])
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+_T = TypeVar("_T")
 
 
 def _missing_module(probe: tuple[str, ...]) -> str | None:
@@ -88,35 +106,254 @@ def _missing_module(probe: tuple[str, ...]) -> str | None:
     return None
 
 
+def _langgraph_interrupt(
+    tool: str, arguments: Mapping[str, Any], risk: str | None
+) -> Approval | None:
+    """The LangGraph native pause for a gated tool (#212). A no-op until the
+    process has imported LangGraph, so ``import donkey_kit`` never loads it."""
+    if "langgraph" not in sys.modules:
+        return None
+    from .integrations.langgraph import approval_interrupt
+
+    return approval_interrupt(tool, arguments, risk)
+
+
+def _openai_agents_approval(
+    tool: str, arguments: Mapping[str, Any], risk: str | None
+) -> Approval | None:
+    """The OpenAI Agents SDK's approved call for a gated tool (#213). A no-op
+    until the process has imported the Agents SDK, so ``import donkey_kit``
+    never loads it."""
+    if "agents" not in sys.modules:
+        return None
+    from .integrations.openai_agents import approved_call
+
+    return approved_call(tool, arguments, risk)
+
+
+def _strands_approval(tool: str, arguments: Mapping[str, Any], risk: str | None) -> Approval | None:  # noqa: ARG001
+    """The Strands native pause for a gated tool (#1234): the approval a
+    Strands ``ApprovalHook`` granted for this call, which paused the agent with
+    Strands' interrupt before the tool ran. A no-op until the process has
+    imported Strands."""
+    if "strands" not in sys.modules:
+        return None
+    from .integrations.strands import approved_call
+
+    return approved_call(tool)
+
+
+def _adk_approval(tool: str, arguments: Mapping[str, Any], risk: str | None) -> Approval | None:  # noqa: ARG001
+    """The ADK native pause for a gated tool (#1235): the approval ADK's tool
+    confirmation granted for this call, through the plugin
+    ``integrations.adk.approval_plugin()`` builds. A no-op until the process
+    has imported ADK."""
+    if "google.adk" not in sys.modules:
+        return None
+    from .integrations.adk import approved_call
+
+    return approved_call(tool)
+
+
+# The framework pauses a gated tool tries before raising ApprovalRequired. The
+# Agents hook only answers inside a call its function_tool() is running, and the
+# Strands and ADK hooks only for a call their hook or plugin approved.
+_NATIVES = (_openai_agents_approval, _strands_approval, _adk_approval, _langgraph_interrupt)
+
+# The approvals of the client whose ``donkey.tool`` is running, so a tool gated
+# there records on that client outside any of its scopes (ADR 0018).
+_declaring: ContextVar[Approvals | None] = ContextVar("donkey_declaring_client", default=None)
+
+
+class _ClientTool(staticmethod):  # type: ignore[type-arg]
+    """``Donkey.tool``: still a staticmethod, so ``@Donkey.tool`` names no client,
+    but read from an instance it declares the tools it gates on that client."""
+
+    def __get__(self, obj: object, *_: object) -> Callable[..., Any]:
+        func: Callable[..., Any] = self.__func__
+        if not isinstance(obj, Donkey):
+            return func
+        approvals = obj.approvals
+
+        @functools.wraps(func)
+        def declare(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+            token = _declaring.set(approvals)
+            try:
+                return func(*args, **kwargs)
+            finally:
+                _declaring.reset(token)
+
+        return declare
+
+
+def _client_bound(method: _T) -> _T:
+    return cast(_T, _ClientTool(cast(Any, method).__func__))
+
+
 class ToolsFacade:
     """``donkey.tools`` — discovery + lock (BG §2.7)."""
 
-    def __init__(self, registry: ExchangeRegistry) -> None:
+    def __init__(
+        self,
+        registry: ExchangeRegistry,
+        cfg: DonkeyConfig,
+        llm_auth: AuthProvider | None,
+        approvals: Approvals | None = None,
+    ) -> None:
         self._registry = registry
+        self._discovery = Discovery(
+            registry,
+            cfg,
+            auth=gateway_auth(cfg, llm_auth),
+            natives=_NATIVES,
+            approvals=approvals,
+        )
 
     async def discover(
         self,
         *,
         domain: str | None = None,
         tags: list[str] | None = None,
-        governed: bool | GovernanceCriteria | None = None,
+        governed: bool | GovernanceCriteria | None = True,
         locked: bool = False,
+        auth: McpAuth | None = None,
     ) -> ToolSet:
-        """Discover a governed tool catalog and return a bindable ``ToolSet``.
+        """Discover the MCP servers in Exchange and return a bindable ``ToolSet``.
 
-        ``governed`` defaults to ``None`` (no filtering) in v1, with a startup
-        log line stating discovery is unfiltered (governed-only discovery). Flipping the default
-        to ``True`` is a breaking change reserved for a later major version.
+        Reads the MCP assets with ``registry.search()``, then each one's
+        ``registry.explain()`` verdict and ``registry.resolve_mcp()`` gateway
+        endpoint. No MCP connection opens until a binding method runs. The
+        result is cached for ``registry_cache_ttl_s`` seconds;
+        ``ToolSet.discovered_at`` and ``ToolSet.is_stale`` say how old it is,
+        and :meth:`refresh` drops it.
 
-        Blocked until Exchange search + the governed-state join are verified
-        (verification discipline / the Verification milestone).
+        ``governed`` defaults to ``True`` (ADR 0017): the set holds only the
+        servers that pass the default ``GovernanceCriteria``, and each one left
+        out is logged with its reasons, so the default set binds. When nothing
+        is left the set is empty, with a log line saying why, not an error.
+        ``governed=None`` lists every server, with a log line stating discovery
+        is unfiltered, and each verdict on ``McpServerHandle.governance``; the
+        ``ToolSet`` binding methods still refuse a set holding an ungoverned
+        server with ``UngovernedMcpServer`` (ADR 0013, rules kept by ADR 0017).
+
+        Args:
+            domain: Catalog domain. Not supported yet.
+            tags: Keep the assets that carry every tag, ignoring case.
+            governed: ``True`` (the default) keeps the servers the default
+                ``GovernanceCriteria`` passes; a ``GovernanceCriteria`` (such as
+                ``STRICT``) sets the rules; ``None`` keeps every server.
+            locked: Resolve only what ``donkey.lock`` pins. Not supported yet.
+            auth: The gateway credential bindings send. ``None`` uses the
+                data-plane consumer credential (``llm_proxy_auth``).
+
+        Raises:
+            ConfigError: The control-plane settings are missing.
+            RegistryError: Exchange or API Manager refused a read.
+            NotImplementedError: ``domain`` or ``locked=True`` was given; see
+                docs/verified-apis.md §7.
+
+        Docs: https://docs.donkey-kit.dev/tool-access/discovery
         """
-
-        raise _verify.blocked(
-            "Exchange search + governed-state join (governed-only discovery, the Verification "
-            "milestone). ToolSet filtering and binding scaffolding exist; wire discover() once the "
-            "APIs are confirmed and use registry.explain() for the empty-result reason."
+        if locked:
+            raise blocked_lock()
+        return await self._discovery.discover(
+            domain=domain, tags=tags, governed=governed, auth=auth
         )
+
+    async def live_tools(self, ref: str) -> tuple[dict[str, object], ...]:
+        """The tools MCP server asset version ``ref`` lists now, through its
+        gateway instance: the live side of ``donkey.registry.published_tools(ref)``.
+
+        Reads the server's default-criteria verdict and its endpoint as
+        :meth:`discover` does, then its ``tools/list`` with the credential a
+        binding sends. Not cached. ``Publication.verify()`` compares the two
+        (BG §2.5, #991).
+
+        Provisional (ADR 0020): may change in a minor release, with a migration
+        note.
+
+        Args:
+            ref: ``group_id/asset_id/version``.
+
+        Raises:
+            UngovernedMcpServer: The server is not governed, so nothing is sent
+                to it (ADR 0017).
+            RegistryError: ``ref`` does not resolve to one gateway instance.
+            ConfigError: The gateway credential may not go to a URL read from a
+                control plane the working directory's config files named (ADR 0019).
+            AuthError: The gateway refused the credential.
+            ToolInvocationError: The server could not list its tools.
+
+        Docs: https://docs.donkey-kit.dev/publishing#verifying-at-runtime-verify
+        """
+        return await self._discovery.live_tools(ref)
+
+    async def live_card(self, ref: str) -> dict[str, Any]:
+        """The card A2A agent asset version ``ref`` serves now, through its
+        gateway instance: the live side of ``donkey.registry.published_card(ref)``.
+
+        Reads ``.well-known/agent-card.json`` after the governance check and
+        with the credential a binding sends. Not cached.
+        ``Publication.verify()`` compares the two (BG §2.5, #1354).
+
+        Provisional (ADR 0020): may change in a minor release, with a migration
+        note.
+
+        Args:
+            ref: ``group_id/asset_id/version``.
+
+        Raises:
+            RegistryError: The agent is not governed (nothing is sent to it), does
+                not resolve to one deployed A2A instance behind an ``https://``
+                gateway URL, or the read failed.
+            ConfigError: The gateway credential may not go to a URL read from a
+                control plane the working directory's config files named (ADR 0019).
+            AuthError: The gateway refused the credential.
+
+        Docs: https://docs.donkey-kit.dev/publishing#verifying-at-runtime-verify
+        """
+        return await self._discovery.agent_card(ref)
+
+    async def warm(
+        self,
+        *,
+        domain: str | None = None,
+        tags: list[str] | None = None,
+        governed: bool | GovernanceCriteria | None = True,
+    ) -> int:
+        """Read the registry now, so the next matching :meth:`discover` is a cache hit.
+
+        Call it at startup with the arguments the agent will pass to
+        :meth:`discover`: it does the same reads and fills the same cache entry,
+        so the first tool lookup does not wait on them. It always reads, even
+        when that entry is cached: it first drops the registry's cached lookups,
+        as ``donkey.registry.refresh()`` does, so the verdicts it caches are
+        current. It returns the number of servers cached.
+
+        There is no bulk read of applied policies, so the cost is O(N): one
+        ``search()``, then an ``explain()`` and a ``resolve_mcp()`` per MCP
+        asset, eight at a time. Measured at about 20 policy reads a second, so
+        200 servers take roughly 10 s (docs/verified-apis.md §6, #54).
+
+        Args:
+            domain: As for :meth:`discover`. Not supported yet.
+            tags: As for :meth:`discover`.
+            governed: As for :meth:`discover`, and with the same default.
+
+        Raises:
+            ConfigError: The control-plane settings are missing.
+            RegistryError: Exchange or API Manager refused a read.
+            NotImplementedError: ``domain`` was given; see docs/verified-apis.md §7.
+
+        Docs: https://docs.donkey-kit.dev/tool-access/discovery#defaults-and-performance
+        """
+        return await self._discovery.warm(domain=domain, tags=tags, governed=governed)
+
+    def refresh(self) -> None:
+        """Drop the cached discoveries and the registry's cached lookups (as
+        ``donkey.registry.refresh()`` does), so the next :meth:`discover` reads
+        Exchange and API Manager again."""
+        self._discovery.refresh()
 
     def lock(self) -> None:
         """Write a ``donkey.lock`` of resolved versions + digests (BG §2.7)."""
@@ -191,7 +428,8 @@ class Donkey:
         self._control_http: DonkeyAsyncClient = self._runtime.control_http
         self._llm = LLMClient(self._cfg, self._http, self._sync_http_client)
         self._registry = ExchangeRegistry(self._cfg, self._control_http)
-        self._tools = ToolsFacade(self._registry)
+        self._approvals = Approvals()
+        self._tools = ToolsFacade(self._registry, self._cfg, self._llm_auth, self._approvals)
         self._adapter_cache: dict[str, Adapter] = {}
 
     @classmethod
@@ -322,10 +560,42 @@ class Donkey:
         # Donkey routes outside our transport, say so by name instead of leaving
         # an indistinguishable UNOBSERVED (hazard #3). An empty cache (raw client
         # / not used yet) is a cold read, not UNAVAILABLE.
+        surface = self._unobservable_surface()
+        return unavailable(surface) if surface is not None else UNOBSERVED
+
+    def _unobservable_surface(self) -> str | None:
+        """The adapters resolved on this Donkey, when every one routes outside
+        the SDK's transport, so no response reaches ``last_call`` or the run
+        ledger; else ``None``. No adapter yet (the raw client) is ``None``."""
         used = list(self._adapter_cache.values())
         if used and all(not a.observes_last_call for a in used):
-            return unavailable(", ".join(sorted(self._adapter_cache)))
-        return UNOBSERVED
+            return ", ".join(sorted(self._adapter_cache))
+        return None
+
+    @property
+    def current_run(self) -> RunLedger | None:
+        """A snapshot of the bound ``donkey.run()`` block's ledger (#613), or
+        ``None`` outside a run.
+
+        Every governed model call made in the run (each call's
+        :class:`~donkey_kit.core.lastcall.LastCall` record), every refusal the
+        gateway returned on one, caught by a framework or not (each a
+        :class:`~donkey_kit.core.runledger.RunRefusal`), and the run's token
+        totals. Use it to adapt within a run::
+
+            async with donkey.run(id=ticket.id):
+                await triage_agent.run(ticket)
+                if any(r.is_a(PIIDetected) for r in donkey.current_run.refusals):
+                    ...  # redact the later prompts
+
+        Metadata only, never prompt or completion text. Like :attr:`last_call`,
+        it is fed only by responses through the SDK's transport, so when every
+        adapter used routes outside it, ``available`` is false: unavailable, not
+        empty.
+
+        Docs: https://docs.donkey-kit.dev/telemetry#run-ledger
+        """
+        return current_run_ledger(self._unobservable_surface())
 
     @overload
     def openai(self, *, sync: Literal[False] = ..., **kw: Any) -> AsyncOpenAI: ...
@@ -394,7 +664,9 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        business_group: str | None = None,
         typed_refusals: bool = True,
+        ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
     ) -> RunScope:
         """Group one logical agent run under a shared correlation id (BG §1.7, #195).
 
@@ -427,6 +699,9 @@ class Donkey:
         env=..., enduser_id=...)`` wins per field for every call inside, and the
         rest fall back to the configured tags. Like the run id, the binding rides
         the contextvar, so it reaches framework-spawned tasks and restores on exit.
+        ``business_group=`` (#310) does the same for the business group: it
+        replaces the configured one for every call in the block. To attribute
+        part of a run without starting a new one, use :meth:`attribution`.
 
         **Typed refusals** (BG §1.2, #724): a governance refusal or a transport
         failure leaving the block is re-raised as its typed
@@ -436,13 +711,103 @@ class Donkey:
         for every framework. Anything that is not a refusal propagates unchanged.
         It is the bridge :func:`donkey_kit.typed_refusals` applies on its own;
         pass ``typed_refusals=False`` to get the framework's own errors instead.
+
+        **Run ledger** (#613): the block keeps every governed call, refusal and
+        token total, read inside at :attr:`current_run` and, after the block, from
+        the scope (``scope = donkey.run(...)``, ``async with scope: ...``,
+        ``scope.ledger``). ``ledger_max_entries`` caps the calls and refusals kept
+        (default 1000 each); the totals keep counting past it.
         """
         override = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
         return run_scope(
             id,
             override if not override.is_empty else None,
             _typed_refusals() if typed_refusals else None,
+            business_group,
+            ledger_max_entries=ledger_max_entries,
+            surface=self._unobservable_surface,
+            client=self._approvals,
         )
+
+    def run_from_headers(
+        self,
+        headers: Mapping[str, str],
+        *,
+        team: str | None = None,
+        project: str | None = None,
+        env: str | None = None,
+        enduser_id: str | None = None,
+        business_group: str | None = None,
+        typed_refusals: bool = True,
+        ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
+    ) -> RunScope:
+        """Join the caller's run: :meth:`run`, with the id read from an inbound
+        request's headers (#308).
+
+        An agent or service that serves HTTP receives its caller's correlation
+        ID in a header. Binding it makes every governed call the handler makes
+        send the caller's ID, so a supervisor and the sub-agents it calls share
+        one run end to end instead of each minting its own::
+
+            @app.post("/task")
+            async def handle(request: Request):
+                async with donkey.run_from_headers(request.headers):
+                    return await agent.run(await request.json())
+
+        The ID is read from the ``correlation_header`` setting's header
+        (``X-Correlation-Id`` by default), case-insensitively. It is adopted
+        when it is 1-128 of ``[A-Za-z0-9._:-]``; when it is missing or
+        malformed a fresh one is minted, never forwarded. The rule is the one a
+        served A2A task uses (``donkey.serve()``, #225). Every ``donkey.llm.chat``
+        span in the block records ``donkey.correlation_id.source`` as
+        ``"adopted"`` or ``"minted"``, so a broken chain is visible in the trace
+        rather than silently plausible. The block yields the bound ID.
+
+        It takes the keyword arguments of :meth:`run` and binds them the same
+        way. To send the bound ID on an outbound hop the governed transport
+        does not carry, such as your own MCP or A2A client, pass it
+        :meth:`correlation_headers`.
+
+        Docs: https://docs.donkey-kit.dev/telemetry
+        """
+        from .core.inbound import correlation_id_from_headers
+
+        inbound = correlation_id_from_headers(headers, self._cfg.correlation_header)
+        override = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
+        return run_scope(
+            inbound.correlation_id,
+            override if not override.is_empty else None,
+            _typed_refusals() if typed_refusals else None,
+            business_group,
+            inbound.source,
+            ledger_max_entries=ledger_max_entries,
+            surface=self._unobservable_surface,
+            client=self._approvals,
+        )
+
+    def correlation_headers(self) -> dict[str, str]:
+        """The bound run's correlation header, for an outbound hop the governed
+        transport does not carry (#308).
+
+        Every request through this client's transport (model calls, registry
+        lookups, ``donkey.http_client()``) already sends the run's ID. A call
+        made with another HTTP client, such as your MCP client or a call to
+        another agent over A2A, does not, so pass it these headers::
+
+            async with donkey.run(id=ticket.id):
+                await agents.post(url, json=task, headers=donkey.correlation_headers())
+
+        Returns ``{name: id}``, named by the ``correlation_header`` setting
+        (``X-Correlation-Id`` by default) inside a :meth:`run` or
+        :meth:`run_from_headers` block, and ``{}`` outside one: a call outside a
+        run is its own run, so there is nothing to join.
+        """
+        from .core.correlation import current_correlation_id
+
+        rid = current_correlation_id()
+        if rid is None:
+            return {}
+        return {self._cfg.correlation_header or _verify.CORRELATION_ID_HEADER: rid}
 
     def run_context(self, run_id: str | None = None) -> RunScope:
         """Deprecated alias for :meth:`run` (BG §1.7): use ``donkey.run(id=…)``.
@@ -453,6 +818,57 @@ class Donkey:
             stacklevel=2,
         )
         return self.run(run_id)
+
+    def attribution(
+        self,
+        *,
+        business_group: str | None = None,
+        team: str | None = None,
+        project: str | None = None,
+        env: str | None = None,
+        enduser_id: str | None = None,
+    ) -> AttributionScope:
+        """Attribute every governed call in the block to a business group and
+        cost tags, per request, without starting a run (#310).
+
+        One process serving several tenants or teams keeps one client,
+        connection pool, auth cache and budget, and states which group each
+        call belongs to::
+
+            async def handle(tenant: str, prompt: str):
+                with donkey.attribution(business_group=tenant):
+                    return await model.ainvoke(prompt)
+
+        The business group replaces the configured ``business_group`` for the
+        block (precedence: this scope, then the ``Donkey`` config, then env,
+        then file). The cost tags merge per field over any already bound by an
+        enclosing :meth:`run` or ``attribution()`` block. The correlation ID is
+        left alone, so it composes with :meth:`run` and one run can span two
+        cost centres::
+
+            async with donkey.run(id=job.id):
+                with donkey.attribution(business_group="risk-eu"):
+                    await score(job)
+                with donkey.attribution(business_group="risk-us"):
+                    await score(job)
+
+        A **dual sync/async** context manager. The binding is a contextvar, so
+        it reaches framework-spawned ``asyncio`` tasks, concurrent tasks never
+        see each other's group, and nesting restores the outer value on exit.
+        Both the async and the blocking client honour it. Invalid values raise
+        :class:`~donkey_kit.core.errors.ConfigError` here, not on the first
+        request.
+
+        The same documented degradation as :meth:`run` applies (BG §1.8): an
+        adapter handed only a ``default_headers`` snapshot
+        (``connection_kwargs()``) captured the configured group when it was
+        built and does not follow this scope. The header name is still an
+        unverified placeholder (``docs/verified-apis.md`` §3, #21).
+        """
+        return attribution_scope(
+            CostTags(team=team, project=project, env=env, enduser_id=enduser_id),
+            business_group,
+        )
 
     def cache(
         self,
@@ -509,6 +925,56 @@ class Donkey:
             )
         )
 
+    def as_user(self, *, token: str) -> UserScope:
+        """Run the governed model calls in the block as the user behind
+        ``token``, not as this service (BG §2.4, #215).
+
+        ``token`` is the user's access token for the gateway: its audience must
+        name the proxy or MCP instance it is sent to (docs/verified-apis.md
+        §13), so an OIDC ID token, issued for your app, is not one. Every
+        data-plane call in the block carries it, unchanged, and so does every
+        MCP ``ToolSet`` bound in the block (#1366)::
+
+            async with donkey.as_user(token=request.access_token):
+                await agent.run(task)
+
+        Sync code (the sync client, a Flask or Django handler) uses a plain
+        ``with`` on the same object (#1436)::
+
+            with donkey.as_user(token=request.access_token):
+                graph.invoke(state)
+
+        The SDK runs no token exchange and makes no control-plane request for
+        the user: the gateway's OBO policy trades the token at the identity
+        provider (docs/verified-apis.md §13, #1350), so no connected-app
+        credentials are needed. The SDK doesn't read the token's expiry or
+        claims either; an expired token comes back from the gateway as a typed
+        error.
+
+        The binding is a contextvar like :meth:`run`: it reaches the ``asyncio``
+        tasks the block spawns and never leaks into a concurrent task or
+        another thread, and a nested block restores the outer user on exit.
+        Control-plane calls stay the service's own.
+
+        The token rides as ``Authorization: Bearer <token>``
+        (docs/verified-apis.md §13); set ``user_token_header`` if your gateway
+        reads another header.
+
+        The same documented degradation as :meth:`run` applies (BG §1.8): a
+        ``connection_kwargs()``-only adapter that does not route through the
+        shared transport never sees the user.
+
+        Raises:
+            AuthError: ``token`` is missing or empty. Never a silent
+                fallback to the service identity.
+            ConfigError: The user token would ride in ``Authorization`` in the
+                ``jwt`` / ``bearer`` modes, where the data-plane token already
+                rides; or ``llm_proxy_url`` was read from the working
+                directory's config files, which only receive the token with
+                ``DONKEY_TRUST_PROJECT_CONFIG=1`` (#1439).
+        """
+        return UserScope(self._cfg, token, client=self._approvals)
+
     # --- one-line on-ramps: decorators (#200) ------------------------------
     # The overloads keep the decorated callable's own signature, for both the
     # bare and the keyword form, under a downstream ``mypy --strict`` (#716).
@@ -521,6 +987,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        business_group: str | None = None,
         typed_refusals: bool = True,
     ) -> Callable[_P, _R]: ...
 
@@ -533,6 +1000,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        business_group: str | None = None,
         typed_refusals: bool = True,
     ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]: ...
 
@@ -544,6 +1012,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        business_group: str | None = None,
         typed_refusals: bool = True,
     ) -> Callable[_P, _R] | Callable[[Callable[_P, _R]], Callable[_P, _R]]:
         """Wrap a callable so its body runs inside a ``donkey.run()`` scope (#200).
@@ -568,8 +1037,8 @@ class Donkey:
         There is deliberately **no** ``id=`` argument: each call opens its own
         run, and a fixed id pinned across every call would collapse unrelated runs
         into one correlation. When you need to pin a specific id, use
-        ``donkey.run(id=...)`` directly. ``approval=`` / ``risk=`` arrive with
-        HITL (2.3) and are out of scope here (#200).
+        ``donkey.run(id=...)`` directly. ``approval=`` / ``risk=`` live on
+        :meth:`tool`, per tool (BG §2.3).
         """
 
         def decorate(fn: Callable[_P, _R]) -> Callable[_P, _R]:
@@ -585,6 +1054,7 @@ class Donkey:
                         project=project,
                         env=env,
                         enduser_id=enduser_id,
+                        business_group=business_group,
                         typed_refusals=typed_refusals,
                     ):
                         return await coro_fn(*args, **kwargs)
@@ -598,6 +1068,7 @@ class Donkey:
                     project=project,
                     env=env,
                     enduser_id=enduser_id,
+                    business_group=business_group,
                     typed_refusals=typed_refusals,
                 ):
                     return fn(*args, **kwargs)
@@ -611,16 +1082,39 @@ class Donkey:
             return decorate(func)
         return decorate
 
+    @overload
     @staticmethod
-    def tool(func: _Callable) -> _Callable:
-        """Mark a callable as a governed tool **without changing call behaviour**,
-        recording its name, signature and docstring in an introspectable registry
-        (#200).
+    def tool(func: _Callable, /) -> _Callable: ...
 
-        Returns the **same** callable (identity preserved — it is not wrapped)
-        with a ``__donkey_tool__`` marker attached, and appends a
-        :class:`~donkey_kit.core.toolspec.ToolSpec` to the process-global registry
-        read by :func:`~donkey_kit.core.toolspec.registered_tools`::
+    @overload
+    @staticmethod
+    def tool(
+        *,
+        approval: ApprovalMode | None = None,
+        risk: str | None = None,
+        approval_timeout: Duration = APPROVAL_TIMEOUT,
+        server: str | None = None,
+    ) -> Callable[[_Callable], _Callable]: ...
+
+    @_client_bound
+    @staticmethod
+    def tool(
+        func: _Callable | None = None,
+        /,
+        *,
+        approval: ApprovalMode | None = None,
+        risk: str | None = None,
+        approval_timeout: Duration = APPROVAL_TIMEOUT,
+        server: str | None = None,
+    ) -> _Callable | Callable[[_Callable], _Callable]:
+        """Mark a callable as a governed tool, recording its name, signature and
+        docstring in an introspectable registry (#200), and optionally gate it
+        behind a human approval (`BG §2.3`).
+
+        Bare, it returns the **same** callable (identity preserved, not
+        wrapped) with a ``__donkey_tool__`` marker attached, and appends a
+        :class:`~donkey_kit.core.toolspec.ToolSpec` to the process-global
+        registry read by :func:`~donkey_kit.core.toolspec.registered_tools`::
 
             @donkey.tool
             async def lookup_crm(customer_id: str) -> dict: ...
@@ -629,11 +1123,268 @@ class Donkey:
         generator (BG §2.9) both read, so the one annotation pays off three times
         (#200).
 
-        Raises :class:`ValueError` when the callable has no docstring — an
-        undescribed tool is useless to a model and to the registry, so it is
-        rejected at decoration time rather than recorded blank (#200).
+        ``server=`` attributes the tool to the MCP server it belongs to, by that
+        server's service ID. The ID is permanent and always yours to set: it is
+        never inferred from a module path or function name (#503). A tool with
+        no ``server`` is reported by the scanner as unattributed::
+
+            @donkey.tool(server="sku-manager")
+            async def lookup_sku(sku: str) -> dict: ...
+
+        With ``approval="required"`` a call does not run the tool. It records a
+        pending :class:`~donkey_kit.core.approvals.Approval`, emits it as a span
+        event and raises :class:`~donkey_kit.core.approvals.ApprovalRequired`;
+        :attr:`approvals` resolves or rejects it::
+
+            @donkey.tool(approval="required", risk="financial")
+            async def issue_refund(ticket_id: str, amount: float) -> str: ...
+
+            try:
+                await issue_refund("T-1", 140.0)
+            except ApprovalRequired as err:
+                ...  # ask a human, then:
+                await donkey.approvals.resolve(err.approval.id, approved_by="m.keller")
+
+        The approval is recorded on the client whose :meth:`run` or
+        :meth:`as_user` block runs the call; outside one, on the client the
+        tool was declared on (``@donkey.tool`` on an instance). A gated tool
+        declared on the class (``@Donkey.tool``) and called outside every
+        block raises :class:`~donkey_kit.core.errors.ConfigError` (ADR 0018).
+
+        Inside a LangGraph graph run with a checkpointer, the call pauses the
+        graph with LangGraph's own ``interrupt()`` instead. Under the OpenAI
+        Agents SDK, build the tool with
+        :func:`donkey_kit.integrations.openai_agents.function_tool`: the run
+        stops on the SDK's own ``needs_approval``. Strands and ADK pause with
+        their own interrupt and tool confirmation. Each of the four adapters'
+        ``pending_approvals`` / ``approve`` / ``reject`` (for LangGraph,
+        :func:`donkey_kit.integrations.langgraph.approve`) speaks ``Approval``.
+
+        The approval is client-side and advisory: calling the undecorated
+        function bypasses it, and the gateway never learns of it. The gateway's
+        own step-up is separate (:class:`~donkey_kit.core.step_up.GatewayApprovalPending`,
+        #214). It never overrides a refusal: the gateway still judges
+        every model call the resumed tool makes.
+
+        Args:
+            func: The tool, when used bare (``@donkey.tool``).
+            approval: ``"required"`` gates every call behind a human decision.
+            risk: A label for the approver and the span, such as ``"financial"``.
+            approval_timeout: How long a pending approval waits before resolving
+                it raises :class:`~donkey_kit.core.approvals.ApprovalTimedOut`:
+                seconds, a ``timedelta`` or a string such as ``"15m"``.
+            server: The service ID (lowercase kebab-case, such as
+                ``"sku-manager"``) of the MCP server this tool belongs to.
+
+        Raises:
+            ValueError: The callable has no docstring (an undescribed tool is
+                useless to a model and to the registry, #200), ``approval`` is
+                not ``"required"``, ``risk`` is blank, ``approval_timeout``
+                is not a positive duration, or ``server`` is not a kebab-case
+                service ID.
+
+        Docs: https://docs.donkey-kit.dev/hitl
         """
-        return register_tool(func)
+        if approval is not None and approval != "required":
+            raise ValueError(f'approval must be "required" or None, not {approval!r}')
+        if risk is not None and (not isinstance(risk, str) or not risk.strip()):
+            raise ValueError(f"risk must be a non-empty label such as 'financial', not {risk!r}")
+        timeout = parse_timeout(approval_timeout)
+        if server is not None:
+            validate_service_id(server)
+        declared_on = _declaring.get()
+
+        def decorate(fn: _Callable) -> _Callable:
+            target = (
+                gate(fn, risk=risk, timeout=timeout, natives=_NATIVES, declared_on=declared_on)
+                if approval
+                else fn
+            )
+            return register_tool(target, approval=approval, risk=risk, server=server)
+
+        # Bare ``@donkey.tool`` passes the callable positionally; the
+        # parametrised ``@donkey.tool(...)`` passes nothing and returns the
+        # decorator to be applied next.
+        if func is not None:
+            return decorate(func)
+        return decorate
+
+    @staticmethod
+    def agent(*, name: str, skills: Sequence[str] = ()) -> Callable[[_Callable], _Callable]:
+        """Mark a callable as an agent entry point, recording its name, skills
+        and docstring in an introspectable registry (#217).
+
+        Like ``@donkey.tool``, it returns the **same** callable with an
+        ``__donkey_agent__`` marker attached and appends an
+        :class:`~donkey_kit.core.toolspec.AgentSpec` to the process-global
+        registry read by :func:`~donkey_kit.core.toolspec.registered_agents`::
+
+            @donkey.agent(name="support-triage", skills=["triage", "draft-reply"])
+            async def handle(task): ...
+
+        ``donkey scan`` reads the marker statically (BG §2.5), and the A2A card
+        generator behind ``donkey.serve()`` (BG §2.9, #224) reads the same
+        record, so the two cannot drift. It changes nothing about how the
+        callable runs.
+
+        Args:
+            name: The agent's service ID: lowercase kebab-case, permanent, and
+                never inferred (#503).
+            skills: The skill IDs the agent advertises, such as ``"triage"``.
+
+        Raises:
+            ValueError: ``name`` is not a kebab-case service ID, a skill is
+                blank or repeated, or the callable has no docstring (it is the
+                agent's description).
+
+        Docs: https://docs.donkey-kit.dev/a2a
+        """
+        validate_service_id(name, what="name")
+        if isinstance(skills, str):
+            raise ValueError(f"skills must be a list of skill IDs, not the string {skills!r}")
+        recorded = tuple(skills)
+        if any(not isinstance(s, str) or not s.strip() for s in recorded):
+            raise ValueError(f"every skill must be a non-empty string, not {list(recorded)!r}")
+        if len(set(recorded)) != len(recorded):
+            raise ValueError(f"skills must not repeat, not {list(recorded)!r}")
+
+        def decorate(fn: _Callable) -> _Callable:
+            return register_agent(fn, name=name, skills=recorded)
+
+        return decorate
+
+    def serve(
+        self,
+        handler: Callable[..., Any],
+        *,
+        host: str = "127.0.0.1",
+        port: int = 8000,
+        url: str | None = None,
+        version: str = "0.0.0",
+    ) -> None:
+        """Serve a ``@donkey.agent`` handler over A2A on ``host:port``, blocking
+        until the server stops (`BG §2.9.1`, #224)::
+
+            @donkey.agent(name="support-triage", skills=["triage"])
+            async def handle(task: A2ATask) -> str:
+                \"\"\"Triage a support ticket.\"\"\"
+                return await graph.ainvoke(task.input)
+
+            donkey.serve(handle)   # card at /.well-known/agent-card.json
+
+        The official ``a2a-sdk`` serves the protocol; the card is generated from
+        the ``@donkey.agent`` marker, so it matches what ``donkey scan`` reads.
+        It binds to localhost by default: the agent sits behind the gateway and
+        is never the public face.
+
+        Each task is governed (#225): its downstream calls share one run whose
+        correlation ID is the caller's ``X-Correlation-Id`` (or a fresh one) and
+        carry this client's cost tags, a ``donkey.a2a.task`` span parents their
+        spans, and a governance refusal fails the task with its typed name in a
+        structured ``error`` part, never a stack trace.
+        :func:`donkey_kit.a2a.build_app` returns the
+        same server as an ASGI app, and :func:`donkey_kit.a2a.serve` is this
+        method as a function.
+
+        Args:
+            handler: A callable marked with ``@donkey.agent``. It takes an
+                :class:`~donkey_kit.a2a.A2ATask` and returns a ``str`` or an
+                :class:`~donkey_kit.a2a.A2AResult`.
+            host: The interface to bind. Pass ``"0.0.0.0"`` only when the
+                gateway reaches the agent over the network. The server
+                authenticates no caller, so a host that is not loopback emits
+                a :class:`~donkey_kit.core.errors.ConfigWarning`.
+            port: The port to bind.
+            url: The URL the card advertises; defaults to
+                ``http://<host>:<port>/``. Pass the gateway's URL when one
+                fronts the agent.
+            version: The agent version the card advertises.
+
+        Raises:
+            TypeError: ``handler`` is not marked with ``@donkey.agent``.
+            ImportError: The ``[a2a]`` extra is not installed.
+
+        Docs: https://docs.donkey-kit.dev/a2a
+        """
+        from .a2a import serve
+
+        serve(
+            handler,
+            host=host,
+            port=port,
+            url=url,
+            version=version,
+            telemetry=self._cfg.telemetry,
+            correlation_header=self._cfg.correlation_header,
+            refusals=_typed_refusals(),
+        )
+
+    @property
+    def approvals(self) -> Approvals:
+        """This client's pending tool approvals (`BG §2.3`): resolve or reject
+        the call a :class:`~donkey_kit.core.approvals.ApprovalRequired` names.
+        Each ``Donkey`` owns its own (ADR 0018): it holds the gated calls run
+        in this client's :meth:`run` / :meth:`as_user` blocks, and those of the
+        tools declared on it with :meth:`tool` or bound from its
+        ``tools.discover()`` when they run outside any block.
+
+        Docs: https://docs.donkey-kit.dev/hitl
+        """
+        return self._approvals
+
+    def on(self, refusal: type[PolicyViolation]) -> OnRefusal:
+        """Declare once what to do when a call is refused with ``refusal`` (`BG §2.1`).
+
+        The reaction runs inside this Donkey's governed transport, for every
+        model call it makes, so no call site needs its own try/except::
+
+            donkey.on(TokenBudgetExceeded).wait_for_reset(max_wait="45m")
+            donkey.on(PIIDetected).call(mask_and_retry, max_times=1)
+            donkey.on(ContentSafetyBlocked).fallback(model="internal-safe-model")
+            donkey.on(PolicyViolation).escalate(to=hitl_queue)  # catch-all
+
+        The most specific registered type wins, so ``on(PolicyViolation)`` is
+        the catch-all, and registering a type again replaces its reaction.
+
+        A handler reacts; it never decides policy. No reaction turns a refusal
+        into a success: it either lets the refusal propagate, or issues a new
+        governed request that the gateway judges afresh. There is no
+        ``ignore()``, and ``max_times``/``max_wait`` bound every reaction. A
+        handler that raises is logged and the refusal propagates.
+        :class:`~donkey_kit.core.errors.AgentKilled` is never handled
+        (`BG §2.6`).
+
+        Raises:
+            TypeError: ``refusal`` is not a ``PolicyViolation`` subclass, or is
+                ``AgentKilled``.
+
+        Docs: https://docs.donkey-kit.dev/refusal-handlers
+        """
+        return self._runtime.reactions.on(refusal)
+
+    @property
+    def classify(self) -> Classifier:
+        """The process-wide refusal classifier (`BG §2.2`): the same object as
+        ``donkey_kit.classify``. Call it to type an error response, or register
+        a custom gateway policy's refusal shape on it::
+
+            class SalaryLeakBlocked(PolicyViolation):
+                remediation = "Salary figures may not leave HR. Ask the user to open the HR portal."
+
+            donkey.classify.register(
+                match=dict(status=403, error_type="acme_salary_block"),
+                raises=SalaryLeakBlocked,
+            )
+
+        A registration is process-wide, not per ``Donkey``: ``classify()`` also
+        runs where no ``Donkey`` exists (the transport, ``classify(err.response)``
+        bridging, ``donkey doctor``), and every path must type a refusal the same
+        way. Handlers (:meth:`on`) and spans pick a registered type up with no
+        extra wiring.
+
+        Docs: https://docs.donkey-kit.dev/custom-policies
+        """
+        return _classify
 
     def simulate(self, error: type[DonkeyError], *, times: int = 1) -> AbstractContextManager[None]:
         """Inject a real gateway refusal in-process, no server (#190, BG §1.5).
@@ -679,6 +1430,30 @@ class Donkey:
 
     def _sync_http_client(self) -> DonkeyClient:
         return self._runtime.sync_http()
+
+    def flush_telemetry(self, timeout_s: float = 2.0) -> bool:
+        """Export the spans DDK's own ``TracerProvider`` still holds, waiting up to
+        ``timeout_s``, before a serverless runtime freezes the process or a script
+        exits.
+
+        DDK's provider is process-wide, shared by every ``Donkey``: the DDK-scoped
+        one built from an OTLP endpoint, or the one installed as the global with
+        ``telemetry_install_global``. Spans riding a provider your process set are
+        yours to flush, so it is left alone. This call blocks; from async code,
+        ``await asyncio.to_thread(donkey.flush_telemetry)``.
+
+        Returns ``True`` once the spans are exported, or when DDK built no
+        provider; ``False`` if the flush timed out or failed. It never raises for
+        an export failure.
+
+        Raises:
+            ValueError: if ``timeout_s`` is not positive.
+
+        Docs: https://docs.donkey-kit.dev/telemetry
+        """
+        if not timeout_s > 0:
+            raise ValueError(f"timeout_s must be positive, got {timeout_s!r}")
+        return spanflush.flush_owned(max(1, round(timeout_s * 1000)))
 
     async def aclose(self) -> None:
         """Close every transport this Donkey owns: the data-plane and

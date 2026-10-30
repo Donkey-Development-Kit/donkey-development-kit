@@ -67,7 +67,7 @@ llm = ["openai>=1.66"]
 # floor is the lowest release verified for every kwarg its adapter passes, per
 # its docs/verified-apis.md §8 row; §8.3 records each floor (#743). Class names / kwargs inside the
 # adapters stay UNVERIFIED until the verification discipline confirms them.
-# The deep, conformance-gated adapter (BG §1.8, #198): its extra ships the graph
+# The first deep, conformance-gated adapter (BG §1.8, #198): its extra ships the graph
 # runtime so `interrupt()` composition and the conformance harness run against a
 # real LangGraph app, not just a bare ChatOpenAI. langchain-openai 0.3.9 added
 # `use_responses_api`; below it the kwarg lands in the request body instead.
@@ -75,13 +75,17 @@ llm = ["openai>=1.66"]
 # langchain-core 0.3.45 is what langchain-openai 0.3.9 requires.
 langgraph = ["langgraph>=0.4", "langchain-openai>=0.3.9", "langchain-core>=0.3.45"]
 # 2.4 is the first google-adk whose `Gemini` has `client_kwargs`; below it
-# `gemini()` silently drops the governed client (#735).
-adk = ["google-adk>=2.4", "litellm>=1.84"]
+# `gemini()` silently drops the governed client (#735). litellm's `mcp` extra:
+# from 1.106 a request with tools imports `mcp` at module level, which plain
+# litellm does not install, so `model()` with tools fails without it (#1267,
+# BerriAI/litellm#46045).
+adk = ["google-adk>=2.4", "litellm[mcp]>=1.84"]
 # 1.13 is the first whose `OpenAIChatClient(model=...)` call reaches the proxy:
 # 1.12 builds it but sends elsewhere, and 1.11 and earlier lack the class path.
 agent_framework = ["agent-framework>=1.13"]
-# openai-agents 0.20 itself requires openai>=2.45, so that is the real floor
-# (the nightly lowest-direct leg checks it, #769).
+# The second deep, conformance-gated adapter (#223). openai-agents 0.20 itself
+# requires openai>=2.45, so that is the real floor (the nightly lowest-direct
+# leg checks it, #769).
 openai-agents = ["openai-agents>=0.20", "openai>=2.45"]
 anthropic = ["anthropic>=0.116"]
 # 1.15.3 keeps `openai/<id>` + `base_url` on the native OpenAI provider for any
@@ -90,12 +94,26 @@ crewai = ["crewai>=1.15.3"]
 llamaindex = ["llama-index-llms-openai-like>=0.8"]
 # The OpenAIModel the adapter builds needs strands' own `openai` extra.
 strands = ["strands-agents[openai]>=1.57.1"]
+# --- Governed MCP tool binding (#221): ToolSet's own tools/list ---
+# 1.24 is the first mcp with `streamable_http_client(url, http_client=...)`, the
+# one call that works on 1.x (httpx) and 2.x (httpx2) alike. Each framework's MCP
+# client comes with its extra, except two separate packages the binding names:
+# langchain-mcp-adapters (LangGraph) and llama-index-tools-mcp (LlamaIndex).
+mcp = ["mcp>=1.24"]
 
 # --- Local gateway simulator (BG §1.4): `donkey mock` ---
 # Pure-Python ASGI (starlette) served by uvicorn. Plain `uvicorn`, NOT
 # `uvicorn[standard]`: uvloop/httptools are C extensions and would break BG §1.4's
 # pure-Python promise. Floors only, no upper pins.
 local = ["starlette>=0.37", "uvicorn>=0.30"]
+
+# --- A2A server (BG §2.9.1): `donkey.serve()` ---
+# The official a2a-sdk serves the protocol, never a home-grown one (#224). Its
+# `http-server` extra brings starlette and sse-starlette; uvicorn runs the app,
+# plain as in [local]. 1.2.0 is the lowest release with
+# DefaultRequestHandler.aclose(), which build_app()'s lifespan calls to drain
+# in-flight tasks on shutdown; see docs/verified-apis.md §8.3.
+a2a = ["a2a-sdk[http-server]>=1.2.0", "uvicorn>=0.30"]
 
 # --- Telemetry (BG §1.6) ---
 # The OTLP exporter is what makes zero-config export real (#194): with it and
@@ -113,9 +131,12 @@ otel = [
 ]
 
 # --- CLI: `donkey init|doctor|mock|test` (donkey_kit/cli) ---
-# typer 0.15.4 is the first that runs the CLI against a fresh click (8.2+);
-# below 0.13 it also rejects `Path | None` options.
-cli = ["typer>=0.15.4", "rich>=13.0"]
+# typer 0.26.0 is the first that keeps a `typer.Argument(help=...)` against a
+# fresh click: every typer up to 0.25.1 drops it under click 8.5+ (#1196), and
+# 0.26.0 vendors click. Below 0.15.4 typer also breaks against click 8.2+, and
+# below 0.13 it rejects `Path | None` options. rich 13.8.0 is what typer 0.26.0
+# requires, so a lower rich floor could never be installed.
+cli = ["typer>=0.26.0", "rich>=13.8.0"]
 
 # --- Conformance pytest plugin (BG §1.5): `donkey-kit[test]` ---
 # The public, run-it-against-your-own-agent plugin
@@ -129,16 +150,17 @@ cli = ["typer>=0.15.4", "rich>=13.0"]
 test = ["pytest>=8.0", "pytest-asyncio>=0.23.1"]
 
 # --- Everything a user runs, together ---
-# The framework-free extras plus the one deep adapter (BG §1.8). No test runner
-# or linter (#744): add `donkey-kit[all,test]` for the conformance plugin. The
-# seven connection_kwargs()-only framework extras are deliberately NOT here:
+# The framework-free extras (`mcp`, the client `ToolSet` binding needs, included:
+# #1436) plus LangGraph, the first deep adapter (BG §1.8). No
+# test runner or linter (#744): add `donkey-kit[all,test]` for the conformance
+# plugin. The seven other framework extras are deliberately NOT here:
 # whether they co-install is an upstream property no floor can guarantee
 # (§8.4), and pip once failed `[all]` with resolution-too-deep when it bundled
 # them (#697). Which ones resolve together today is the generated
 # docs/co-installability.md table, re-checked nightly (#769). See
 # docs/verified-apis.md §8.1.
 all = [
-    "donkey-kit[llm,langgraph,otel,cli,local]",
+    "donkey-kit[llm,langgraph,otel,cli,local,a2a,mcp]",
 ]
 
 # Contributor tooling is a PEP 735 dependency group, not an extra, so it stays
@@ -165,7 +187,7 @@ dev = [
     "import-linter>=2.3",
     # dead-code check in CI (#720); allowed names live in vulture_whitelist.py.
     "vulture>=2.11",
-    "typer>=0.15.4",
+    "typer>=0.26.0",
     "pyyaml>=6.0",
     # Coverage floor (#751): 7.10 is the first release documenting `[run]
     # patch = ["subprocess"]`, which this repo relies on to measure the
@@ -201,6 +223,21 @@ lock = [
     # 0.6.7: the first release whose `uv pip compile` takes `--group`.
     "uv>=0.6.7",
 ]
+# The adapter-contract leg's MCP binding packages (#1318), one group per matrix
+# extra: ci.yml's adapter-contract job, the nightly framework legs and
+# framework-release-watch.yml install `--group "contract-<extra>"`, so the leg's
+# lock pins the binding and test_tool_binding.py fails, not skips, on it.
+# The binding packages stay out of the published extras (binding.mdx lists them
+# as the user's own install). ADK, Strands, OpenAI Agents and Agent Framework
+# bind through `mcp`, which their extras already pull in, so theirs are empty.
+contract-langgraph = ["langchain-mcp-adapters>=0.3.2", "mcp>=1.24"]
+contract-llamaindex = ["llama-index-tools-mcp>=0.6", "mcp>=1.24"]
+contract-anthropic = ["mcp>=1.24"]
+contract-crewai = ["crewai-tools[mcp]>=1.15.32", "mcp>=1.24"]
+contract-adk = []
+contract-strands = []
+contract-agent_framework = []
+contract-openai-agents = []
 
 [project.scripts]
 donkey = "donkey_kit.cli:main"
@@ -263,8 +300,8 @@ files = ["src/donkey_kit", "tests/typecheck"]
 # `follow_imports_for_stubs` extends the skip to packages that ship .pyi files
 # (numpy, opentelemetry). tests/unit/test_house_style_config.py keeps every
 # optional extra outside [llm,cli] in this list. langgraph itself is NOT listed:
-# src/ never imports it, and the langgraph-demo job checks examples/langgraph
-# against the real package.
+# src/ never imports it statically (approval_interrupt() loads it by name), and
+# the langgraph-demo job checks examples/langgraph against the real package.
 module = [
     "langchain_openai.*",
     "langchain_core.*",
@@ -278,11 +315,20 @@ module = [
     "llama_index.*",
     "strands.*",
     "litellm.*",
+    "langchain_mcp_adapters.*",
+    "crewai_tools.*",
     # [local] simulator deps — absent under the typecheck job's [llm,cli]
     # install; build_app()/serve() confine their use to function bodies and the
     # public return type is a framework-free Protocol, so no Any leaks out.
     "starlette.*",
     "uvicorn.*",
+    # [a2a] — the same: build_app() imports the a2a-sdk inside its body and
+    # returns Any, so none of its types leak into the public signatures.
+    "a2a.*",
+    # The `mcp` SDK, which [adk] installs (through litellm's `mcp` extra, #1267)
+    # and several frameworks pull in: registry/introspect.py imports it inside
+    # _live_mcp_tools() only (#1024).
+    "mcp.*",
     # Never imported by src/, but reachable through a framework's own imports.
     "numpy.*",
 ]
@@ -311,11 +357,14 @@ ignore_missing_imports = true
 # and the LangGraph adapter's last_call handler langchain_core's BaseCallbackHandler.
 # The Strands adapter's model subclasses the OpenAIModel class it is handed (#951),
 # and the ADK adapter's llm_client the LiteLLMClient class it is handed (#969).
+# The OpenAI Agents adapter's gated tool subclasses agents.FunctionTool (#213).
 module = [
+    "donkey_kit.a2a._server",
     "donkey_kit.core.transport.httpx2",
     "donkey_kit.integrations.adk",
     "donkey_kit.integrations.crewai",
     "donkey_kit.integrations.langgraph",
+    "donkey_kit.integrations.openai_agents",
     "donkey_kit.integrations.strands",
 ]
 disallow_subclassing_any = false
@@ -438,7 +487,6 @@ ignore-variadic-names = true
 # verified. Remove the entry when the module's stubs are implemented.
 "src/donkey_kit/donkey.py" = ["ARG002"]
 "src/donkey_kit/registry/exchange.py" = ["ARG002"]
-"src/donkey_kit/registry/introspect.py" = ["ARG001"]
 "src/donkey_kit/registry/publication.py" = ["ARG001", "ARG002"]
 # The one sanctioned seam module: the dev-only simulator and conformance siblings
 # reach Donkey's and its clients' private members only through it (#719). Its
@@ -452,13 +500,25 @@ ignore-variadic-names = true
 "src/donkey_kit/conformance/**" = ["ANN401"]
 "src/donkey_kit/simulator/app.py" = ["ANN401"]
 "src/donkey_kit/core/telemetry.py" = ["ANN401"]
+"src/donkey_kit/core/inbound.py" = ["ANN401"]
+"src/donkey_kit/registry/introspect.py" = ["ANN401"]
 # White-box tests inspect and swap private state by design (#719); docstring
 # rules apply to the shipped package only (#722). Tests also request fixtures for
 # their side effects and write doubles that mirror third-party signatures, so
 # unused and `Any`-typed arguments are expected there.
 "tests/**" = ["SLF001", "D101", "D102", "D103", "ARG", "ANN401"]
+# The surface snapshot holds one signature per string so a change reads as a
+# one-line diff, and some signatures are longer than a line (#1425).
+"tests/unit/test_public_api_snapshot.py" = ["E501"]
 "examples/**" = ["D101", "D102", "D103"]
 "scripts/**" = ["D101", "D102", "D103"]
+# The §10 capture reads framework objects the way a user would, private ADK
+# method included, and its reference function is a schema, not logic (#1024).
+"scripts/capture_descriptor_fixtures.py" = ["ANN401", "ARG001", "SLF001"]
+# The MCP binding harness (§9, #636-#652): the reference server's ASGI callables take
+# and pass through Starlette's untyped scope/receive/send, and the probes bind to
+# whichever mcp major (1.x FastMCP, 2.x MCPServer) their throwaway venv has.
+"scripts/mcp_binding/*.py" = ["ANN401"]
 
 # --- vulture: dead-code check in CI (#720) ---
 # Reads src/ only, so code that only the tests use is reported as dead; names
@@ -494,7 +554,10 @@ type = "layers"
 # directly or indirectly (#729). The production stack is donkey → integrations →
 # tools → registry → llm → core, with experimental (#730) beside donkey: it
 # re-exports registry and core names that are not first-class API (ADR 0008,
-# docs/adr/0008-*.md), and neither of the two imports the other. Above it:
+# docs/adr/0008-*.md), and neither of the two imports the other. a2a (the
+# donkey.serve() A2A server, ADR 0014) sits beside integrations: it wraps a
+# third-party protocol library like an adapter does, and the two are
+# independent. Above it:
 # - cli: the `donkey` console script (#730). It may import any layer, and being
 #   on top means no library module imports it back (typer stays off the base
 #   install).
@@ -510,7 +573,7 @@ layers = [
     "simulator",
     "_testing",
     "donkey | experimental",
-    "integrations",
+    "integrations | a2a",
     "tools",
     "registry",
     "llm",
@@ -562,6 +625,7 @@ type = "forbidden"
 # package import (pinned by test_import_donkey_kit_loads_only_the_production_layers).
 source_modules = ["donkey_kit.core"]
 forbidden_modules = [
+    "a2a",
     "agent_framework",
     "agents",
     "anthropic",
@@ -594,26 +658,44 @@ type = "layers"
 # Top to bottom (#729). The order is the real import graph: runtime builds the
 # transports; transport attaches budget, telemetry and cache control; auth and
 # those features read config; config reads cost, endpoints and header names;
-# everything reports through errors. Two deviations from the order sketched in
-# #729: lastcall sits BELOW errors, because a DonkeyError reads its request id
+# everything reports through errors. classifier (the classify() registry,
+# #210) sits beside cost and the rest, over _policy_spec (its match-spec
+# checks); it fills a hook slot in errors, so errors never imports it. step_up
+# (the CIBA step-up types, #1320) fills another and sits just above errors,
+# beside tool_access (the MCP tool-access denial, #312), which only subclasses
+# errors' PolicyViolation, and runledger (the run ledger, #613), which holds
+# lastcall records and errors' DonkeyErrors and is bound by correlation.
+# approvals (the @donkey.tool approval gate, #211) sits beside transport: it
+# reads correlation, errors, identity and telemetry, and neither imports the
+# other. approval_types (the Approval value object and the approval errors,
+# #1423, ADR 0018) sits between step_up and errors: step_up's
+# GatewayApprovalDenied subclasses its ApprovalError, and approvals re-exports it.
+# inbound (the run an inbound A2A task binds, #225) sits there too: it binds
+# correlation and opens a telemetry span, and imports neither sibling. Two
+# deviations from the order sketched in #729: lastcall sits BELOW errors, because a DonkeyError reads its request id
 # through lastcall.request_id; and _wire sits below _verify, because the
 # verification placeholders name wire headers. A sibling group with `|` is
 # independent: its members never import each other. `exhaustive` makes a new
 # core module fail until it is placed. _response (the structural response
-# Protocols, #933) imports nothing from core, so it sits at the bottom.
+# Protocols, #933) imports nothing from core, so it sits at the bottom, as does
+# _budget_headers (budget's header parsers and receive-time stamp, #311) and
+# _window (the window state every budget window shares, #1025).
 containers = ["donkey_kit.core"]
 exhaustive = true
 layers = [
     "runtime",
-    "transport",
-    "budget | cache | cachecontrol | telemetry | toolspec",
-    "auth | correlation",
+    "transport | approvals | inbound",
+    "budget | cache | cachecontrol | identity | telemetry | toolspec",
+    "auth | correlation | spanflush",
     "config",
-    "cost | endpoints | header_names | refusals",
+    "classifier | cost | endpoints | header_names | reactions | refusals",
+    "_policy_spec",
+    "runledger | step_up | tool_access",
+    "approval_types",
     "errors",
     "_refusal_body | lastcall | masking",
     "_verify",
-    "_wire | _response",
+    "_wire | _response | _budget_headers | _window",
 ]
 
 [[tool.importlinter.contracts]]

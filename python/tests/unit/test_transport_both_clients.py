@@ -19,6 +19,7 @@ import httpx
 import pytest
 
 from donkey_kit.core import _wire
+from donkey_kit.core.budget import Budget
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import (
     ModelSubstituted,
@@ -67,8 +68,9 @@ class _Async(DonkeyAsyncClient):
         super().__init__(*args, **kwargs)
         self.refusals: list[PolicyViolation] = []
 
-    async def _on_refusal(self, violation: PolicyViolation) -> None:
+    async def _on_refusal(self, request: Any, response: Any, violation: Any, options: Any) -> Any:
         self.refusals.append(violation)
+        return await super()._on_refusal(request, response, violation, options)
 
 
 class _Sync(DonkeyClient):
@@ -76,8 +78,9 @@ class _Sync(DonkeyClient):
         super().__init__(*args, **kwargs)
         self.refusals: list[PolicyViolation] = []
 
-    def _on_refusal(self, violation: PolicyViolation) -> None:
+    def _on_refusal(self, request: Any, response: Any, violation: Any, options: Any) -> Any:
         self.refusals.append(violation)
+        return super()._on_refusal(request, response, violation, options)
 
 
 def _send(
@@ -266,6 +269,58 @@ def test_a_substitution_raises_on_both_clients_when_opted_in(kind: str) -> None:
     with pytest.raises(ModelSubstituted) as exc:
         _send(kind, handler, cfg=cfg)
     assert (exc.value.requested_model, exc.value.served_model) == ("gpt-4o", "gpt-4o-mini")
+
+
+# --- budget observation ----------------------------------------------------------
+
+_BAD_RESETS = {
+    "gateway-ms-huge": {_wire.TOKEN_RESET_HEADER: "9" * 25},
+    "gateway-ms-negative": {_wire.TOKEN_RESET_HEADER: "-" + "9" * 25},
+    "gateway-ms-nan": {_wire.TOKEN_RESET_HEADER: "nan"},
+    "gateway-ms-inf": {_wire.TOKEN_RESET_HEADER: "inf"},
+    "gateway-ms-epoch-us": {_wire.REQUEST_RESET_HEADER: "1730000000000000"},
+    "gateway-iso-timestamp": {_wire.REQUEST_RESET_HEADER: "2026-09-24T06:19:44Z"},
+    "prose-huge": {
+        _wire.RATELIMIT_HEADER: "Token rate limit: 1 tokens remaining of 2 limit. "
+        f"Reset in {'9' * 25}ms."
+    },
+    "upstream-hours-huge": {_wire.UPSTREAM_TOKEN_RESET_HEADER: "99999999999999999h"},
+    "upstream-seconds-huge": {_wire.UPSTREAM_REQUEST_RESET_HEADER: "99999999999999999s"},
+    "upstream-inf": {_wire.UPSTREAM_TOKEN_RESET_HEADER: "1" + "0" * 400 + "h"},
+}
+
+
+@pytest.mark.parametrize("headers", list(_BAD_RESETS.values()), ids=list(_BAD_RESETS))
+@pytest.mark.parametrize("kind", KINDS)
+def test_an_out_of_range_reset_header_never_breaks_a_send(
+    kind: str, headers: dict[str, str]
+) -> None:
+    """#1444: the reset is dropped and the response is returned as sent."""
+    budget = Budget()
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, headers=headers))
+    if kind == "sync":
+        with _Sync(_CFG, budget=budget, transport=transport) as client:
+            response = client.post(_URL, json={"model": "gpt-4o"})
+    else:
+
+        async def run() -> httpx.Response:
+            async with _Async(_CFG, None, budget=budget, transport=transport) as client:
+                return await client.post(_URL, json={"model": "gpt-4o"})
+
+        response = asyncio.run(run())
+    assert response.status_code == 200
+    windows = (budget, budget.requests, budget.upstream.requests, budget.upstream.tokens)
+    assert all(w.reset_at is None for w in windows)
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_a_budget_refusal_with_an_out_of_range_reset_is_still_typed(kind: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={_wire.TOKEN_RESET_HEADER: "9" * 25})
+
+    response, refusals = _send(kind, handler)
+    assert response.status_code == 429
+    assert [type(v) for v in refusals] == [TokenBudgetExceeded]
 
 
 # --- the governed transport seam -------------------------------------------------

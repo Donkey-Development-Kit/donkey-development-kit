@@ -1,0 +1,20 @@
+{
+  "data": {
+    "assets": [
+      {
+        "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+        "assetId": "ddk-demo-sku-lookup",
+        "version": "1.1.0",
+        "name": "SKU Lookup MCP Server",
+        "type": "mcp",
+        "description": "Looks up a product by its SKU: name, price and stock level.",
+        "tags": [
+          {
+            "key": "exchange-derived",
+            "value": "other"
+          }
+        ]
+      }
+    ]
+  }
+}

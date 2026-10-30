@@ -22,12 +22,9 @@ import pytest
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import DonkeyAsyncClient
 from donkey_kit.experimental import AssetRef, AssetType, Publication, PublicationAssetType
-from donkey_kit.registry.criteria import GovernanceCriteria
 from donkey_kit.registry.exchange import ExchangeRegistry
-from donkey_kit.registry.introspect import derive_descriptor
 from donkey_kit.registry.models import McpServerHandle
 from donkey_kit.tools.filter import ToolDescriptor, resolve_collisions
-from donkey_kit.tools.session import ToolSet
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "a2d"
 
@@ -39,7 +36,6 @@ _REGISTRY = ExchangeRegistry(
     DonkeyConfig(client_id="client", client_secret="secret", org_id="org"),
     cast(DonkeyAsyncClient, object()),
 )
-_TOOL_SET = ToolSet([McpServerHandle(ref=_REF, endpoint_url="https://example.test/mcp")])
 _PUBLICATION = Publication(
     asset_type=PublicationAssetType.MCP_SERVER,
     group_id=_REF.group_id,
@@ -50,26 +46,10 @@ _PUBLICATION = Publication(
 )
 
 _BLOCKED_SURFACES: tuple[tuple[str, Callable[[], object]], ...] = (
-    ("registry.search", lambda: _REGISTRY.search()),
-    ("registry.resolve_mcp", lambda: _REGISTRY.resolve_mcp(_REF)),
-    ("registry.resolve_agent", lambda: _REGISTRY.resolve_agent(_REF)),
-    (
-        "registry.explain",
-        lambda: _REGISTRY.explain(_REF, criteria=GovernanceCriteria()),
-    ),
+    ("registry.search(governed=)", lambda: _REGISTRY.search(governed=True)),
     ("registry.warm", lambda: _REGISTRY.warm()),
-    ("tools.langgraph", _TOOL_SET.langgraph),
-    ("tools.adk", _TOOL_SET.adk),
-    ("tools.strands", _TOOL_SET.strands),
-    ("tools.llamaindex", _TOOL_SET.llamaindex),
-    ("tools.openai", _TOOL_SET.openai),
-    ("tools.anthropic", _TOOL_SET.anthropic),
-    ("tools.crewai", _TOOL_SET.crewai),
-    ("tools.agent_framework", _TOOL_SET.agent_framework),
     ("publication.preview", lambda: _PUBLICATION.preview(object())),
     ("publication.export", _PUBLICATION.export),
-    ("publication.verify", lambda: _PUBLICATION.verify(object())),
-    ("registry.derive_descriptor", lambda: derive_descriptor("example:asset")),
 )
 
 

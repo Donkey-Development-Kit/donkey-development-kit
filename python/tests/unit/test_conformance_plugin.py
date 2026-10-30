@@ -160,9 +160,12 @@ def test_agent_alias_yields_when_another_plugin_owns_it(pytester: pytest.Pyteste
     result.stderr.fnmatch_lines(["*requires --donkey-agent*"])
 
 
-def test_options_are_registered(pytester: pytest.Pytester) -> None:
+def test_options_are_registered(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> None:
     # The plugin auto-loads via its entry point, so its options appear in --help
     # even though it stays inert. Proves the plugin is present in the subprocess.
+    # The subprocess inherits the environment, and FORCE_COLOR colours the help.
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setenv("NO_COLOR", "1")
     result = pytester.runpytest_subprocess("--help")
     result.stdout.fnmatch_lines(["*--donkey-conformance*"])
     result.stdout.fnmatch_lines(["*--donkey-agent=MODULE:FACTORY*"])
@@ -189,6 +192,38 @@ def test_gateway_fixture_is_registered(pytester: pytest.Pytester) -> None:
     result = pytester.runpytest_subprocess("--fixtures", "-v")
     result.stdout.fnmatch_lines(["*gateway*"])
     result.stdout.fnmatch_lines(["*ephemeral port*"])
+
+
+def test_classify_registry_fixture_is_donkey_prefixed_and_isolates(
+    pytester: pytest.Pytester,
+) -> None:
+    # The plugin loads on every run, so its registry fixture is namespaced like
+    # its options (#1425); the unprefixed name never shipped, so it has no alias.
+    # A registration made through the fixture is gone in the next test.
+    pytester.makepyfile(
+        test_registry=(
+            "import pytest\n"
+            "import donkey_kit\n"
+            "from donkey_kit import PolicyViolation\n"
+            "class SalaryLeakBlocked(PolicyViolation):\n"
+            "    policy = 'acme-salary-block'\n"
+            "    remediation = 'Remove the salary figures.'\n"
+            "def test_registers(donkey_classify_registry):\n"
+            "    assert donkey_classify_registry is donkey_kit.classify\n"
+            "    donkey_classify_registry.register(\n"
+            "        match={'status': 403, 'error_type': 'acme_salary_block'},\n"
+            "        raises=SalaryLeakBlocked,\n"
+            "    )\n"
+            "    assert len(donkey_kit.classify.registered()) == 1\n"
+            "def test_did_not_leak():\n"
+            "    assert donkey_kit.classify.registered() == ()\n"
+            "def test_old_name_is_gone(request):\n"
+            "    with pytest.raises(pytest.FixtureLookupError):\n"
+            "        request.getfixturevalue('classify_registry')\n"
+        )
+    )
+    result = pytester.runpytest_subprocess("-p", "no:randomly")
+    result.assert_outcomes(passed=3)
 
 
 def test_conformance_without_agent_is_a_usage_error(pytester: pytest.Pytester) -> None:
@@ -236,6 +271,64 @@ def test_retry_bug_agent_fails_the_retry_scenario(pytester: pytest.Pytester) -> 
     # The retry scenario item is the one that fails, and its finding is shown.
     result.stdout.fnmatch_lines(["*retries_token_budget*FAIL*"])
     result.stdout.fnmatch_lines(["*retried*"])
+
+
+def test_mode_option_is_registered_and_defaults_to_in_process(
+    pytester: pytest.Pytester,
+) -> None:
+    # #322: --donkey-mode is offered beside the other options, and an absent flag
+    # keeps the #191 in-process behaviour.
+    result = pytester.runpytest_subprocess("--help")
+    result.stdout.fnmatch_lines(["*--donkey-mode*"])
+    assert pytester.parseconfig().getoption("donkey_mode") == "in-process"
+
+
+def test_unknown_mode_is_a_usage_error(pytester: pytest.Pytester) -> None:
+    result = pytester.runpytest_subprocess(
+        "--donkey-conformance", "--donkey-agent=goodagent:build", "--donkey-mode=docker"
+    )
+    assert result.ret == _EXIT_USAGE_ERROR
+    result.stderr.fnmatch_lines(["*invalid choice*"])
+
+
+def test_server_mode_without_the_local_extra_names_the_install(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Choosing server mode without starlette/uvicorn is a misuse with a fix, not
+    # an ImportError traceback mid-run.
+    from donkey_kit.conformance import plugin
+
+    server = pytester.parseconfig("--donkey-mode=server")
+    default = pytester.parseconfig()
+    monkeypatch.setattr(plugin.importlib.util, "find_spec", lambda name: None)
+    with pytest.raises(pytest.UsageError, match=r"donkey-kit\[local\]"):
+        plugin._resolve_mode(server)
+    # In-process mode never needs the extra.
+    assert plugin._resolve_mode(default) == "in-process"
+
+
+@pytest.mark.local_gateway
+def test_server_mode_runs_the_suite_against_a_live_simulator(
+    pytester: pytest.Pytester,
+) -> None:
+    # Same table, same verdicts as in-process, but each scenario's Donkey talks to
+    # a real simulator over a socket; the retry is counted from the server's log.
+    pytest.importorskip("openai")
+    pytest.importorskip("uvicorn")
+    pytest.importorskip("starlette")
+    pytester.makepyfile(goodagent=_GOOD_AGENT, retryagent=_RETRY_BUG_AGENT)
+    good = pytester.runpytest_subprocess(
+        "--donkey-conformance", "--donkey-agent=goodagent:build", "--donkey-mode=server", "-v"
+    )
+    assert good.ret == _EXIT_OK
+    good.assert_outcomes(passed=len(_scenario_names()))
+    good.stdout.fnmatch_lines(["*Retries a budget refusal*"])
+    bad = pytester.runpytest_subprocess(
+        "--donkey-conformance", "--donkey-agent=retryagent:build", "--donkey-mode=server", "-v"
+    )
+    assert bad.ret == _EXIT_TESTS_FAILED
+    bad.stdout.fnmatch_lines(["*retries_token_budget*FAIL*"])
+    bad.stdout.fnmatch_lines(["*retried*"])
 
 
 def _scenario_names() -> list[str]:

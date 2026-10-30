@@ -140,7 +140,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          if pip install --dry-run -e ".[llm,local,$EXTRA]" --group dev \
+          if pip install --dry-run -e ".[llm,local,$EXTRA]" --group dev --group "contract-$EXTRA" \
               -c "$RUNNER_TEMP/constraints.txt" > "$RUNNER_TEMP/resolve.log" 2>&1; then
             echo "mode=locked" >> "$GITHUB_OUTPUT"
           else
@@ -155,9 +155,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$MODE" = locked ]; then
-            pip install -e ".[llm,local,$EXTRA]" --group dev -c "$RUNNER_TEMP/constraints.txt"
+            pip install -e ".[llm,local,$EXTRA]" --group dev --group "contract-$EXTRA" -c "$RUNNER_TEMP/constraints.txt"
           else
-            pip install -e ".[llm,local,$EXTRA]" --group dev "$PACKAGE==$LATEST"
+            pip install -e ".[llm,local,$EXTRA]" --group dev --group "contract-$EXTRA" "$PACKAGE==$LATEST"
           fi
       - name: Signature verification (§8), fail if not installed
         id: verify
@@ -191,7 +191,7 @@ jobs:
           --release "$RELEASE" --mode "${MODE:-co-bump}"
           --verify-json "$RUNNER_TEMP/verify.json"
           --outcome "install=$INSTALL" "verify=$VERIFY" "pytest=$PYTEST" "smoke=$SMOKE"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: result-${{ matrix.extra }}-${{ matrix.package }}
@@ -260,7 +260,7 @@ jobs:
         id: review
         if: steps.prompt.outcome == 'success'
         continue-on-error: true
-        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        uses: anthropics/claude-code-action@db77d4d3c98f3f6380e7cd45ffba2342a3dbde3c # v1.0.254
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ github.token }}
@@ -293,7 +293,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/impact
           key: ${{ steps.cache.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: impact-${{ matrix.extra }}-${{ matrix.package }}
@@ -320,13 +320,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: needs.detect.outputs.count != '0' && needs.detect.outputs.count != ''
         with:
           pattern: result-*
           path: ${{ runner.temp }}/results
       # The reviews are advisory: none at all is "impact review unavailable".
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: needs.detect.outputs.count != '0' && needs.detect.outputs.count != ''
         continue-on-error: true
         with:

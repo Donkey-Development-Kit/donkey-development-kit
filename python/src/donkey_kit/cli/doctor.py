@@ -481,20 +481,18 @@ def doctor(
     ),
     as_json: bool = typer.Option(False, "--json", help="emit machine-readable JSON"),
 ) -> None:
-    """Diagnose governed access: config, credentials, gateway, model, budget (#202).
+    """Diagnose governed access: config, credentials, gateway, model, budget.
 
-    Makes ONE real governed call and reads the result through the BG §1.2 error
-    taxonomy to tell the three look-alike failures apart — wrong URL
-    (``GatewayUnavailable``), wrong credentials (``AuthError``), and
-    credentials-fine-but-model-rejected (the verified ``model_not_found``
-    passthrough → ``UpstreamRequestError``). Each failure prints the remediation
-    the exception itself carries (one source of wording), and the budget line
-    always states how stale the reading is — the proxy has no budget endpoint, so
-    doctor never implies live data.
+    Makes one real governed call and reads its result to tell the three
+    look-alike failures apart: a wrong URL (`GatewayUnavailable`), wrong
+    credentials (`AuthError`), and credentials that work for a model the proxy
+    rejects (`UpstreamRequestError`). Each failure prints the remediation the
+    error carries. The budget line always says how old its reading is: the proxy
+    has no budget endpoint, so doctor never implies live data.
 
     Exits non-zero if any check fails, so it works as a CI preflight. Needs the
-    ``[llm]`` extra for the probe client (a missing extra is an install prompt,
-    exit 1, not a ``blocked on verification`` message).
+    \\[llm] extra for the probe client; without it, doctor prints the install
+    command and exits 1.
     """
     # The global --json (before the subcommand) and the local --json (after it)
     # are equivalent — either turns on machine-readable output.

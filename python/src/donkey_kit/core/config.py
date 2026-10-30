@@ -4,26 +4,22 @@ Resolution order (:meth:`DonkeyConfig.resolve`, §2.1, #727), highest first and
 per key: a value set in code (a ``resolve()`` keyword argument, or one changed
 afterwards with ``with_overrides`` or ``dataclasses.replace``) → env var →
 ``.donkey-kit.local.toml`` → ``.donkey-kit.toml`` → the user file
-``$XDG_CONFIG_HOME/.donkey-kit.toml`` (``~/.config/.donkey-kit.toml`` when
-``XDG_CONFIG_HOME`` is unset, empty or relative) → default. The three files merge key by
-key (nested tables such as ``[donkey.cost]`` recursively; scalars and arrays
-replace), so a lower file fills what a higher one leaves unset. ``resolve(path=...)``
-reads the named file in place of the working directory's ``.donkey-kit.toml``.
-``from_env()`` is ``resolve()`` with no arguments. A ``DonkeyConfig(...)``
-built directly reads neither env nor files. We never read ``.env`` implicitly —
-the user calls ``load_dotenv()`` themselves. One declarative table,
-``_FIELDS``, names each field's env var, TOML key, parser and value check.
+``$XDG_CONFIG_HOME/.donkey-kit.toml`` (``~/.config/`` when ``XDG_CONFIG_HOME`` is unset,
+empty or relative) → default. The three files merge key by key (nested tables such as
+``[donkey.cost]`` recursively; scalars and arrays replace). ``resolve(path=...)`` reads
+the named file in place of ``./.donkey-kit.toml``; ``from_env()`` is ``resolve()``. A
+``DonkeyConfig(...)`` built directly reads neither env nor files, and ``.env`` is never
+read implicitly (call ``load_dotenv()``). ``_FIELDS`` names each field's env var, TOML
+key, parser and value check.
 
-Every resolved field records its source (a value changed in code afterwards
-counts as set in code), and :meth:`DonkeyConfig.check_endpoints`
-uses it so an endpoint read from the working directory's files only receives
-credentials read from those same files (``DONKEY_TRUST_PROJECT_CONFIG=1`` opts
-out). Endpoints must be ``https://``, except loopback hosts, or any host when
-``DONKEY_ALLOW_HTTP=1`` is set in the environment.
+Every resolved field records its source (a value changed in code afterwards counts
+as set in code); :meth:`DonkeyConfig.check_endpoints` uses it so an endpoint read from
+the working directory's files only receives credentials read from those same files
+(``DONKEY_TRUST_PROJECT_CONFIG=1`` opts out). Endpoints must be ``https://``, except
+loopback hosts, or any host when ``DONKEY_ALLOW_HTTP=1`` is set in the environment.
 
-``validated()`` reports ALL missing fields in one error, not one per run — the
-one-missing-variable-per-run loop is the most common first-five-minutes
-abandonment (config resolution).
+``validated()`` reports ALL missing fields in one error, not one per run: that loop is
+the most common first-five-minutes abandonment (config resolution).
 """
 
 from __future__ import annotations
@@ -66,7 +62,7 @@ from ._verify import REGION_HOSTS
 from .cost import CostTags
 from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
 from .errors import ConfigError, ConfigWarning
-from .header_names import header_name_problem
+from .header_names import header_name_problem, key_header_problem, user_token_header_problem
 
 # Imported at runtime, not only for type checking, so ``typing.get_type_hints``
 # resolves the ``**overrides`` of resolve() and with_overrides() (#727).
@@ -77,29 +73,19 @@ else:
 
 Region = Literal["us", "eu", "ca", "jp"]
 
-# What to do when the gateway serves a different model than the one requested —
-# a routing fallback substituted the model (docs/verified-apis.md §3, #309).
-# ``"off"`` (default): the substitution is surfaced passively on
-# ``donkey.last_call.substituted`` and the
-# span, but the call succeeds. ``"raise"``: the transport raises
-# :class:`~donkey_kit.core.errors.ModelSubstituted`, for callers who need model
-# determinism (e.g. an evaluation whose results are only comparable per-model).
+# What to do when a routing fallback serves a different model than requested
+# (docs/verified-apis.md §3, #309): ``"off"`` (default) surfaces it on
+# ``donkey.last_call.substituted`` and the span; ``"raise"`` raises
+# :class:`~donkey_kit.core.errors.ModelSubstituted`, for model determinism.
 OnModelSubstitution = Literal["off", "raise"]
 
-# How the caller authenticates to the LLM proxy DATA plane (BG §1.1, #509).
-# ``"client-id"`` (default): the ``client_id``/``client_secret``
-# request-header pair (client-id-enforcement, docs/verified-apis.md §2/§3). ``"jwt"``:
-# a wallet-backed proxy where Client ID Enforcement is disabled and the caller is
-# identified from an IdP-issued JWT validated by the JWT Validation policy, with
-# NO ``client_secret`` — the parallel ingress captured live under #372
-# (docs/verified-apis.md §2/§3). ``"bearer"``: a proxy that authenticates model
-# calls on a bearer token alone — ``Authorization: Bearer <token>``, with no
-# wallet selector and no ``client_id``/``client_secret`` pair (#836). The mode is
-# durable config even though the token itself is not: in both token modes the
-# rotating credential enters through an ``AuthProvider`` (see
-# ``Donkey(llm_auth=...)``), never a config field. Inferring the mode from "no
-# client_id set" is deliberately NOT done — it would turn a typo into a silent
-# mode switch and make the per-mode missing-field report misleading (#509).
+# How the caller authenticates to the LLM proxy DATA plane (BG §1.1, #509):
+# ``"client-id"`` (default), the client-id-enforcement header pair; ``"jwt"``, a
+# wallet-backed proxy that validates an IdP JWT with no ``client_secret`` (#372);
+# ``"bearer"``, ``Authorization: Bearer <token>`` alone (#836); see
+# docs/verified-apis.md §2/§3. In both token modes the rotating token comes from
+# ``Donkey(llm_auth=...)``, never a config field. The mode is never inferred from
+# "no client_id set": a typo would become a silent mode switch (#509).
 LlmProxyAuth = Literal["client-id", "jwt", "bearer"]
 
 #: The auth modes whose data-plane credential is a token from the
@@ -128,8 +114,10 @@ class ConfigOverrides(TypedDict, total=False):
     llm_proxy_client_id: str | None
     llm_proxy_client_secret: str | None
     llm_proxy_key: str | None
+    llm_proxy_key_header: str | None
     llm_proxy_auth: LlmProxyAuth
     llm_proxy_wallet_client_id: str | None
+    user_token_header: str | None
     application_name: str | None
     business_group: str | None
     correlation_header: str | None
@@ -142,6 +130,8 @@ class ConfigOverrides(TypedDict, total=False):
     timeout_s: float
     max_retries: int
     registry_cache_ttl_s: int
+    tool_warn_count: int
+    tool_warn_tokens: int
     telemetry: bool
     telemetry_capture_content: bool
     telemetry_install_global: bool
@@ -300,32 +290,34 @@ class DonkeyConfig:
     # Anthropic, ``x-goog-api-key`` from ADK's gemini()). A client-id proxy ignores
     # it; leave unset to send a sentinel.
     llm_proxy_key: str | None = field(default=None, repr=False)
+    # Optional: a header that also carries ``llm_proxy_key`` (not in jwt mode), the one
+    # a Dynamic API Key route reads the provider key from (#367). Checked on construction.
+    llm_proxy_key_header: str | None = None
 
     # --- LLM proxy auth mode (BG §1.1, #509) ---
-    # Which data-plane ingress the proxy uses. Default ``"client-id"`` (the
-    # CIE header pair above). ``"jwt"`` selects the model-wallet
-    # ingress: no ``client_secret``, an IdP JWT supplied dynamically via an
-    # ``AuthProvider`` (``Donkey(llm_auth=...)``), and a durable wallet-selector
-    # client ID sent as the ``X-Client-Id`` header (docs/verified-apis.md §2/§3, #372).
-    # ``"bearer"`` sends only ``Authorization: Bearer <token>`` from that provider
-    # (#836).
+    # Which data-plane ingress the proxy uses. Default ``"client-id"`` (the CIE header
+    # pair above). ``"jwt"`` selects the model-wallet ingress: no ``client_secret``, an
+    # IdP JWT from an ``AuthProvider`` (``Donkey(llm_auth=...)``) and a wallet-selector
+    # ``X-Client-Id`` (docs/verified-apis.md §2/§3, #372). ``"bearer"`` sends only
+    # ``Authorization: Bearer <token>`` from that provider (#836).
     llm_proxy_auth: LlmProxyAuth = "client-id"
-    # The wallet-selector client ID sent as ``X-Client-Id`` in JWT mode — the
-    # wallet's system-generated clientId (read from the omni API, see the
-    # ddk-configure-llm-proxy-model-wallet skill). Durable, not rotating, so it IS
-    # a config field (the rotating JWT is not); required in JWT mode. Ignored in
-    # client-id mode.
+    # The wallet's system-generated clientId, sent as ``X-Client-Id`` in JWT mode (see
+    # the ddk-configure-llm-proxy-model-wallet skill). Durable, so it IS a config field
+    # (the rotating JWT is not); required in JWT mode, ignored in client-id mode.
     llm_proxy_wallet_client_id: str | None = None
+
+    # --- ``donkey.as_user(...)`` (BG §2.4, #215): the user-token header, unset →
+    # ``core/_verify``. ---
+    user_token_header: str | None = None
 
     # --- Attribution (real header names: see docs/verified-apis.md §3) ---
     application_name: str | None = None
     business_group: str | None = None
 
     # --- Correlation request-header NAME overrides (BG §1.1, #195) ---
-    # Override the correlation/call-id request-header names (docs/verified-apis.md
-    # §3) without a release. Unset → the defaults in ``core/_verify``.
-    # These and the ``cost_*_header`` names are checked on construction: see
-    # ``core/header_names`` for the names they may not use.
+    # Override the correlation/call-id request-header names (docs/verified-apis.md §3)
+    # without a release; unset → the defaults in ``core/_verify``. These and the
+    # ``cost_*_header`` names are checked on construction (``core/header_names``).
     correlation_header: str | None = None
     call_id_header: str | None = None
 
@@ -344,23 +336,22 @@ class DonkeyConfig:
     timeout_s: float = 60.0
     max_retries: int = 3
     registry_cache_ttl_s: int = 300
+    # Warn when a ToolSet bind exposes more tools or descriptor tokens than these (0 turns
+    # one off). The defaults are published vendor guidance, cited in tools/session.py (#1257).
+    tool_warn_count: int = 20
+    tool_warn_tokens: int = 10_000
     telemetry: bool = True
-    # Emit message content (prompts, completions, tool arguments/results) on OTel
-    # spans. Default FALSE: the gateway masks PII in ITS logs, but spans are
-    # emitted upstream of the gateway, so defaulting this on would re-export the
-    # very content the platform just masked to whatever OTLP collector is wired
-    # up (#306, BG §1.6). Opting in is the developer assuming that obligation.
+    # Emit message content (prompts, completions, tool I/O) on OTel spans. Default
+    # FALSE: spans are emitted upstream of the gateway, so this would re-export the
+    # content the gateway masks to any OTLP collector (#306, BG §1.6).
     telemetry_capture_content: bool = False
-    # Install DDK's OTLP TracerProvider as the process-global OpenTelemetry
-    # provider. Default FALSE: OTel lets the global provider be set once, so a
-    # library that took it implicitly would lock out a host that configures its
-    # own afterwards. Off, DDK exports its own spans through a DDK-scoped
-    # provider and defers to any global provider the host sets (#732,
-    # docs/adr/0010-no-hidden-global-side-effects.md).
+    # Install DDK's OTLP TracerProvider as the process-global OpenTelemetry provider.
+    # Default FALSE: OTel lets the global provider be set once, so a library that took
+    # it implicitly would lock out a host that configures its own afterwards. Off, DDK
+    # exports through a DDK-scoped provider and defers to any global one the host sets
+    # (#732, docs/adr/0010-no-hidden-global-side-effects.md).
     telemetry_install_global: bool = False
-    # What to do when the gateway serves a different model than requested (docs/verified-apis.md §3,
-    # #309). Default "off" — the substitution is surfaced passively on
-    # ``donkey.last_call``; "raise" opts into a hard ``ModelSubstituted`` error.
+    # On a model substitution (see ``OnModelSubstitution``, #309): default "off".
     on_model_substitution: OnModelSubstitution = "off"
     # Send the cost tags as request headers too. Default FALSE: nothing on the
     # gateway reads a cost-tag header (docs/verified-apis.md §3, #522), so the
@@ -401,11 +392,15 @@ class DonkeyConfig:
         """Refuse a configurable header name that isn't safe to send, or that
         two keys share (see :mod:`donkey_kit.core.header_names`)."""
         in_use = {key: getattr(self, key) or dflt for key, dflt in _HEADER_KEYS}
-        for key, _ in _HEADER_KEYS:
+        in_use["llm_proxy_key_header"] = self.llm_proxy_key_header or ""
+        in_use["user_token_header"] = self.user_token_header or ""
+        checks = {"llm_proxy_key_header": key_header_problem}
+        checks["user_token_header"] = user_token_header_problem
+        for key in in_use:
             name = getattr(self, key)
             if name is None:
                 continue
-            problem = header_name_problem(name)
+            problem = checks.get(key, header_name_problem)(name)
             if problem is None:
                 clash = [k for k, n in in_use.items() if k != key and n.lower() == name.lower()]
                 if clash:
@@ -604,12 +599,9 @@ class DonkeyConfig:
             if not self.llm_proxy_url:
                 missing.append(_needs("llm_proxy_url"))
             if self.llm_proxy_auth == "jwt":
-                # Model-wallet ingress (#509): NO client_secret — CIE is disabled
-                # and the caller is identified from the JWT. The rotating JWT is
-                # supplied via an AuthProvider (Donkey(llm_auth=...)), not config,
-                # so it is not a "missing field" here — the provider-attached check
-                # lives where the provider is known (LLMClient.client()). What IS
-                # required here is the durable wallet-selector client ID.
+                # Model-wallet ingress (#509): no client_secret. The JWT comes from an
+                # AuthProvider, checked where it is known (LLMClient.client()); only
+                # the durable wallet-selector client ID is required here.
                 if not self.llm_proxy_wallet_client_id:
                     missing.append(
                         _needs("llm_proxy_wallet_client_id")
@@ -627,37 +619,38 @@ class DonkeyConfig:
             raise ConfigError(f"Unknown capability {need!r} passed to validated().")
         return missing
 
-    def check_endpoints(self, *, need: Capability, code_credential: str | None = None) -> None:
+    def check_endpoints(
+        self, *, need: Capability, code_credential: str | None = None, fields: tuple[str, ...] = ()
+    ) -> None:
         """Raise :class:`ConfigError` if ``need``'s endpoint may not receive the
         credentials that would be sent to it.
 
         The endpoint must be ``https://``; ``http://`` is accepted for loopback
-        hosts, and for other hosts only with ``DONKEY_ALLOW_HTTP=1`` in the
-        environment, which does not relax the rest of this check. And an
-        endpoint read from the working directory's ``.donkey-kit.toml`` or its
-        ``.local`` overlay only receives credentials read from those same files,
+        hosts (exempt from this rule only), and for other hosts only with
+        ``DONKEY_ALLOW_HTTP=1`` in the environment, which relaxes nothing else.
+        And an endpoint read from the working directory's ``.donkey-kit.toml`` or
+        its ``.local`` overlay only receives credentials read from those files,
         unless it is a standard Anypoint control-plane host or
-        ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set in the environment. Loopback
-        hosts are exempt from the ``https://`` rule only. In ``jwt`` and
-        ``bearer`` auth modes the token comes from the caller's ``AuthProvider``,
-        never from those files, so it always counts as outside them. ``code_credential``
-        names another credential supplied in code, such as the token of a
-        ``Donkey(auth=...)`` provider, which counts as outside them too.
+        ``DONKEY_TRUST_PROJECT_CONFIG=1`` is set in the environment. The ``jwt``
+        and ``bearer`` modes' ``AuthProvider`` token always counts as outside
+        them, as does ``code_credential``, which names credentials set in code
+        (a ``Donkey(auth=...)`` or ``donkey.as_user()`` token). ``fields`` names
+        the config fields sent in place of ``client_id``/``client_secret`` (ADR 0019).
         """
-        runtime_credential = code_credential
+        runtime = [code_credential] if code_credential else []
         if need == "control_plane":
             key, url = "base_url", self.control_plane_url
-            credentials: tuple[str, ...] = ("client_id", "client_secret")
+            credentials: tuple[str, ...] = fields or ("client_id", "client_secret")
         elif need == "llm":
             if not self.llm_proxy_url:
                 return
             key, url = "llm_proxy_url", self.llm_proxy_url
             if self.llm_proxy_auth == "jwt":
                 credentials = ("llm_proxy_wallet_client_id",)
-                runtime_credential = "the JWT from the llm_auth provider"
+                runtime.insert(0, "the JWT from the llm_auth provider")
             elif self.llm_proxy_auth == "bearer":
                 credentials = ("llm_proxy_key",)
-                runtime_credential = "the token from the llm_auth provider"
+                runtime.insert(0, "the token from the llm_auth provider")
             else:
                 credentials = ("llm_proxy_client_id", "llm_proxy_client_secret", "llm_proxy_key")
         else:
@@ -677,8 +670,7 @@ class DonkeyConfig:
             for name in credentials
             if getattr(self, name) and self.source_of(name).kind not in _WORKDIR_KINDS
         ]
-        if runtime_credential:
-            outside.append(runtime_credential)
+        outside.extend(runtime)
         if outside:
             raise _binding_error(
                 key=key,
@@ -686,7 +678,7 @@ class DonkeyConfig:
                 url=url,
                 origin=origin,
                 credentials=outside,
-                offer_local_file=runtime_credential is None,
+                offer_local_file=not runtime,
             )
 
 
@@ -885,10 +877,12 @@ _FIELDS: tuple[_Field, ...] = (
     _Field("llm_proxy_client_id", "DONKEY_LLM_PROXY_CLIENT_ID", _opt),
     _Field("llm_proxy_client_secret", "DONKEY_LLM_PROXY_CLIENT_SECRET", _opt),
     _Field("llm_proxy_key", "DONKEY_LLM_PROXY_KEY", _opt),
+    _Field("llm_proxy_key_header", "DONKEY_LLM_PROXY_KEY_HEADER", _opt),
     _Field(
         "llm_proxy_auth", "DONKEY_LLM_PROXY_AUTH", _as_token, _one_of("client-id", "jwt", "bearer")
     ),
     _Field("llm_proxy_wallet_client_id", "DONKEY_LLM_PROXY_WALLET_CLIENT_ID", _opt),
+    _Field("user_token_header", "DONKEY_USER_TOKEN_HEADER", _opt),
     _Field("application_name", "DONKEY_APP_NAME", _opt),
     _Field("business_group", "DONKEY_BUSINESS_GROUP", _opt),
     _Field("correlation_header", "DONKEY_CORRELATION_HEADER", _opt),
@@ -900,6 +894,8 @@ _FIELDS: tuple[_Field, ...] = (
     _Field("timeout_s", "DONKEY_TIMEOUT_S", _as_float, _positive_number),
     _Field("max_retries", "DONKEY_MAX_RETRIES", _as_int, _non_negative_int),
     _Field("registry_cache_ttl_s", "DONKEY_REGISTRY_CACHE_TTL_S", _as_int, _non_negative_int),
+    _Field("tool_warn_count", "DONKEY_TOOL_WARN_COUNT", _as_int, _non_negative_int),
+    _Field("tool_warn_tokens", "DONKEY_TOOL_WARN_TOKENS", _as_int, _non_negative_int),
     _Field("telemetry", "DONKEY_TELEMETRY", _as_bool, _is_bool),
     _Field("telemetry_capture_content", "DONKEY_TELEMETRY_CAPTURE_CONTENT", _as_bool, _is_bool),
     _Field("telemetry_install_global", "DONKEY_TELEMETRY_INSTALL_GLOBAL", _as_bool, _is_bool),

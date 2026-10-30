@@ -28,26 +28,83 @@ Two factories, one per proxy ingress Format (docs/verified-apis.md §2):
   work. The default DDK proxies are
   ``Format=OpenAI``, so point ``base_url`` at a ``Format=Gemini`` proxy.
 
+Both factories return a subclass of the ADK class that carries
+``donkey.last_call`` back to the context that started the model call (#1207).
+google-adk 2.13.0 runs each step of the model's response generator in a copy of
+the flow's context, so without it the record stays in that copy and an
+``after_model_callback`` reads ``UNOBSERVED``. :func:`last_call_bridged` returns
+that subclass for a model built from ``connection_kwargs()`` or
+``gemini_connection_kwargs()`` (#1218). The factories' classes,
+``GovernedLiteLlm``, ``GovernedGemini`` and the ``GovernedLiteLLMClient`` that
+``model()`` passes as ``llm_client``, resolve by name on this module, so pickle
+finds them. A model the factories build still holds the SDK's http client, so
+it does not pickle; nor does a plain ``LiteLlm`` given the same kwargs. A class
+:func:`last_call_bridged` builds from your own class has no name here.
+
+APPROVALS (BG §2.3, #1235): an approval-gated tool
+(``@donkey.tool(approval="required")`` in an agent's ``tools``) pauses the run
+with ADK's own tool confirmation once the app has the plugin
+:func:`approval_plugin` builds: ``App(..., plugins=[approval_plugin()])``.
+Before the call runs, the plugin records the pending approval and calls
+``tool_context.request_confirmation``, and ADK ends the turn with an
+``adk_request_confirmation`` call. :func:`pending_approvals` reads those calls
+off the run's events as ``Approval`` objects, and the run resumes on a user
+message whose parts are the ``native`` parts of :func:`approve` /
+:func:`reject`. An approved call runs once, under
+the pause's correlation id. A rejected call is not run: the model gets the
+rejection as the tool's error result, and nothing raises ``ApprovalRejected``.
+The pause lives in the session's events, so a fresh process can resume it.
+Without the plugin the gate raises ``ApprovalRequired`` inside the tool.
+
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 """
 
 from __future__ import annotations
 
+import collections
+import contextvars
+import dataclasses
 import functools
+import hashlib
+import json
+import math
+import threading
+import time
+from collections.abc import Iterable, Mapping
+from contextlib import aclosing
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from ..core import _verify
+from ..core.approvals import Approval, record_decision, record_pending
+from ..core.correlation import current_correlation_id
+from ..core.lastcall import LastCallBridge, open_last_call_bridge
 from ..core.masking import masked
 from ..core.refusals import capture_refusals
-from . import AdapterCapabilities
+from ..core.toolspec import tool_spec
+from . import AdapterCapabilities, missing_framework_error
 from ._base import Adapter, default_adapter
 
 if TYPE_CHECKING:
-    from google.adk.models import Gemini
-    from google.adk.models.lite_llm import LiteLlm, LiteLLMClient
+    from collections.abc import AsyncGenerator
 
-__all__ = ["ADKAdapter", "gemini", "model"]
+    from google.adk.models import BaseLlm, Gemini
+    from google.adk.models.lite_llm import LiteLlm, LiteLLMClient
+    from google.adk.plugins import BasePlugin
+
+_M = TypeVar("_M", bound="BaseLlm")
+
+__all__ = [
+    "APPROVAL_KIND",
+    "ADKAdapter",
+    "approval_plugin",
+    "approve",
+    "gemini",
+    "last_call_bridged",
+    "model",
+    "pending_approvals",
+    "reject",
+]
 
 
 class ADKAdapter(Adapter):
@@ -116,7 +173,8 @@ class ADKAdapter(Adapter):
         yourself, bound to a ``Format=Gemini`` proxy (``base_url``, default the
         configured proxy URL).
 
-        ADK replaces its own ``http_options`` with ``client_kwargs``, so every
+        ADK builds its client from ``client_kwargs`` (from google-adk 2.13.0 it
+        adds its tracking headers and fills only the fields left unset), so every
         governed value rides there: the shared http client (header injection,
         retries, last_call), the consumer-auth headers, the ``api_key`` slot
         google-genai requires for the Gemini API backend, and the SDK timeout —
@@ -149,7 +207,11 @@ class ADKAdapter(Adapter):
         Its ``llm_client`` is a ``LiteLLMClient`` subclass that lets a gateway
         refusal reach ``donkey.run()`` as its typed class (#969, see the module
         docstring). An ``llm_client`` you pass replaces it, and the refusal
-        then stays LiteLLM's error."""
+        then stays LiteLLM's error.
+
+        The object is a ``LiteLlm`` subclass that carries ``donkey.last_call``
+        back to the context that started each model call, so an
+        ``after_model_callback`` reads it (#1207)."""
         self._allow_endpoints(kw, "api_base", "base_url")
         with self._native_import():
             from google.adk.models.lite_llm import (  # VERIFY name/path: docs/verified-apis.md §8
@@ -163,13 +225,18 @@ class ADKAdapter(Adapter):
             # LiteLLM sends to the client's own base URL, so rebuild it there.
             conn["client"] = self._proxy_openai_client(str(override))
         conn["llm_client"] = _governed_llm_client_class(LiteLLMClient)()
+        governed: type[LiteLlm] = _last_call_bridged_class(LiteLlm)
         # LiteLLM's OpenAI-compatible route needs the ``openai/`` prefix.
-        return LiteLlm(model=f"openai/{model}", **{**conn, **kw})
+        return governed(model=f"openai/{model}", **{**conn, **kw})
 
     def gemini(self, model: str, *, base_url: str | None = None, **kw: Any) -> Gemini:
         """Return ADK's native ``google.adk.models.Gemini`` bound to a
         ``Format=Gemini`` proxy, with the shared http client injected (#691).
-        Pass the bare model id (``"gemini-2.5-flash"``) — no provider prefix."""
+        Pass the bare model id (``"gemini-3.8-flash"``) — no provider prefix.
+
+        The object is a ``Gemini`` subclass that carries ``donkey.last_call``
+        back to the context that started each model call, so an
+        ``after_model_callback`` reads it (#1207, see the module docstring)."""
         conn = self.gemini_connection_kwargs(base_url=base_url)
         with self._native_import():
             from google.adk.models import Gemini  # VERIFY name/path: docs/verified-apis.md §8
@@ -189,7 +256,97 @@ class ADKAdapter(Adapter):
                 "older versions ADK drops the governed client without an error. "
                 "Upgrade with: pip install -U 'donkey-kit[adk]'"
             )
-        return Gemini(model=model, **{**conn, **kw})
+        governed: type[Gemini] = _last_call_bridged_class(Gemini)
+        return governed(model=model, **{**conn, **kw})
+
+
+def last_call_bridged(model_class: type[_M]) -> type[_M]:
+    """The subclass of an ADK model class that carries ``donkey.last_call`` back
+    to the context that started each model call, so an ``after_model_callback``
+    reads it (#1218). For a model you build yourself from
+    :meth:`ADKAdapter.connection_kwargs` or
+    :meth:`ADKAdapter.gemini_connection_kwargs`::
+
+        llm = last_call_bridged(LiteLlm)(model="openai/gpt-4o", **donkey.adk.connection_kwargs())
+
+    ``model_class`` is any ``google.adk.models.BaseLlm`` subclass, your own
+    included. The subclass is built once per class, and a class that already
+    bridges is returned as is. :meth:`ADKAdapter.model` and
+    :meth:`ADKAdapter.gemini` already return one.
+
+    Raises:
+        TypeError: ``model_class`` is not a ``BaseLlm`` subclass.
+        ImportError: ``google-adk`` is not installed.
+    """
+    try:
+        from google.adk.models import BaseLlm
+    except ModuleNotFoundError as exc:
+        raise missing_framework_error("adk", exc.name) from exc
+
+    if not (isinstance(model_class, type) and issubclass(model_class, BaseLlm)):
+        raise TypeError(f"expected a google.adk.models.BaseLlm subclass, got {model_class!r}")
+    if getattr(model_class, "_donkey_last_call_bridged", False):
+        return model_class
+    # A class hashes by identity; mypy reads pydantic's unhashable instances.
+    base: Any = model_class
+    bridged: type[_M] = _last_call_bridged_class(base)
+    return bridged
+
+
+@functools.cache
+def _last_call_bridged_class(base: Any) -> Any:
+    """The subclass of an ADK model class (``base``: ``Gemini``, ``LiteLlm`` or
+    another ``BaseLlm``) that :meth:`ADKAdapter.gemini`, :meth:`ADKAdapter.model`
+    and :func:`last_call_bridged` build, defined on first use so ``google.adk``
+    is imported lazily (§1.1).
+
+    Only the public ``BaseLlm.generate_content_async`` is overridden. ADK's flow
+    calls it in its own context and then iterates the generator it returns.
+    From google-adk 2.13.0 it iterates that generator in a copy of the context
+    (``_stream_in_caller_scope``), so the record the transport sets stays in the
+    copy, and the ``after_model_callback`` that ADK runs in the flow's context
+    reads ``UNOBSERVED`` (docs/verified-apis.md §8). The override is a plain
+    ``def``, so it opens a :class:`~donkey_kit.core.lastcall.LastCallBridge`
+    in the flow's context before ADK takes the copy. The copy inherits the
+    bridge, and the transport records through it.
+
+    The bridge serves one model call in one task, so hazard #2 holds: a
+    ``ParallelAgent`` branch runs in a task of its own and opens its own bridge.
+    It closes before the generator yields a complete (non-partial) response,
+    because ADK runs that response's function calls before it resumes the
+    generator, and a tool that ADK runs in a task of its own must not write
+    through the bridge. A partial response keeps it open, since ADK runs no
+    function calls for one."""
+
+    class LastCallBridged(base):
+        """An ADK model whose ``donkey.last_call`` reaches the context that
+        started the call (#1207)."""
+
+        # A ClassVar, so pydantic leaves it a plain class attribute rather than
+        # turning it into a private attribute.
+        _donkey_last_call_bridged: ClassVar[bool] = True
+
+        def generate_content_async(self, *args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
+            bridge = open_last_call_bridge()
+            return _bridged_responses(super().generate_content_async(*args, **kwargs), bridge)
+
+    LastCallBridged.__name__ = LastCallBridged.__qualname__ = f"Governed{base.__name__}"
+    return LastCallBridged
+
+
+async def _bridged_responses(
+    responses: AsyncGenerator[Any, None], bridge: LastCallBridge
+) -> AsyncGenerator[Any, None]:
+    """Yield ``responses`` and close ``bridge`` before the first complete
+    response, or when the call ends early (see :func:`_last_call_bridged_class`)."""
+    try:
+        async with aclosing(responses):
+            async for response in responses:
+                if not getattr(response, "partial", False):
+                    bridge.close()
+                yield response
+    finally:
+        bridge.close()
 
 
 @functools.cache
@@ -218,7 +375,45 @@ def _governed_llm_client_class(base: Any) -> type[LiteLLMClient]:
                     capture.tag(exc)
                     raise
 
+    GovernedLiteLLMClient.__qualname__ = GovernedLiteLLMClient.__name__
     return GovernedLiteLLMClient
+
+
+def _governed_lite_llm() -> Any:
+    from google.adk.models.lite_llm import LiteLlm
+
+    return _last_call_bridged_class(LiteLlm)
+
+
+def _governed_gemini() -> Any:
+    from google.adk.models import Gemini
+
+    return _last_call_bridged_class(Gemini)
+
+
+def _governed_lite_llm_client() -> Any:
+    from google.adk.models.lite_llm import LiteLLMClient
+
+    return _governed_llm_client_class(LiteLLMClient)
+
+
+_GOVERNED_CLASSES = {
+    "GovernedLiteLlm": _governed_lite_llm,
+    "GovernedGemini": _governed_gemini,
+    "GovernedLiteLLMClient": _governed_lite_llm_client,
+}
+
+if not TYPE_CHECKING:  # mypy would otherwise accept any name on this module
+
+    def __getattr__(name: str) -> Any:
+        """The factories' classes by name, so pickle finds them (PEP 562)."""
+        build = _GOVERNED_CLASSES.get(name)
+        if build is None:
+            raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        try:
+            return build()
+        except ModuleNotFoundError as exc:
+            raise missing_framework_error("adk", exc.name) from exc
 
 
 def model(model: str, **kw: Any) -> LiteLlm:
@@ -233,3 +428,394 @@ def gemini(model: str, *, base_url: str | None = None, **kw: Any) -> Gemini:
     using a cached default env-configured Donkey. Equivalent to
     ``Donkey.from_env().adk.gemini(model, base_url=..., **kw)``."""
     return default_adapter(ADKAdapter).gemini(model, base_url=base_url, **kw)
+
+
+#: The ``kind`` in a DDK approval's confirmation payload, so a caller reading the
+#: run's ``adk_request_confirmation`` calls can tell it from other confirmations.
+APPROVAL_KIND = "donkey.approval"
+
+# The function call ADK pauses a run with (docs/verified-apis.md §8).
+_CONFIRMATION_CALL = "adk_request_confirmation"
+
+# How many invocations' recorded decisions the plugin keeps.
+_INVOCATIONS_KEPT = 256
+
+# The call the plugin approved, for the gate inside the tool to pick up. Set in
+# before_tool_callback, which ADK awaits on the task that runs that one call (a
+# task per call at google-adk 2.4.0 and 2.13.0), so it cannot reach another
+# call. ADK runs a sync tool in a thread pool on a copy of that task's context.
+_APPROVED: contextvars.ContextVar[Approval | None] = contextvars.ContextVar(
+    "donkey_adk_approved", default=None
+)
+
+
+def approval_plugin(name: str = "donkey_approval") -> BasePlugin:
+    """An ADK plugin that pauses approval-gated tool calls with ADK's own tool
+    confirmation (BG §2.3, #1235).
+
+    Add it to the app: ``App(name=..., root_agent=agent,
+    plugins=[approval_plugin()])``. Before a ``@donkey.tool(approval="required")``
+    call runs, the plugin records the pending approval and requests a
+    confirmation. Its payload carries the ``kind`` (:data:`APPROVAL_KIND`),
+    ``approval_id``, ``tool``, ``arguments``, ``risk`` and ``correlation_id``.
+    Resume with ``types.Content(role="user", parts=[approve(a, by="m.keller").native
+    for a in pending_approvals(session.events)])``. The plugin checks the
+    answer against the request the agent stored in the session: a confirmation
+    it did not request, or for a call already answered, is refused and the
+    call not run. It records the decision once, and an approved call runs
+    under the pause's correlation id. A rejected
+    call is answered with the rejection message, so the model sees it as the
+    tool's error result. ADK keeps confirmation calls out of the model's
+    context, so the approver's name never reaches it.
+
+    The approval id is derived from ADK's function-call id, the tool and its
+    arguments as the model sent them, so it is the same in any process. ADK
+    holds the pause, so ``approval_timeout`` does not apply.
+
+    Raises:
+        ImportError: ``google-adk`` is not installed.
+    """
+    return _approval_plugin_class()(name=name)
+
+
+@functools.cache
+def _approval_plugin_class() -> type[BasePlugin]:
+    """The ``BasePlugin`` subclass :func:`approval_plugin` builds, defined on
+    first use so ``google.adk`` is imported lazily (§1.1)."""
+    try:
+        from google.adk.plugins import BasePlugin
+    except ModuleNotFoundError as exc:
+        raise missing_framework_error("adk", exc.name) from exc
+
+    class ApprovalPlugin(BasePlugin):
+        """Pauses approval-gated tool calls with ADK's tool confirmation."""
+
+        def __init__(self, name: str) -> None:
+            super().__init__(name=name)
+            self._lock = threading.Lock()
+            # Per invocation, the latest few: the approvals whose decision is
+            # recorded, so a call ADK runs again does not record it twice.
+            self._decided: collections.OrderedDict[str, set[str]] = collections.OrderedDict()
+
+        async def before_tool_callback(
+            self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any
+        ) -> dict[str, Any] | None:
+            func = getattr(tool, "func", None)
+            spec = tool_spec(func) if callable(func) else None
+            if spec is None or spec.approval != "required":
+                return None
+            # Bind as ADK calls the tool: it drops arguments the function does
+            # not take and passes its ToolContext parameter itself.
+            context_param = getattr(tool, "_context_param_name", None) or "tool_context"
+            params = spec.signature.parameters
+            sent = {k: v for k, v in tool_args.items() if k in params and k != context_param}
+            given = {**sent, context_param: tool_context} if context_param in params else sent
+            try:
+                bound = spec.signature.bind(**given)
+            except TypeError:
+                return None  # ADK answers a missing argument itself, without running it
+            bound.apply_defaults()
+            arguments = MappingProxyType(
+                {k: v for k, v in bound.arguments.items() if k != context_param}
+            )
+            call_id = str(tool_context.function_call_id)
+            approval = _approval(call_id, spec.name, sent, arguments, spec.risk)
+            confirmation = tool_context.tool_confirmation
+            if confirmation is None:
+                record_pending(approval)
+                tool_context.request_confirmation(
+                    hint=f"Approve the call of {approval.tool!r}?",
+                    payload=_payload(approval, sent),
+                )
+                # The pause is not a tool result for the model to summarize;
+                # without this the flow calls the model again.
+                tool_context.actions.skip_summarization = True
+                return _awaiting(approval)
+            # Trust only what the agent wrote to the session: google-adk 2.4.0
+            # resumes on any confirmation a user message carries, and again on
+            # one it already ran.
+            events = getattr(getattr(tool_context, "session", None), "events", None) or ()
+            decision = _decision(confirmation, approval)
+            requested = _requested(call_id, approval, events)
+            refused = _refusal(call_id, approval, decision, requested, events)
+            # The refusal is set whenever either is None; mypy needs both checks.
+            if refused is not None or decision is None or requested is None:
+                return {"error": refused}
+            approved, by, message = decision
+            approval = _as_requested(approval, requested)
+            with self._lock:
+                invocation = str(tool_context.invocation_id)
+                decided = self._decided.setdefault(invocation, set())
+                self._decided.move_to_end(invocation)
+                while len(self._decided) > _INVOCATIONS_KEPT:
+                    self._decided.popitem(last=False)
+                record = approval.id not in decided
+                decided.add(approval.id)
+            if record:
+                record_decision(approval, approved=approved, by=by)
+            if approved:
+                _APPROVED.set(approval)
+                return None
+            # The rejecter's name stays out of the model's context, as on the
+            # other frameworks (#213, #1234); the decision span event records it.
+            return {
+                "error": message
+                or f"A human rejected this call of {approval.tool!r}, so it was not run."
+            }
+
+        async def after_tool_callback(self, **kwargs: Any) -> None:
+            _APPROVED.set(None)
+
+        async def on_tool_error_callback(self, **kwargs: Any) -> None:
+            _APPROVED.set(None)
+
+        async def after_run_callback(self, *, invocation_context: Any) -> None:
+            with self._lock:
+                self._decided.pop(str(invocation_context.invocation_id), None)
+
+    return ApprovalPlugin
+
+
+def _approval(
+    call_id: str,
+    tool: str,
+    sent: Mapping[str, Any],
+    arguments: Mapping[str, Any],
+    risk: str | None,
+) -> Approval:
+    # Hash the arguments as the model sent them, not the bound ones: a default's
+    # repr can hold a memory address, which would change the id between
+    # processes (a restored session).
+    encoded = json.dumps(dict(sent), sort_keys=True, default=repr)
+    approval_id = hashlib.sha256(repr((call_id, tool, encoded)).encode()).hexdigest()[:32]
+    return Approval(
+        id=approval_id,
+        tool=tool,
+        arguments=arguments,
+        risk=risk,
+        correlation_id=current_correlation_id() or approval_id,
+        requested_at=time.time(),
+        expires_at=math.inf,
+    )
+
+
+def _as_requested(approval: Approval, payload: Mapping[str, Any]) -> Approval:
+    """``approval`` with the correlation id and time its pause recorded (the
+    agent's ``payload`` in the session, never the answer's), so the resumed
+    call joins the pause's trace, in this process or another."""
+    correlation_id = payload.get("correlation_id")
+    requested_at = payload.get("requested_at")
+    return dataclasses.replace(
+        approval,
+        correlation_id=(
+            correlation_id
+            if isinstance(correlation_id, str) and correlation_id
+            else approval.correlation_id
+        ),
+        requested_at=(
+            float(requested_at)
+            if isinstance(requested_at, (int, float)) and not isinstance(requested_at, bool)
+            else approval.requested_at
+        ),
+    )
+
+
+def _payload(approval: Approval, sent: Mapping[str, Any]) -> dict[str, Any]:
+    # The arguments as sent: the session stores the payload as JSON, and a bound
+    # default need not serialize.
+    return {
+        "kind": APPROVAL_KIND,
+        "approval_id": approval.id,
+        "tool": approval.tool,
+        "arguments": json.loads(json.dumps(dict(sent), default=repr)),
+        "risk": approval.risk,
+        "correlation_id": approval.correlation_id,
+        "requested_at": approval.requested_at,
+    }
+
+
+def approved_call(tool: str) -> Approval | None:
+    """The approval :func:`approval_plugin`'s plugin granted for the ``tool``
+    call running now, or ``None``. The gate's ADK hook (BG §2.3): it lets the
+    approved call run instead of raising ``ApprovalRequired``. One approval runs
+    one call."""
+    approval = _APPROVED.get()
+    if approval is None or approval.tool != tool:
+        return None
+    _APPROVED.set(None)
+    return approval
+
+
+def pending_approvals(events: Iterable[Any]) -> tuple[Approval, ...]:
+    """The approval-gated calls among ADK ``events`` that no later event
+    answers, in order (BG §2.3, #1422).
+
+    Pass the events of the latest run, or a session's ``events``. The runner
+    does not yield the user message that answers a request, so the events of
+    several runs put together still list a request already answered.
+
+    Each is an :class:`~donkey_kit.core.approvals.Approval` read from the
+    payload described in :func:`approval_plugin` (its ``arguments`` as the model
+    sent them), and ``native`` is ADK's own ``adk_request_confirmation``
+    ``FunctionCall``. Pass it to :func:`approve` or :func:`reject`. ADK holds the
+    pause, so ``expires_at`` is ``math.inf``."""
+    calls: dict[str, Any] = {}
+    for event in events:
+        for call in event.get_function_calls() or ():
+            if call.name == _CONFIRMATION_CALL and _kind(call) == APPROVAL_KIND:
+                calls[call.id] = call
+        for response in event.get_function_responses() or ():
+            calls.pop(response.id, None)
+    return tuple(_from_request(call) for call in calls.values())
+
+
+def approve(approval: Approval, *, by: str) -> Approval:
+    """Approve a paused call from :func:`pending_approvals`, recording ``by`` as
+    the approver once the run resumes on it.
+
+    Returns the approval with ``native`` set to the user-message ``types.Part``
+    to resume on: ``types.Content(role="user", parts=[a.native for a in decided])``.
+
+    Raises:
+        ValueError: ``by`` is empty, or ``approval`` is not one of
+            :func:`pending_approvals`.
+        ImportError: ``google-adk`` is not installed.
+    """
+    return _response(approval, {"by": _who(by)}, confirmed=True)
+
+
+def reject(approval: Approval, *, by: str, message: str | None = None) -> Approval:
+    """Reject a paused call from :func:`pending_approvals`. On resume the call is
+    not run, and the model gets ``message`` (or a default that names the tool,
+    never ``by``) as the tool's error result.
+
+    Returns the approval with ``native`` set to the user-message ``types.Part``,
+    as :func:`approve` does.
+
+    Raises:
+        ValueError: ``by`` is empty, or ``approval`` is not one of
+            :func:`pending_approvals`.
+        ImportError: ``google-adk`` is not installed.
+    """
+    decision: dict[str, Any] = {"by": _who(by)}
+    if message is not None:
+        decision["message"] = message
+    return _response(approval, decision, confirmed=False)
+
+
+def _from_request(call: Any) -> Approval:
+    """The :class:`~donkey_kit.core.approvals.Approval` a DDK confirmation
+    request describes, with the request on ``native``."""
+    payload = call.args["toolConfirmation"]["payload"]
+    approval_id = str(payload.get("approval_id") or call.id)
+    arguments, risk = payload.get("arguments"), payload.get("risk")
+    approval = Approval(
+        id=approval_id,
+        tool=str(payload.get("tool") or ""),
+        arguments=MappingProxyType(dict(arguments) if isinstance(arguments, Mapping) else {}),
+        risk=risk if isinstance(risk, str) else None,
+        correlation_id=approval_id,
+        requested_at=time.time(),
+        expires_at=math.inf,
+        native=call,
+    )
+    return _as_requested(approval, payload)
+
+
+def _kind(call: Any) -> object:
+    confirmation = (getattr(call, "args", None) or {}).get("toolConfirmation")
+    payload = confirmation.get("payload") if isinstance(confirmation, Mapping) else None
+    return payload.get("kind") if isinstance(payload, Mapping) else None
+
+
+def _response(approval: Approval, decision: dict[str, Any], *, confirmed: bool) -> Approval:
+    request: Any = getattr(approval, "native", None)
+    if getattr(request, "name", None) != _CONFIRMATION_CALL or _kind(request) != APPROVAL_KIND:
+        raise ValueError(
+            f"not a paused ADK approval; pass one of pending_approvals(events), not {approval!r}"
+        )
+    try:
+        from google.genai import types
+    except ModuleNotFoundError as exc:
+        raise missing_framework_error("adk", exc.name) from exc
+
+    payload = {**request.args["toolConfirmation"]["payload"], **decision}
+    part = types.Part(
+        function_response=types.FunctionResponse(
+            id=request.id,
+            name=_CONFIRMATION_CALL,
+            response={"confirmed": confirmed, "payload": payload},
+        )
+    )
+    return dataclasses.replace(approval, native=part)
+
+
+def _who(by: str) -> str:
+    if not isinstance(by, str) or not by.strip():
+        raise ValueError(f"by must name who decided, not {by!r}")
+    return by.strip()
+
+
+def _decision(confirmation: Any, approval: Approval) -> tuple[bool, str, str | None] | None:
+    """``(approved, by, message)`` from ADK's ``ToolConfirmation``, or ``None``
+    when it is not :func:`approve` or :func:`reject`'s answer to ``approval``."""
+    payload = getattr(confirmation, "payload", None)
+    approved = getattr(confirmation, "confirmed", None)
+    if not isinstance(payload, Mapping) or not isinstance(approved, bool):
+        return None
+    if payload.get("kind") != APPROVAL_KIND or payload.get("approval_id") != approval.id:
+        return None
+    by, message = payload.get("by"), payload.get("message")
+    if isinstance(by, str) and by.strip() and (message is None or isinstance(message, str)):
+        return approved, by.strip(), message
+    return None
+
+
+def _requested(call_id: str, approval: Approval, events: Iterable[Any]) -> Mapping[str, Any] | None:
+    """The payload of the pause the agent recorded in the session for
+    ``approval``, or ``None``. A user message cannot carry one: ADK stores a
+    requested confirmation on the agent's own event."""
+    for event in events:
+        if getattr(event, "author", "user") == "user":
+            continue
+        actions = getattr(event, "actions", None)
+        asked = (getattr(actions, "requested_tool_confirmations", None) or {}).get(call_id)
+        payload = (
+            asked.get("payload") if isinstance(asked, Mapping) else getattr(asked, "payload", None)
+        )
+        if (
+            isinstance(payload, Mapping)
+            and payload.get("kind") == APPROVAL_KIND
+            and payload.get("approval_id") == approval.id
+        ):
+            return payload
+    return None
+
+
+def _refusal(
+    call_id: str,
+    approval: Approval,
+    decision: tuple[bool, str, str | None] | None,
+    requested: Mapping[str, Any] | None,
+    events: Iterable[Any],
+) -> str | None:
+    """Why the resumed call must not run, for the model, or ``None``."""
+    tool = approval.tool
+    if decision is None:
+        return (
+            f"This call of {tool!r} was not run: its confirmation is not an "
+            "approve() or reject() answer to its approval request."
+        )
+    if requested is None:
+        return f"This call of {tool!r} was not run: no approval of it was requested."
+    placeholder = _awaiting(approval)
+    for event in events:
+        for response in event.get_function_responses() or ():
+            if response.id == call_id and response.response != placeholder:
+                return f"This call of {tool!r} was not run again: it was already answered."
+    return None
+
+
+def _awaiting(approval: Approval) -> dict[str, Any]:
+    """The tool result a paused call answers with."""
+    return {"status": "awaiting approval", "approval_id": approval.id}

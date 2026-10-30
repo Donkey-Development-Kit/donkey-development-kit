@@ -1,0 +1,15 @@
+{
+  "content": [
+    {
+      "id": "00000000-0000-4000-8000-d4b0d8dad526",
+      "name": "shared-omni-gateway",
+      "targetId": "cloudhub-us-east-2",
+      "status": "APPLIED",
+      "dateCreated": "2026-09-16T06:28:42.656Z",
+      "lastUpdated": "2026-10-27T20:32:57.262Z"
+    }
+  ],
+  "pageSize": 20,
+  "pageNumber": 0,
+  "totalElements": 1
+}

@@ -3,7 +3,8 @@
 # Purpose: three different nightly checks, in three different jobs below.
 #
 #   `matrix`         — catches upstream framework churn for the
-#                       CONFORMANCE-TESTED adapter(s) (today: LangGraph only).
+#                       CONFORMANCE-TESTED adapters (today: LangGraph and the
+#                       OpenAI Agents SDK).
 #   `framework-legs`  — catches upstream churn for EVERY ADAPTERS entry via a
 #                       fresh, unconstrained resolve (#748; see that job's own
 #                       comment for why it exists alongside ci.yml's
@@ -17,22 +18,23 @@
 #   `pip-audit`       — known vulnerabilities in a fresh base / `[all]` resolve
 #                       (#757).
 #
-# `matrix` scope (#197): the roster is "one deep, seven shallow" — only
-# LangGraph is conformance-tested, so it is the only framework in `matrix`
-# (which re-verifies §8 class/kwarg signatures against the newest upstream
-# release). The other seven are supported at connection_kwargs() only; their
+# `matrix` scope (#197): the roster is "two deep, six shallow" — LangGraph and
+# the OpenAI Agents SDK (#223) are conformance-tested, so they are the only
+# frameworks in `matrix` (which re-verifies §8 class/kwarg signatures against
+# the newest upstream release). The other six are supported at
+# connection_kwargs() only; their
 # governed-kwargs shape is guarded by the blocking unit suite
 # (tests/unit/test_adapter_ergonomics.py) and, since #748, by their own
 # `framework-legs` entry below. Native-constructor signatures can also be
 # checked on demand with `python scripts/verify_frameworks.py` (FRAMEWORKS
 # there stays the full roster). A demoted framework rejoins `matrix` when
-# demand promotes it to deep support (#223/#244).
+# demand promotes it to deep support (#244).
 #
 # What `matrix` runs per framework:
 #   1. verify_frameworks.py --only <fw>  — signature check (offline). Fails the job
 #      if an INSTALLED framework's class/kwarg signature no longer matches §8.
 #   2. examples/<fw>/main.py             — smoke: must exit 0 with no creds set
-#      (the LangGraph example runs against the in-process local simulator).
+#      (each deep example runs against the in-process local simulator).
 #   3. pytest                            — the unit + ergonomics suites.
 #
 # NOTE (known constraint): the extras carry no `openai` upper bound ("floors,
@@ -121,26 +123,32 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The conformance-tested roster (BG §1.8, #197): only LangGraph. Every
-        # key MUST have a matching pyproject extra AND an examples/<key>/main.py;
-        # the "reject unwired framework" guard step below fails fast (with a clear
-        # message) if a stray key is added, so the list can't silently drift into
-        # permanently-red jobs again (#140). To promote another framework to deep
-        # support (#223/#244), add its key here AND flip conformance_tested=True in
-        # the ADAPTERS registry. The other seven frameworks are supported at
+        # The conformance-tested roster (BG §1.8, #197): LangGraph and the OpenAI
+        # Agents SDK (#223). Every key MUST have a matching pyproject extra AND an
+        # examples/<key>/main.py; the "reject unwired framework" guard step below
+        # fails fast (with a clear message) if a stray key is added, so the list
+        # can't silently drift into permanently-red jobs again (#140). To promote another framework to deep
+        # support (#244), add its key here AND flip conformance_tested=True in
+        # the ADAPTERS registry. `extra` is listed with `framework` because the
+        # two differ for openai_agents (pip extra `openai-agents`), as in
+        # framework-legs below. The other six frameworks are supported at
         # connection_kwargs() only, guarded by the blocking unit suite, and already
         # get a real install + real import/build on every PR via ci.yml (#748) —
         # they are absent from this nightly matrix because it checks something they
-        # don't need (upstream §8 signature drift for the deep adapter), not because
+        # don't need (upstream §8 signature drift for the deep adapters), not because
         # they lack real-install coverage. `donkey.openai()` is a separate raw-client
         # method (#277).
-        framework:
-          - langgraph
+        include:
+          - framework: langgraph
+            extra: langgraph
+          - framework: openai_agents
+            extra: openai-agents
     name: verify (${{ matrix.framework }})
     env:
-      # Bind the matrix value to an env var so it is never interpolated into a
+      # Bind the matrix values to env vars so they are never interpolated into a
       # run: body directly (injection hardening).
       FRAMEWORK: ${{ matrix.framework }}
+      EXTRA: ${{ matrix.extra }}
       RUN_LIVE: ${{ inputs.live }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -160,12 +168,12 @@ jobs:
             exit 1
           fi
 
-      # `local` + `otel` match ci.yml's langgraph-demo: the example smoke boots the
+      # `local` + `otel` match ci.yml's deep demo jobs: the example smoke boots the
       # simulator (uvicorn, from `local`) and flushes spans (opentelemetry, from
       # `otel`). Without them the smoke step dies on ModuleNotFoundError and the
       # unit suites never run (#834).
       - name: Install SDK + framework extra
-        run: python -m pip install --upgrade pip && pip install -e ".[llm,${FRAMEWORK},local,otel]" --group dev
+        run: python -m pip install --upgrade pip && pip install -e ".[llm,${EXTRA},local,otel]" --group dev
 
       - name: Signature verification (§8)
         run: python scripts/verify_frameworks.py --only "${FRAMEWORK}"
@@ -259,11 +267,13 @@ jobs:
           python-version: "3.12"
 
       # `local` + `otel`: so the whole-suite step's simulator (uvicorn) and span
-      # tests run rather than skip. No `-c`: a fresh resolve is this job's whole point.
+      # tests run rather than skip. `contract-<extra>`: the leg's MCP binding
+      # packages, which the armed skip guard requires (#1318). No `-c`: a fresh
+      # resolve is this job's whole point.
       - name: Install SDK + framework extra (fresh resolve; ADR 0007 rule 4)
         run: >-
           python -m pip install --upgrade pip &&
-          pip install -e ".[llm,local,otel,$EXTRA]" --group dev
+          pip install -e ".[llm,local,otel,$EXTRA]" --group dev --group "contract-$EXTRA"
 
       - name: Signature verification (§8), fail if not actually installed (#748)
         run: python scripts/verify_frameworks.py --only "$FRAMEWORK" --require-installed

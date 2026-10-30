@@ -104,7 +104,7 @@ def test_module_level_factory_matches_method(monkeypatch: pytest.MonkeyPatch) ->
     assert model.temperature == 0.1  # kwargs pass through
 
 
-# --- connection_kwargs() works for all eight (one deep, seven shallow, #197) ---
+# --- connection_kwargs() works for all eight (two deep, six shallow, #197) ---
 #
 # The roster cut (BG §1.8) leaves seven frameworks supported at connection_kwargs()
 # only, so that accessor is their entire governed surface — each gets a test here
@@ -244,19 +244,19 @@ def test_openai_agents_connection_kwargs_carry_governed_client() -> None:
     assert client.max_retries == 0  # we retry in transport (BG §1.1)
 
 
-def test_only_langgraph_is_conformance_tested() -> None:
-    """One deep, seven shallow (BG §1.8, #197): LangGraph is the sole
-    conformance-tested adapter; the other seven are present in the registry but
-    supported at connection_kwargs() only — no code deletion."""
+def test_langgraph_and_openai_agents_are_conformance_tested() -> None:
+    """Two deep, six shallow (BG §1.8, #197): LangGraph and the OpenAI Agents SDK
+    (promoted by Phase 1 demand, #223) are the conformance-tested adapters; the
+    other six are present in the registry but supported at connection_kwargs()
+    only — no code deletion."""
     from donkey_kit.integrations import ADAPTERS
 
     tested = {k for k, spec in ADAPTERS.items() if spec.conformance_tested}
-    assert tested == {"langgraph"}
+    assert tested == {"langgraph", "openai_agents"}
     assert set(ADAPTERS) - tested == {
         "adk",
         "strands",
         "agent_framework",
-        "openai_agents",
         "anthropic",
         "crewai",
         "llamaindex",
@@ -672,11 +672,11 @@ def test_adk_gemini_factory_and_connection_kwargs_do_not_drift(
     captured = _install_gemini_stub(monkeypatch)
     from donkey_kit.integrations.adk import ADKAdapter, gemini
 
-    gemini("gemini-2.5-flash", base_url="https://gw/gem/")
+    gemini("gemini-3.8-flash", base_url="https://gw/gem/")
 
     adapter = default_adapter(ADKAdapter)
     expected = adapter.gemini_connection_kwargs(base_url="https://gw/gem/")
-    assert captured["model"] == "gemini-2.5-flash"  # bare id, no provider prefix
+    assert captured["model"] == "gemini-3.8-flash"  # bare id, no provider prefix
     assert {k: captured[k] for k in expected} == expected
 
 
@@ -688,7 +688,7 @@ def test_adk_gemini_caller_kwargs_override_connection_defaults(
     from donkey_kit.integrations.adk import gemini
 
     caller = {"api_key": "k"}
-    gemini("gemini-2.5-flash", client_kwargs=caller)
+    gemini("gemini-3.8-flash", client_kwargs=caller)
     assert captured["client_kwargs"] is caller
 
 
@@ -718,7 +718,7 @@ def test_adk_last_call_status_does_not_depend_on_factory_order(
     try:
         with Donkey(_cfg()) as donkey:
             for factory in factories:
-                getattr(donkey.adk, factory)("gemini-2.5-flash")
+                getattr(donkey.adk, factory)("gemini-3.8-flash")
             assert donkey.last_call.status is LastCallStatus[status]
     finally:
         lastcall._last_call.reset(token)
@@ -742,7 +742,7 @@ def test_adk_gemini_refuses_a_gemini_that_would_drop_the_governed_client(
 
     adapter = ADKAdapter(_cfg(), _http())
     with pytest.raises(NotImplementedError, match="blocked on verification") as exc_info:
-        adapter.gemini("gemini-2.5-flash")
+        adapter.gemini("gemini-3.8-flash")
     assert f"lacks {missing}" in str(exc_info.value)
     assert "google-adk>=2.4" in str(exc_info.value)
     assert captured == {}  # never constructed
@@ -796,8 +796,8 @@ async def test_adk_gemini_real_round_trip_is_governed_by_our_transport() -> None
 
     async with http:
         with run_scope("run-691"):
-            m = adapter.gemini("gemini-2.5-flash", base_url="https://gw/ddk-gemini-inbound/")
-            async for _ in m.generate_content_async(_request("gemini-2.5-flash")):
+            m = adapter.gemini("gemini-3.8-flash", base_url="https://gw/ddk-gemini-inbound/")
+            async for _ in m.generate_content_async(_request("gemini-3.8-flash")):
                 pass
             record = current_last_call()
 
@@ -807,12 +807,12 @@ async def test_adk_gemini_real_round_trip_is_governed_by_our_transport() -> None
                     pass
 
     sent = seen[0]
-    assert sent.url.path == "/ddk-gemini-inbound/models/gemini-2.5-flash:generateContent"
+    assert sent.url.path == "/ddk-gemini-inbound/models/gemini-3.8-flash:generateContent"
     assert sent.headers["client_id"] == "cid"
     assert sent.headers[http._correlation_header] == "run-691"
     assert "model" not in json_body(sent)  # the wire body stays pure Gemini
     assert record is not None and record.status is LastCallStatus.OBSERVED
-    assert record.requested_model == "gemini-2.5-flash"
+    assert record.requested_model == "gemini-3.8-flash"
     assert (record.input_tokens, record.total_tokens, record.reasoning_tokens) == (9, 32, 21)
     assert isinstance(classify(exc_info.value.response), UpstreamRequestError)
 

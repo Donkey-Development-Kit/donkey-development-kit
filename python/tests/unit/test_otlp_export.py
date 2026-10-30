@@ -39,6 +39,7 @@ import warnings
 
 import pytest
 
+from donkey_kit import Donkey
 from donkey_kit.core import telemetry
 from donkey_kit.core.config import DonkeyConfig
 
@@ -382,6 +383,114 @@ def test_a_host_provider_takes_over_from_the_scoped_one(
     assert telemetry._tracer() is sentinel
     monkeypatch.setattr(telemetry, "_host_provider_set", lambda: True)
     assert telemetry._tracer() is not sentinel
+
+
+# --- Donkey.flush_telemetry() (#954) -------------------------------------------
+#
+# The scoped provider is not the global one, so the host's
+# ``trace.get_tracer_provider().force_flush()`` never reaches its spans; this is
+# the public flush that does.
+
+
+def _batched_scoped_provider(monkeypatch: pytest.MonkeyPatch) -> tuple[object, object]:
+    """Configure DDK's scoped provider with an in-memory exporter behind a batch
+    processor that never exports on its own timer, so only a flush exports."""
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    exporter = InMemorySpanExporter()
+    scoped = TracerProvider()
+    scoped.add_span_processor(BatchSpanProcessor(exporter, schedule_delay_millis=3_600_000))
+    monkeypatch.setattr(telemetry, "_build_tracer_provider", lambda _config: scoped)
+    monkeypatch.setattr(telemetry, "_host_provider_set", lambda: False)
+    telemetry.configure_otlp_export(DonkeyConfig())
+    return scoped, exporter
+
+
+def _donkey() -> Donkey:
+    return Donkey(
+        DonkeyConfig(
+            llm_proxy_url="https://proxy/p",
+            llm_proxy_client_id="cid",
+            llm_proxy_client_secret="csecret",
+        )
+    )
+
+
+def test_flush_telemetry_exports_the_scoped_providers_pending_spans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scoped, exporter = _batched_scoped_provider(monkeypatch)
+    try:
+        with telemetry.genai_span(enabled=True):
+            pass
+        assert exporter.get_finished_spans() == ()  # type: ignore[attr-defined]
+        assert _donkey().flush_telemetry() is True
+        names = [s.name for s in exporter.get_finished_spans()]  # type: ignore[attr-defined]
+        assert names == [telemetry.SPAN_LLM_CHAT]
+    finally:
+        scoped.shutdown()  # type: ignore[attr-defined]
+
+
+def test_flush_telemetry_leaves_a_host_provider_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DDK built no provider (a host's was set first), so there is nothing of
+    DDK's to flush and the host's provider is not touched."""
+    from opentelemetry import trace
+
+    flushed: list[int] = []
+
+    class Host:
+        def force_flush(self, timeout_millis: int) -> bool:
+            flushed.append(timeout_millis)
+            return True
+
+    monkeypatch.setattr(trace, "get_tracer_provider", Host)
+    assert _donkey().flush_telemetry() is True
+    assert flushed == []
+
+
+@pytest.mark.parametrize("outcome", [False, RuntimeError("collector down")], ids=repr)
+def test_flush_telemetry_reports_a_timeout_or_failure(
+    monkeypatch: pytest.MonkeyPatch, outcome: object
+) -> None:
+    from donkey_kit.core import spanflush
+
+    seen: list[int] = []
+
+    class Owned:
+        def force_flush(self, timeout_millis: int) -> bool:
+            seen.append(timeout_millis)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return bool(outcome)
+
+    spanflush.keep(Owned())
+    assert _donkey().flush_telemetry(timeout_s=0.25) is False
+    assert seen == [250]
+
+
+@pytest.mark.parametrize("timeout_s", [0, -1.0, float("nan")])
+def test_flush_telemetry_needs_a_positive_timeout(timeout_s: float) -> None:
+    with pytest.raises(ValueError, match="timeout_s"):
+        _donkey().flush_telemetry(timeout_s=timeout_s)
+
+
+def test_install_global_opt_in_keeps_its_provider_for_flush_telemetry() -> None:
+    """With the opt-in, the provider DDK installed as the global is still DDK's,
+    so ``flush_telemetry()`` flushes it."""
+    out = _run_probe(
+        """
+        from donkey_kit import Donkey
+        from donkey_kit.core import spanflush
+        from opentelemetry import trace
+        Donkey.from_env()
+        print("KEPT", spanflush._owned is trace.get_tracer_provider())
+        """,
+        OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318",
+        DONKEY_TELEMETRY_INSTALL_GLOBAL="true",
+    )
+    assert "KEPT True" in out
 
 
 def test_the_suite_never_sees_an_ambient_otlp_endpoint() -> None:

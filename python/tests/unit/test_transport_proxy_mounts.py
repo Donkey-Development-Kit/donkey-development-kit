@@ -209,3 +209,11 @@ def test_swap_refuses_when_a_mount_could_bypass_it(make: object) -> None:
     client._mounts = {URLPattern("all://"): httpx.MockTransport(lambda r: httpx.Response(200))}
     with pytest.raises(RuntimeError, match="mounts that would bypass it"):
         client.governed_transport.replace_inner(httpx.MockTransport(lambda r: httpx.Response(200)))
+
+
+def test_crewai_telemetry_is_off_for_the_suite() -> None:
+    """``no_sockets`` patches ``socket.connect`` process-wide, so CrewAI's
+    background telemetry export failed these tests at random (#1202). The
+    conftest switch turns it off; this fails if CrewAI stops honouring it."""
+    telemetry = pytest.importorskip("crewai.telemetry.telemetry")
+    assert telemetry.Telemetry._is_telemetry_disabled()

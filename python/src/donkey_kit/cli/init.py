@@ -109,15 +109,15 @@ def init(
         False, "--force", help="Regenerate even if the file already exists."
     ),
 ) -> None:
-    """Bootstrap a commented ``.donkey-kit.toml`` from the resolved config (config resolution).
+    """Bootstrap a commented `.donkey-kit.toml` from the resolved config.
 
-    Writes every non-secret value already visible via kwargs/env/toml, and names
-    EVERY missing required field at once — reusing the same
-    ``DonkeyConfig.validated`` report the SDK uses at runtime, so ``init`` never
-    disagrees with a live call about what is required. Secrets are never written
-    (they surface as commented ``env`` pointers). Idempotent: an existing file is
-    left untouched unless ``--force`` is passed. Honors the global ``--config``
-    (write target), ``--env`` (environment override), and ``--json`` flags.
+    Writes every non-secret value already resolved from the environment or an
+    existing config file, and names every missing required field at once, from
+    the same check the SDK runs at startup, so init never disagrees with a live
+    call about what is required. Secrets are never written: each one is a
+    commented pointer to its environment variable. An existing file is left
+    untouched unless `--force` is passed. Honors the global `--config` (the
+    file to write), `--env` and `--json` flags.
     """
     opts = ctx.obj or {}
     target: Path = opts.get("config") or (Path.cwd() / TOML_NAME)

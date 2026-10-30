@@ -97,6 +97,7 @@ def render_ratelimit_prose(remaining: int, limit: int, reset_ms: int) -> str:
 # DonkeyError.request_id, and `donkey.last_call` parses the decorator op into the
 # API-instance/environment ids (#362) — so replaying them is what makes
 # simulate()/`donkey mock` populate the record from the committed fixtures. The
+# `retry-after` is kept for the CIBA pending 401, whose poll interval it carries (#1320). The
 # honesty marker stays the injected `x-donkey-simulator: true`, not the absence
 # of identity headers. The unsuffixed request-window trio is kept (#974); the
 # upstream's suffixed ``x-ratelimit-*-requests`` / ``-tokens`` passthrough is not.
@@ -106,6 +107,7 @@ _KEEP_EXACT = frozenset(
         _wire.REQUEST_REMAINING_HEADER,
         _wire.REQUEST_RESET_HEADER,
         _wire.WWW_AUTHENTICATE_HEADER,
+        _wire.RETRY_AFTER_HEADER,
         _wire.INJECTION_PROTECTION_HEADER,
         _wire.CORRELATION_ID_HEADER.lower(),
         _wire.REQUEST_ID_HEADER,
@@ -213,6 +215,20 @@ SHAPES: dict[str, _Spec] = {
         "reject.agent-killed.body.json",
         403,
     ),
+    # OAuth2 OBO CIBA step-up (docs/verified-apis.md §4, #1320): a flat-string body ``error``,
+    # ``authorization_pending`` on the 401 (with Retry-After) and ``access_denied`` on the 403.
+    "ciba-pending": _Spec(
+        "rejections",
+        "reject.ciba-pending.headers.txt",
+        "reject.ciba-pending.body.json",
+        401,
+    ),
+    "ciba-denied": _Spec(
+        "rejections",
+        "reject.ciba-denied.headers.txt",
+        "reject.ciba-denied.body.json",
+        403,
+    ),
     "model-not-found": _Spec(
         # Captured body-only (no .headers.txt): matches test_row5's
         # httpx.Response(400, json=body) with no headers.
@@ -310,13 +326,19 @@ def fixture_bytes(directory: str, name: str) -> bytes:
 @dataclass(frozen=True)
 class Fixture:
     """A fully resolved captured shape: what the simulator serves and what the
-    tests assert against. ``body`` is ``b""`` for the empty-body captures."""
+    tests assert against. ``body`` is ``b""`` for the empty-body captures.
+
+    ``verbatim_headers`` marks a shape whose every header is a discriminator:
+    the response a ``classify.register()`` entry describes (#210), which
+    :func:`replay_headers` then replays whole instead of filtering through the
+    capture allow-list."""
 
     shape: str
     status: int
     headers: dict[str, str]
     body: bytes
     content_type: str | None
+    verbatim_headers: bool = False
 
 
 def load(shape: str) -> Fixture:
@@ -361,7 +383,7 @@ def replay_headers(fixture: Fixture) -> dict[str, str]:
     for key, value in fixture.headers.items():
         if key == "content-type":
             continue
-        if key in _KEEP_EXACT or key.startswith(_KEEP_PREFIX):
+        if fixture.verbatim_headers or key in _KEEP_EXACT or key.startswith(_KEEP_PREFIX):
             out[key] = value
     return out
 

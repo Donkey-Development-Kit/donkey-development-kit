@@ -32,6 +32,7 @@ exitstatus  # unused variable (src/donkey_kit/conformance/plugin.py)
 question  # unused variable (src/donkey_kit/conformance/suite.py)
 _.pace  # unused method (src/donkey_kit/core/budget.py)
 _.wait_for_reset  # unused method (src/donkey_kit/core/budget.py)
+_.unregister  # unused method (src/donkey_kit/core/classifier.py): public API, #210
 cost_team_header  # unused variable (src/donkey_kit/core/config.py)
 cost_project_header  # unused variable (src/donkey_kit/core/config.py)
 cost_env_header  # unused variable (src/donkey_kit/core/config.py)
@@ -55,6 +56,11 @@ trust_env  # unused variable (src/donkey_kit/core/transport/pipeline.py)
 limits  # unused variable (src/donkey_kit/core/transport/pipeline.py)
 http2  # unused variable (src/donkey_kit/core/transport/pipeline.py)
 _.discover  # unused method (src/donkey_kit/donkey.py)
+_.attribution  # unused method (src/donkey_kit/donkey.py): public API, #310
+_.as_user  # unused method (src/donkey_kit/donkey.py): public API, #215
+_.run_from_headers  # unused method (src/donkey_kit/donkey.py): public API, #308
+_.correlation_headers  # unused method (src/donkey_kit/donkey.py): public API, #308
+_.flush_telemetry  # unused method (src/donkey_kit/donkey.py): public API, #954
 domain  # unused variable (src/donkey_kit/donkey.py)
 locked  # unused variable (src/donkey_kit/donkey.py)
 _.lock  # unused method (src/donkey_kit/donkey.py)
@@ -79,6 +85,7 @@ messages  # unused variable (src/donkey_kit/integrations/langgraph.py)
 _.on_llm_end  # unused method (src/donkey_kit/integrations/langgraph.py)
 _.on_llm_error  # unused method (src/donkey_kit/integrations/langgraph.py)
 _.framework_error  # unused attribute (src/donkey_kit/integrations/langgraph.py)
+_.__class__  # unused attribute (src/donkey_kit/integrations/openai_agents.py): re-classes the SDK's FunctionTool, read by Python on every attribute lookup
 function_calling  # unused variable (src/donkey_kit/llm/catalog.py)
 vision  # unused variable (src/donkey_kit/llm/catalog.py)
 json_output  # unused variable (src/donkey_kit/llm/catalog.py)
@@ -104,8 +111,6 @@ require_gateways  # unused variable (src/donkey_kit/registry/governance.py)
 require_tags  # unused variable (src/donkey_kit/registry/governance.py)
 require_lifecycle  # unused variable (src/donkey_kit/registry/governance.py)
 _.reasons_failed  # unused method (src/donkey_kit/registry/governance.py)
-derive_descriptor  # unused function (src/donkey_kit/registry/introspect.py)
-entrypoint  # unused variable (src/donkey_kit/registry/introspect.py)
 exchange_url  # unused variable (src/donkey_kit/registry/models.py)
 _.coordinates  # unused property (src/donkey_kit/registry/models.py)
 endpoint_url  # unused variable (src/donkey_kit/registry/models.py)
@@ -133,13 +138,54 @@ _.strands  # unused method (src/donkey_kit/tools/session.py)
 _.llamaindex  # unused method (src/donkey_kit/tools/session.py)
 _.crewai  # unused method (src/donkey_kit/tools/session.py)
 _.agent_framework  # unused method (src/donkey_kit/tools/session.py)
-# The donkey CLI (#730): typer calls the callback and passes the blocked
-# command's option by name.
+# The donkey CLI (#730): typer calls the callback.
 _global  # unused function (src/donkey_kit/cli/_app.py)
-if_changed  # unused variable (src/donkey_kit/cli/_blocked.py)
 # DonkeyConfig.environment (ANYPOINT_ENV) is public config callers read; it is
 # also a keyword of the blocked registry search stubs. Its only in-tree reader
 # was the deleted governance.py (#730).
 environment  # unused variable (src/donkey_kit/core/config.py, src/donkey_kit/registry/exchange.py)
 # Keyword of the blocked publish_if_changed stub (BG §2.5).
 publication  # unused variable (src/donkey_kit/registry/publication.py)
+# donkey.on(...).escalate(to=...) is public API (BG §2.1, #208); only user code
+# and the tests call it.
+_.escalate  # unused method (src/donkey_kit/core/reactions.py)
+# donkey.approvals.reject(...) and Approval.requested_at are public API (BG §2.3,
+# #211); only user code and the tests use them.
+_.reject  # unused method (src/donkey_kit/core/approvals.py)
+requested_at  # unused variable (src/donkey_kit/core/approvals.py)
+# ToolSet approval on discovered tools (#1153): require_approval is public API.
+# inspect reads __signature__.
+_.require_approval  # unused method (src/donkey_kit/tools/session.py)
+# ToolSet.wait_for_gateway_approval (#214) is public API; only user code and
+# tests/unit/test_step_up_wait.py call it.
+_.wait_for_gateway_approval  # unused method (src/donkey_kit/tools/session.py)
+# ToolSet staleness after a cached discover() (#221) is public API; only user
+# code and tests/unit/test_discover.py read it.
+_.discovered_at  # unused property (src/donkey_kit/tools/session.py)
+_.is_stale  # unused property (src/donkey_kit/tools/session.py)
+# ToolSet.excluded (#312) is public API; only user code and
+# tests/unit/test_tool_access.py read it.
+_.excluded  # unused property (src/donkey_kit/tools/session.py)
+_.__signature__  # unused attribute (src/donkey_kit/tools/approval.py)
+# The a2a-sdk calls AgentExecutor.execute (BG §2.9.1, #224); a served handler
+# reads A2ATask.input.
+_.execute  # unused method (src/donkey_kit/a2a/_server.py)
+input  # unused variable (src/donkey_kit/a2a/types.py)
+# Strands calls HookProvider.register_hooks and reads
+# BeforeToolCallEvent.cancel_tool (BG §2.3, #1234).
+_.register_hooks  # unused method (src/donkey_kit/integrations/strands.py)
+_.cancel_tool  # unused attribute (src/donkey_kit/integrations/strands.py)
+# ADK calls a BasePlugin's tool and run callbacks and reads
+# ToolContext.actions.skip_summarization (BG §2.3, #1235).
+_.before_tool_callback  # unused method (src/donkey_kit/integrations/adk.py)
+_.after_tool_callback  # unused method (src/donkey_kit/integrations/adk.py)
+_.on_tool_error_callback  # unused method (src/donkey_kit/integrations/adk.py)
+_.after_run_callback  # unused method (src/donkey_kit/integrations/adk.py)
+_.skip_summarization  # unused attribute (src/donkey_kit/integrations/adk.py)
+# The run ledger is read by the caller: donkey.current_run and its RunLedger
+# fields (#613, tests/unit/test_run_ledger.py, website/content/telemetry.mdx).
+_.current_run  # unused property (src/donkey_kit/donkey.py)
+call_count  # unused variable (src/donkey_kit/core/runledger.py)
+refusal_count  # unused variable (src/donkey_kit/core/runledger.py)
+dropped  # unused variable (src/donkey_kit/core/runledger.py)
+_.is_a  # unused method (src/donkey_kit/core/runledger.py)

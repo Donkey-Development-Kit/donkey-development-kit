@@ -19,6 +19,8 @@ from typing import Generic, Protocol, TypeVar
 
 import httpx
 
+from .._budget_headers import stamp_received
+
 __all__ = ["GovernedSyncTransport", "GovernedTransport"]
 
 _T = TypeVar("_T")
@@ -62,8 +64,9 @@ class GovernedTransport(_InnerSlot[httpx.AsyncBaseTransport], httpx.AsyncBaseTra
     :meth:`replace_inner` swaps."""
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        """Send ``request`` through the current inner transport."""
-        return await self._inner.handle_async_request(request)
+        """Send ``request`` through the current inner transport, and stamp when
+        the response's headers arrived (#311)."""
+        return stamp_received(await self._inner.handle_async_request(request))
 
     async def __aenter__(self) -> GovernedTransport:
         await self._inner.__aenter__()
@@ -86,8 +89,9 @@ class GovernedSyncTransport(_InnerSlot[httpx.BaseTransport], httpx.BaseTransport
     """Blocking twin of :class:`GovernedTransport`."""
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        """Send ``request`` through the current inner transport."""
-        return self._inner.handle_request(request)
+        """Send ``request`` through the current inner transport, and stamp when
+        the response's headers arrived (#311)."""
+        return stamp_received(self._inner.handle_request(request))
 
     def __enter__(self) -> GovernedSyncTransport:
         self._inner.__enter__()

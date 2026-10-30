@@ -1,0 +1,33 @@
+{
+  "binding": {
+    "call": "streamable_http_client(url, http_client=AsyncClient(headers=...)) -> ClientSession(read, write).initialize()/list_tools()/call_tool()",
+    "class": "ClientSession",
+    "module": "mcp"
+  },
+  "date": "2026-10-28",
+  "distributions": {
+    "httpx": "0.28.1",
+    "mcp": "1.30.0"
+  },
+  "framework": "mcp_sdk",
+  "headers_seen": {
+    "client_id": "fake-client-id",
+    "client_secret": "fake-client-secret"
+  },
+  "native_tool_types": [
+    "Tool"
+  ],
+  "tool_call": {
+    "args": {
+      "a": 2,
+      "b": 3
+    },
+    "name": "add",
+    "result": "5"
+  },
+  "tools_listed": [
+    "add",
+    "lookup_sku"
+  ],
+  "url_shape": "http://127.0.0.1:<port>/mcp/"
+}

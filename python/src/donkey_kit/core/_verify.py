@@ -86,7 +86,7 @@ def blocked(what: str) -> NotImplementedError:
     """Construct the standard verification-blocked error.
 
     Use for surfaces where we have no defensible placeholder at all (e.g. the
-    Exchange publication API behind ``donkey publish``, BG §2.5).
+    Exchange entry render behind ``Publication.preview()``, BG §2.5).
     """
 
     return NotImplementedError(f"blocked on verification: {what}")
@@ -211,6 +211,14 @@ LLM_PROXY_WALLET_CLIENT_ID_HEADER = _wire.LLM_PROXY_WALLET_CLIENT_ID_HEADER
 #     confirmed live;
 LLM_PROXY_WALLET_JWT_HEADER = _wire.LLM_PROXY_WALLET_JWT_HEADER
 LLM_PROXY_WALLET_JWT_SCHEME = _wire.LLM_PROXY_WALLET_JWT_SCHEME
+
+# --- On-behalf-of user token (BG §2.4, #215) — VERIFIED (LIVE) 2026-10-29 ---
+# ``donkey.as_user(token=...)`` forwards the user's token unchanged. The
+# gateway reads it as ``Authorization: Bearer <token>``: a user token issued for
+# the instance's audience in that header was accepted by JWT Validation and OAuth2 OBO Credential
+# Injection on eight MCP instances (docs/verified-apis.md §13, #255,
+# provisioning #81). ``user_token_header`` still overrides it.
+USER_TOKEN_HEADER = _wire.USER_TOKEN_HEADER
 
 # --- Region host map (docs/verified-apis.md §1) ------------------------------
 # The US host is VERIFIED (CLI) 2026-08-28; EU is VERIFIED (plugin) 2026-10-12

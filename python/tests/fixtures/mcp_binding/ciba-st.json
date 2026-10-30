@@ -1,0 +1,28 @@
+{
+  "ciba": "HTTP 401 authorization_pending (Retry-After) / 403 access_denied on tools/call",
+  "distributions": {
+    "mcp": "2.1.1",
+    "strands-agents": "1.62.0"
+  },
+  "observed": {
+    "strands": {
+      "denied": {
+        "body_visible": false,
+        "call_tool_sync": {
+          "returned": "builtins.dict",
+          "text": "{'status': 'error', 'toolUseId': 'probe-1', 'content': [{'text': 'Tool execution failed: Server returned an error response'}]}"
+        }
+      },
+      "pending": {
+        "body_visible": false,
+        "call_tool_sync": {
+          "returned": "builtins.dict",
+          "text": "{'status': 'error', 'toolUseId': 'probe-1', 'content': [{'text': 'Tool execution failed: Server returned an error response'}]}"
+        }
+      }
+    }
+  },
+  "probe": "probe_ciba.py",
+  "python": "3.12.16",
+  "recorded": "2026-10-29"
+}

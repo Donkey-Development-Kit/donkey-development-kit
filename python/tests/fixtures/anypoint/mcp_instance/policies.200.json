@@ -1,0 +1,40 @@
+{
+  "policies": [
+    {
+      "policyTemplateId": "461713",
+      "order": 1,
+      "pointcutData": null,
+      "label": null,
+      "type": "system",
+      "policyId": 9656265,
+      "configuration": {
+        "injectMcpNameHeaders": false
+      },
+      "template": {
+        "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+        "assetId": "mcp-support",
+        "assetVersion": "1.1.1"
+      },
+      "version": 1793111629655
+    },
+    {
+      "policyTemplateId": "433807",
+      "order": 2,
+      "pointcutData": null,
+      "label": null,
+      "type": "system",
+      "policyId": 9656266,
+      "configuration": {
+        "credentialsOriginHasHttpBasicAuthenticationHeader": "customExpression",
+        "clientIdExpression": "#[attributes.headers['client_id']]",
+        "clientSecretExpression": "#[attributes.headers['client_secret']]"
+      },
+      "template": {
+        "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+        "assetId": "client-id-enforcement",
+        "assetVersion": "1.3.3"
+      },
+      "version": 1793111630663
+    }
+  ]
+}

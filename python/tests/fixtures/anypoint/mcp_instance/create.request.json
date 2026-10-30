@@ -1,0 +1,16 @@
+{
+  "spec": {
+    "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+    "assetId": "ddk-verify1278-mcp",
+    "version": "0.1.0"
+  },
+  "endpoint": {
+    "type": "mcp",
+    "uri": "http://host.docker.internal:8765/mcp/verify1278/",
+    "proxyUri": "http://0.0.0.0:8081/ddk-verify1278-mcp",
+    "isCloudHub": null,
+    "deploymentType": "HY"
+  },
+  "instanceLabel": "ddk-verify1278-mcp",
+  "technology": "flexGateway"
+}

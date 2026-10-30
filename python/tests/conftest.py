@@ -15,7 +15,16 @@ from typing import Any
 
 import pytest
 
-from donkey_kit.core import _verify, lastcall, runtime, telemetry, toolspec
+from donkey_kit.core import (
+    _verify,
+    approvals,
+    classifier,
+    lastcall,
+    runtime,
+    spanflush,
+    telemetry,
+    toolspec,
+)
 from donkey_kit.integrations import ADAPTERS, _base
 
 pytest_plugins = ["pytester"]
@@ -59,6 +68,13 @@ _HARNESS_VARS = frozenset({"DONKEY_CONTRACT_EXTRA", "DONKEY_BENCHMARK_JSON"})
 # copy bundled in the wheel instead. It is read once at import, so it is set
 # here at conftest load, before any test can import litellm.
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+# CrewAI exports anonymous usage telemetry from a background thread. Under a
+# test's dead proxy that thread opens a socket while ``no_sockets`` patches
+# ``socket.connect`` process-wide, so an offline-seam test failed on CrewAI's
+# traffic, not ours, whenever the export landed in its window (#1202).
+# ``OTEL_SDK_DISABLED`` would also work but is cleared per test with the other
+# ``OTEL_*`` vars; this switch is CrewAI's own and is read on every export.
+os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -202,8 +218,11 @@ def _reset_module_state() -> Iterator[None]:
     these by hand; add a new module's ``_reset_for_tests()`` here instead."""
     _verify._reset_for_tests()
     _base._reset_for_tests()
+    classifier._reset_for_tests()
     telemetry._reset_for_tests()
+    spanflush._reset_for_tests()
     toolspec._reset_for_tests()
+    approvals._reset_for_tests()
     # A sync governed call records ``last_call`` into the caller's context,
     # which for a sync test is the main context every later test inherits; an
     # async test's tasks copy it and read a stale call instead of UNOBSERVED.
@@ -213,6 +232,9 @@ def _reset_module_state() -> Iterator[None]:
     yield
     _verify._reset_for_tests()
     _base._reset_for_tests()
+    classifier._reset_for_tests()
     telemetry._reset_for_tests()
+    spanflush._reset_for_tests()
     toolspec._reset_for_tests()
+    approvals._reset_for_tests()
     lastcall._last_call.set(None)

@@ -58,7 +58,7 @@ tools = await donkey.tools.discover(domain="hr", locked=True)
 
 ## Registry caching
 
-Registry lookups (`ExchangeRegistry.search()`, `resolve_mcp()`,
+Registry lookups (`ExchangeRegistry.search()`, `resolve_mcp()`, `explain()`,
 `resolve_agent()` — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md))
 are cached with a configurable TTL (default 300 seconds):
 
@@ -70,6 +70,8 @@ donkey = Donkey.from_env(registry_cache_ttl_s=60)
 
 - `donkey.registry.refresh()` invalidates the cache and re-fetches on next use —
   call it after a platform team publishes a change you need to see immediately.
+  `donkey.tools.refresh()` does the same and also drops the cached discoveries,
+  and `donkey.tools.warm()` drops the registry cache before it reads.
 - Set `DONKEY_REGISTRY_CACHE_TTL_S` to change the TTL from the environment.
 - Set `DONKEY_NO_CACHE=1` to bypass the cache entirely, for debugging a
   discovery result that looks stale.

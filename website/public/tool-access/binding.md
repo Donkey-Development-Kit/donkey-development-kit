@@ -1,8 +1,12 @@
 # Framework binding
 
-Status: Roadmap. Planned design; not shipped yet.
+Status: Live. Shipped, and verified against a real governed gateway.
 
-This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
+  Every binding below was run through the governed gateway with the
+  framework's current release: discovered from Exchange, then bound and called
+  through an MCP instance behind JWT Validation and one behind Client ID
+  Enforcement. The collision rename and the approval gate run in the SDK, and
+  were run against local MCP servers.
 
 Once [discovery](https://docs.donkey-kit.dev/tool-access/discovery.md) hands you a `ToolSet`, binding turns
 governed MCP servers into a framework's own tool objects — nothing wrapped,
@@ -14,68 +18,366 @@ MCP servers created by MCP Bridge are gateway endpoints speaking streamable
 HTTP, protected by gateway policies. The SDK's session layer handles four
 things for you:
 
-- **Auth.** Client-credentials OAuth is the machine-to-machine case. Strands'
-  `MCPClient` already builds streamable HTTP with a `client_credentials` grant
-  internally; every other framework needs headers supplied explicitly.
-  `McpServerHandle.auth_headers()` returns a ready-to-use header dict, refreshed
-  automatically on a `401`.
-- **Connection lifecycle.** MCP clients are stateful, and several frameworks
-  connect lazily. `donkey.tools.discover()` never opens a connection — it
-  returns handles, and the connection opens on first tool use.
+- **Auth.** Every binding sends your gateway consumer credential with each MCP
+  request, and nothing else. See [Auth](#auth).
+- **Connection lifecycle.** `donkey.tools.discover()` never opens a
+  connection. The first binding call lists each server's tools (`tools/list`)
+  after the [governance check](#only-governed-servers-are-bound), and the
+  framework's own MCP client connects when the agent uses the tools.
 - **Multi-server aggregation.** `ToolSet` wraps N `McpServerHandle`s. When two
   servers expose a tool with the same name, the collision is resolved by
   prefixing the server's short name — for example `hr__get_employee` — and the
   mapping is available on `ToolSet.name_map`, so you can see exactly why the
-  model called that name.
+  model called that name. A name that would still be exposed twice, for
+  example because two servers share a short name, raises `ConfigError` rather
+  than dropping one of the tools.
 - **Filtering.** Enterprise MCP servers can expose dozens of tools. Handing 60
   tool descriptors to a model degrades it and inflates token cost, so filter
-  before you bind:
+  before you bind.
+
+Install the MCP client with the framework's extra, for example
+`pip install "donkey-kit[langgraph,mcp]" langchain-mcp-adapters`. The `[all]`
+extra includes `mcp` too. A binding whose packages are missing raises
+`ImportError` with the command to run.
+
+## Auth
+
+A governed MCP server is a gateway endpoint, so it takes the same consumer
+credential as the LLM proxy. By default a binding sends the data-plane
+credential you already configured, following `llm_proxy_auth`:
+
+| `llm_proxy_auth` | Headers sent |
+|---|---|
+| `client-id` (the default) | `client_id` and `client_secret`, from `DONKEY_LLM_PROXY_CLIENT_ID` and `DONKEY_LLM_PROXY_CLIENT_SECRET` |
+| `jwt`, `bearer` | `Authorization: Bearer <token>`, from `Donkey(llm_auth=...)` |
+
+It never sends the provider key, the wallet selector or the attribution
+headers: those belong to the LLM proxy. The consumer application needs a
+contract with each MCP instance, as it has with the LLM proxy.
+
+When an MCP instance wants a different credential than the LLM proxy, pass one
+to `discover(auth=...)`. Anything with an async `headers()` and an async
+`invalidate()` works, and the SDK ships two:
 
 ```python
-tools = await donkey.tools.discover(domain="hr")
+from donkey_kit.tools.auth import BearerAuth, ClientIdAuth
+
+tools = await donkey.tools.discover(
+    tags=["hr"],
+    auth=ClientIdAuth("<client-id>", "<client-secret>"),
+)
+# or, for an instance behind JWT Validation:
+tools = await donkey.tools.discover(tags=["hr"], auth=BearerAuth(my_provider))
+```
+
+- A binding with no credential raises `ConfigError` before any request.
+- The headers are read once per bind and handed to the framework's MCP client
+  as static headers, the one header argument every framework has. A bearer
+  token is the one current at bind time, so bind again after it expires.
+- A redirect never takes the credential to another origin. Where the framework
+  takes an HTTP client, a client factory or a transport, the binding passes
+  one that does not follow redirects and drops the credential, the user token
+  included, from any request to an origin other than the server's. Agent
+  Framework removes its `static_headers` on such a redirect itself. Bind to the
+  URL with its trailing slash: an older `mcp` release, such as the 2.1 that
+  Strands installs, then follows no redirect at all.
+- A `401` or `403` while listing tools drops the cached credential and retries
+  once, then raises `AuthError`. A gateway step-up answer is the exception: it
+  raises `GatewayApprovalPending` or `GatewayApprovalDenied` at once and keeps
+  the credential. To wait for the user instead, see
+  [`wait_for_gateway_approval()`](https://docs.donkey-kit.dev/hitl.md#waiting-while-listing-mcp-tools).
+- Discovery reads the server URLs from the control plane at `base_url`, so the
+  credential follows `base_url`'s rule. If `base_url` comes from the working
+  directory's `.donkey-kit.toml` or `.donkey-kit.local.toml` and isn't a
+  regional Anypoint host, then unless `DONKEY_TRUST_PROJECT_CONFIG` is set, a
+  discovered set sends `client_id` and `client_secret` only when they come from
+  those files too, and never sends the `llm_auth` token or a
+  `discover(auth=...)` credential. Instead, listing or binding raises
+  `ConfigError` before anything is sent, naming each credential and where it
+  came from. A set you build by hand has its URLs in code and isn't checked. See
+  [Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
+
+A credential is often good for one instance only, such as a JWT whose audience
+is that instance. Narrow the set to it with `filter(servers=[...])` before you
+bind, so the other servers are never listed and never receive the token:
+
+```python
+tools = await donkey.tools.discover(auth=BearerAuth(hr_token))
+hr = tools.filter(servers=["hr-mcp"])   # asset ID, or coordinates such as "<group-id>/hr-mcp/*"
+```
+
+## Acting for a user
+
+Bind inside [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md) and the binding sends the user's
+token instead of your service's, so the gateway's on-behalf-of policy acts for
+that user:
+
+```python
+async with donkey.as_user(token=user_token):
+    tools = await (await donkey.tools.discover()).langgraph()
+    agent = create_react_agent(model, tools=tools)
+    await agent.ainvoke({"messages": [("user", question)]})
+```
+
+- The token rides in the `user_token_header` (`Authorization: Bearer <token>`
+  by default). It replaces the credential's `Authorization`; the credential's
+  other headers, such as `client_id` and `client_secret`, still go. Inside the
+  block a binding needs no credential of its own.
+- The token is read when you bind, like any credential, and the framework's
+  MCP client sends it on every call. A binding acts for the user it was bound
+  for, so bind inside the block that runs the agent, once per user or request.
+  A binding made outside any block acts as your service.
+- A per-tool binding (`langgraph()`, `llamaindex()`, `anthropic()`) refuses a
+  call made under a different user than the one it was bound for. That covers
+  another user's token, a user's binding called outside any block, and a
+  service binding called inside one. The call raises `AuthError` before
+  anything is sent. An approved tool still
+  [runs as the user who asked for it](https://docs.donkey-kit.dev/hitl.md#who-a-resumed-call-runs-as),
+  wherever it is resumed.
+- The token goes as you pass it. JWT Validation accepts it only if its audience
+  names the MCP instance, so exchange the user's login token at your identity
+  provider for that audience first.
+- A `401` or `403` on the user's token raises `AuthError` without retrying: the
+  SDK never falls back to your service's credential.
+- The same `base_url` rule as for [the credential](#auth) applies to the
+  user's token. If `base_url` comes from the working directory's
+  `.donkey-kit.toml` or `.donkey-kit.local.toml`, a discovered set sends the
+  user's token only when `base_url` is a regional Anypoint host or
+  `DONKEY_TRUST_PROJECT_CONFIG` is set. Otherwise listing or binding inside the
+  block raises `ConfigError` before anything is sent. The error names the token
+  and any credential headers that would go with it. See
+  [Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
+
+  **A whole-server binding can't be checked.** `adk()`, `strands()`,
+  `openai_agents()`, `agent_framework()` and `crewai()` hand each server to the
+  framework, and the framework makes the tool calls itself, so the SDK never
+  sees them. Such a binding sends the identity it was bound with on every
+  call, whatever `as_user()` block the call runs in. Build an agent once at
+  startup and run each request inside `as_user()`, and its model calls go as
+  the user while its tool calls go as your service. Cache an agent built for
+  one user and reuse it for the next, and its tool calls go as the first user.
+  Bind a whole-server binding inside the `as_user()` block that uses it, and
+  don't reuse it outside that block.
+
+## Filtering
+
+`filter()` takes an allow-list, a deny-list and a predicate, and deny wins.
+Allow and deny entries are exact names or glob patterns, matched against the
+bare tool name and the server-qualified one (`hr__get_employee`, `hr__*`):
+
+```python
+tools = await donkey.tools.discover(tags=["hr"])
 filtered = tools.filter(allow=["get_employee", "search_employees"])
 # or:
 filtered = tools.filter(deny=["delete_*"])
 # or a predicate over the tool descriptor:
-filtered = tools.filter(predicate=lambda t: t.name.startswith("get_"))
+filtered = tools.filter(predicate=lambda t: t.description and len(t.description) > 40)
 ```
 
-  The SDK logs how many tool descriptors a `ToolSet` exposes out of the total
-  at debug level, so you can see the cost of skipping `filter()` before a
+Each call returns a new `ToolSet`, and chained calls narrow through every
+filter. A later call can never bring back a tool an earlier one removed:
+
+```python
+final = (tools
+         .filter(allow=["get_*", "search_*"])
+         .filter(deny=["get_ssn"])
+         .filter(predicate=lambda t: "internal" not in t.tags))
+```
+
+Filtering only narrows. It removes tools from what the model sees. It never
+adds a tool the servers did not expose, and it never widens what the gateway
+allows: gateway policies still apply to every call.
+
+An allow or deny entry that matches no tool on any server raises `ConfigError`
+once the tools are listed, at `describe()` or at bind time. A typo then can't
+empty the set or leave a tool you meant to deny exposed.
+
+`filter(servers=[...])` narrows the servers instead, by asset ID or
+coordinates, exact or glob. It applies before any tool is listed, so a server
+it drops is never connected to. An entry that matches no server in the set
+raises `ConfigError` straight away.
+
+### What the tool list costs
+
+Every model call carries the descriptors of the tools it can call.
+`descriptor_tokens()` estimates that cost for the set after filtering. A
+discovered server's tools are unknown until they are listed, so call
+`describe()` first (every binding calls it for you):
+
+```python
+tools, final = await tools.describe(), await final.describe()
+print(f"{tools.descriptor_tokens()} -> {final.descriptor_tokens()} descriptor tokens per call")
+# 9120 -> 812 descriptor tokens per call
+```
+
+It counts each descriptor's name, description and input schema as an
+OpenAI-style function tool, at about four characters per token. Tokenizers
+differ by model, so use it to compare tool sets, not as a bill.
+
+Every binding logs the number of tools it binds and this estimate at debug
+level, and logs a warning when the set has more than `tool_warn_count` tools
+(default `20`) or costs more than `tool_warn_tokens` (default `10000`):
+
+```text
+WARNING donkey_kit.tools.session: langgraph() binds 34 tool descriptors, about 9120 descriptor tokens per model call (more than tool_warn_count=20). Large tool sets degrade tool selection and cost tokens on every call: narrow the set with filter(), or raise the threshold (0 turns it off).
+```
+
+The defaults follow the model vendors' published guidance on tool count and
+descriptor size; see [Tool-set size warnings](https://docs.donkey-kit.dev/reference/configuration.md#tool-set-size-warnings)
+for the sources and how to change or turn off each threshold.
+
+  The SDK also logs how many tool descriptors a `ToolSet` exposes out of the
+  total at debug level, so you can see the cost of skipping `filter()` before a
   model does. See [Debug logging](https://docs.donkey-kit.dev/telemetry.md#debug-logging) to turn it on.
+
+## Only governed servers are bound
+
+Binding refuses a set that holds any MCP server the gateway does not govern,
+with `UngovernedMcpServer`. That covers a server
+registered in Exchange but not fronted by the gateway, and one whose governance
+was never evaluated, and one that does not resolve to exactly one deployed MCP
+instance. The refusal happens before any connection opens, so:
+
+- **No credentials leak.** The SDK attaches your gateway credentials to every
+  governed request. It never sends them to a server the gateway does not front.
+- **No ungoverned tool calls.** Gateway policies, access profiles and the kill
+  switch apply to every tool the agent can call.
+
+The error names each refused server (`.servers`) and each governance check it
+failed (`.reasons`, from [`explain()`](https://docs.donkey-kit.dev/tool-access/discovery.md)):
+
+```python
+from donkey_kit import UngovernedMcpServer
+
+ts = await donkey.tools.discover(tags=["crm"], governed=None)  # unfiltered: lists everything
+try:
+    tools = await ts.langgraph()
+except UngovernedMcpServer as e:
+    print(e.servers)  # ('com.acme/fastmcp-crm/1.0.0',)
+    print(e.reasons)  # ('com.acme/fastmcp-crm/1.0.0: deployed: no gateway in Sandbox',)
+```
+
+To fix it, front the server with the gateway, or leave it out: the default
+`discover()` (`governed=True`) does, so drop `governed=None`, or drop the
+server with `filter(servers=[...])`. A tool
+filter (`allow`, `deny`, `predicate`) does not get you past the check: the
+server is still in the set. There is no opt-out: to call an ungoverned server, use
+the framework's own MCP client, without the SDK and without your gateway
+credentials.
+
+To put a human decision in front of a sensitive tool, declare it on the set
+with `require_approval(tools=[...], risk=...)` before you bind (see
+"Discovered tools" in [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md)).
 
 ## Per-framework binding
 
-`ToolSet` exposes one method per installed integration, each returning the
-framework's **native** tool type:
+`ToolSet` exposes one method per framework, each returning the framework's
+**native** MCP objects. They are async, because each lists the tools first:
 
 ```python
-ts = await donkey.tools.discover(domain="hr")
-ts.langgraph()          # -> list[BaseTool]
-ts.adk()                # -> list[McpToolset]
-ts.strands()            # -> list[MCPClient]
-ts.llamaindex()         # -> list[FunctionTool]
-# etc.
+ts = await donkey.tools.discover(tags=["hr"])
+await ts.langgraph()          # -> list[BaseTool]
+await ts.llamaindex()         # -> list[FunctionTool]
+async with ts.anthropic() as tools:   # -> list[BetaAsyncFunctionTool]
+    ...
+await ts.adk()                # -> list[McpToolset], one per server
+await ts.strands()            # -> list[MCPClient], one per server
+await ts.openai_agents()      # -> list[MCPServerStreamableHttp], one per server
+await ts.agent_framework()    # -> list[MCPStreamableHTTPTool], one per server
+async with ts.crewai() as tools:      # -> list[BaseTool]
+    ...
 ```
 
-Note the shape difference: ADK and Strands take a toolset/provider object,
-while LangGraph and LlamaIndex take a flat tool list. Each method matches its
-framework's own idiom rather than forcing a uniform return type, and its
-docstring calls out the difference.
+| Framework | Binding | Install |
+|---|---|---|
+| LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient`, transport `"streamable_http"`, with the SDK's `httpx_client_factory`. Returns a flat list of tools for `create_react_agent(tools=...)` or a `ToolNode`; each call opens its own session. | `donkey-kit[langgraph,mcp]`, `langchain-mcp-adapters` (needs `mcp<2`) |
+| LlamaIndex | `llama_index.tools.mcp.BasicMCPClient(url, http_client=...)` + `McpToolSpec(...).to_tool_list_async()`. A flat list of tools; each call opens its own session. | `donkey-kit[llamaindex,mcp]`, `llama-index-tools-mcp` |
+| Anthropic SDK | `anthropic.lib.tools.mcp.async_mcp_tool(tool, session)` over an MCP `ClientSession` per server, for `client.beta.messages.tool_runner(tools=...)`. An async context manager: the sessions close on exit. The Messages API `mcp_servers` connector is not used: Anthropic's servers dial that URL, and it has no field for the gateway's credential headers. | `donkey-kit[anthropic,mcp]` |
+| Google ADK | `google.adk.tools.mcp_tool.McpToolset(connection_params=StreamableHTTPConnectionParams(url=..., headers=..., httpx_client_factory=...), tool_filter=[...])`, passed straight into `LlmAgent(tools=[...])`. Close it with `await toolset.close()`. | `donkey-kit[adk,mcp]` |
+| Strands | `strands.tools.mcp.MCPClient(transport_callable=..., tool_filters=...)`, used as a context manager; `list_tools_sync()` yields `MCPAgentTool` objects for `Agent(tools=[...])`. | `donkey-kit[strands,mcp]` |
+| OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp(params={"url": ..., "headers": ..., "httpx_client_factory": ...}, tool_filter=...)`, entered with `async with` and passed into `Agent(mcp_servers=[...])`. | `donkey-kit[openai-agents,mcp]` |
+| MS Agent Framework | `agent_framework.MCPStreamableHTTPTool(name, url, static_headers=..., allowed_tools=...)`, entered with `async with`. It has no `headers=` argument; the gateway credentials go in `static_headers`. | `donkey-kit[agent_framework,mcp]` |
+| CrewAI | `crewai_tools.MCPServerAdapter({"url": ..., "transport": "streamable-http", "headers": ..., "httpx_client_factory": ...}, *tool_names)`, one per server, for `Agent(tools=...)`. An async context manager: the adapters hold their connections open and stop on exit. `filter()` becomes the `tool_names` allow-list. | `donkey-kit[crewai,mcp]`, `crewai-tools[mcp]` (needs `mcp<2`) |
 
-| Framework | Binding |
-|---|---|
-| LangGraph | `langchain_mcp_adapters.client.MultiServerMCPClient({...}).get_tools()` — the SDK builds the connection dict from your handles, transport `"streamable_http"`, headers injected. |
-| Google ADK | `McpToolset(connection_params=StreamableHTTPConnectionParams(url=..., headers=...), tool_filter=[...])`, passed straight into `LlmAgent(tools=[...])`. |
-| MS Agent Framework | The framework's MCP client/tool class for streamable HTTP. |
-| OpenAI Agents SDK | `agents.mcp.MCPServerStreamableHttp(params={"url": ..., "headers": ...})`, passed into `Agent(mcp_servers=[...])`. |
-| Anthropic SDK | The `anthropic` SDK has no native client-side MCP binding; the SDK binds via the MCP Python SDK's streamable-HTTP client and passes the resulting tool schemas to `messages.create(tools=...)`. |
-| CrewAI | The framework's MCP adapter for streamable-HTTP servers, yielding native `crewai` tool objects for a `Crew`/`Agent`. |
-| LlamaIndex | `llama_index.tools.mcp.BasicMCPClient` + `McpToolSpec(...).to_tool_list_async()`. |
-| Strands | `MCPClient(lambda: streamablehttp_client(url, headers=...))` — implements `ToolProvider`, so it can be passed directly into `Agent(tools=[...])` with automatic lifecycle management. |
+Each class in this table, and the argument that carries the gateway's
+credential headers, was checked by binding the framework's current release to
+a local MCP server. The SDK's bindings were run against two local servers for
+the filter, the collision rename and the approval gate described here, and
+then through the governed gateway: each one bound an MCP instance discovered
+from Exchange, behind JWT Validation and behind Client ID Enforcement, and
+called a tool on it. Another instance's token, or a wrong client secret, raised
+`AuthError`.
 
-A binding failure or a `401` surfaces as a typed exception from the
-[error taxonomy](https://docs.donkey-kit.dev/errors.md).
+### Whole-server bindings
+
+ADK, Strands, the OpenAI Agents SDK, Agent Framework and CrewAI bind each MCP
+server as one object. `filter()` becomes that object's allow-list of tool names, but the
+object cannot rename one tool or gate one call, so:
+
+- a set whose tool names collide across servers raises `ConfigError`. Keep one
+  of each clashing tool with `filter(deny=[...])`, or bind with LangGraph,
+  LlamaIndex or the Anthropic SDK, which rename it;
+- a set with a `require_approval()` rule raises `ConfigError`. Gate
+  discovered tools through LangGraph, LlamaIndex or the Anthropic SDK, or use
+  the framework's own approval hook (see [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md));
+- a tool call made under a different `as_user()` user from the bind's is not
+  refused: it goes out with the identity of the bind. See
+  [Acting for a user](#acting-for-a-user).
+
+### Results and errors
+
+The frameworks return a tool call's result in different shapes: a plain
+string, MCP content blocks, structured JSON, or a wrapper object. Each binding
+leaves the framework's own result type unchanged, so don't assume a bare
+string.
+
+A binding failure surfaces as a typed exception from the
+[error taxonomy](https://docs.donkey-kit.dev/errors.md): `AuthError` when the gateway refuses the
+credential, `ToolInvocationError` when a server cannot list its tools, and
+`UngovernedMcpServer` for an ungoverned server (above). A binding that leaves
+no tool to bind, because `filter()` removed them all or the set is empty, logs
+why at info level and returns an empty list.
+
+### Tools outside your access profile
+
+The gateway's MCP access policies (MCP Global Access and Attribute-Based
+Access Control) decide which tools each consumer may call. They act in two
+places:
+
+- **Discovery is scoped by the server.** A tool you may not call is left out of
+  that server's `tools/list` for you, so the SDK never sees it and never binds
+  it. `ToolSet.excluded` lists only the tools your own `filter()` calls
+  removed (`reason="filter"`), not these.
+- **A call to a denied tool is refused.** A stale tool list, or a policy changed
+  after you bound, can still lead to one. The gateway answers with HTTP `200`
+  and the JSON-RPC error `-32008` `"Unable to access"`. It names the tool but not
+  the profile or rule that refused it.
+
+The LangGraph, LlamaIndex and Anthropic bindings raise `ToolNotInProfile` (a
+`PolicyViolation`) from that call, with
+`.tool_name` and the server's coordinates in `.server`. It is a configuration
+problem, so it is never retried. The whole-server bindings leave the call to
+the framework. The OpenAI Agents SDK and CrewAI raise the `mcp` package's
+`McpError`, and Agent Framework wraps it in its `ToolExecutionException`.
+`tool_access_denial()` turns any of them into the typed error:
+
+```python
+from donkey_kit import ToolNotInProfile
+from donkey_kit.experimental import tool_access_denial
+
+try:
+    result = await server.call_tool("lookup_proxy", {"name": "orders"})
+except Exception as exc:
+    if (denied := tool_access_denial(exc)) is not None:
+        raise denied from exc
+    raise
+```
+
+ADK and Strands hand the agent an error result whose text is
+`... Unable to access`, without the JSON-RPC code. The SDK doesn't classify
+it, because the text alone could be any tool's failure. In the same way, a
+tool that ran and failed returns a result with `isError: true`, never
+`ToolNotInProfile`.
 
 ## Related
 

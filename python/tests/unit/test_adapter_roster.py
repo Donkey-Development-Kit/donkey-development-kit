@@ -49,6 +49,17 @@ _EXAMPLES = _PYTHON / "examples"
 _NON_FRAMEWORK_EXTRAS = {"llm", "mcp", "a2a", "local", "otel", "cli", "test", "all", "dev"}
 _INDEPENDENCE = "integrations are mutually independent"
 
+# The scenarios that need a request on the SDK's own httpx client: an adapter
+# is exempt from each exactly when it declares transport="framework".
+_TRANSPORT_SCENARIOS = (
+    "agent_killed_stops_cleanly",
+    "approval_round_trip",
+    "correlation_id_propagated",
+    "custom_policy_typed",
+    "jwt_token_refreshed",
+    "refusal_handler_cannot_unrefuse",
+)
+
 
 def _pyproject() -> dict[str, Any]:
     with _PYPROJECT.open("rb") as f:
@@ -79,6 +90,44 @@ def test_every_roster_entry_names_its_own_module_and_class() -> None:
         cls = _adapter_class(attr)
         assert cls.__name__ == spec.cls
         assert issubclass(cls, Adapter)
+
+
+def _internal_hooks() -> set[tuple[str, str]]:
+    """``(adapter module, name)`` for every adapter name a ``donkey.py`` function
+    imports (the gate's native-pause hooks, imported lazily) and every
+    ``AdapterSpec.refusal_translator``."""
+    hooks = {
+        (spec.module.lstrip("."), spec.refusal_translator)
+        for spec in ADAPTERS.values()
+        if spec.refusal_translator is not None
+    }
+    functions = (
+        node
+        for node in ast.walk(ast.parse(_DONKEY.read_text()))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+    for function in functions:
+        for node in ast.walk(function):
+            module = getattr(node, "module", None) or ""
+            if isinstance(node, ast.ImportFrom) and module.startswith("integrations."):
+                name = module.removeprefix("integrations.")
+                hooks |= {(name, alias.name) for alias in node.names}
+    return hooks
+
+
+def test_no_internal_hook_is_in_an_adapter_all() -> None:
+    # The hooks are seams donkey.py and the roster reach by name, not adapter
+    # API: they stay importable but out of every __all__ (#1422, ADR 0006).
+    hooks = _internal_hooks()
+    assert {name for _, name in hooks} == {
+        "approval_interrupt",
+        "approved_call",
+        "refusal_translator",
+    }
+    for module_name, name in hooks:
+        module = importlib.import_module(f"donkey_kit.integrations.{module_name}")
+        assert callable(getattr(module, name)), f"{module_name}.{name} is gone"
+        assert name not in module.__all__, f"{module_name}.__all__ exports {name}"
 
 
 def test_framework_extras_are_the_roster() -> None:
@@ -144,9 +193,12 @@ def test_verify_frameworks_covers_every_adapter_factory() -> None:
 
 
 def test_nightly_matrix_is_the_conformance_tested_set() -> None:
+    # (framework, extra) pairs, as in framework-legs: openai_agents installs the
+    # hyphenated `openai-agents` extra.
     workflow = yaml.safe_load(_NIGHTLY.read_text())
-    matrix = workflow["jobs"]["matrix"]["strategy"]["matrix"]["framework"]
-    assert set(matrix) == {attr for attr, s in ADAPTERS.items() if s.conformance_tested}
+    include = workflow["jobs"]["matrix"]["strategy"]["matrix"]["include"]
+    pairs = {(entry["framework"], entry["extra"]) for entry in include}
+    assert pairs == {(attr, s.extra) for attr, s in ADAPTERS.items() if s.conformance_tested}
 
 
 def test_nightly_framework_legs_match_adapters() -> None:
@@ -185,4 +237,5 @@ def test_known_limitations_name_roster_adapters_and_match_capabilities() -> None
         exempt = limits.get(attr, {})
         assert ("gateway_identity_observed" in exempt) is (not caps.observes_last_call), attr
         assert ("typed_refusal_bridged" in exempt) is (not caps.typed_refusals), attr
-        assert ("jwt_token_refreshed" in exempt) is (caps.transport == "framework"), attr
+        for scenario in _TRANSPORT_SCENARIOS:
+            assert (scenario in exempt) is (caps.transport == "framework"), (attr, scenario)

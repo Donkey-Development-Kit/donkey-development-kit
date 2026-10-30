@@ -1,0 +1,43 @@
+{
+  "binding": {
+    "call": "with MCPServerAdapter({\"url\": url, \"transport\": \"streamable-http\", \"headers\": {...}}, *tool_names) as tools: add.run(a=2, b=3)",
+    "class": "MCPServerAdapter",
+    "module": "crewai_tools"
+  },
+  "date": "2026-10-28",
+  "distributions": {
+    "crewai": "1.15.32",
+    "crewai-tools": "1.15.32",
+    "mcp": "1.30.0",
+    "mcpadapt": "0.1.20"
+  },
+  "framework": "crewai",
+  "headers_seen": {
+    "client_id": "probe-id",
+    "client_secret": "probe-secret"
+  },
+  "native_tool_types": [
+    "crewai_tools.adapters.mcp_adapter.CrewAIToolAdapter.adapt.<locals>.CrewAIMCPTool"
+  ],
+  "tool_call": {
+    "args": {
+      "a": 2,
+      "b": 3
+    },
+    "name": "add",
+    "result": "5"
+  },
+  "tool_names_allow_list": {
+    "listed": [
+      "add"
+    ],
+    "passed": [
+      "add"
+    ]
+  },
+  "tools_listed": [
+    "add",
+    "lookup_sku"
+  ],
+  "url_shape": "http://127.0.0.1:<port>/mcp/"
+}

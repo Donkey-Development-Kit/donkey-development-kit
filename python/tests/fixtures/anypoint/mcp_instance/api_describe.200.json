@@ -1,0 +1,106 @@
+{
+  "audit": {
+    "created": {
+      "date": "2026-10-27T14:33:42.052Z"
+    },
+    "updated": {
+      "date": "2026-10-27T14:33:42.052Z"
+    }
+  },
+  "masterOrganizationId": "00000000-0000-4000-8000-306f0858eed3",
+  "organizationId": "00000000-0000-4000-8000-4256cc8e6f68",
+  "id": 21259411,
+  "instanceLabel": "ddk-verify1278-mcp",
+  "environmentInstanceId": "instance_21259411",
+  "groupId": "00000000-0000-4000-8000-4256cc8e6f68",
+  "assetId": "ddk-verify1278-mcp",
+  "assetVersion": "0.1.0",
+  "productVersion": "v0.1",
+  "description": null,
+  "tags": [],
+  "order": 1,
+  "providerId": null,
+  "deprecated": false,
+  "lastActiveDate": null,
+  "endpointUri": null,
+  "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+  "isPublic": false,
+  "stage": "release",
+  "technology": "flexGateway",
+  "approvalMethod": null,
+  "endpoint": {
+    "audit": {
+      "created": {},
+      "updated": {}
+    },
+    "id": 5660362,
+    "type": "mcp",
+    "uri": "http://host.docker.internal:8765/mcp/verify1278/",
+    "apiGatewayVersion": "1.14.2",
+    "proxyUri": "http://0.0.0.0:8081/ddk-verify1278-mcp",
+    "proxyRegistrationUri": null,
+    "lastActiveDate": null,
+    "isCloudHub": null,
+    "deploymentType": "HY",
+    "policiesVersion": null,
+    "referencesUserDomain": null,
+    "responseTimeout": null,
+    "wsdlConfig": null,
+    "muleVersion4OrAbove": null
+  },
+  "deployment": {
+    "audit": {
+      "created": {},
+      "updated": {
+        "date": "2026-10-27T14:33:54.202Z"
+      }
+    },
+    "id": 28482512,
+    "applicationId": "00000000-0000-4000-8000-cc690d96060a",
+    "applicationName": null,
+    "gatewayVersion": "1.14.2",
+    "environmentName": "Sandbox",
+    "environmentId": "00000000-0000-4000-8000-5c4fd1a49fc3",
+    "targetId": "00000000-0000-4000-8000-d4b0d8dad526",
+    "targetName": "shared-omni-gateway",
+    "deploymentId": null,
+    "updatedDate": "2026-10-27T14:33:54.202Z",
+    "type": "HY",
+    "expectedStatus": "deployed",
+    "targetMetadata": {
+      "spec": {
+        "target": {
+          "annotations": {
+            "gateway-manager.mulesoft.com/kind": "managed",
+            "gateway-manager.mulesoft.com/targetType": "shared-space"
+          },
+          "environment": {
+            "target": {
+              "id": "00000000-0000-4000-8000-d4b0d8dad526",
+              "provider": "RR"
+            }
+          }
+        }
+      },
+      "target": {
+        "id": "00000000-0000-4000-8000-d4b0d8dad526",
+        "provider": "RR"
+      }
+    },
+    "apiId": 21259411
+  },
+  "routing": [
+    {
+      "upstreams": [
+        {
+          "id": "00000000-0000-4000-8000-2adc02d6eb91",
+          "weight": 100
+        }
+      ]
+    }
+  ],
+  "metadata": null,
+  "semanticServiceConfigId": null,
+  "status": "active",
+  "autodiscoveryInstanceName": "v0.1:21259411"
+}
