@@ -61,7 +61,7 @@ class McpServerHandle:
     ``governance`` is the ``registry.explain()`` verdict for the server, attached
     by discovery so an unfiltered ``ToolSet`` can still list an ungoverned server
     with its reason. ``None`` means it was never evaluated. ``ToolSet`` binds a
-    server only when ``governance.governed`` is true (#1150, ADR 0013)."""
+    server only when ``governance.governed`` is true (#1150, ADR 0017)."""
 
     ref: AssetRef
     endpoint_url: str

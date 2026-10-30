@@ -282,6 +282,17 @@ def test_record_ignores_a_non_finite_or_out_of_range_reset(reset_ms: float) -> N
     assert (window.limit, window.reset_at) == (5, None)
 
 
+@pytest.mark.parametrize(
+    ("limit", "remaining", "used"),
+    [(1, -(10**400), 1.0), (10**400, 0, 1.0), (10**400, 10**400, 0.0), (4, 10**400, 0.0)],
+    ids=["huge-negative-remaining", "huge-limit-spent", "huge-limit-unspent", "huge-remaining"],
+)
+def test_fraction_used_clamps_before_it_divides(limit: int, remaining: int, used: float) -> None:
+    window = Window()
+    window.limit, window.remaining = limit, remaining
+    assert window.fraction_used == used
+
+
 def test_record_still_takes_a_zero_and_the_latest_representable_reset() -> None:
     window = Window()
     record(window, None, None, 0, _FIXED_NOW)

@@ -126,7 +126,7 @@ class ExchangeRegistry:
         if governed or environment is not None:
             raise _verify.blocked(
                 "search(governed=, environment=): the governed-state join over API "
-                "Manager instances (the Verification milestone); see warm()."
+                "Manager instances is not built (docs/verified-apis.md §6); see warm()."
             )
         if asset_types and "a2a-agent" in asset_types:
             raise _verify.blocked(
@@ -648,19 +648,24 @@ class ExchangeRegistry:
     async def warm(self, *, environment: str | None = None) -> None:
         """Build the in-memory governance index at startup.
 
-        Design (fill in after the Verification milestone):
+        Design:
           1. ONE call to list all API Manager instances for (org, environment);
              index by (groupId, assetId, version) AND (groupId, assetId).
-          2. Bulk policies call if one exists (verify the Verification milestone), else
-             per-candidate.
+          2. One policy read per instance: API Manager has no bulk policy read
+             (docs/verified-apis.md §6, #54).
           3. Apply Exchange-side filters (tags/lifecycle/type) BEFORE any API
              Manager calls to shrink the candidate set.
           4. Cache the whole index under registry_cache_ttl_s, keyed by env.
+
+        The reads it needs are answered (docs/verified-apis.md §6); the index
+        itself, and ``search(governed=, environment=)`` over it, are not built.
+        ``donkey.tools.warm()`` pre-fills discovery's cache instead (#1324).
         """
 
         raise _verify.blocked(
-            "API Manager instance-list + bulk-policy APIs for the governed-state "
-            "index (the Verification milestone)."
+            "ExchangeRegistry.warm(): the environment-wide governed-state index is "
+            "not built; donkey.tools.warm() pre-fills discovery instead "
+            "(docs/verified-apis.md §6)."
         )
 
     def refresh(self) -> None:

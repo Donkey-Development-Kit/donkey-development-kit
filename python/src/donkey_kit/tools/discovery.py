@@ -224,8 +224,10 @@ class Discovery:
     async def resolve(self, ref: AssetRef | str, *, auth: McpAuth | None) -> ToolSet:
         """A ``ToolSet`` of the one server ``ref``: its default-criteria verdict
         and its endpoint, as :meth:`discover` reads them for each asset, with no
-        search and no cache. A server that does not resolve is in the set with
-        a failed ``resolve_mcp`` check, so listing its tools refuses it."""
+        search. Nothing is cached here, but the registry's verdict and endpoint
+        lookups are, for ``registry_cache_ttl_s`` seconds (:meth:`refresh` drops
+        them). A server that does not resolve is in the set with a failed
+        ``resolve_mcp`` check, so listing its tools refuses it."""
         handle = await self._handle(AssetRef.parse(ref), GovernanceCriteria())
         return ToolSet(
             [handle],
@@ -241,7 +243,8 @@ class Discovery:
         """The tools MCP server ``ref`` lists now: its ``tools/list`` through its
         gateway instance, after the governance check and with the credential a
         :meth:`resolve` binding uses (§9). What ``Publication.verify()`` compares
-        the published ``mcp-metadata`` tools against (#991). Not cached."""
+        the published ``mcp-metadata`` tools against (#991). The ``tools/list``
+        is never cached; the lookups behind :meth:`resolve` are."""
         (server,) = (await (await self.resolve(ref, auth=None)).describe()).servers
         return server.tool_descriptors or ()
 
@@ -251,9 +254,11 @@ class Discovery:
         credential a ``ToolSet`` binding sends (docs/verified-apis.md §7).
 
         Like a binding, it reads the default-criteria verdict first and sends
-        nothing to an agent that is not governed (ADR 0013), nor to a gateway
+        nothing to an agent that is not governed (ADR 0017), nor to a gateway
         URL read from a control plane the credential may not go to (ADR 0019).
-        Not cached.
+        The card is read live every time; the registry's verdict and endpoint
+        lookups are cached for ``registry_cache_ttl_s`` seconds (:meth:`refresh`
+        drops them).
 
         Raises:
             RegistryError: The agent is not governed, does not resolve to one

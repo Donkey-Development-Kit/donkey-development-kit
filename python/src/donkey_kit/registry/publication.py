@@ -59,8 +59,10 @@ _log = logging.getLogger(__name__)
 
 
 class PublicationAssetType(Enum):
-    """SDK publication categories. The ledger records ``mcp`` as an Exchange
-    type (docs/verified-apis.md §7); the other token strings are UNVERIFIED."""
+    """SDK publication categories. The ledger records ``mcp`` and ``agent`` as
+    Exchange types, each confirmed by a publish, and ``a2a-agent`` as not an
+    Exchange type: an A2A agent publishes as ``agent`` (docs/verified-apis.md
+    §7). ``api`` stands for the REST, HTTP and SOAP API types."""
 
     MCP_SERVER = "mcp"
     A2A_AGENT = "a2a-agent"
@@ -213,7 +215,7 @@ class Publication:
                 or card file for it, the asset does not resolve to one gateway
                 instance, or an agent is not governed (nothing is sent to it).
             UngovernedMcpServer: The server is not governed, so no credential
-                is sent to it (ADR 0013).
+                is sent to it (ADR 0017).
         """
         ref = f"{self.group_id}/{self.asset_id}/{self.version}"
         if self.asset_type is PublicationAssetType.MCP_SERVER:

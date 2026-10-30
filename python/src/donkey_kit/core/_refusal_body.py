@@ -7,6 +7,7 @@ client sent. docs/verified-apis.md §4."""
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any
 
@@ -181,30 +182,34 @@ def retry_after(
     """Seconds until the caller may retry. Prefers the standard ``retry-after``
     (delta-seconds) header; falls back to the rate-limit policy's reset header
     (``x-token-reset``, or ``x-ratelimit-reset`` for the request window), which
-    is captured in **milliseconds** (docs/verified-apis.md §4)."""
+    is captured in **milliseconds** (docs/verified-apis.md §4). A value that is
+    not a finite number is no wait at all: ``None``."""
     seconds = parse_retry_after(response.headers.get(_wire.RETRY_AFTER_HEADER))
     if seconds is not None:
         return seconds
     reset_ms = response.headers.get(reset_header)
     if reset_ms is not None:
         try:
-            return max(0.0, float(reset_ms) / 1000.0)
+            value = float(reset_ms)
         except ValueError:
             return None
+        return max(0.0, value / 1000.0) if math.isfinite(value) else None
     return None
 
 
 def parse_retry_after(raw: str | None) -> float | None:
     """A ``Retry-After`` delta-seconds value, floored at 0, or ``None`` when it
-    is absent or not a number. The one parser behind both the transport's retry
-    sleep and an error's ``retry_after``: a negative value (e.g. ``"-1"``) means
-    "retry now", never a negative wait (#286, #815)."""
+    is absent or not a finite number (``inf``, ``nan``, ``1e400``). The one parser
+    behind both the transport's retry sleep and an error's ``retry_after``: a
+    negative value (e.g. ``"-1"``) means "retry now", never a negative wait (#286,
+    #815)."""
     if raw is None:
         return None
     try:
-        return max(0.0, float(raw))
+        value = float(raw)
     except ValueError:
         return None  # HTTP-date form; left for the fixture-driven parser (BG §1.5)
+    return max(0.0, value) if math.isfinite(value) else None
 
 
 # The model-based-routing rejection for a bare model name on a multi-provider

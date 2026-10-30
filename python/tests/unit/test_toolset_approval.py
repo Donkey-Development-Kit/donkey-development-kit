@@ -221,20 +221,20 @@ def test_filter_keeps_the_rules_and_require_approval_keeps_the_filter(registry: 
     assert gated._approvals != narrowed.require_approval(tools=["get_invoice"])._approvals
 
 
-def test_a_name_no_server_exposes_is_refused_at_bind_time(registry: Approvals) -> None:
+async def test_a_name_no_server_exposes_is_refused_at_bind_time(registry: Approvals) -> None:
     tools = _billing(registry).require_approval(tools=["issue_refnd", "legacy__issue_refund"])
 
     with pytest.raises(ConfigError, match="issue_refnd, legacy__issue_refund") as caught:
-        tools._check_approvals()
+        await tools.describe()
     assert "name_map" in caught.value.remediation
 
 
-def test_a_gated_tool_removed_by_filter_is_not_a_typo(registry: Approvals) -> None:
+async def test_a_gated_tool_removed_by_filter_is_not_a_typo(registry: Approvals) -> None:
     tools = (
         _billing(registry).require_approval(tools=["issue_refund"]).filter(deny=["issue_refund"])
     )
 
-    tools._check_approvals()
+    await tools.describe()
     assert tools.name_map == {"get_invoice": "get_invoice"}
 
 
