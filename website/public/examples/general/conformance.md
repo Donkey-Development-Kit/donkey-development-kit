@@ -52,7 +52,7 @@ Run context
     ==================
     FAIL  Retries a budget refusal        — retried a TokenBudgetExceeded 3× — a budget refusal is terminal; retrying only burns the same exhausted window
     FAIL  Swallows PII as a generic error — raised a bare RuntimeError — the PII refusal was swallowed as a generic error (run it inside donkey.run() or typed_refusals())
-    FAIL  Propagates the correlation id   — did not emit the correlation id in any log record — read it from current_correlation_id() and include it when you log
+    FAIL  Propagates the correlation id   — did not emit the correlation id in any log record — read it from donkey.current_run.run_id and include it when you log
     PASS  Works without budget headers    — completed a run when the gateway returned no budget headers
     Donkey conformance: 1 passed, 3 failed
     =========================== short test summary info ============================

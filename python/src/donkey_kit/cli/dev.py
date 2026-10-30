@@ -57,22 +57,21 @@ def dev(
         ),
     ),
 ) -> None:
-    """Serve an agent over A2A behind a simulated gateway ingress (BG §2.9.3).
+    """Serve an agent over A2A behind a simulated gateway ingress.
 
-    Runs the app ``donkey.serve()`` runs, governed the same way, with a local
-    fake ingress in front of it on one port. ``--scenario`` rules reject inbound
-    calls (``SendMessage``/``SendStreamingMessage``) with the simulator's shared
-    rejection fixtures, the bytes ``classify()`` and ``donkey mock`` use; every
-    other request reaches the agent untouched. Every response carries
-    ``x-donkey-simulator: true``.
+    Runs the app `donkey.serve()` runs, governed the same way, with a local
+    fake ingress in front of it on one port. `--scenario` rules reject inbound
+    calls (`SendMessage`/`SendStreamingMessage`) with the captured rejections
+    `donkey mock` serves; every other request reaches the agent untouched.
+    Every response carries `x-donkey-simulator: true`.
 
-    The ingress is SIMULATED: it enforces no policy. No A2A agent instance's
+    The ingress is simulated: it enforces no policy. No A2A agent instance's
     rejections have been captured live yet, so the shapes are the LLM-proxy
-    ones. It answers a request body over 4 MiB with a ``413``, and a ``--host``
-    that is not loopback prints a warning: nothing authenticates the caller.
+    ones. It answers a request body over 4 MiB with a 413, and a `--host` that
+    is not loopback prints a warning: nothing authenticates the caller.
 
-    Needs the ``[a2a]`` and ``[local]`` extras; a missing one is an install
-    prompt (exit 1). A bad TARGET or ``--scenario`` is a usage error (exit 2).
+    Needs the \\[a2a] and \\[local] extras; without one, it prints the install
+    command and exits 1. A bad TARGET or `--scenario` is a usage error (exit 2).
     """
     from ..simulator.ingress import check_scenarios
     from ..simulator.scenarios import ScenarioError, parse_scenarios

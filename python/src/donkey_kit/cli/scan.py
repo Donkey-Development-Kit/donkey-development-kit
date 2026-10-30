@@ -29,7 +29,7 @@ def scan(
     path: Path = typer.Argument(Path("."), help="The repository (or one .py file) to scan."),
     as_json: bool = typer.Option(False, "--json", help="emit the canonical scan model as JSON"),
 ) -> None:
-    """Find @donkey.agent and @donkey.tool markers statically and report them (BG §2.5)."""
+    """Find @donkey.agent and @donkey.tool markers statically and report them."""
     as_json = as_json or bool((ctx.obj or {}).get("json"))
     try:
         result = scan_repository(path)

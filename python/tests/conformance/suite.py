@@ -5,7 +5,7 @@ ONE suite, defined once. Its blocking scope is the conformance-tested roster
 #223) and the raw client. A framework is "supported" only when it passes all of
 it, or records a documented, asserted exemption in ``KNOWN_LIMITATIONS`` (the
 conformance kit) — never a silent skip. The other six frameworks are supported
-at ``connection_kwargs()`` only and are not run here, except for the three
+at ``connection_kwargs()`` only and are not run here, except for the four
 tool-binding scenarios, which run every ``ToolSet`` binding
 (``test_tool_binding.py``). A demoted framework rejoins with its own
 conformance run when demand promotes it (#223/#244). The

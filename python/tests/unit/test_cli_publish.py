@@ -13,6 +13,7 @@ from _fake_exchange import ORG, FakeExchange
 from _json_shapes import PLAN_ASSET_KEYS, PLAN_KEYS, PUBLISH_ASSET_KEYS, PUBLISH_KEYS, assert_shape
 from typer.testing import CliRunner
 
+from donkey_kit.cli import _common as cli_common
 from donkey_kit.cli import app
 from donkey_kit.cli import publish as publish_command
 from donkey_kit.core.auth import StaticToken
@@ -272,7 +273,7 @@ def test_publish_without_control_plane_credentials_exits_2(
 
 def test_the_page_source_comes_from_github_actions(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
-    assert publish_command._ci_source() is None
+    assert cli_common.ci_source() is None
 
     for name, value in {
         "GITHUB_ACTIONS": "true",
@@ -284,7 +285,7 @@ def test_the_page_source_comes_from_github_actions(monkeypatch: pytest.MonkeyPat
     }.items():
         monkeypatch.setenv(name, value)
 
-    source = publish_command._ci_source()
+    source = cli_common.ci_source()
 
     assert source is not None
     assert source.repository_url == "https://github.example.invalid/acme/sku"

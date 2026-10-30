@@ -244,7 +244,7 @@ Global options go before the command (`donkey --json init`):
 |---|---|---|
 | `--agent` | none | Import path to your agent factory, e.g. my.pkg:make_agent. |
 
-`donkey verify`: Check published MCP servers and A2A agents against their live side.
+`donkey verify`: Check published MCP servers and A2A agents against their live side, read-only.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -508,9 +508,14 @@ has no card to compare. With `--json` it prints the verify document
 `not_attempted`.
 
 It reads the `ANYPOINT_*` control-plane credentials for Exchange and the
-gateway credential for the live side, and exits `0` when every verified asset matches,
-`1` on drift, a failed read or a declaration issue (nothing is read then), and
-`2` on a missing path, invalid config or missing control-plane credentials.
+gateway credential (`DONKEY_LLM_PROXY_CLIENT_ID` and
+`DONKEY_LLM_PROXY_CLIENT_SECRET`) for the live side, and exits `0` when every
+verified asset matches, `1` on drift, a failed read or a declaration issue
+(nothing is read then), and `2` on a missing path, invalid config, or missing
+control-plane credentials or gateway credential. The CLI has no token
+provider, so in `jwt` or `bearer` mode it has no gateway credential: verify
+with `DONKEY_LLM_PROXY_AUTH=client-id`, or call `Publication.verify()` from
+code.
 Run it in CI after a deploy to catch a server that changed without a new
 published version.
 

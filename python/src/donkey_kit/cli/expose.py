@@ -35,6 +35,7 @@ import typer
 
 from ..core.config import TOML_NAME, DonkeyConfig
 from ..core.errors import ConfigError
+from ..core.runtime import Runtime
 from ..registry.expose import ExposeReport
 from ..registry.expose import expose as run_exposure
 from ..registry.expose_plan import ExposePlan, plan_exposure
@@ -42,7 +43,7 @@ from ..registry.publish_plan import plan_publication
 from ..registry.scan import ScanResult
 from ..registry.scan import scan as scan_repository
 from ._app import app
-from .publish import _ci_source, _runtime
+from ._common import ci_source
 
 __all__ = ["expose", "preflight"]
 
@@ -79,7 +80,7 @@ def expose(
     ),
     as_json: bool = _JSON,
 ) -> None:
-    """Expose one MCP server or A2A agent through an existing gateway (BG §2.9.2)."""
+    """Expose one MCP server or A2A agent through an existing gateway."""
     _run(ctx, service, path, env, target, dry_run=dry_run, as_json=as_json)
 
 
@@ -92,7 +93,7 @@ def preflight(
     target: str | None = _TARGET,
     as_json: bool = _JSON,
 ) -> None:
-    """Check, read-only, that a service can be exposed (ADR 0015)."""
+    """Check, read-only, that a service can be exposed."""
     _run(ctx, service, path, env, target, dry_run=True, as_json=as_json)
 
 
@@ -147,13 +148,18 @@ def _echo_json(report: ExposeReport) -> None:
     typer.echo(json.dumps(report.to_dict(), sort_keys=True, indent=2))
 
 
+def _runtime(cfg: DonkeyConfig) -> Runtime:
+    """The runtime whose control-plane client exposes; a test seam."""
+    return Runtime(cfg)
+
+
 async def _expose(
     cfg: DonkeyConfig, plan: ExposePlan, result: ScanResult, *, dry_run: bool
 ) -> ExposeReport:
     runtime = _runtime(cfg)
     try:
         return await run_exposure(
-            plan, result, runtime.control_http, cfg=cfg, dry_run=dry_run, source=_ci_source()
+            plan, result, runtime.control_http, cfg=cfg, dry_run=dry_run, source=ci_source()
         )
     finally:
         await runtime.aclose()

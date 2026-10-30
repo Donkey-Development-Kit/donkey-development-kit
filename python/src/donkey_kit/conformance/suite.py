@@ -239,7 +239,7 @@ async def _correlation_id_propagated(ctx: ScenarioContext) -> Outcome:
     return Outcome(
         False,
         "did not emit the correlation id in any log record — read it from "
-        "current_correlation_id() and include it when you log",
+        "donkey.current_run.run_id and include it when you log",
     )
 
 

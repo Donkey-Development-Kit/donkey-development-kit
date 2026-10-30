@@ -138,10 +138,8 @@ _.strands  # unused method (src/donkey_kit/tools/session.py)
 _.llamaindex  # unused method (src/donkey_kit/tools/session.py)
 _.crewai  # unused method (src/donkey_kit/tools/session.py)
 _.agent_framework  # unused method (src/donkey_kit/tools/session.py)
-# The donkey CLI (#730): typer calls the callback and passes the blocked
-# command's option by name.
+# The donkey CLI (#730): typer calls the callback.
 _global  # unused function (src/donkey_kit/cli/_app.py)
-if_changed  # unused variable (src/donkey_kit/cli/_blocked.py)
 # DonkeyConfig.environment (ANYPOINT_ENV) is public config callers read; it is
 # also a keyword of the blocked registry search stubs. Its only in-tree reader
 # was the deleted governance.py (#730).

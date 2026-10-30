@@ -20,7 +20,7 @@ or ``not_attempted`` when an issue stopped the verify), ``detail`` and
 Exit codes: 0 when every verified asset matches, 1 when one drifted, a read failed,
 or the scan or the declaration reports an issue (nothing is read), 2 when there
 is nothing at the path or the config is invalid or lacks the control-plane
-credentials.
+credentials or, with an asset to read live, the gateway credential.
 """
 
 from __future__ import annotations
@@ -32,14 +32,15 @@ from pathlib import Path
 
 import typer
 
-from ..core.config import TOML_NAME, DonkeyConfig
+from ..core.config import TOKEN_AUTH_MODES, TOML_NAME, DonkeyConfig
 from ..core.errors import ConfigError, DonkeyError
 from ..donkey import Donkey
 from ..registry.publication import Publication, PublicationAssetType
 from ..registry.publish_plan import PlannedAsset, PublishPlan, plan_publication
 from ..registry.scan import scan as scan_repository
+from ..tools.auth import gateway_auth
 from ._app import app
-from .publish import _document, _issues
+from ._common import document, print_issues
 
 __all__ = ["VERIFY_FORMAT", "verify"]
 
@@ -68,7 +69,7 @@ def verify(
         False, "--json", help="emit the plan with each asset's outcome as JSON"
     ),
 ) -> None:
-    """Check published MCP servers and A2A agents against their live side (read-only, BG §2.5)."""
+    """Check published MCP servers and A2A agents against their live side, read-only."""
     as_json = as_json or bool((ctx.obj or {}).get("json"))
     try:
         result = scan_repository(path)
@@ -83,7 +84,7 @@ def verify(
             detail = "not attempted: the plan has issues"
             stopped = tuple(VerifyOutcome(a, "not_attempted", detail) for a in plan.assets)
             typer.echo(_outcomes_json(plan, stopped), nl=False)
-        _issues(plan)
+        print_issues(plan)
         typer.secho("nothing was verified", fg="red", err=True)
         raise typer.Exit(1)
     try:
@@ -91,6 +92,10 @@ def verify(
     except ConfigError as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(2) from exc
+    if any(_reads_live(a) for a in plan.assets) and gateway_auth(cfg, None) is None:
+        typer.secho("No gateway credential to read the live side with.", fg="red", err=True)
+        typer.secho(_gateway_remediation(cfg), err=True)
+        raise typer.Exit(2)
     outcomes = asyncio.run(_verify(cfg, plan))
     if as_json:
         typer.echo(_outcomes_json(plan, outcomes), nl=False)
@@ -98,6 +103,25 @@ def verify(
         _summary(outcomes)
     if any(o.status in ("drift", "error") for o in outcomes):
         raise typer.Exit(1)
+
+
+def _reads_live(asset: PlannedAsset) -> bool:
+    """Whether verifying ``asset`` reads its live side, which needs the gateway credential."""
+    return asset.type == PublicationAssetType.MCP_SERVER.value or asset.protocol == "a2a_v1"
+
+
+def _gateway_remediation(cfg: DonkeyConfig) -> str:
+    if cfg.llm_proxy_auth in TOKEN_AUTH_MODES:
+        return (
+            f"DONKEY_LLM_PROXY_AUTH is {cfg.llm_proxy_auth!r}, and the CLI has no token to "
+            "send. Set DONKEY_LLM_PROXY_AUTH=client-id with DONKEY_LLM_PROXY_CLIENT_ID and "
+            "DONKEY_LLM_PROXY_CLIENT_SECRET, or call Publication.verify() from code with "
+            "Donkey(llm_auth=...)."
+        )
+    return (
+        "Set DONKEY_LLM_PROXY_CLIENT_ID and DONKEY_LLM_PROXY_CLIENT_SECRET (the consumer "
+        "application the gateway instances have a contract with)."
+    )
 
 
 def _donkey(cfg: DonkeyConfig) -> Donkey:
@@ -111,12 +135,12 @@ async def _verify(cfg: DonkeyConfig, plan: PublishPlan) -> tuple[VerifyOutcome, 
 
 
 async def _verify_one(donkey: Donkey, asset: PlannedAsset) -> VerifyOutcome:
+    if not _reads_live(asset):
+        return VerifyOutcome(asset, "skipped", "only an a2a_v1 agent has a card to compare")
     if asset.type == PublicationAssetType.MCP_SERVER.value:
         asset_type, live = PublicationAssetType.MCP_SERVER, "the live tools match"
-    elif asset.protocol == "a2a_v1":
-        asset_type, live = PublicationAssetType.AGENT, "the live card matches"
     else:
-        return VerifyOutcome(asset, "skipped", "only an a2a_v1 agent has a card to compare")
+        asset_type, live = PublicationAssetType.AGENT, "the live card matches"
     # plan.issues is empty, so the coordinates are declared.
     assert asset.group_id is not None and asset.version is not None
     publication = Publication(
@@ -139,7 +163,7 @@ async def _verify_one(donkey: Donkey, asset: PlannedAsset) -> VerifyOutcome:
 
 def _outcomes_json(plan: PublishPlan, outcomes: tuple[VerifyOutcome, ...]) -> str:
     """The verify document: the plan's assets with each one's outcome, in plan order."""
-    data = _document(plan, "verify_format", VERIFY_FORMAT)
+    data = document(plan, "verify_format", VERIFY_FORMAT)
     for asset, outcome in zip(data["assets"], outcomes, strict=True):
         asset["status"], asset["detail"] = outcome.status, outcome.detail
         asset["differences"] = list(outcome.differences)
