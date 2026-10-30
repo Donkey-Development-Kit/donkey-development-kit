@@ -14,4 +14,6 @@ regexTarget = "match"
 regexes = [
   # website/lib/analytics.test.mjs: fake Cloudflare beacon site token
   '''0123456789abcdef0123456789abcdef''',
+  # python/tests/unit/test_endpoints.py: fake URL password (#1478)
+  '''hunter2-pw-1478''',
 ]
