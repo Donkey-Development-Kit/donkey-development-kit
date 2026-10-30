@@ -85,11 +85,13 @@ linear stack:
   importing it back, so typer (the `[cli]` extra) never reaches the base
   `import donkey_kit` path. One hidden command, `status`, is `_verify.blocked`
   and exits 3.
-- **`donkey_kit.experimental`** re-exports the types that exist only for a
-  verification-blocked surface (`AssetRef`, `Publication`, `STRICT`,
-  `RegistryError`, …). They are importable, but they are not in
-  `donkey_kit.__all__` and carry no stability promise until their surface is
-  verified. A name that moves up to `donkey_kit` keeps a deprecated
+- **`donkey_kit.experimental`** re-exports the types outside the stable
+  namespace (`AssetRef`, `Publication`, `STRICT`, `RegistryError`, …). Most
+  serve a surface still blocked on verification, such as the lockfile or the
+  governed-state search join; the registry and tool-call types those surfaces
+  share have no settled tier yet. They are importable, but they are not in
+  `donkey_kit.__all__` and may change in any release (ADR 0006) until their
+  tier is settled. A name that moves up to `donkey_kit` keeps a deprecated
   `experimental` alias (`GovernanceCriteria`, `ToolNotInProfile` and
   `UngovernedMcpServer`, #1425).
 

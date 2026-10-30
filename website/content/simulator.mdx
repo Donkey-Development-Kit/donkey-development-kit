@@ -221,7 +221,10 @@ donkey mock --scenario ciba:pending=2,then=approve
 ```
 
 The count is the scenario's own. The simulator does not model the live policy's per-user
-cache or its silent expiry, so test your own deadline separately.
+cache or its silent expiry, so test your own deadline separately. The two answers were
+captured on an A2A `message/send` and an MCP `tools/call`, not on an LLM proxy route; the
+simulator serves the same bytes on its model routes so your error handling can be tested
+offline.
 
 ### `request_limit:limit=<requests>,window=<duration>`
 

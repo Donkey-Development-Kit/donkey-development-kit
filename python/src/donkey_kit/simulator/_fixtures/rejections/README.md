@@ -39,8 +39,8 @@ shared-omni-gateway) — a `400` carrying a real **79-byte** body,
 `{"message":"Injection attack detected - Rule: 'SQL Injection', Location: Body"}`,
 replacing the honest empty placeholder. Row 4 (the content-moderation
 fall-through) stays documented-only: no policy proxy produces an
-"unrecognised refusal" on demand, so its bytes remain an honest placeholder,
-and it is the sole residual keeping #253 open.
+"unrecognised refusal" on demand, so its bytes remain an honest placeholder.
+It has no known contract by design (#184), and #253 closed without it.
 
 **Bedrock Guardrails sibling (#568, 2026-09-24):** row 8's second vendor was
 live-captured against `ddk-bedrock-guardrails` — a `403` carrying
@@ -107,7 +107,7 @@ capture (the JWT was a request header, never written to disk).
 | 1 | Token rate limit | `../anypoint/llm_proxy/reject.token-rate-limit.{headers.txt,body.empty}` | `TokenBudgetExceeded` | 429 + `x-token-limit`/`-remaining`/`-reset`, empty body | LIVE, 2026-08-28 (`llm-token-rate-limit` 1.0.2) |
 | 2 | PII detection | `../anypoint/llm_proxy/reject.pii-detected.{headers.txt,body.json}` | `PIIDetected` | nested `error.type == "pii_detected"`, no `www-authenticate` | LIVE, 2026-08-28 (`llm-pii-detection-policy` 1.0.0) |
 | 3 | Injection protection | `reject.injection-protection.{headers.txt,body.json}` | `PromptInjectionBlocked` | header `x-injection-protection: blocked` (not status) | **VERIFIED (LIVE), 2026-09-27 (#669)** — real 79-byte body captured against `ddk-injection-protection` (instance 21200898). [Injection Protection policy](https://docs.mulesoft.com/gateway/latest/policies-included-injection-protection) (v1.12.0). |
-| 4 | Content moderation / federated guardrails | `reject.content-moderation.{headers.txt,body.empty}` | generic `PolicyViolation` | falls through (no nested error, no injection/guard/safety discriminator) | **UNDER-DOCUMENTED** — minimal 4xx proving the fall-through stays generic. Blocked on #253. |
+| 4 | Content moderation / federated guardrails | `reject.content-moderation.{headers.txt,body.empty}` | generic `PolicyViolation` | falls through (no nested error, no injection/guard/safety discriminator) | **UNDER-DOCUMENTED** — minimal 4xx proving the fall-through stays generic. No known contract by design (#184); federated-guardrail verdicts are tracked in #305. |
 | 5 | Upstream provider 4xx | `../anypoint/llm_proxy/reject.model-not-found.body.json` | `UpstreamRequestError` | non-429 4xx, nested `error` with `code`/`type`/`param` | LIVE, 2026-08-28 (OpenAI passthrough) |
 | 6 | Upstream 5xx | `reject.upstream-5xx.{headers.txt,body.empty}` | `UpstreamModelError` (retryable) | 5xx status range (no competing discriminator) | **SYNTHETIC** — status-range classification only; no live capture, no invented body. |
 | 7 | Regex Prompt Guard | `reject.regex-prompt-guard.{headers.txt,body.json}` | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) | 403 + top-level `matched_patterns` list (flat-string `error`) | **VERIFIED (LIVE), 2026-09-22 (#253)** — body matches the live capture byte-for-byte against `ddk-injection-guard` (instance 21179713). [Regex Prompt Guard policy](https://docs.mulesoft.com/gateway/latest/policies-included-regex-prompt-guard) (v1.11.4). |
