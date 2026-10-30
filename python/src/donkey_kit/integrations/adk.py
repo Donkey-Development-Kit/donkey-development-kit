@@ -34,7 +34,12 @@ google-adk 2.13.0 runs each step of the model's response generator in a copy of
 the flow's context, so without it the record stays in that copy and an
 ``after_model_callback`` reads ``UNOBSERVED``. :func:`last_call_bridged` returns
 that subclass for a model built from ``connection_kwargs()`` or
-``gemini_connection_kwargs()`` (#1218).
+``gemini_connection_kwargs()`` (#1218). The factories' classes,
+``GovernedLiteLlm``, ``GovernedGemini`` and the ``GovernedLiteLLMClient`` that
+``model()`` passes as ``llm_client``, resolve by name on this module, so pickle
+finds them. A model the factories build still holds the SDK's http client, so
+it does not pickle; nor does a plain ``LiteLlm`` given the same kwargs. A class
+:func:`last_call_bridged` builds from your own class has no name here.
 
 APPROVALS (BG §2.3, #1235): an approval-gated tool
 (``@donkey.tool(approval="required")`` in an agent's ``tools``) pauses the run
@@ -68,7 +73,7 @@ import time
 from collections.abc import Iterable, Mapping
 from contextlib import aclosing
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from ..core import _verify
 from ..core.approvals import Approval, record_decision, record_pending
@@ -317,7 +322,9 @@ def _last_call_bridged_class(base: Any) -> Any:
         """An ADK model whose ``donkey.last_call`` reaches the context that
         started the call (#1207)."""
 
-        _donkey_last_call_bridged = True
+        # A ClassVar, so pydantic leaves it a plain class attribute rather than
+        # turning it into a private attribute.
+        _donkey_last_call_bridged: ClassVar[bool] = True
 
         def generate_content_async(self, *args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
             bridge = open_last_call_bridge()
@@ -368,7 +375,45 @@ def _governed_llm_client_class(base: Any) -> type[LiteLLMClient]:
                     capture.tag(exc)
                     raise
 
+    GovernedLiteLLMClient.__qualname__ = GovernedLiteLLMClient.__name__
     return GovernedLiteLLMClient
+
+
+def _governed_lite_llm() -> Any:
+    from google.adk.models.lite_llm import LiteLlm
+
+    return _last_call_bridged_class(LiteLlm)
+
+
+def _governed_gemini() -> Any:
+    from google.adk.models import Gemini
+
+    return _last_call_bridged_class(Gemini)
+
+
+def _governed_lite_llm_client() -> Any:
+    from google.adk.models.lite_llm import LiteLLMClient
+
+    return _governed_llm_client_class(LiteLLMClient)
+
+
+_GOVERNED_CLASSES = {
+    "GovernedLiteLlm": _governed_lite_llm,
+    "GovernedGemini": _governed_gemini,
+    "GovernedLiteLLMClient": _governed_lite_llm_client,
+}
+
+if not TYPE_CHECKING:  # mypy would otherwise accept any name on this module
+
+    def __getattr__(name: str) -> Any:
+        """The factories' classes by name, so pickle finds them (PEP 562)."""
+        build = _GOVERNED_CLASSES.get(name)
+        if build is None:
+            raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        try:
+            return build()
+        except ModuleNotFoundError as exc:
+            raise missing_framework_error("adk", exc.name) from exc
 
 
 def model(model: str, **kw: Any) -> LiteLlm:

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pickle
 from pathlib import Path
 from typing import Any
 
@@ -457,6 +458,45 @@ def test_last_call_bridged_builds_one_class_and_takes_only_adk_models() -> None:
     for wrong in (object, "Gemini", Gemini(model="gemini-3.8-flash")):
         with pytest.raises(TypeError, match="BaseLlm"):
             last_call_bridged(wrong)  # type: ignore[arg-type]
+
+
+def test_the_bridge_marker_is_a_plain_class_attribute() -> None:
+    """Not a pydantic private attribute, which is a truthy ``ModelPrivateAttr``."""
+    pytest.importorskip("google.adk")
+    pytest.importorskip("litellm")
+    from google.adk.models import Gemini
+    from google.adk.models.lite_llm import LiteLlm
+
+    from donkey_kit.integrations.adk import last_call_bridged
+
+    for base in (Gemini, LiteLlm):
+        bridged = last_call_bridged(base)
+        assert bridged.__dict__["_donkey_last_call_bridged"] is True
+        assert "_donkey_last_call_bridged" not in bridged.__private_attributes__
+
+
+async def test_the_factory_classes_resolve_by_name_so_they_pickle() -> None:
+    pytest.importorskip("google.adk")
+    pytest.importorskip("litellm")
+    from google.adk.models import Gemini
+    from google.adk.models.lite_llm import LiteLlm
+
+    from donkey_kit.integrations import adk
+
+    donkey = _donkey()
+    async with donkey:
+        lite = donkey.adk.model("gpt-4o")
+        gemini = donkey.adk.gemini("gemini-3.8-flash")
+    assert type(lite) is adk.GovernedLiteLlm
+    assert type(lite.llm_client) is adk.GovernedLiteLLMClient
+    assert type(gemini) is adk.GovernedGemini
+    for cls in (adk.GovernedLiteLlm, adk.GovernedGemini, adk.GovernedLiteLLMClient):
+        assert pickle.loads(pickle.dumps(cls)) is cls
+    plain = adk.last_call_bridged(LiteLlm)(model="openai/gpt-4o")
+    assert type(pickle.loads(pickle.dumps(plain))) is adk.GovernedLiteLlm
+    assert adk.last_call_bridged(Gemini) is adk.GovernedGemini
+    with pytest.raises(AttributeError, match="GovernedNothing"):
+        adk.GovernedNothing  # noqa: B018
 
 
 async def test_adk_factories_return_the_adk_classes() -> None:
