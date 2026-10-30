@@ -32,16 +32,20 @@ refuses a gate. The rules and the gate live in ``tools/approval.py``.
 Inside ``donkey.as_user(...)`` (BG §2.4, #1366) listing and binding send the
 user's token in the user-token header (``Authorization: Bearer`` by default,
 docs/verified-apis.md §13) instead of the credential's ``Authorization``; the
-credential's other headers still go. A discovered set first checks the control
-plane its server URLs came from, as for any credential from outside the project
-config files (ADR 0005, #1439), and raises ``ConfigError`` rather than send the
-token. The token is read when the set lists or
+credential's other headers still go. The token is read when the set lists or
 binds and goes into the framework client's static headers, so a binding sends
 the identity it was bound for. A per-tool binding records that identity, and a
 call under any other identity (another token, the service where a user was
 bound, or the reverse) raises :class:`~donkey_kit.core.errors.AuthError` before it is sent
 (#1418). A whole-server binding hands each call to the framework, out of the
 SDK's sight, so it cannot refuse one: bind it inside the block that uses it.
+
+Before a discovered set lists or binds, it checks the control plane its server
+URLs were read from, as for any endpoint read from the project config files
+(ADR 0005, ADR 0019, #1439, #1479): the gateway credential and the user token go
+only where ``tools.auth.check_gateway_endpoint`` passes them, and otherwise
+``ConfigError`` is raised and nothing is sent. A set built by hand has its URLs
+in code, so it has no such check.
 """
 
 from __future__ import annotations
@@ -161,7 +165,7 @@ class ToolSet:
         _discovered: tuple[datetime, float, float] | None = None,
         _limits: tuple[int, int] | None = None,
         _user_header: str | None = None,
-        _user_endpoint_check: Callable[[], None] | None = None,
+        _endpoint_check: Callable[[bool, bool], None] | None = None,
         _step_up_wait: float = 0.0,
     ) -> None:
         self._servers = list(servers)
@@ -182,10 +186,10 @@ class ToolSet:
         self._limits = _limits or (DonkeyConfig.tool_warn_count, DonkeyConfig.tool_warn_tokens)
         # The header a donkey.as_user() token rides in (core.identity.user_token_header).
         self._user_header = _user_header or _verify.USER_TOKEN_HEADER
-        # Raises before a donkey.as_user() token is sent to the servers: discovery
-        # read their URLs from the control plane, which may come from the working
-        # directory's config files (core.identity.check_user_token_endpoint, #1439).
-        self._user_endpoint_check = _user_endpoint_check
+        # Called with (credential goes, user token goes) before either is sent to
+        # the servers: discovery read their URLs from the control plane, which may
+        # come from the working directory's config files (ADR 0019, #1479).
+        self._endpoint_check = _endpoint_check
         # How long listing waits for a gateway step-up (CIBA) approval; 0 raises at once (#214).
         self._step_up_wait = _step_up_wait
 
@@ -206,7 +210,7 @@ class ToolSet:
             _discovered=self._discovered,
             _limits=self._limits,
             _user_header=self._user_header,
-            _user_endpoint_check=self._user_endpoint_check,
+            _endpoint_check=self._endpoint_check,
             _step_up_wait=self._step_up_wait if _step_up_wait is None else _step_up_wait,
         )
 
@@ -476,9 +480,9 @@ class ToolSet:
         Raises:
             UngovernedMcpServer: A server in the set is not governed (ADR 0013).
             ConfigError: No gateway credential is configured outside a
-                ``donkey.as_user(...)`` block; inside one, the server URLs were
-                read from a ``base_url`` in the working directory's config files
-                that ``DONKEY_TRUST_PROJECT_CONFIG`` does not trust (#1439); or a
+                ``donkey.as_user(...)`` block; the server URLs were read from a
+                ``base_url`` in the working directory's config files that may
+                not receive the credential or the user token (ADR 0019); or a
                 ``filter()`` or ``require_approval()`` name matches no tool.
             GatewayApprovalPending: The gateway is waiting for the user's CIBA
                 approval; re-run after ``retry_after`` seconds, or build the set with
@@ -539,12 +543,14 @@ class ToolSet:
         """The headers listing and binding send: the credential's, with the
         ``donkey.as_user(...)`` token in the user-token header inside a block
         (#1366). It replaces the credential's ``Authorization``; the rest stays.
-        A server URL the token may not be sent to raises ``ConfigError`` (#1439)."""
+        A server URL that may not receive what would go raises ``ConfigError``
+        (ADR 0019)."""
         user = current_user()
         if user is None:
-            return await self._credential().headers()
-        if self._user_endpoint_check is not None:
-            self._user_endpoint_check()
+            credential = self._credential()
+            if self._endpoint_check is not None:
+                self._endpoint_check(True, False)
+            return await credential.headers()
         headers = await self._auth.headers() if self._auth is not None else {}
         header = self._user_header
         if header.lower() == _verify.LLM_PROXY_WALLET_JWT_HEADER.lower():
@@ -552,6 +558,8 @@ class ToolSet:
         else:
             value = user.token
         kept = {k: v for k, v in headers.items() if k.lower() != header.lower()}
+        if self._endpoint_check is not None:
+            self._endpoint_check(bool(kept), True)
         return {**kept, header: value}
 
     def _credential(self) -> McpAuth:

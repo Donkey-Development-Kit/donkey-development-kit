@@ -730,12 +730,18 @@ nothing is sent.
 control-plane check runs at the first control-plane call and again right before
 each connected-app token request. `donkey doctor` runs both without sending
 anything. For the [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md) token, the LLM-proxy check
-runs when you call `as_user()`. The control-plane check runs when a discovered
-MCP tool set lists or binds inside the block, because the server URLs were read
-from `base_url`.
+runs when you call `as_user()`. The control-plane check also runs each time a
+discovered MCP tool set lists or binds, and before `agent_card()` (and so
+[`verify()`](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify))
+reads an agent's card. Discovery read those gateway URLs from `base_url`, so
+they get `base_url`'s rule for the service's gateway credential, and inside an
+`as_user()` block for the user's token as well. `donkey doctor` doesn't run
+this gateway check.
 
-**Scope:** the checks cover `llm_proxy_url`, `base_url` and the connected-app
-token endpoint. A URL you pass to a factory in code gets the `https://` check
+**Scope:** the checks cover `llm_proxy_url`, `base_url`, the MCP and A2A gateway
+URLs that discovery reads from `base_url`, and the connected-app token
+endpoint. A tool set you build by hand has its server URLs in code, so it
+isn't checked. A URL you pass to a factory in code gets the `https://` check
 when the factory is called; see
 [Credentials go only to checked endpoints](#credentials-go-only-to-checked-endpoints). They don't cover OTLP exporter endpoints (configured by
 OpenTelemetry).
@@ -749,7 +755,7 @@ flowchart TD
         AH["DONKEY_ALLOW_HTTP<br/>in the environment?"]
     end
     subgraph C2["Check 2 · project-file URLs get project-file credentials"]
-        P["URL read from .donkey-kit.toml<br/>or .donkey-kit.local.toml?"]
+        P["URL read from .donkey-kit.toml<br/>or .donkey-kit.local.toml, or from<br/>a control plane that base_url names?"]
         T["DONKEY_TRUST_PROJECT_CONFIG<br/>in the environment?"]
         R["base_url on a regional<br/>anypoint.mulesoft.com host?"]
         C["Every credential it would receive<br/>also read from those two files?"]
@@ -830,7 +836,8 @@ These are the credentials checked for each endpoint:
 | `llm_proxy_url`, `jwt` mode | `llm_proxy_wallet_client_id`, and the JWT from `llm_auth`, which always counts as coming from outside the files |
 | `llm_proxy_url`, `bearer` mode | `llm_proxy_key` if set, and the token from `llm_auth`, which always counts as coming from outside the files |
 | `llm_proxy_url`, inside `donkey.as_user()` | The `as_user()` token, in every mode, which always counts as coming from outside the files |
-| `base_url`, for a discovered MCP tool set listed or bound inside `donkey.as_user()` | The `as_user()` token, which always counts as coming from outside the files |
+| `base_url`, for the gateway URL of a discovered MCP tool set or of `agent_card()` | The service's gateway credential: `llm_proxy_client_id` and `llm_proxy_client_secret` in client-id mode; the token from `llm_auth` in `jwt` and `bearer` mode; or a `discover(auth=…)` credential. The last two always count as coming from outside the files |
+| `base_url`, for a discovered MCP tool set listed or bound inside `donkey.as_user()` | The `as_user()` token, which always counts as coming from outside the files, and the gateway credential headers that still go with it |
 
 | The URL comes from | A credential it would receive comes from | Result |
 |---|---|---|
@@ -843,6 +850,7 @@ These are the credentials checked for each endpoint:
 | `.donkey-kit.toml` / `.donkey-kit.local.toml`, `bearer` mode | The token from `llm_auth` (always) | `ConfigError`, every time |
 | `.donkey-kit.toml` / `.donkey-kit.local.toml` (`base_url`) | The token from a `Donkey(auth=…)` provider (always) | `ConfigError`, every time |
 | `.donkey-kit.toml` / `.donkey-kit.local.toml` (`llm_proxy_url`, or `base_url` for a discovered MCP tool set) | The `donkey.as_user()` token (always) | `ConfigError`, every time |
+| `.donkey-kit.toml` / `.donkey-kit.local.toml` (`base_url`, for a discovered MCP tool set or `agent_card()`) | A `discover(auth=…)` credential (always) | `ConfigError`, every time |
 | `.donkey-kit.toml` / `.donkey-kit.local.toml`, `base_url` on `anypoint.mulesoft.com`, `eu1.anypoint.mulesoft.com`, `ca1.platform.mulesoft.com` or `jp1.platform.mulesoft.com` | Anywhere | Sent |
 | Any of the above, with `DONKEY_TRUST_PROJECT_CONFIG` set in the environment | Anywhere | Sent |
 | Any of the above, with only `DONKEY_ALLOW_HTTP` set | As in the rows above | Unchanged: `DONKEY_ALLOW_HTTP` affects the `https://` rule only |
@@ -850,8 +858,9 @@ These are the credentials checked for each endpoint:
 **What counts as code:** any value passed to `DonkeyConfig(...)`; any value on
 a resolved config that differs from what was loaded, whether you changed it with
 `with_overrides(...)`, `dataclasses.replace(...)` or otherwise; the token from a
-`Donkey(auth=…)` provider; the token passed to `donkey.as_user()`; and in `jwt`
-and `bearer` mode the token returned by `llm_auth`. A
+`Donkey(auth=…)` provider; the token passed to `donkey.as_user()`; a credential
+passed to `donkey.tools.discover(auth=…)`; and in `jwt` and `bearer` mode the
+token returned by `llm_auth`. A
 config built entirely with `DonkeyConfig(...)` has its URLs in code too, so the
 rule never applies to it. Likewise, a URL you change in code is no longer
 treated as coming from the file.
@@ -875,16 +884,16 @@ The source labels are `env`, `user file` and `code`.
    longer comes from the file.
 2. **Keep the credentials in `.donkey-kit.local.toml`** in the same directory.
    Not available for the `llm_auth` token in `jwt` or `bearer` mode, a
-   `Donkey(auth=…)` token or the `donkey.as_user()` token, because none of them
-   comes from a file.
+   `Donkey(auth=…)` token, a `discover(auth=…)` credential or the
+   `donkey.as_user()` token, because none of them comes from a file.
 3. **Opt in:** set `DONKEY_TRUST_PROJECT_CONFIG` to `1` (or `true`, `yes`,
    `on`) in the environment if you trust the project config files. The
    setting decides whether those files are trusted, so it is read from the
    environment only; a `[donkey]` key with that name is ignored.
 
 In `jwt` or `bearer` mode with the URL in a project file, for a `Donkey(auth=…)` token
-with `base_url` in a project file, and for the `donkey.as_user()` token, only 1
-and 3 apply; the error lists only those two. The error names every token it
+or a `discover(auth=…)` credential with `base_url` in a project file, and for the
+`donkey.as_user()` token, only 1 and 3 apply; the error lists only those two. The error names every token it
 holds back, for example
 `Not sending the token from the llm_auth provider, the donkey.as_user() token to …`.
 

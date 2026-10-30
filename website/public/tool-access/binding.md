@@ -83,6 +83,16 @@ tools = await donkey.tools.discover(tags=["hr"], governed=True, auth=BearerAuth(
   Strands installs, then follows no redirect at all.
 - A `401` or `403` while listing tools drops the cached credential and retries
   once, then raises `AuthError`.
+- Discovery reads the server URLs from the control plane at `base_url`, so the
+  credential follows `base_url`'s rule. If `base_url` comes from the working
+  directory's `.donkey-kit.toml` or `.donkey-kit.local.toml` and isn't a
+  regional Anypoint host, then unless `DONKEY_TRUST_PROJECT_CONFIG` is set, a
+  discovered set sends `client_id` and `client_secret` only when they come from
+  those files too, and never sends the `llm_auth` token or a
+  `discover(auth=...)` credential. Instead, listing or binding raises
+  `ConfigError` before anything is sent, naming each credential and where it
+  came from. A set you build by hand has its URLs in code and isn't checked. See
+  [Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
 
 A credential is often good for one instance only, such as a JWT whose audience
 is that instance. Narrow the set to it with `filter(servers=[...])` before you
@@ -126,12 +136,13 @@ async with donkey.as_user(token=user_token):
   provider for that audience first.
 - A `401` or `403` on the user's token raises `AuthError` without retrying: the
   SDK never falls back to your service's credential.
-- Discovery reads the server URLs from the control plane at `base_url`. If
-  `base_url` comes from the working directory's `.donkey-kit.toml` or
-  `.donkey-kit.local.toml`, a discovered set sends the user's token only when
-  `base_url` is a regional Anypoint host or `DONKEY_TRUST_PROJECT_CONFIG` is set.
-  Otherwise listing or binding inside the block raises `ConfigError` before
-  anything is sent. See
+- The same `base_url` rule as for [the credential](#auth) applies to the
+  user's token. If `base_url` comes from the working directory's
+  `.donkey-kit.toml` or `.donkey-kit.local.toml`, a discovered set sends the
+  user's token only when `base_url` is a regional Anypoint host or
+  `DONKEY_TRUST_PROJECT_CONFIG` is set. Otherwise listing or binding inside the
+  block raises `ConfigError` before anything is sent. The error names the token
+  and any credential headers that would go with it. See
   [Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
 
   **A whole-server binding can't be checked.** `adk()`, `strands()`,

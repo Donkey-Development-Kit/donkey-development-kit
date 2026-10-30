@@ -89,3 +89,4 @@ is not rewritten.
 | [0015](0015-provisioning-boundary.md) | The SDK creates only the ingress instance in front of the developer's own agent or MCP server, never a control plane | Accepted | #319 |
 | [0016](0016-policy-source-evidence-class.md) | A gateway response shape read from the policy's own source may be typed, at `VERIFIED (POLICY SOURCE)` | Accepted | #1429 |
 | [0017](0017-governed-discovery-default.md) | Discovery is governed by default; binding still refuses an ungoverned server, with no opt-out | Accepted | #1424 |
+| [0019](0019-derived-endpoint-trust.md) | A URL read from a configured endpoint follows that endpoint's trust rule, for every credential sent to it | Accepted | #1479 |

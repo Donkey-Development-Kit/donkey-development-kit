@@ -20,7 +20,7 @@ import logging
 import time
 from collections.abc import Callable, Iterator, Sequence
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -29,11 +29,11 @@ from ..core.approvals import NativePause
 from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, RegistryError
-from ..core.identity import check_user_token_endpoint, user_token_header
+from ..core.identity import user_token_header
 from ..registry.criteria import Check, GovernanceCriteria, GovernanceReport
 from ..registry.exchange import ExchangeRegistry
 from ..registry.models import AssetRef, McpServerHandle
-from .auth import McpAuth
+from .auth import McpAuth, check_gateway_endpoint
 from .session import ToolSet
 
 __all__ = ["Discovery"]
@@ -74,7 +74,9 @@ class Discovery:
         registry: The Exchange registry client.
         cfg: The resolved configuration (``registry_cache_ttl_s`` and the
             ``tool_warn_*`` thresholds).
-        auth: The default gateway credential for bindings.
+        auth: The default gateway credential for bindings, built from ``cfg``
+            by :func:`~donkey_kit.tools.auth.gateway_auth`; the endpoint check
+            weighs it by the source of the fields it was built from.
         natives: The framework approval pauses (#1153).
     """
 
@@ -124,13 +126,21 @@ class Discovery:
             _discovered=(found.at, found.started, self._cfg.registry_cache_ttl_s),
             _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
             _user_header=user_token_header(self._cfg),
-            _user_endpoint_check=self._user_endpoint_check,
+            _endpoint_check=self._endpoint_check(auth),
         )
 
-    def _user_endpoint_check(self) -> None:
-        """Refuse to send a ``donkey.as_user()`` token to the servers when the
-        control plane their URLs came from may not receive it (#1439)."""
-        check_user_token_endpoint(self._cfg, need="control_plane")
+    def _endpoint_check(self, auth: McpAuth | None) -> Callable[[bool, bool], None]:
+        """The check a set runs before it lists or binds, given whether the
+        gateway credential and the ``donkey.as_user()`` token go: the control
+        plane the server URLs came from may refuse them (ADR 0019, #1479).
+        ``auth`` is the ``discover(auth=...)`` credential, set in code; ``None``
+        is the default one, built from the config."""
+        origin: Literal["config", "code"] = "config" if auth is None else "code"
+
+        def check(credential: bool, user: bool) -> None:
+            check_gateway_endpoint(self._cfg, credential=origin if credential else None, user=user)
+
+        return check
 
     async def warm(
         self,
@@ -218,7 +228,7 @@ class Discovery:
             _auth=auth if auth is not None else self._auth,
             _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
             _user_header=user_token_header(self._cfg),
-            _user_endpoint_check=self._user_endpoint_check,
+            _endpoint_check=self._endpoint_check(auth),
         )
 
     async def live_tools(self, ref: AssetRef | str) -> tuple[dict[str, object], ...]:
@@ -235,12 +245,17 @@ class Discovery:
         credential a ``ToolSet`` binding sends (docs/verified-apis.md §7).
 
         Like a binding, it reads the default-criteria verdict first and sends
-        nothing to an agent that is not governed (ADR 0013). Not cached.
+        nothing to an agent that is not governed (ADR 0013), nor to a gateway
+        URL read from a control plane the credential may not go to (ADR 0019).
+        Not cached.
 
         Raises:
             RegistryError: The agent is not governed, does not resolve to one
                 deployed A2A instance behind an ``https://`` gateway URL, or the
                 card read failed.
+            ConfigError: ``base_url`` was read from the working directory's
+                config files and the credential was not
+                (:func:`~donkey_kit.tools.auth.check_gateway_endpoint`).
             AuthError: The gateway refused the credential (``401``/``403``).
         """
         asset = AssetRef.parse(ref)
@@ -257,6 +272,9 @@ class Discovery:
             )
         handle = await self._registry.resolve_agent(asset)
         url = handle.endpoint_url + ".well-known/agent-card.json"
+        check_gateway_endpoint(
+            self._cfg, credential="config" if self._auth is not None else None, user=False
+        )
         headers = await self._auth.headers() if self._auth is not None else {}
         # Its own client, as an MCP binding's is: the shared ones send credentials
         # only to their configured origins. Redirects are not followed, so the
