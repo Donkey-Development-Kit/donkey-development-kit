@@ -239,8 +239,8 @@ Each asset is published with:
   publish runs in GitHub Actions, the repository, the commit and a link to the
   run. It never includes credentials or your org ID. Only a new version gets a
   page; an unchanged asset keeps the one it has. A rerun that
-  [finishes a publish](#when-a-publish-fails) writes the same page, with
-  "Changes since" the published version before it.
+  [finishes a publish](#when-a-publish-fails) writes the page the first run
+  would have, with "Changes since" the published version before it.
 
 A publish is safe to repeat:
 

@@ -361,9 +361,9 @@ async def _changes(
 
 
 def _version_before(latest: PublishedVersion) -> str | None:
-    """The highest published version below ``latest.version`` by semver
-    precedence: the one a publish of ``latest`` read as the latest. ``None``
-    when ``latest`` is the asset's first version."""
+    """The highest of ``latest.versions`` below ``latest.version`` by semver
+    precedence, or ``None`` when there is none: the order Exchange lists the
+    other versions in is not relied on."""
     current = _precedence(latest.version)
     if current is None:
         return None
