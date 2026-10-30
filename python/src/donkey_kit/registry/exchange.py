@@ -687,29 +687,22 @@ def _asset_ref(asset: dict[str, Any]) -> AssetRef:
 
 def _require_secure_gateway(url: str, *, name: str) -> None:
     """Raise :class:`RegistryError` unless ``url`` may receive the gateway credential:
-    the https rule of the configured endpoints, and no user name or password."""
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        parts = None  # require_secure_url refuses it below
-    if parts is not None and (parts.username is not None or parts.password is not None):
-        # Never echo the URL: it carries a credential.
-        raise RegistryError(
-            f"{name} carries a user name or password. No gateway credentials were sent.",
-            remediation=(
-                "Remove the user name and password from the gateway's public URL; the "
-                "SDK sends the gateway credential itself."
-            ),
-        )
+    the https rule of the configured endpoints, which also refuses a user name or
+    password."""
     try:
         require_secure_url(url, name=name)
     except ConfigError as exc:
-        raise RegistryError(
-            f"{exc} No gateway credentials were sent.",
-            remediation=(
+        # The user-name-or-password refusal names its own fix; the https one
+        # leaves the generic ConfigError remediation, which doesn't fit a gateway.
+        if exc.remediation != ConfigError.remediation:
+            remediation = exc.remediation
+        else:
+            remediation = (
                 "Give the gateway an https:// public URL, or set DONKEY_ALLOW_HTTP=1 in "
                 "the environment to allow plain http:// to it on a network you control."
-            ),
+            )
+        raise RegistryError(
+            f"{exc} No gateway credentials were sent.", remediation=remediation
         ) from exc
 
 

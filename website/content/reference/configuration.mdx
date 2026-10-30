@@ -805,8 +805,7 @@ lets it through.
 
 This applies wherever the URL comes from: environment, file or code. It also
 applies to the gateway URL that `resolve_mcp()` and `resolve_agent()` read from
-Omni Gateway Manager, which raises `RegistryError` instead of `ConfigError`, as
-does a gateway URL with a user name or password (see
+Omni Gateway Manager, which raises `RegistryError` instead of `ConfigError` (see
 [Resolving an MCP server](/tool-access/discovery#resolving-an-mcp-server)).
 
 | URL | Result |
@@ -816,9 +815,19 @@ does a gateway URL with a user name or password (see
 | `http://` on any other host, including `0.0.0.0`, LAN addresses and container hostnames such as `http://simulator:8080` | `ConfigError` |
 | `http://` on any other host, with `DONKEY_ALLOW_HTTP=1` in the environment | Accepted, with a `ConfigWarning` |
 | Any other scheme, or a URL with no host | `ConfigError`, whatever `DONKEY_ALLOW_HTTP` says |
+| A URL with a user name or password, such as `https://user:pass@host/` | `ConfigError`, whatever `DONKEY_ALLOW_HTTP` says |
 
 ```text
 ConfigError: llm_proxy_url must be an https:// URL (got http scheme, llm.example.test). Plain http:// is accepted for loopback hosts (localhost, 127.0.0.0/8, ::1), such as the local gateway simulator. Change it to the https:// address of the service, or set DONKEY_ALLOW_HTTP=1 in the environment to allow plain http:// to other hosts.
+```
+
+The SDK sends its own credentials, and an HTTP client would also send a URL's
+user name and password to that host. So a URL that carries them is refused on
+loopback hosts too. The error names the setting and the host, never the URL;
+remove the user name and password from the URL:
+
+```text
+ConfigError: llm_proxy_url carries a user name or password (host llm.example.test).
 ```
 
 `DONKEY_ALLOW_HTTP` (`1`, `true`, `yes` or `on`) is for networks you control,
