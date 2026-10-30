@@ -269,6 +269,9 @@ class ToolsFacade:
         binding sends. Not cached. ``Publication.verify()`` compares the two
         (BG §2.5, #991).
 
+        Provisional (ADR 0020): may change in a minor release, with a migration
+        note.
+
         Args:
             ref: ``group_id/asset_id/version``.
 
@@ -292,6 +295,9 @@ class ToolsFacade:
         Reads ``.well-known/agent-card.json`` after the governance check and
         with the credential a binding sends. Not cached.
         ``Publication.verify()`` compares the two (BG §2.5, #1354).
+
+        Provisional (ADR 0020): may change in a minor release, with a migration
+        note.
 
         Args:
             ref: ``group_id/asset_id/version``.

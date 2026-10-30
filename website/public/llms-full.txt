@@ -9297,6 +9297,10 @@ tools = await donkey.tools.live_tools("${ANYPOINT_ORG_ID}/hr-tools-mcp/1.3.0")
 card = await donkey.tools.live_card("${ANYPOINT_ORG_ID}/hr-agent/0.1.0")
 ```
 
+Both methods are **provisional**: unlike the rest of `donkey.tools`, they may
+change in a minor release, with a migration note in the release notes. See
+[Stability](https://docs.donkey-kit.dev/reference/api.md#stability).
+
 By default each difference is logged at `WARNING` and returned, so a drifted
 catalog is loud without taking down production traffic. With
 `raise_on_drift=True` it raises `PublicationDrift`, whose message
@@ -15281,6 +15285,9 @@ Some types you meet through a stable object live there, such as
 `RefusalContext` (what a [refusal handler](https://docs.donkey-kit.dev/refusal-handlers.md) receives),
 `RunUsage` (`RunLedger.usage`) and `PolicyRegistration` (what
 `classify.registered()` returns); import them from `donkey_kit.core`.
+So is a method of a stable object whose docstring says *Provisional*
+(`help()` shows it), such as `donkey.tools.live_tools()` and
+`donkey.tools.live_card()`.
 `donkey_kit.experimental` holds types for surfaces that are still blocked
 on verification, and they may change in any release.
 

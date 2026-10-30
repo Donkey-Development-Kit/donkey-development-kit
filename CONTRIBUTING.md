@@ -814,8 +814,12 @@ build plan has the rationale behind each rule:
   (`tests/unit/test_public_api_surface.py`). The stable surface, which is
   `donkey_kit.__all__` plus the public members of `Donkey`, `ToolsFacade` and
   `ToolSet`, is snapshotted in `tests/unit/test_public_api_snapshot.py`
-  (ADR 0006 rule 4). A PR that changes that surface updates the snapshot in
-  the same diff, using the command in the test's failure message. A type that exists only for a
+  (ADR 0006 rule 4). The exception is a member whose docstring says
+  `Provisional (ADR 0020)`: the snapshot lists it in `PROVISIONAL_MEMBERS`
+  instead, and it may change in a minor release with a migration note
+  ([ADR 0020](docs/adr/0020-provisional-members-of-stable-classes.md)). A PR
+  that changes that surface updates the snapshot in the same diff, using the
+  command in the test's failure message. A type that exists only for a
   verification-blocked surface goes in `donkey_kit.experimental`, not
   `donkey_kit.__all__` (#730); a name moved there keeps a deprecated
   `donkey_kit.<name>` alias for a release. Submodule paths are not API. Don't

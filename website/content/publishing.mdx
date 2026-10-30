@@ -667,6 +667,10 @@ tools = await donkey.tools.live_tools("${ANYPOINT_ORG_ID}/hr-tools-mcp/1.3.0")
 card = await donkey.tools.live_card("${ANYPOINT_ORG_ID}/hr-agent/0.1.0")
 ```
 
+Both methods are **provisional**: unlike the rest of `donkey.tools`, they may
+change in a minor release, with a migration note in the release notes. See
+[Stability](/reference/api#stability).
+
 By default each difference is logged at `WARNING` and returned, so a drifted
 catalog is loud without taking down production traffic. With
 `raise_on_drift=True` it raises `PublicationDrift`, whose message
