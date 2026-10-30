@@ -124,6 +124,8 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("ANYPOINT_ORG_ID", ORG)
     monkeypatch.setenv("ANYPOINT_CLIENT_ID", "client")
     monkeypatch.setenv("ANYPOINT_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_ID", "consumer")
+    monkeypatch.setenv("DONKEY_LLM_PROXY_CLIENT_SECRET", "consumer-secret")
     (tmp_path / "app.py").write_text(SOURCE, encoding="utf-8")
     (tmp_path / ".donkey-kit.toml").write_text(
         '[donkey.publication]\nversion = "1.0.0"\n', encoding="utf-8"
@@ -295,6 +297,51 @@ def test_missing_control_plane_credentials_exit_two(
 
     assert result.exit_code == 2, result.output
     assert donkey.read == []
+
+
+def test_a_missing_gateway_credential_exits_two_before_any_read(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DONKEY_LLM_PROXY_CLIENT_ID")
+    monkeypatch.delenv("DONKEY_LLM_PROXY_CLIENT_SECRET")
+    donkey = _serve(monkeypatch, [_TOOL])
+
+    result = runner.invoke(app, ["verify", str(repo)])
+
+    assert result.exit_code == 2, result.output
+    assert "No gateway credential" in result.stderr
+    assert "DONKEY_LLM_PROXY_CLIENT_ID and DONKEY_LLM_PROXY_CLIENT_SECRET" in result.stderr
+    assert donkey.read == []
+
+
+def test_a_token_auth_mode_names_the_client_id_pair(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The CLI has no token provider, so jwt or bearer mode has no gateway credential."""
+    monkeypatch.setenv("DONKEY_LLM_PROXY_AUTH", "bearer")
+    donkey = _serve(monkeypatch, [_TOOL])
+
+    result = runner.invoke(app, ["verify", str(repo)])
+
+    assert result.exit_code == 2, result.output
+    assert "DONKEY_LLM_PROXY_AUTH is 'bearer'" in result.stderr
+    assert "DONKEY_LLM_PROXY_AUTH=client-id" in result.stderr
+    assert donkey.read == []
+
+
+def test_a_plan_with_nothing_to_read_live_needs_no_gateway_credential(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (repo / "app.py").unlink()
+    _with_agent(repo, "other")
+    monkeypatch.delenv("DONKEY_LLM_PROXY_CLIENT_ID")
+    monkeypatch.delenv("DONKEY_LLM_PROXY_CLIENT_SECRET")
+    _serve(monkeypatch, [])
+
+    result = runner.invoke(app, ["--json", "verify", str(repo)])
+
+    assert result.exit_code == 0, result.output
+    assert [a["status"] for a in json.loads(result.output)["assets"]] == ["skipped"]
 
 
 def test_nothing_at_the_path_exits_two(tmp_path: Path) -> None:

@@ -23,15 +23,13 @@ def test(
         help="Import path to your agent factory, e.g. my.pkg:make_agent.",
     ),
 ) -> None:
-    """Run the conformance suite against your agent (BG §1.5).
+    """Run the conformance suite against your agent.
 
-    A thin front end to ``pytest --donkey-conformance`` — it does not
-    re-implement the runner. Your ``--agent MODULE:FACTORY`` (forwarded as the
-    plugin's ``--donkey-agent``) and any trailing
-    pytest arguments pass straight through, and pytest's exit code becomes
-    ``donkey test``'s own, so it drops into CI unchanged. Needs the ``[test]``
-    extra (a missing pytest is an install prompt, exit 1, not a ``blocked on
-    verification`` message).
+    A front end to `pytest --donkey-conformance`. `--agent MODULE:FACTORY`
+    becomes the plugin's `--donkey-agent`, any trailing pytest arguments pass
+    straight through, and pytest's exit code is this command's, so it drops into
+    CI unchanged. Needs the \\[test] extra; without pytest, it prints the install
+    command and exits 1.
     """
     if importlib.util.find_spec("pytest") is None:
         typer.secho(

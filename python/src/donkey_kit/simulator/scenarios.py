@@ -204,7 +204,12 @@ class PiiBlockScenario:
 
 class CibaScenario:
     """The OBO policy's CIBA step-up: ``pending`` calls get the ``ciba-pending`` 401, then
-    the user approves (calls pass) or denies (calls get the ``ciba-denied`` 403)."""
+    the user approves (calls pass) or denies (calls get the ``ciba-denied`` 403).
+
+    Both shapes were captured on an A2A ``message/send`` and an MCP ``tools/call``
+    (docs/verified-apis.md §4, #1320), not on an LLM-proxy route. The simulator
+    serves the same bytes on its model routes, so a client's handling of them can
+    be tested offline; that an LLM proxy answers the same way is not verified."""
 
     name = "ciba"
 

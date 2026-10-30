@@ -44,6 +44,7 @@ from donkey_kit.conformance.suite import (
 from donkey_kit.core.errors import classify
 from donkey_kit.core.telemetry import current_correlation_id
 from donkey_kit.donkey import Donkey
+from donkey_kit.simulator.fixtures import Fixture
 
 _LOG = logging.getLogger("donkey_kit.tests.toy_agent")
 
@@ -553,6 +554,30 @@ def test_success_is_reshaped_for_a_chat_completions_route() -> None:
 
 def test_a_refusal_is_not_reshaped_on_a_chat_completions_route() -> None:
     assert _served("/chat/completions", "pii-detected").status_code == 403
+
+
+def test_strip_budget_drops_every_header_the_token_window_is_read_from() -> None:
+    fixture = Fixture(
+        shape="success",
+        status=200,
+        headers={
+            "x-token-remaining": "10",
+            "x-llm-proxy-ratelimit": "limit=100, remaining=10, reset=1000",
+            "x-llm-proxy-llm-model": "gpt-4o",
+        },
+        body=b"",
+        content_type=None,
+        verbatim_headers=True,
+    )
+    request = httpx.Request("POST", "https://donkey-conformance.invalid/responses")
+
+    kept = harness_module._fixture_responder(fixture)(request).headers
+    stripped = harness_module._fixture_responder(fixture, strip_budget=True)(request).headers
+
+    assert "x-llm-proxy-ratelimit" in kept and "x-token-remaining" in kept
+    assert "x-llm-proxy-ratelimit" not in stripped
+    assert "x-token-remaining" not in stripped
+    assert stripped["x-llm-proxy-llm-model"] == "gpt-4o"
 
 
 def test_an_unexpected_success_body_is_served_as_captured() -> None:

@@ -183,14 +183,17 @@ def _fixture_responder(
     Uses the same header allow-list (:func:`replay_headers`) and honesty stamp
     (``x-donkey-simulator: true``) as ``simulate()`` and the mock server, so a
     conformance response is never mistaken for a live gateway response. With
-    ``strip_budget`` the ``x-token-*`` headers are dropped, so the run observes a
+    ``strip_budget`` the ``x-token-*`` headers and ``x-llm-proxy-ratelimit`` are
+    dropped, the two the token window is read from, so the run observes a
     genuinely unobserved budget even if a future capture grows them."""
 
     def respond(request: httpx.Request) -> httpx.Response:
         headers = replay_headers(fixture)
         if strip_budget:
             headers = {
-                k: v for k, v in headers.items() if not k.startswith(_wire.TOKEN_HEADER_PREFIX)
+                k: v
+                for k, v in headers.items()
+                if not k.startswith(_wire.TOKEN_HEADER_PREFIX) and k != _wire.RATELIMIT_HEADER
             }
         if fixture.content_type is not None:
             headers["content-type"] = fixture.content_type

@@ -315,7 +315,6 @@ module = [
     "llama_index.*",
     "strands.*",
     "litellm.*",
-    "mcp.*",
     "langchain_mcp_adapters.*",
     "crewai_tools.*",
     # [local] simulator deps — absent under the typecheck job's [llm,cli]

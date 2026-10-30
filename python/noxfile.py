@@ -535,36 +535,42 @@ def quickstart(session: nox.Session) -> None:
 
 @nox.session(name="langgraph-demo", python="3.11")
 def langgraph_demo(session: nox.Session) -> None:
-    """Scenario A end to end against the simulator, then through conformance (#199, BG §1.8)."""
+    """Scenario A end to end against the simulator, then through conformance in both
+    modes, in-process and against the out-of-process simulator (#199, BG §1.8)."""
     _install(session, "langgraph-demo")
     session.run("mypy", "-p", "examples.langgraph")
     _bounded(session, 120, "-m", "examples.langgraph.main")
     # `python -m pytest` puts python/ on sys.path, so `examples` imports.
-    session.run(
-        "python",
-        "-m",
-        "pytest",
-        "-q",
-        "--donkey-conformance",
-        "--donkey-agent=examples.langgraph.main:build",
-    )
+    for mode in ("in-process", "server"):
+        session.run(
+            "python",
+            "-m",
+            "pytest",
+            "-q",
+            "--donkey-conformance",
+            "--donkey-agent=examples.langgraph.main:build",
+            f"--donkey-mode={mode}",
+        )
 
 
 @nox.session(name="openai-agents-demo", python="3.11")
 def openai_agents_demo(session: nox.Session) -> None:
-    """The second deep adapter's Scenario A, then through conformance (#223, BG §1.8)."""
+    """The second deep adapter's Scenario A, then through conformance in both modes
+    (#223, BG §1.8)."""
     _install(session, "openai-agents-demo")
     # No mypy step: agents.* is follow_imports = "skip", so typecheck-and-lint
     # already covers examples.openai_agents (unlike langgraph-demo, #721).
     _bounded(session, 120, "-m", "examples.openai_agents.main")
-    session.run(
-        "python",
-        "-m",
-        "pytest",
-        "-q",
-        "--donkey-conformance",
-        "--donkey-agent=examples.openai_agents.main:build",
-    )
+    for mode in ("in-process", "server"):
+        session.run(
+            "python",
+            "-m",
+            "pytest",
+            "-q",
+            "--donkey-conformance",
+            "--donkey-agent=examples.openai_agents.main:build",
+            f"--donkey-mode={mode}",
+        )
 
 
 @nox.session(name="docs-llms-drift", venv_backend="none")

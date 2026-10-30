@@ -23,30 +23,26 @@ def mock(
         ),
     ),
 ) -> None:
-    """Run the local gateway simulator (BG §1.4).
+    """Run the local gateway simulator.
 
-    Serves the same captured fixtures ``core.errors.classify()`` is tested
-    against, so a stock client pointed at ``DONKEY_LLM_PROXY_URL=http://{host}:{port}``
+    Serves the captured gateway responses the SDK's error typing is tested
+    against, so a stock client pointed at `DONKEY_LLM_PROXY_URL=http://{host}:{port}`
     sees the real rejection shapes locally. Every response carries
-    ``x-donkey-simulator: true`` — it is a fixture replay, never a real gateway.
+    `x-donkey-simulator: true`: it is a replay, never a real gateway.
 
-    It REPLAYS captured shapes; it does NOT evaluate policy. It tests how your
-    agent handles a refusal, never which prompts get refused — you choose the
-    refusal (the ``donkey-sim/<shape>`` model sentinel or a ``--scenario`` rule),
-    the simulator does not decide it. Testing against real policy configuration
-    needs gateway-side dry-run mode (#250).
+    It replays captured shapes and does not evaluate policy. It tests how your
+    agent handles a refusal, not which prompts get refused: you choose the
+    refusal, with the `donkey-sim/<shape>` model name or a `--scenario` rule.
 
-    ``--scenario`` scripts a specific failure on demand (#188): ``pii_block``
-    fails every Nth call, ``injection`` matches request text, ``budget``
-    runs a real windowed token counter (429 on exhaustion), and
-    ``request_limit`` runs a request counter with the ``x-ratelimit-*`` headers
-    (the request-rate-limit 429 once spent, #974), and ``ciba`` plays the OBO policy's
-    step-up: ``pending=N`` calls get the CIBA 401, then the user approves (calls pass)
-    or, with ``then=deny``, denies (calls get the 403, #214). Repeatable.
+    `--scenario` scripts a failure on demand: `pii_block` fails every Nth call,
+    `injection` matches request text, `budget` runs a windowed token counter
+    (a 429 once spent), `request_limit` runs a request counter with the
+    `x-ratelimit-*` headers (a 429 once spent), and `ciba` plays the OAuth2 OBO
+    policy's step-up: `pending=N` calls get its 401, then the user approves
+    (calls pass) or, with `then=deny`, denies (calls get its 403). Repeatable.
 
-    Needs the ``[local]`` extra (starlette + uvicorn); this is NOT one of the
-    verification-gated platform commands, so a missing extra is an install
-    prompt (exit 1), not a ``blocked on verification`` message (exit 3).
+    Needs the \\[local] extra (starlette and uvicorn); without it, mock prints
+    the install command and exits 1.
     """
     from ..simulator import server
     from ..simulator.app import SimulatorConfig

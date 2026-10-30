@@ -38,21 +38,19 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from pathlib import Path
-from typing import Any
 
 import typer
 
 from ..core.config import TOML_NAME, DonkeyConfig
 from ..core.errors import ConfigError, DonkeyError
 from ..core.runtime import Runtime
-from ..registry.exchange_page import PageSource
 from ..registry.exchange_publish import PUBLISH_FORMAT, PublishOutcome, publish_plan
 from ..registry.publish_plan import PublishPlan, plan_publication
 from ..registry.scan import ScanResult
 from ..registry.scan import scan as scan_repository
 from ._app import app
+from ._common import ci_source, document, print_issues
 
 __all__ = ["publish"]
 
@@ -77,7 +75,7 @@ def publish(
         False, "--json", help="emit the plan, or what was published, as JSON"
     ),
 ) -> None:
-    """Publish code-first assets to Exchange (CI-only, BG §2.5)."""
+    """Publish code-first assets to Exchange."""
     as_json = as_json or bool((ctx.obj or {}).get("json"))
     try:
         result = scan_repository(path)
@@ -90,7 +88,7 @@ def publish(
     if dry_run:
         if as_json:
             typer.echo(plan.to_json(), nl=False)
-            _issues(plan)
+            print_issues(plan)
         else:
             _summary(plan)
         raise typer.Exit(1 if plan.issues else 0)
@@ -99,7 +97,7 @@ def publish(
             detail = "not attempted: the plan has issues"
             stopped = tuple(PublishOutcome(a, "not_attempted", detail) for a in plan.assets)
             typer.echo(_outcomes_json(plan, stopped), nl=False)
-        _issues(plan)
+        print_issues(plan)
         typer.secho("nothing was published", fg="red", err=True)
         raise typer.Exit(1)
     try:
@@ -146,41 +144,17 @@ async def _publish(
             base_url=cfg.control_plane_url,
             org_id=cfg.org_id,
             if_changed=if_changed,
-            source=_ci_source(),
+            source=ci_source(),
         )
     finally:
         await runtime.aclose()
-
-
-def _ci_source() -> PageSource | None:
-    """Where this publish runs from, from the GitHub Actions environment."""
-    env = os.environ
-    if env.get("GITHUB_ACTIONS") != "true":
-        return None
-    server, repository = env.get("GITHUB_SERVER_URL"), env.get("GITHUB_REPOSITORY")
-    repository_url = f"{server}/{repository}" if server and repository else None
-    run_id = env.get("GITHUB_RUN_ID")
-    return PageSource(
-        repository_url=repository_url,
-        commit=env.get("GITHUB_SHA") or None,
-        ref=env.get("GITHUB_REF_NAME") or None,
-        run_url=f"{repository_url}/actions/runs/{run_id}" if repository_url and run_id else None,
-    )
-
-
-def _document(plan: PublishPlan, key: str, version: int) -> dict[str, Any]:
-    """The plan's JSON with the command's own format key in place of ``plan_format``."""
-    data = plan.to_dict()
-    del data["plan_format"]
-    data[key] = version
-    return data
 
 
 def _outcomes_json(plan: PublishPlan, outcomes: tuple[PublishOutcome, ...]) -> str:
     """The publish document: the plan's assets with each one's outcome, in plan
     order. A refused asset's detail ends with the remediation, as ``donkey
     verify``'s does."""
-    data = _document(plan, "publish_format", PUBLISH_FORMAT)
+    data = document(plan, "publish_format", PUBLISH_FORMAT)
     for asset, outcome in zip(data["assets"], outcomes, strict=True):
         detail = outcome.detail
         if outcome.status in _FAILED and outcome.error is not None:
@@ -207,12 +181,4 @@ def _summary(plan: PublishPlan) -> None:
         typer.echo(f"  {a.type:<6} {gav}  {a.name}  {a.digest}")
     n = len(plan.assets)
     typer.echo(f"would publish {n} asset{'' if n == 1 else 's'} (dry run: nothing was sent)")
-    _issues(plan)
-
-
-def _issues(plan: PublishPlan) -> None:
-    if plan.issues:
-        count = len(plan.issues)
-        typer.secho(f"{count} issue{'' if count == 1 else 's'}", fg="red", err=True)
-        for i in plan.issues:
-            typer.secho(f"  {i.path}:{i.line}  {i.kind}  {i.subject}: {i.detail}", err=True)
+    print_issues(plan)

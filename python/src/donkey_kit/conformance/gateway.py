@@ -42,7 +42,8 @@ __all__ = ["Gateway", "RecordedRequest", "start_gateway"]
 # + uvicorn (the server). Both live in `[local]`, so the hint names that extra —
 # not `[test]`, which ships the fixture itself but not the server it drives.
 _LOCAL_EXTRA_HINT = (
-    "The `gateway` fixture needs the local simulator server extra "
+    "Server mode (the `gateway` fixture, `--donkey-mode server` or "
+    '`run_conformance(mode="server")`) needs the local simulator server extra '
     "(starlette + uvicorn). Install it with:\n"
     '    pip install "donkey-kit[local]"'
 )
