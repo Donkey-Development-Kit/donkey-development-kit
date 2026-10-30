@@ -36,7 +36,7 @@ business group alone; *org + env* means the business group and the
 environment the SDK targets (`ANYPOINT_ENV`). Exchange, API Governance and
 `read:orgenvironments` scopes take no environment.
 
-## Reads (`search()`, `resolve_mcp()`, `explain()`, `donkey.tools.discover()`)
+## Reads (`search()`, `resolve_mcp()`, `explain()`, `donkey.tools.discover()`, `Publication.verify()`)
 
 | Operation | Call | Any one of these scopes | Context | Admin / user context | Without it | Date | Source |
 |---|---|---|---|---|---|---|---|
@@ -49,6 +49,8 @@ environment the SDK targets (`ANYPOINT_ENV`). Exchange, API Governance and
 | `resolve_mcp()`: gateway public URL | `GET /gatewaymanager/api/v1/…/gateways/{id}` | `read:servers`. Not `manage:servers`, `read:api_configuration`, `manage:api_proxies` or `view:environment`. | org + env | No | `403` `{"status":403,"message":"Forbidden"}` → `AuthError` naming `read:servers` | 2026-10-28 | live run, sandbox, connected app (#23) |
 | `explain()`: tags and lifecycle (`require_tags`, `require_lifecycle`) | `GET /exchange/api/v2/assets/{group}/{asset}/{version}` | `read:exchange` | org | No | `403` `ForbiddenError` → the checks are UNKNOWN, their detail names `read:exchange` | 2026-10-28 | live run, sandbox, connected app (#23) |
 | `explain()`: governance (`require_governance_pass`) | `GET /governance/xapi/api/v1/stats/organization/targets/…` | `read:exchange`, `view:ang_governance_profiles`, `admin:ang_governance_profiles` | org | No | `403`, text "The supplied authentication is not authorized to access this resource" → the check is UNKNOWN, its detail names `read:exchange` | 2026-10-28 | live run, sandbox, connected app (#23) |
+| `Publication.verify()`, `donkey verify`: the published version | `POST /graph/api/v2/graphql` files query, then a `GET` of the file's pre-signed `externalLink` (no credential) | `read:exchange` | org | No | not isolated live: by code a `401`/`403` on the query → `AuthError` naming `read:exchange` | 2026-10-29 | [`verified-apis.md`](verified-apis.md) §7, live read, sandbox (#991, #1354) |
+| `Publication.verify()`, `donkey verify`: the live server or agent | `tools/list` or `GET <endpoint>.well-known/agent-card.json` through its gateway instance, after the `resolve_mcp()`/`resolve_agent()` and `explain()` reads above | none: the consumer credential, not the connected app | — | No | — | 2026-10-29 | [`verified-apis.md`](verified-apis.md) §7 and §9, live run, sandbox (#1354) |
 
 So `read:exchange`, `read:servers` and `read:api_policies` are enough for every
 read. The docs site recommends the five scopes the SDK's error messages name
@@ -113,7 +115,8 @@ needs (`donkey_kit.registry._scopes`) rather than reading the response:
 A `401` or `403` on a read that `resolve_mcp()` or `explain()` cannot do
 without is an `AuthError` whose `remediation` names the scope and the business
 group. A refused Exchange or API Governance read makes the `explain()` checks
-that need it UNKNOWN, with the scope in their detail. A refused `donkey
+that need it UNKNOWN, with the scope in their detail. A refused
+`Publication.verify()` Exchange read is an `AuthError` naming `read:exchange`. A refused `donkey
 publish` step is an `AuthError`, or for the endpoint registration a
 `RegistryError`, naming `manage:exchange`. A refused `donkey expose` step
 fails with the scope in its remediation, and the steps after it are skipped;
