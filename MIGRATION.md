@@ -189,15 +189,17 @@ exit 3 with `blocked on verification` (#218, #1352).
 **Symptom:** both are now visible and do the work. `donkey publish` scans the
 repository and publishes its MCP servers and agents to Exchange, at the
 coordinates `[donkey.publication]` declares. `donkey verify` compares each
-published MCP server and A2A agent with the live one, and writes nothing. Each exits 0 on
-success, 1 on an issue or a failed asset, and 2 when there is nothing at the
-path or the config lacks the control-plane credentials. A step that ran
-either one as a no-op now publishes or fails. `donkey status` is still
-hidden and still exits 3.
+published MCP server and A2A agent with the live one, and writes nothing.
+Each exits 0 on success, 1 on an issue or a failed asset, and 2 when there
+is nothing at the path or the config lacks the control-plane credentials.
+`donkey verify` also exits 2 when an asset needs a live read and there is no
+gateway credential. A step that ran either one as a no-op now publishes or
+fails. `donkey status` is still hidden and still exits 3.
 
 **Fix:** remove the step if it was a placeholder. To keep it, give it the
 connected-app credentials and the scopes in
-[`docs/scopes.md`](docs/scopes.md), and treat exit 1 as a failure. Run
+[`docs/scopes.md`](docs/scopes.md), plus the gateway credential for
+`donkey verify`, and treat exit 1 as a failure. Run
 `donkey publish --dry-run` first to see the plan without sending anything.
 
 ### 5. Registry, discovery and `ToolSet` calls reach Anypoint
@@ -375,12 +377,25 @@ arrives after a newer one no longer moves `donkey.budget` backwards (#311).
 together are admitted together, so size `reserve` to the width of your
 fan-out.
 
+A `Retry-After`, `x-token-reset` or `x-ratelimit-reset` value that isn't a
+finite number (`inf`, `nan`, `1e400`) now gives `retry_after is None`, and the
+transport retries with its normal jittered backoff (#1447). Before, `inf` gave
+`retry_after == inf` (the retry sleep capped it at 30 seconds) and `nan` gave
+`0.0`, an immediate retry. This applies to `TokenBudgetExceeded`,
+`RequestRateLimitExceeded` and `GatewayApprovalPending`. Code that already
+handles `None` needs no change.
+
 ### ADK `gemini()` and `model()` return subclasses (not breaking)
 
 `donkey.adk.gemini()` and `donkey.adk.model()` return a subclass of ADK's
 `Gemini` and `LiteLlm`, which carries `donkey.last_call` into an
 `after_model_callback` on google-adk 2.13 and later (#1207).
 `isinstance(llm, LiteLlm)` still holds, but `type(llm) is LiteLlm` does not.
+The classes are reachable by name on `donkey_kit.integrations.adk`, though not
+in its `__all__`: `GovernedLiteLlm`, `GovernedGemini`, and
+`GovernedLiteLLMClient`, which is `model()`'s `llm_client`. That lets pickle
+find them. An instance from `model()` or `gemini()` still holds its HTTP
+client, so the instance itself can't be pickled (#1447).
 `donkey_kit.integrations.adk.last_call_bridged()` gives the same bridge to a
 model class of your own.
 
@@ -551,14 +566,26 @@ against one, because the surface was new in 0.2.0 or raised
   and `donkey verify` raise `ConfigError` when `base_url` comes from the
   working-directory files, isn't a regional Anypoint host, and the gateway
   credential comes from somewhere else. See section 5 for the fix (#1479).
-- **The ADK and LangGraph helpers raise the install-hint `ImportError`.**
-  Without the extra, these used to raise a bare `ModuleNotFoundError`:
-  ADK's `last_call_bridged()`, `approval_plugin()`, `approve()` and
-  `reject()`, and LangGraph's `approve()`, `reject()` and
+- **The ADK, LangGraph and Agent Framework helpers raise the install-hint
+  `ImportError`.** Without the extra, these used to raise a bare
+  `ModuleNotFoundError`: ADK's `last_call_bridged()`, `approval_plugin()`,
+  `approve()` and `reject()`, and LangGraph's `approve()`, `reject()` and
   `approval_interrupt()`. They now raise an `ImportError` naming the
   `pip install "donkey-kit[...]"` line. `ImportError` is the parent class, so
   `except ImportError:` still catches it but `except ModuleNotFoundError:`
-  no longer does. Catch `ImportError` (#1440, #1502).
+  no longer does. Catch `ImportError` (#1440, #1502). A standalone
+  `AgentFrameworkAdapter(...).policy_middleware()` without `agent_framework`
+  installed raises the same `ImportError`. It used to raise
+  `NotImplementedError`, in 0.1.3 too, so `except NotImplementedError:` no
+  longer catches it (#1503).
+- **`donkey verify` exits 2 when it has no gateway credential.** It checks
+  for one before any read when an asset needs a live read: an MCP server or
+  an `a2a_v1` agent. The message names `DONKEY_LLM_PROXY_CLIENT_ID` and
+  `DONKEY_LLM_PROXY_CLIENT_SECRET`. Before, each such asset failed on its own
+  and the command exited 1. In `jwt` or `bearer` mode the CLI has no token,
+  so set `DONKEY_LLM_PROXY_AUTH=client-id` with the pair, or call
+  `Publication.verify()` from code with `Donkey(llm_auth=...)`. A plan with
+  nothing to read live still needs no gateway credential (#1447).
 
 ## 0.1.3: no breaking changes
 
