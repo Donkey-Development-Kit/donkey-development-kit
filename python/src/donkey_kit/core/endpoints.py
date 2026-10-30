@@ -3,7 +3,8 @@
 Credentials only travel over ``https://``. Plain ``http://`` is accepted for
 loopback hosts (``localhost``, ``127.0.0.0/8``, ``::1``) because the local
 gateway simulator and local development listen there, and for any other host
-only when ``DONKEY_ALLOW_HTTP=1`` is set in the environment.
+only when ``DONKEY_ALLOW_HTTP=1`` is set in the environment. A URL that carries
+a user name or password is refused whatever the scheme or host (#1478).
 """
 
 from __future__ import annotations
@@ -83,8 +84,19 @@ def require_secure_url(url: str, *, name: str) -> None:
     """Raise :class:`ConfigError` unless ``url`` is ``https://`` with a host, or
     ``http://`` to a loopback host. ``http://`` to any other host passes with a
     :class:`ConfigWarning` when ``DONKEY_ALLOW_HTTP`` is on (``1``, ``true``,
-    ``yes`` or ``on``) in the environment."""
+    ``yes`` or ``on``) in the environment. A URL with a user name or password is
+    refused whatever ``DONKEY_ALLOW_HTTP`` says: httpx would send them to the host
+    as ``Authorization: Basic``."""
     parts = _split(url)
+    if parts is not None and (parts.username is not None or parts.password is not None):
+        # Never echo the URL: it carries a credential.
+        raise ConfigError(
+            f"{name} carries a user name or password (host {parts.hostname or 'no host'}).",
+            remediation=(
+                "Remove the user name and password from the URL; the SDK sends the "
+                "credentials itself."
+            ),
+        )
     if parts is not None and parts.hostname:
         if parts.scheme == "https":
             return

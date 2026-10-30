@@ -258,7 +258,8 @@ class _CheckedEndpoints:
         """Let this client send credentials to ``url``'s origin, a URL passed in
         code. Raises :class:`~donkey_kit.core.errors.ConfigError` unless it passes
         the config's https check (``https://``, a loopback host, or any host with
-        ``DONKEY_ALLOW_HTTP=1`` in the environment); ``name`` labels the error."""
+        ``DONKEY_ALLOW_HTTP=1`` in the environment, and no user name or password);
+        ``name`` labels the error."""
         require_secure_url(url, name=name)
         origin = origin_of(url)
         if origin is not None:
