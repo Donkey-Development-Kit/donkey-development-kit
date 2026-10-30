@@ -19,8 +19,10 @@ cut a release.
 - [Versioning & naming](#versioning--naming)
   - [The pre-release ladder](#the-pre-release-ladder)
   - [Tags](#tags)
-  - [The version string lives in two files](#the-version-string-lives-in-two-files)
+  - [The version string lives in one file](#the-version-string-lives-in-one-file)
 - [How a release reaches PyPI](#how-a-release-reaches-pypi)
+- [Release gates](#release-gates)
+  - [The acceptance run](#the-acceptance-run)
 - [Hotfix releases](#hotfix-releases)
   - [Merge mechanics](#merge-mechanics)
   - [Docs hotfix: no version](#docs-hotfix-no-version)
@@ -43,11 +45,13 @@ of the **milestone being shipped**. The milestone titles are the ground truth
 | `Phase 1.2 — Stabilize the MVP (0.1.2)` | `0.1.2` |
 | `Phase 1.3 — Stabilize the MVP (0.1.3)` | `0.1.3` |
 | `Phase 2 — Differentiate, go beyond (0.2.0)` | `0.2.0` |
+| `Phase 2.1 — Consolidate Phase 2 (0.2.1)` | `0.2.1` |
+| `Phase 2.2 — Consolidate Phase 2 (0.2.2)` | `0.2.2` |
 | `Phase 3 — Platform capabilities (0.3.0)` | `0.3.0` |
 | `Phase 4 — Enterprise readiness (0.4.0)` | `0.4.0` |
 | `Phase 5 — Complete rollout (1.0.0)` | `1.0.0` |
 
-Patch milestones (`Phase 1.N`) are added as they're created, so keep this
+Patch milestones (`Phase N.M`) are added as they're created, so keep this
 table in step with them: add a row for each new milestone, and rename the rows
 when a [package hotfix](#package-hotfix-next-patch-milestones-shift) shifts
 their versions.
