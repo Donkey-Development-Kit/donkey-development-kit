@@ -28,7 +28,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from ..core.approvals import NativePause, gate
+from ..core.approvals import Approvals, NativePause, gate
 from ..core.errors import ConfigError
 from .filter import ToolDescriptor
 
@@ -120,6 +120,7 @@ def gated_tool(
     rule: ApprovalRule,
     schema: Mapping[str, Any] | None = None,
     natives: Sequence[NativePause] = (),
+    declared_on: Approvals | None = None,
 ) -> Callable[..., Any]:
     """Wrap ``invoke``, the binding's call of one MCP tool, so a call asks for
     approval instead of running it.
@@ -128,6 +129,8 @@ def gated_tool(
     tool's arguments as keywords and may be ``async``; once approved it gets
     only the arguments the caller passed. ``natives`` are the framework pauses
     to try first, such as the LangGraph ``interrupt()`` hook (#212).
+    ``declared_on`` is the registry of the client whose discovery built the
+    ``ToolSet``, recorded on outside any client scope (ADR 0018).
     """
     if inspect.iscoroutinefunction(invoke):
 
@@ -142,4 +145,6 @@ def gated_tool(
 
     call.__name__ = call.__qualname__ = name
     call.__signature__ = _signature(schema)  # type: ignore[attr-defined]
-    return gate(call, risk=rule.risk, timeout=rule.timeout, natives=natives)
+    return gate(
+        call, risk=rule.risk, timeout=rule.timeout, natives=natives, declared_on=declared_on
+    )

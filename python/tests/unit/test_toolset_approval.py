@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from donkey_kit import Approval, ApprovalRequired, Approvals, ConfigError
+from donkey_kit import Approval, ApprovalRequired, Approvals, ConfigError, Donkey, DonkeyConfig
 from donkey_kit.registry.criteria import GovernanceReport
 from donkey_kit.registry.models import AssetRef, McpServerHandle
 from donkey_kit.tools.filter import ToolDescriptor
@@ -34,6 +34,15 @@ _REFUND_SCHEMA = {
 }
 
 
+def _cfg() -> DonkeyConfig:
+    return DonkeyConfig(
+        llm_proxy_url="https://proxy",
+        llm_proxy_client_id="cid",
+        llm_proxy_client_secret="csecret",
+        max_retries=0,
+    )
+
+
 def _server(asset_id: str, *names: str) -> McpServerHandle:
     return McpServerHandle(
         ref=AssetRef("com.acme", asset_id, "1.0.0"),
@@ -43,8 +52,14 @@ def _server(asset_id: str, *names: str) -> McpServerHandle:
     )
 
 
-def _billing() -> ToolSet:
-    return ToolSet([_server("billing", "issue_refund", "get_invoice")])
+@pytest.fixture
+def registry() -> Approvals:
+    """The ``donkey.approvals`` of the client whose discovery built the set."""
+    return Approvals()
+
+
+def _billing(registry: Approvals | None) -> ToolSet:
+    return ToolSet([_server("billing", "issue_refund", "get_invoice")], _approval_registry=registry)
 
 
 def _tool(server: str, name: str) -> ToolDescriptor:
@@ -62,8 +77,8 @@ class _Invoker:
         return "refunded"
 
 
-def test_a_gated_tool_raises_approval_required_and_does_not_run() -> None:
-    tools = _billing().require_approval(tools=["issue_refund"], risk="financial")
+def test_a_gated_tool_raises_approval_required_and_does_not_run(registry: Approvals) -> None:
+    tools = _billing(registry).require_approval(tools=["issue_refund"], risk="financial")
     invoke = _Invoker()
     call = tools._bind_tool(
         "issue_refund", _tool("billing", "issue_refund"), invoke, schema=_REFUND_SCHEMA
@@ -84,8 +99,8 @@ def test_a_gated_tool_raises_approval_required_and_does_not_run() -> None:
     assert invoke.calls == []
 
 
-def test_resolving_runs_the_call_with_only_the_arguments_passed() -> None:
-    tools = _billing().require_approval(tools=["issue_refund"])
+def test_resolving_runs_the_call_with_only_the_arguments_passed(registry: Approvals) -> None:
+    tools = _billing(registry).require_approval(tools=["issue_refund"])
     invoke = _Invoker()
     call = tools._bind_tool(
         "issue_refund", _tool("billing", "issue_refund"), invoke, schema=_REFUND_SCHEMA
@@ -94,38 +109,36 @@ def test_resolving_runs_the_call_with_only_the_arguments_passed() -> None:
     with pytest.raises(ApprovalRequired) as caught:
         call(invoice="INV-7", amount=40.0)
 
-    assert Approvals().resolve(caught.value.approval.id, approved_by="m.keller") == "refunded"
+    assert registry.resolve(caught.value.approval.id, approved_by="m.keller") == "refunded"
     assert invoke.calls == [{"invoice": "INV-7", "amount": 40.0}]
 
 
-async def test_an_async_invoker_is_gated_and_resolved() -> None:
+async def test_an_async_invoker_is_gated_and_resolved(registry: Approvals) -> None:
     sent: list[dict[str, Any]] = []
 
     async def invoke(**arguments: Any) -> str:
         sent.append(arguments)
         return "refunded"
 
-    tools = _billing().require_approval(tools=["issue_refund"])
+    tools = _billing(registry).require_approval(tools=["issue_refund"])
     call = tools._bind_tool("issue_refund", _tool("billing", "issue_refund"), invoke)
 
     with pytest.raises(ApprovalRequired) as caught:
         await call(invoice="INV-7")
 
     assert sent == []
-    assert await Approvals().resolve(caught.value.approval.id, approved_by="m.keller") == (
-        "refunded"
-    )
+    assert await registry.resolve(caught.value.approval.id, approved_by="m.keller") == ("refunded")
     assert sent == [{"invoice": "INV-7"}]
 
 
-def test_an_ungated_tool_is_bound_unwrapped() -> None:
-    tools = _billing().require_approval(tools=["issue_refund"])
+def test_an_ungated_tool_is_bound_unwrapped(registry: Approvals) -> None:
+    tools = _billing(registry).require_approval(tools=["issue_refund"])
     invoke = _Invoker()
 
     assert tools._bind_tool("get_invoice", _tool("billing", "get_invoice"), invoke) is invoke
 
 
-def test_a_native_pause_is_tried_first() -> None:
+def test_a_native_pause_is_tried_first(registry: Approvals) -> None:
     # The LangGraph interrupt() hook reaches a gated discovered tool as it does
     # a @donkey.tool (#212): the hook decides, and the call runs under it.
     seen: list[tuple[str, Mapping[str, Any], str | None]] = []
@@ -142,9 +155,9 @@ def test_a_native_pause_is_tried_first() -> None:
             expires_at=math.inf,
         )
 
-    tools = ToolSet([_server("billing", "issue_refund")], _natives=(native,)).require_approval(
-        tools=["issue_refund"], risk="financial"
-    )
+    tools = ToolSet(
+        [_server("billing", "issue_refund")], _natives=(native,), _approval_registry=registry
+    ).require_approval(tools=["issue_refund"], risk="financial")
     invoke = _Invoker()
     call = tools._bind_tool("issue_refund", _tool("billing", "issue_refund"), invoke)
 
@@ -153,9 +166,10 @@ def test_a_native_pause_is_tried_first() -> None:
     assert invoke.calls == [{"invoice": "INV-7"}]
 
 
-def test_a_bare_name_gates_the_tool_on_every_server() -> None:
+def test_a_bare_name_gates_the_tool_on_every_server(registry: Approvals) -> None:
     tools = ToolSet(
-        [_server("billing", "issue_refund"), _server("legacy", "issue_refund")]
+        [_server("billing", "issue_refund"), _server("legacy", "issue_refund")],
+        _approval_registry=registry,
     ).require_approval(tools=["issue_refund"])
 
     for server in ("billing", "legacy"):
@@ -166,9 +180,10 @@ def test_a_bare_name_gates_the_tool_on_every_server() -> None:
             call()
 
 
-def test_a_prefixed_name_gates_one_server_only() -> None:
+def test_a_prefixed_name_gates_one_server_only(registry: Approvals) -> None:
     tools = ToolSet(
-        [_server("billing", "issue_refund"), _server("legacy", "issue_refund")]
+        [_server("billing", "issue_refund"), _server("legacy", "issue_refund")],
+        _approval_registry=registry,
     ).require_approval(tools=["billing__issue_refund"])
     legacy = _Invoker()
 
@@ -180,9 +195,9 @@ def test_a_prefixed_name_gates_one_server_only() -> None:
     )
 
 
-def test_the_last_matching_rule_sets_risk_and_timeout() -> None:
+def test_the_last_matching_rule_sets_risk_and_timeout(registry: Approvals) -> None:
     tools = (
-        _billing()
+        _billing(registry)
         .require_approval(tools=["issue_refund", "get_invoice"], risk="low", timeout="1h")
         .require_approval(tools=["issue_refund"], risk="financial", timeout="5m")
     )
@@ -194,8 +209,8 @@ def test_the_last_matching_rule_sets_risk_and_timeout() -> None:
     assert approval.expires_at - approval.requested_at == pytest.approx(300)
 
 
-def test_filter_keeps_the_rules_and_require_approval_keeps_the_filter() -> None:
-    gated = _billing().require_approval(tools=["issue_refund"])
+def test_filter_keeps_the_rules_and_require_approval_keeps_the_filter(registry: Approvals) -> None:
+    gated = _billing(registry).require_approval(tools=["issue_refund"])
     narrowed = gated.filter(allow=["issue_refund"])
 
     assert narrowed.name_map == {"issue_refund": "issue_refund"}
@@ -206,16 +221,18 @@ def test_filter_keeps_the_rules_and_require_approval_keeps_the_filter() -> None:
     assert gated._approvals != narrowed.require_approval(tools=["get_invoice"])._approvals
 
 
-def test_a_name_no_server_exposes_is_refused_at_bind_time() -> None:
-    tools = _billing().require_approval(tools=["issue_refnd", "legacy__issue_refund"])
+def test_a_name_no_server_exposes_is_refused_at_bind_time(registry: Approvals) -> None:
+    tools = _billing(registry).require_approval(tools=["issue_refnd", "legacy__issue_refund"])
 
     with pytest.raises(ConfigError, match="issue_refnd, legacy__issue_refund") as caught:
         tools._check_approvals()
     assert "name_map" in caught.value.remediation
 
 
-def test_a_gated_tool_removed_by_filter_is_not_a_typo() -> None:
-    tools = _billing().require_approval(tools=["issue_refund"]).filter(deny=["issue_refund"])
+def test_a_gated_tool_removed_by_filter_is_not_a_typo(registry: Approvals) -> None:
+    tools = (
+        _billing(registry).require_approval(tools=["issue_refund"]).filter(deny=["issue_refund"])
+    )
 
     tools._check_approvals()
     assert tools.name_map == {"get_invoice": "get_invoice"}
@@ -231,14 +248,16 @@ def test_a_gated_tool_removed_by_filter_is_not_a_typo() -> None:
         ({"tools": ["issue_refund"], "timeout": "0s"}, "positive duration"),
     ],
 )
-def test_require_approval_rejects_bad_input(kwargs: dict[str, Any], match: str) -> None:
+def test_require_approval_rejects_bad_input(
+    kwargs: dict[str, Any], match: str, registry: Approvals
+) -> None:
     with pytest.raises(ValueError, match=match):
-        _billing().require_approval(**kwargs)
+        _billing(registry).require_approval(**kwargs)
 
 
-def test_a_schema_with_non_identifier_names_falls_back_to_keywords() -> None:
+def test_a_schema_with_non_identifier_names_falls_back_to_keywords(registry: Approvals) -> None:
     schema = {"properties": {"invoice-id": {"type": "string"}}, "required": ["invoice-id"]}
-    tools = _billing().require_approval(tools=["issue_refund"])
+    tools = _billing(registry).require_approval(tools=["issue_refund"])
     invoke = _Invoker()
     call = tools._bind_tool("issue_refund", _tool("billing", "issue_refund"), invoke, schema=schema)
 
@@ -248,12 +267,66 @@ def test_a_schema_with_non_identifier_names_falls_back_to_keywords() -> None:
     assert dict(caught.value.approval.arguments) == {"arguments": {"invoice-id": "INV-7"}}
 
 
-def test_a_call_that_could_never_run_fails_before_asking() -> None:
-    tools = _billing().require_approval(tools=["issue_refund"])
+def test_a_call_that_could_never_run_fails_before_asking(registry: Approvals) -> None:
+    tools = _billing(registry).require_approval(tools=["issue_refund"])
     call = tools._bind_tool(
         "issue_refund", _tool("billing", "issue_refund"), _Invoker(), schema=_REFUND_SCHEMA
     )
 
     with pytest.raises(TypeError):
         call(amount=40.0)  # the required "invoice" is missing
-    assert Approvals().pending() == ()
+    assert registry.pending() == ()
+
+
+# --- which client records it (ADR 0018, #1423) -----------------------------
+def test_a_gate_outside_every_scope_records_on_the_discovering_client(
+    registry: Approvals,
+) -> None:
+    call = (
+        _billing(registry)
+        .require_approval(tools=["issue_refund"])
+        ._bind_tool("issue_refund", _tool("billing", "issue_refund"), _Invoker())
+    )
+
+    with pytest.raises(ApprovalRequired) as caught:
+        call(invoice="INV-7")
+    assert registry.pending() == (caught.value.approval,)
+
+
+def test_the_running_clients_scope_wins_over_the_discovering_client(
+    registry: Approvals,
+) -> None:
+    call = (
+        _billing(registry)
+        .require_approval(tools=["issue_refund"])
+        ._bind_tool("issue_refund", _tool("billing", "issue_refund"), _Invoker())
+    )
+
+    with Donkey(_cfg()) as donkey:
+        with donkey.run(), pytest.raises(ApprovalRequired) as caught:
+            call(invoice="INV-7")
+        assert donkey.approvals.pending() == (caught.value.approval,)
+    assert registry.pending() == ()
+
+
+def test_a_hand_built_set_needs_a_client_scope() -> None:
+    invoke = _Invoker()
+    call = (
+        _billing(None)
+        .require_approval(tools=["issue_refund"])
+        ._bind_tool("issue_refund", _tool("billing", "issue_refund"), invoke)
+    )
+
+    with pytest.raises(ConfigError, match="no Donkey owns this call"):
+        call(invoice="INV-7")
+    assert invoke.calls == []
+
+
+def test_the_discovering_client_survives_filter_and_require_approval(
+    registry: Approvals,
+) -> None:
+    view = (
+        _billing(registry).filter(allow=["issue_refund"]).require_approval(tools=["issue_refund"])
+    )
+
+    assert view._approval_registry is registry

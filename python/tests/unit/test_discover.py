@@ -489,8 +489,9 @@ async def test_a_whole_server_plan_refuses_a_rename_and_a_gate(lister: _Lister) 
     assert [(s.ref.asset_id, sorted(t)) for s, t in plan] == [("inv-a", ["add", "lookup"])]
     assert headers == {"client_id": "cid", "client_secret": "secret"}
     gated = ToolSet([_handle("inv-a")], _auth=_AUTH).require_approval(tools=["add"])
-    with pytest.raises(NotImplementedError, match=r"^blocked on verification:"):
+    with pytest.raises(ConfigError, match=r"adk\(\) binding cannot gate \(add\)") as refused:
         await gated._plan("adk()", per_tool=False)
+    assert "langgraph()" in refused.value.remediation
 
 
 async def test_a_per_tool_plan_renames_and_gates(lister: _Lister) -> None:

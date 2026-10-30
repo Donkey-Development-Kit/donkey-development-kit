@@ -26,7 +26,6 @@ import pytest
 from donkey_kit import (
     ApprovalRejected,
     ApprovalRequired,
-    Approvals,
     AuthError,
     Donkey,
     DonkeyConfig,
@@ -141,7 +140,8 @@ def test_a_gated_tool_in_a_graph_pauses_with_a_native_interrupt(spans: Any) -> N
     ran: list[tuple[str, float, str | None]] = []
     graph = _refund_graph(ran).compile(checkpointer=MemorySaver())
 
-    paused = graph.invoke({"ticket_id": "T-1", "amount": 140.0}, _thread("t-pause"))
+    with Donkey(_cfg()) as donkey, donkey.run():
+        paused = graph.invoke({"ticket_id": "T-1", "amount": 140.0}, _thread("t-pause"))
 
     assert ran == []
     (pause,) = paused["__interrupt__"]
@@ -154,8 +154,8 @@ def test_a_gated_tool_in_a_graph_pauses_with_a_native_interrupt(spans: Any) -> N
         "correlation_id": pause.value["correlation_id"],
         "requested_at": pause.value["requested_at"],
     }
-    # The checkpointer holds the pause; the in-memory registry is not used.
-    assert Approvals().pending() == ()
+    # The checkpointer holds the pause; the client's registry is not used.
+    assert donkey.approvals.pending() == ()
     ((name, attrs),) = _events(spans)
     assert name == "donkey.approval.pending"
     assert attrs["donkey.approval.id"] == pause.value["approval_id"]
@@ -460,8 +460,10 @@ def test_outside_a_graph_a_gated_tool_still_raises_approval_required() -> None:
     def issue_refund(ticket_id: str) -> None:
         """Refund a ticket."""
 
-    with pytest.raises(ApprovalRequired):
-        issue_refund("T-1")
+    with Donkey(_cfg()) as donkey:
+        with donkey.run(), pytest.raises(ApprovalRequired) as info:
+            issue_refund("T-1")
+        assert donkey.approvals.pending() == (info.value.approval,)
 
 
 def test_a_graph_without_a_checkpointer_falls_back_to_approval_required() -> None:
@@ -470,10 +472,12 @@ def test_a_graph_without_a_checkpointer_falls_back_to_approval_required() -> Non
     ran: list[tuple[str, float, str | None]] = []
     graph = _refund_graph(ran).compile()
 
-    with pytest.raises(ApprovalRequired) as info:
-        graph.invoke({"ticket_id": "T-1", "amount": 140.0})
+    with Donkey(_cfg()) as donkey:
+        with donkey.run(), pytest.raises(ApprovalRequired) as info:
+            graph.invoke({"ticket_id": "T-1", "amount": 140.0})
 
-    assert Approvals().resolve(info.value.approval.id, approved_by="m.keller") == "refunded T-1"
+        resolved = donkey.approvals.resolve(info.value.approval.id, approved_by="m.keller")
+    assert resolved == "refunded T-1"
     assert [r[:2] for r in ran] == [("T-1", 140.0)]
 
 

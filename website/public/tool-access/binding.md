@@ -314,7 +314,7 @@ object cannot rename one tool or gate one call, so:
 - a set whose tool names collide across servers raises `ConfigError`. Keep one
   of each clashing tool with `filter(deny=[...])`, or bind with LangGraph,
   LlamaIndex or the Anthropic SDK, which rename it;
-- a set with a `require_approval()` rule raises `NotImplementedError`. Gate
+- a set with a `require_approval()` rule raises `ConfigError`. Gate
   discovered tools through LangGraph, LlamaIndex or the Anthropic SDK, or use
   the framework's own approval hook (see [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md));
 - a tool call made under a different `as_user()` user from the bind's is not

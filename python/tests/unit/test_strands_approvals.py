@@ -32,7 +32,6 @@ from donkey_kit import (
     PIIDetected,
     TokenBudgetExceeded,
 )
-from donkey_kit.core import approvals as approvals_mod
 from donkey_kit.core import telemetry
 from donkey_kit.core.approvals import Approval
 from donkey_kit.core.identity import current_user
@@ -160,8 +159,8 @@ def _agent(model: _ScriptedModel, *tools: Any, hooks: tuple[Any, ...] = (), **kw
     return Agent(model=model, tools=list(tools), hooks=list(hooks), callback_handler=None, **kw)
 
 
-async def _paused(agent: Agent) -> Any:
-    async with Donkey(_cfg()).run(id=_RUN):
+async def _paused(agent: Agent, donkey: Donkey | None = None) -> Any:
+    async with (donkey or Donkey(_cfg())).run(id=_RUN):
         result = await agent.invoke_async("refund T-1")
     assert result.stop_reason == "interrupt"
     return result
@@ -253,8 +252,10 @@ async def test_a_nested_call_of_the_approved_tool_waits_for_its_own_approval(
             return "refunded"
 
     agent = _agent(_ScriptedModel(_REFUND), tool(issue_refund), hooks=(ApprovalHook(),))
-    (approval,) = pending_approvals(await _paused(agent))
-    resumed = await agent.invoke_async([approve(approval, by="m.keller").native])
+    async with Donkey(_cfg()) as donkey:
+        (approval,) = pending_approvals(await _paused(agent, donkey))
+        async with donkey.run():
+            resumed = await agent.invoke_async([approve(approval, by="m.keller").native])
 
     assert resumed.stop_reason == "end_turn"
     assert ran == ["T-1"]
@@ -262,7 +263,7 @@ async def test_a_nested_call_of_the_approved_tool_waits_for_its_own_approval(
     assert needed.approval.tool == "issue_refund"
     assert dict(needed.approval.arguments) == {"ticket_id": "T-2"}
     assert needed.approval.id != approval.id
-    (waiting,) = approvals_mod.approvals.pending()
+    (waiting,) = donkey.approvals.pending()
     assert waiting.id == needed.approval.id
 
 
@@ -469,16 +470,17 @@ async def test_a_tool_refusal_stops_the_agent_without_retrying(
             async with donkey.run():
                 await agent.invoke_async([approve(approval, by="m.keller").native])
 
-    assert caught.value is refusal
-    assert calls == ["T-1"]
-    assert len(model.turns) == 1  # no refusal text or subsequent model request
-    assert approved_call("issue_refund") is None
-    # A failed approved call must not leak its approval into the next call.
-    with pytest.raises(ApprovalRequired):
-        if is_async:
-            await issue_refund("T-2")
-        else:
-            issue_refund("T-2")
+        assert caught.value is refusal
+        assert calls == ["T-1"]
+        assert len(model.turns) == 1  # no refusal text or subsequent model request
+        assert approved_call("issue_refund") is None
+        # A failed approved call must not leak its approval into the next call.
+        with pytest.raises(ApprovalRequired):
+            async with donkey.run():
+                if is_async:
+                    await issue_refund("T-2")
+                else:
+                    issue_refund("T-2")
     assert calls == ["T-1"]
 
 
@@ -606,7 +608,8 @@ async def test_the_pending_and_decision_events_share_the_approval(
     monkeypatch.setattr(telemetry, "_tracer", lambda: provider.get_tracer("t"))
 
     agent = _agent(_ScriptedModel(_REFUND), _refund_tool([]), hooks=(ApprovalHook(),))
-    (approval,) = pending_approvals(await _paused(agent))
+    donkey = Donkey(_cfg())
+    (approval,) = pending_approvals(await _paused(agent, donkey))
     await agent.invoke_async([approve(approval, by="m.keller").native])
 
     events = [
@@ -619,7 +622,7 @@ async def test_the_pending_and_decision_events_share_the_approval(
     assert approved_attrs["donkey.correlation_id"] == _RUN
     # A framework-held pause has no expiry to record.
     assert "donkey.approval.expires_at" not in pending_attrs
-    assert approvals_mod.approvals.pending() == ()
+    assert donkey.approvals.pending() == ()
 
 
 def test_decisions_need_an_approver_and_an_approval_interrupt() -> None:

@@ -43,7 +43,12 @@ def _cfg(**kw: object) -> DonkeyConfig:
     return DonkeyConfig(**{**base, **kw})
 
 
-def _toolset(auth: McpAuth | None = None, *, user_header: str | None = None) -> ToolSet:
+def _toolset(
+    auth: McpAuth | None = None,
+    *,
+    user_header: str | None = None,
+    registry: Approvals | None = None,
+) -> ToolSet:
     return ToolSet(
         [
             McpServerHandle(
@@ -54,6 +59,7 @@ def _toolset(auth: McpAuth | None = None, *, user_header: str | None = None) -> 
         ],
         _auth=auth,
         _user_header=user_header,
+        _approval_registry=registry,
     )
 
 
@@ -260,17 +266,18 @@ async def test_a_per_tool_binding_refuses_a_call_under_another_user(
 async def test_an_approved_tool_runs_as_its_requester_wherever_it_is_resolved(
     listed: list[dict[str, str]], mcp_calls: list[dict[str, Any]]
 ) -> None:
-    ts = _toolset(ClientIdAuth("cid", "secret")).require_approval(tools=["add"])
-    tool = await _bind(ts, _ALICE)
+    registry = Approvals()
+    ts = _toolset(ClientIdAuth("cid", "secret"), registry=registry)
+    tool = await _bind(ts.require_approval(tools=["add"]), _ALICE)
     with pytest.raises(ApprovalRequired) as alice:
         await _call(tool, _ALICE)
     with pytest.raises(ApprovalRequired) as bob:
         await _call(tool, _BOB)
     # Resolved outside any block: each runs as its requester (#1416), and Bob
     # is not the user the binding sends.
-    assert await Approvals().resolve(alice.value.approval.id, approved_by="m.keller") == "sent"
+    assert await registry.resolve(alice.value.approval.id, approved_by="m.keller") == "sent"
     with pytest.raises(AuthError, match="with a different token"):
-        await Approvals().resolve(bob.value.approval.id, approved_by="m.keller")
+        await registry.resolve(bob.value.approval.id, approved_by="m.keller")
     assert mcp_calls == [{"a": 1}]
 
 

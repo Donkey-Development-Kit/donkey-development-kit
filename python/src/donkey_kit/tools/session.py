@@ -63,7 +63,7 @@ from fnmatch import fnmatchcase
 from typing import Any, TypeVar
 
 from ..core import _verify
-from ..core.approvals import APPROVAL_TIMEOUT, NativePause, parse_timeout
+from ..core.approvals import APPROVAL_TIMEOUT, Approvals, NativePause, parse_timeout
 from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, ConfigError, ConfigWarning, DonkeyError
 from ..core.identity import Requester, capture_requester, current_user
@@ -161,6 +161,7 @@ class ToolSet:
         _filters: tuple[ToolFilter, ...] = (),
         _approvals: tuple[ApprovalRule, ...] = (),
         _natives: tuple[NativePause, ...] = (),
+        _approval_registry: Approvals | None = None,
         _auth: McpAuth | None = None,
         _discovered: tuple[datetime, float, float] | None = None,
         _limits: tuple[int, int] | None = None,
@@ -176,6 +177,9 @@ class ToolSet:
         # Framework pauses for a gated call, such as the LangGraph interrupt()
         # hook. Passed in by discovery: tools/ cannot import integrations/.
         self._natives = _natives
+        # The discovering client's donkey.approvals: a gated call outside any
+        # client scope records there; None (a set built by hand) needs a scope.
+        self._approval_registry = _approval_registry
         # The gateway credential every binding sends (tools/auth.py); None when
         # none is configured, which only binding refuses.
         self._auth = _auth
@@ -206,6 +210,7 @@ class ToolSet:
             _filters=_filters if _filters is not None else self._filters,
             _approvals=_approvals if _approvals is not None else self._approvals,
             _natives=self._natives,
+            _approval_registry=self._approval_registry,
             _auth=self._auth,
             _discovered=self._discovered,
             _limits=self._limits,
@@ -357,7 +362,9 @@ class ToolSet:
         local function. A gated call raises
         :class:`~donkey_kit.core.approvals.ApprovalRequired`, or pauses a
         LangGraph graph with ``interrupt()``, and resolves through
-        ``donkey.approvals``.
+        ``donkey.approvals``: the client whose ``donkey.run()`` /
+        ``donkey.as_user()`` block runs the call, else the client whose
+        ``tools.discover()`` built the set (ADR 0018).
 
         A bare name (``"issue_refund"``) gates that tool on every server; the
         exposed form (``"billing__issue_refund"``) gates one server's tool. Rules
@@ -400,7 +407,14 @@ class ToolSet:
         rule = rule_for(self._approvals, tool)
         if rule is None:
             return invoke
-        return gated_tool(exposed_name, invoke, rule=rule, schema=schema, natives=self._natives)
+        return gated_tool(
+            exposed_name,
+            invoke,
+            rule=rule,
+            schema=schema,
+            natives=self._natives,
+            declared_on=self._approval_registry,
+        )
 
     def _check_approvals(self) -> None:
         """Refuse a ``require_approval()`` name that matches no tool on any
@@ -611,10 +625,15 @@ class ToolSet:
                 )
             gated = sorted(t.exposed for t in bound if t.rule is not None)
             if gated:
-                raise _verify.blocked(
-                    f"require_approval() on the {binding} binding ({', '.join(gated)}): it "
-                    "binds whole servers, so there is no per-tool call to gate; bind with "
-                    "langgraph(), llamaindex() or anthropic() to gate a discovered tool."
+                raise ConfigError(
+                    f"require_approval() names tools the {binding} binding cannot gate "
+                    f"({', '.join(gated)}): it binds each MCP server as one object, so there "
+                    "is no per-tool call for the SDK to hold.",
+                    remediation=(
+                        "Bind with langgraph(), llamaindex() or anthropic() to gate a "
+                        "discovered tool, or use the framework's own approval on the "
+                        "server object and drop require_approval() from this set."
+                    ),
                 )
         headers = await self._headers()
         _report_cost(binding, len(exposed), descriptor_tokens(exposed), self._limits)

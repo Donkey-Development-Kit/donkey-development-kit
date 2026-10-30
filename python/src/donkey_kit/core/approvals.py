@@ -9,6 +9,12 @@ the call; ``reject(...)`` records who refused and drops it. A pending approval
 expires after its timeout, and resolving it then raises
 :class:`ApprovalTimedOut`, so nothing waits on a human forever.
 
+Each ``Donkey`` owns its own :class:`Approvals` (ADR 0018, #1423). A gated call
+records its approval on the client whose ``donkey.run()`` or ``donkey.as_user()``
+block runs it; outside one, on the client the tool was declared on
+(``@donkey.tool`` read from an instance, or the client whose discovery built the
+``ToolSet``); with neither, it raises :class:`~donkey_kit.core.errors.ConfigError`.
+
 The approval is client-side and advisory. Code that calls the function without
 the decorator bypasses it, and the gateway never learns that an approval was
 needed or who gave it. The gateway's own step-up is separate: its policy asks the
@@ -18,16 +24,16 @@ like any other, and the gateway judges each model call it makes afresh, as it
 judges a refusal handler's re-send (BG §2.1).
 
 There is no queue and no approval UI (build plan, "Do not build"). Pending
-approvals live in this process's memory, so a restart forgets them; a framework
-checkpointer is the durable form. ``gate(natives=...)`` takes framework hooks
-that pause the call with the framework's own primitive instead: LangGraph's
-``interrupt()`` (#212), the OpenAI Agents SDK's ``needs_approval`` (#213),
-Strands' interrupt (#1234) and ADK's tool confirmation (#1235). Each adapter's
-``pending_approvals`` / ``approve`` / ``reject`` speak :class:`Approval`, with the
-framework's object on ``native`` (#1422). A rejection differs: LangGraph raises
-:class:`ApprovalRejected` from the resumed tool, the others hand the model the
-rejection message as the tool's result. Core never imports a framework: the
-hooks are passed in from the top-level ``donkey`` module.
+approvals live in memory, so a restart forgets them; a framework checkpointer is
+the durable form. ``gate(natives=...)`` takes framework hooks that pause the call
+with the framework's own primitive instead: LangGraph's ``interrupt()`` (#212),
+the OpenAI Agents SDK's ``needs_approval`` (#213), Strands' interrupt (#1234) and
+ADK's tool confirmation (#1235). Each adapter's ``pending_approvals`` /
+``approve`` / ``reject`` speak :class:`Approval`, with the framework's object on
+``native`` (#1422). A rejection differs: LangGraph raises :class:`ApprovalRejected`
+from the resumed tool, the others hand the model the rejection message as the
+tool's result. Core never imports a framework: the hooks are passed in from the
+top-level ``donkey`` module.
 
 A resumed call runs as its requester, with the user and attribution bound where it
 was requested, and a resolver bound to another user is refused (#1416, ``identity``).
@@ -45,25 +51,34 @@ import time
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, TypeAlias, TypeVar
 
-from .correlation import request_correlation_id, run_scope
-from .errors import DonkeyError
+from .approval_types import (
+    Approval,
+    ApprovalError,
+    ApprovalNotFound,
+    ApprovalRejected,
+    ApprovalRequired,
+    ApprovalTimedOut,
+)
+from .correlation import current_approvals_client, request_correlation_id, run_scope
+from .errors import AuthError, ConfigError
 from .identity import Requester, capture_requester, check_requester, requester_scope
 from .reactions import Duration, _seconds
 
 __all__ = [
     "APPROVAL_TIMEOUT",
     "Approval",
+    "ApprovalError",
     "ApprovalMode",
+    "ApprovalNotFound",
     "ApprovalRejected",
     "ApprovalRequired",
     "ApprovalTimedOut",
     "Approvals",
     "NativePause",
-    "approvals",
     "gate",
     "parse_timeout",
     "record_decision",
@@ -88,116 +103,7 @@ _EVENT_PENDING = "donkey.approval.pending"
 _EVENT_APPROVED = "donkey.approval.approved"
 _EVENT_REJECTED = "donkey.approval.rejected"
 _EVENT_TIMED_OUT = "donkey.approval.timed_out"
-
-
-@dataclass(frozen=True)
-class Approval:
-    """One call of an approval-gated tool, waiting for a human (BG §2.3). A
-    framework adapter's approval helpers carry the framework's own object on ``native``.
-
-    ``arguments`` is the call's arguments bound to the tool's parameter names,
-    defaults included, so the approver sees the whole call. ``correlation_id`` is
-    the enclosing ``donkey.run()`` id, or a fresh one outside a run; the resumed
-    call runs under it, so the gateway records join to the approval.
-    ``requested_at`` and ``expires_at`` are Unix timestamps; ``expires_at`` is
-    ``math.inf`` for a call a framework holds, such as a LangGraph interrupt,
-    which never expires.
-
-    ``native`` is the pause on an approval ``pending_approvals()`` returns, and what
-    to resume the framework with on one ``approve()`` / ``reject()`` returns (#1422).
-    ``None`` for a raise-and-resume approval. It is left out of equality and the repr.
-    """
-
-    id: str
-    tool: str
-    arguments: Mapping[str, Any]
-    risk: str | None
-    correlation_id: str
-    requested_at: float
-    expires_at: float
-    native: Any = field(default=None, compare=False, repr=False)
-
-    @property
-    def expired(self) -> bool:
-        """True once ``expires_at`` has passed: the approval can no longer be resolved."""
-        return time.time() >= self.expires_at
-
-
-class ApprovalRequired(DonkeyError):
-    """A ``@donkey.tool(approval="required")`` tool was called, and was not run
-    (BG §2.3).
-
-    :attr:`approval` is the pending call. Get a decision out of band (Slack,
-    ServiceNow, your own UI), then pass its id to
-    ``donkey.approvals.resolve(...)`` or ``reject(...)``. ``correlation_id`` is
-    the approval's run id.
-
-    The approval is client-side and advisory: the gateway still judges every
-    model call the resumed tool makes.
-    """
-
-    remediation = (
-        "This tool needs a human decision before it runs. Show err.approval "
-        "(tool, arguments, risk) to an approver, then call "
-        "donkey.approvals.resolve(err.approval.id, approved_by=...) to run it, or "
-        "donkey.approvals.reject(err.approval.id, rejected_by=...) to drop it, "
-        "before the approval times out."
-    )
-
-    def __init__(self, message: str, *, approval: Approval, remediation: str | None = None) -> None:
-        super().__init__(message, remediation=remediation, correlation_id=approval.correlation_id)
-        self.approval = approval
-
-    @property
-    def tool(self) -> str:
-        """The gated tool's name."""
-        return self.approval.tool
-
-    @property
-    def arguments(self) -> Mapping[str, Any]:
-        """The call's arguments, by parameter name."""
-        return self.approval.arguments
-
-    @property
-    def risk(self) -> str | None:
-        """The ``risk=`` the tool declared, if any."""
-        return self.approval.risk
-
-
-class ApprovalRejected(DonkeyError):
-    """A human rejected an approval-gated call that a framework paused natively,
-    so the tool was not run (BG §2.3, #212). :attr:`approval` is the call.
-
-    Raised where the framework resumes the call and reports a rejection by
-    raising: a LangGraph tool resumed on the ``Command`` its adapter's ``reject()``
-    builds. The other frameworks report the rejection to the model as the tool's
-    result (#213), and ``donkey.approvals.reject()`` just drops the call.
-    """
-
-    remediation = (
-        "A human rejected this tool call, so it was not run. Tell the agent, or "
-        "let the framework turn the error into a tool message (LangGraph: "
-        "ToolNode(handle_tool_errors=True))."
-    )
-
-    def __init__(self, message: str, *, approval: Approval, remediation: str | None = None) -> None:
-        super().__init__(message, remediation=remediation, correlation_id=approval.correlation_id)
-        self.approval = approval
-
-
-class ApprovalTimedOut(DonkeyError):
-    """A pending approval passed its timeout before anyone resolved it, so the
-    call was not made (BG §2.3). :attr:`approval` is the expired call."""
-
-    remediation = (
-        "Nobody resolved this approval within its timeout, so the tool was not "
-        "run. Call the tool again to request a fresh approval, or give the tool a "
-        "longer approval_timeout."
-    )
-
-    def __init__(self, message: str, *, approval: Approval, remediation: str | None = None) -> None:
-        super().__init__(message, remediation=remediation, correlation_id=approval.correlation_id)
-        self.approval = approval
+_EVENT_RESUME_REFUSED = "donkey.approval.resume_refused"
 
 
 #: A framework hook ``gate`` tries before raising :class:`ApprovalRequired`. It
@@ -219,38 +125,41 @@ class _Pending:
     requester: Requester
 
 
-# Process-global, in request order: an approval is raised wherever a gated tool
-# is called and resolved wherever the decision arrives, often another task or
-# thread, so the state is module-level like the tool registry it serves.
+# The requesters of the latest framework pauses, by the framework's id (a pause
+# may never resume). Per process, not per client: an adapter's
+# ``pending_approvals()`` records a pause with no client to hand (ADR 0018).
 _LOCK = threading.Lock()
-_PENDING: dict[str, _Pending] = {}
-# The requesters of the latest native pauses, by id (a pause may never resume).
 _NATIVE_REQUESTERS: OrderedDict[str, Requester] = OrderedDict()
 _NATIVE_KEPT = 1024
 
 
 class Approvals:
-    """``donkey.approvals``: this process's pending tool approvals (BG §2.3).
+    """``donkey.approvals``: one client's pending tool approvals (BG §2.3).
 
-    Every ``Donkey`` returns the same registry, as every one shares the tool
-    registry. It is thread-safe.
+    Each ``Donkey`` owns one (ADR 0018), so a client resolves only the approvals
+    its own calls recorded. It is thread-safe. ``Approvals()`` built by hand is an
+    empty registry that no gated call records on.
     """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._pending: dict[str, _Pending] = {}
 
     def pending(self) -> tuple[Approval, ...]:
         """The approvals still waiting for a decision, oldest first. Expired ones
         are dropped, each recorded as a ``donkey.approval.timed_out`` span event."""
-        _sweep()
-        with _LOCK:
-            return tuple(p.approval for p in _PENDING.values())
+        self._sweep()
+        with self._lock:
+            return tuple(p.approval for p in self._pending.values())
 
     def get(self, approval_id: str) -> Approval:
         """The pending approval with this id.
 
         Raises:
-            KeyError: No approval with this id is pending in this process.
+            ApprovalNotFound: No approval with this id is pending on this client.
         """
-        with _LOCK:
-            return _find(approval_id).approval
+        with self._lock:
+            return self._find(approval_id).approval
 
     # The tool's own return value, whatever the user's function returns.
     def resolve(self, approval_id: str, *, approved_by: str) -> Any:  # noqa: ANN401
@@ -260,21 +169,21 @@ class Approvals:
         attribution bound where it was called (#1416), under the approval's
         correlation id and with its arguments. This returns what the tool
         returns: for an ``async`` tool, an awaitable. The approval is consumed:
-        resolving it twice is a :class:`KeyError`. A refusal from any model call
-        the tool makes propagates as usual.
+        resolving it twice raises :class:`ApprovalNotFound`. A refusal from any
+        model call the tool makes propagates as usual.
 
         Raises:
             AuthError: This code runs inside ``donkey.as_user(...)`` for a
                 different user than the requester; the approval stays pending.
             ApprovalTimedOut: The approval expired before this call.
-            KeyError: No approval with this id is pending in this process.
+            ApprovalNotFound: No approval with this id is pending on this client.
             ValueError: ``approved_by`` is empty.
         """
         who = _identity(approved_by, "approved_by")
-        with _LOCK:
-            found = _find(approval_id)
+        with self._lock:
+            found = self._find(approval_id)
         check_requester(found.requester, what=_what(found.approval))
-        pending = _take(approval_id)
+        pending = self._take(approval_id)
         record_decision(pending.approval, approved=True, by=who)
         return _resume(pending)
 
@@ -285,62 +194,55 @@ class Approvals:
 
         Raises:
             ApprovalTimedOut: The approval expired before this call.
-            KeyError: No approval with this id is pending in this process.
+            ApprovalNotFound: No approval with this id is pending on this client.
             ValueError: ``rejected_by`` is empty.
         """
         who = _identity(rejected_by, "rejected_by")
-        pending = _take(approval_id)
+        pending = self._take(approval_id)
         record_decision(pending.approval, approved=False, by=who)
         return pending.approval
 
+    def _add(self, pending: _Pending) -> None:
+        self._sweep()
+        with self._lock:
+            self._pending[pending.approval.id] = pending
 
-#: The registry behind ``donkey.approvals``.
-approvals = Approvals()
+    def _find(self, approval_id: str) -> _Pending:
+        try:
+            return self._pending[approval_id]
+        except KeyError:
+            raise ApprovalNotFound(
+                f"no pending approval {approval_id!r} on this client: it was already "
+                "resolved or rejected, it was recorded by another Donkey, or the process "
+                "restarted (pending approvals are kept in memory)",
+                approval_id=approval_id,
+            ) from None
 
+    def _take(self, approval_id: str) -> _Pending:
+        with self._lock:
+            pending = self._find(approval_id)
+            del self._pending[approval_id]
+        if pending.approval.expired:
+            _expire(pending.approval)
+            raise ApprovalTimedOut(
+                f"approval {approval_id} for tool {pending.approval.tool!r} timed out",
+                approval=pending.approval,
+            )
+        return pending
 
-def _add(pending: _Pending) -> None:
-    _sweep()
-    with _LOCK:
-        _PENDING[pending.approval.id] = pending
-
-
-def _find(approval_id: str) -> _Pending:
-    try:
-        return _PENDING[approval_id]
-    except KeyError:
-        raise KeyError(
-            f"no pending approval {approval_id!r} in this process: it was already "
-            "resolved or rejected, or the process restarted (pending approvals "
-            "are kept in memory)"
-        ) from None
-
-
-def _take(approval_id: str) -> _Pending:
-    with _LOCK:
-        pending = _find(approval_id)
-        del _PENDING[approval_id]
-    if pending.approval.expired:
-        _expire(pending.approval)
-        raise ApprovalTimedOut(
-            f"approval {approval_id} for tool {pending.approval.tool!r} timed out",
-            approval=pending.approval,
-        )
-    return pending
-
-
-def _sweep() -> None:
-    with _LOCK:
-        expired = [p.approval for p in _PENDING.values() if p.approval.expired]
+    def _sweep(self) -> None:
+        with self._lock:
+            expired = [p.approval for p in self._pending.values() if p.approval.expired]
+            for approval in expired:
+                del self._pending[approval.id]
         for approval in expired:
-            del _PENDING[approval.id]
-    for approval in expired:
-        _expire(approval)
+            _expire(approval)
 
 
 def _reset_for_tests() -> None:
-    """Forget every pending approval (only the autouse fixture in ``tests/conftest.py``)."""
+    """Forget every framework pause's requester (only the autouse fixture in
+    ``tests/conftest.py``; pending approvals live on each client)."""
     with _LOCK:
-        _PENDING.clear()
         _NATIVE_REQUESTERS.clear()
 
 
@@ -359,7 +261,14 @@ def parse_timeout(value: Duration) -> float:
         ) from None
 
 
-def gate(func: _F, *, risk: str | None, timeout: float, natives: Sequence[NativePause] = ()) -> _F:
+def gate(
+    func: _F,
+    *,
+    risk: str | None,
+    timeout: float,
+    natives: Sequence[NativePause] = (),
+    declared_on: Approvals | None = None,
+) -> _F:
     """Wrap ``func`` so a call requests approval instead of running it.
 
     The wrapper keeps ``func``'s name, docstring and signature, and is ``async``
@@ -367,9 +276,22 @@ def gate(func: _F, *, risk: str | None, timeout: float, natives: Sequence[Native
     It binds the call's arguments first, so a call that could never run raises
     :class:`TypeError` at once instead of waiting for an approver. Each of
     ``natives`` is tried next (see :data:`NativePause`); when none applies, the
-    call is recorded as pending and :class:`ApprovalRequired` is raised. A call
-    a native hook approves runs as the requester :func:`record_pending` kept
-    for it, when this process paused it (#1416).
+    call is recorded as pending on the registry of the client scope running it,
+    else on ``declared_on`` (ADR 0018), and :class:`ApprovalRequired` is raised.
+
+    A call a native hook approves runs as the requester :func:`record_pending`
+    kept for it when this process paused it (#1416). Only the gated tool is
+    re-bound: the framework's other model calls in the resumed run keep the
+    resuming code's binding. A pause from another process, or past the latest
+    1024, has no recorded requester: the call logs a warning and runs as the
+    resuming code's binding. A resume refused for running as another user records
+    a ``donkey.approval.resume_refused`` span event, so the audit trail does not
+    end on an approval whose tool never ran.
+
+    Raises:
+        ConfigError: (from the gated call) No client owns it: it ran outside any
+            ``donkey.run()`` / ``donkey.as_user()`` block and ``declared_on`` is
+            ``None``.
     """
     signature = inspect.signature(func)
 
@@ -380,8 +302,8 @@ def gate(func: _F, *, risk: str | None, timeout: float, natives: Sequence[Native
         for native in natives:
             approved = native(func.__name__, arguments, risk)
             if approved is not None:
-                with _LOCK:
-                    return approved, _NATIVE_REQUESTERS.get(approved.id)
+                return approved, _native_requester(approved)
+        registry = _owner(func.__name__, declared_on)
         now = time.time()
         approval = Approval(
             id=uuid.uuid4().hex,
@@ -392,7 +314,8 @@ def gate(func: _F, *, risk: str | None, timeout: float, natives: Sequence[Native
             requested_at=now,
             expires_at=now + timeout,
         )
-        _add(_Pending(approval, func, args, dict(kwargs), capture_requester()))
+        # gate() is this module's own seam onto the registry it records on.
+        registry._add(_Pending(approval, func, args, dict(kwargs), capture_requester()))  # noqa: SLF001
         _record_pending(approval)
         raise ApprovalRequired(
             f"tool {approval.tool!r} needs human approval (id {approval.id})",
@@ -416,10 +339,55 @@ def gate(func: _F, *, risk: str | None, timeout: float, natives: Sequence[Native
     return gated  # type: ignore[return-value]
 
 
+def _owner(tool: str, declared_on: Approvals | None) -> Approvals:
+    """The registry a gated call records on: the client scope's, else the
+    declaring client's (ADR 0018)."""
+    scoped = current_approvals_client()
+    if isinstance(scoped, Approvals):
+        return scoped
+    if declared_on is not None:
+        return declared_on
+    raise ConfigError(
+        f"tool {tool!r} needs human approval, but no Donkey owns this call: it runs "
+        "outside any donkey.run() or donkey.as_user() block, and the tool was declared "
+        "with Donkey.tool, which names no client. The tool was not run.",
+        remediation=(
+            "Call the tool inside donkey.run() or donkey.as_user(), so the approval is "
+            "recorded on that client's donkey.approvals, or declare it on a client: "
+            "@donkey.tool(approval='required') on your Donkey instance."
+        ),
+    )
+
+
+def _native_requester(approved: Approval) -> Requester | None:
+    """The requester this process recorded for a framework pause, checked against
+    this context; ``None`` (with a warning) when the pause was not seen here."""
+    with _LOCK:
+        requester = _NATIVE_REQUESTERS.get(approved.id)
+    if requester is None:
+        _log.warning(
+            "approval %s for tool %s resumes with no recorded requester (paused in another "
+            "process, before a restart, or past the latest %d pauses): it runs as this "
+            "code's own binding. Resume it inside the requester's donkey.as_user() block.",
+            approved.id,
+            approved.tool,
+            _NATIVE_KEPT,
+        )
+        return None
+    try:
+        check_requester(requester, what=_what(approved))
+    except AuthError:
+        _record(approved, _EVENT_RESUME_REFUSED, {})
+        _log.info("approval %s for tool %s: resume refused", approved.id, approved.tool)
+        raise
+    return requester
+
+
 def record_pending(approval: Approval) -> None:
     """Record ``approval`` as a call a framework paused, where it was requested:
     a ``donkey.approval.pending`` span event, and the requester bound here, which
-    the gate runs the approved call as (#1416). The latest 1024 are kept, in memory."""
+    the gate runs the approved call as (#1416). The latest 1024 are kept, in this
+    process's memory, by the framework's id (ADR 0018)."""
     with _LOCK:
         _NATIVE_REQUESTERS[approval.id] = capture_requester()
         _NATIVE_REQUESTERS.move_to_end(approval.id)

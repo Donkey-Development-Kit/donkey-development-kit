@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import inspect
 import logging
+from collections.abc import Iterator
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -19,18 +20,24 @@ import pytest
 
 from donkey_kit import (
     Approval,
+    ApprovalError,
+    ApprovalNotFound,
+    ApprovalRejected,
     ApprovalRequired,
     Approvals,
     ApprovalTimedOut,
+    ConfigError,
     Donkey,
     DonkeyConfig,
     DonkeyError,
+    GatewayApprovalDenied,
     PIIDetected,
     PolicyViolation,
     registered_tools,
 )
+from donkey_kit.core import approval_types, telemetry
 from donkey_kit.core import approvals as approvals_mod
-from donkey_kit.core import telemetry
+from donkey_kit.core.correlation import current_approvals_client
 from donkey_kit.core.telemetry import current_correlation_id
 from donkey_kit.core.toolspec import tool_spec
 
@@ -55,7 +62,8 @@ class _Clock:
 @pytest.fixture
 def clock(monkeypatch: pytest.MonkeyPatch) -> _Clock:
     fake = _Clock()
-    monkeypatch.setattr(approvals_mod, "time", SimpleNamespace(time=fake.time))
+    for module in (approvals_mod, approval_types):
+        monkeypatch.setattr(module, "time", SimpleNamespace(time=fake.time))
     return fake
 
 
@@ -72,6 +80,12 @@ def spans(monkeypatch: pytest.MonkeyPatch) -> Any:
     tracer = provider.get_tracer("donkey_kit.test")
     monkeypatch.setattr(telemetry, "_tracer", lambda: tracer)
     return exporter
+
+
+@pytest.fixture
+def donkey() -> Iterator[Donkey]:
+    with Donkey(_cfg()) as client:
+        yield client
 
 
 def _requested(call: Any) -> ApprovalRequired:
@@ -168,8 +182,8 @@ def test_a_gated_call_does_not_run_and_carries_the_call() -> None:
     assert donkey.approvals.pending() == (err.approval,)
 
 
-def test_outside_a_run_the_approval_gets_its_own_correlation_id() -> None:
-    @Donkey.tool(approval="required")
+def test_outside_a_run_the_approval_gets_its_own_correlation_id(donkey: Donkey) -> None:
+    @donkey.tool(approval="required")
     def issue_refund(ticket_id: str) -> None:
         """Refund a ticket."""
 
@@ -180,18 +194,18 @@ def test_outside_a_run_the_approval_gets_its_own_correlation_id() -> None:
     assert first.approval.id != second.approval.id
 
 
-def test_a_call_that_could_never_run_fails_now_and_requests_nothing() -> None:
-    @Donkey.tool(approval="required")
+def test_a_call_that_could_never_run_fails_now_and_requests_nothing(donkey: Donkey) -> None:
+    @donkey.tool(approval="required")
     def issue_refund(ticket_id: str) -> None:
         """Refund a ticket."""
 
     with pytest.raises(TypeError):
         issue_refund("T-1", "extra")
-    assert Approvals().pending() == ()
+    assert donkey.approvals.pending() == ()
 
 
-async def test_an_async_gated_call_raises_when_awaited() -> None:
-    @Donkey.tool(approval="required")
+async def test_an_async_gated_call_raises_when_awaited(donkey: Donkey) -> None:
+    @donkey.tool(approval="required")
     async def issue_refund(ticket_id: str) -> str:
         """Refund a ticket."""
         return ticket_id
@@ -230,8 +244,8 @@ def test_resolve_runs_the_call_under_the_approvals_correlation_id() -> None:
             donkey.approvals.resolve(err.approval.id, approved_by="m.keller")
 
 
-async def test_resolve_of_an_async_tool_is_awaited() -> None:
-    @Donkey.tool(approval="required")
+async def test_resolve_of_an_async_tool_is_awaited(donkey: Donkey) -> None:
+    @donkey.tool(approval="required")
     async def issue_refund(ticket_id: str) -> str:
         """Refund a ticket."""
         return f"refunded {ticket_id} in {current_correlation_id()}"
@@ -240,48 +254,48 @@ async def test_resolve_of_an_async_tool_is_awaited() -> None:
         await issue_refund("T-1")
     except ApprovalRequired as err:
         approval = err.approval
-    result = await Approvals().resolve(approval.id, approved_by="m.keller")
+    result = await donkey.approvals.resolve(approval.id, approved_by="m.keller")
     assert result == f"refunded T-1 in {approval.correlation_id}"
 
 
-def test_reject_drops_the_call_without_running_it() -> None:
+def test_reject_drops_the_call_without_running_it(donkey: Donkey) -> None:
     ran: list[str] = []
 
-    @Donkey.tool(approval="required")
+    @donkey.tool(approval="required")
     def issue_refund(ticket_id: str) -> None:
         """Refund a ticket."""
         ran.append(ticket_id)
 
     err = _requested(lambda: issue_refund("T-1"))
-    assert Approvals().reject(err.approval.id, rejected_by="m.keller") == err.approval
+    assert donkey.approvals.reject(err.approval.id, rejected_by="m.keller") == err.approval
     assert ran == []
     with pytest.raises(KeyError):
-        Approvals().get(err.approval.id)
+        donkey.approvals.get(err.approval.id)
 
 
 @pytest.mark.parametrize("who", ["", "  "])
-def test_a_decision_must_name_who_made_it(who: str) -> None:
-    @Donkey.tool(approval="required")
+def test_a_decision_must_name_who_made_it(who: str, donkey: Donkey) -> None:
+    @donkey.tool(approval="required")
     def issue_refund(ticket_id: str) -> None:
         """Refund a ticket."""
 
     err = _requested(lambda: issue_refund("T-1"))
     with pytest.raises(ValueError, match="approved_by"):
-        Approvals().resolve(err.approval.id, approved_by=who)
+        donkey.approvals.resolve(err.approval.id, approved_by=who)
     with pytest.raises(ValueError, match="rejected_by"):
-        Approvals().reject(err.approval.id, rejected_by=who)
+        donkey.approvals.reject(err.approval.id, rejected_by=who)
     # A rejected decision consumes nothing.
-    assert Approvals().get(err.approval.id) == err.approval
+    assert donkey.approvals.get(err.approval.id) == err.approval
 
 
-def test_the_approver_lands_in_the_log(caplog: pytest.LogCaptureFixture) -> None:
-    @Donkey.tool(approval="required")
+def test_the_approver_lands_in_the_log(caplog: pytest.LogCaptureFixture, donkey: Donkey) -> None:
+    @donkey.tool(approval="required")
     def issue_refund(ticket_id: str) -> None:
         """Refund a ticket."""
 
     err = _requested(lambda: issue_refund("T-1"))
     with caplog.at_level(logging.INFO, logger="donkey_kit.core.approvals"):
-        Approvals().resolve(err.approval.id, approved_by="m.keller")
+        donkey.approvals.resolve(err.approval.id, approved_by="m.keller")
     (record,) = caplog.records
     assert "m.keller" in record.getMessage()
     assert err.approval.id in record.getMessage()
@@ -310,10 +324,10 @@ def test_an_approval_never_overrides_a_gateway_refusal() -> None:
 
 
 # --- timeout ----------------------------------------------------------------
-def test_an_unresolved_approval_times_out_with_a_typed_error(clock: _Clock) -> None:
+def test_an_unresolved_approval_times_out_with_a_typed_error(clock: _Clock, donkey: Donkey) -> None:
     ran: list[str] = []
 
-    @Donkey.tool(approval="required", approval_timeout="30s")
+    @donkey.tool(approval="required", approval_timeout="30s")
     def issue_refund(ticket_id: str) -> None:
         """Refund a ticket."""
         ran.append(ticket_id)
@@ -323,29 +337,29 @@ def test_an_unresolved_approval_times_out_with_a_typed_error(clock: _Clock) -> N
     clock.now += 30
     assert err.approval.expired
     with pytest.raises(ApprovalTimedOut) as info:
-        Approvals().resolve(err.approval.id, approved_by="m.keller")
+        donkey.approvals.resolve(err.approval.id, approved_by="m.keller")
     assert info.value.approval == err.approval
     assert info.value.correlation_id == err.approval.correlation_id
     assert ran == []
     with pytest.raises(KeyError):
-        Approvals().get(err.approval.id)
+        donkey.approvals.get(err.approval.id)
 
 
-def test_pending_drops_expired_approvals(clock: _Clock) -> None:
-    @Donkey.tool(approval="required", approval_timeout=timedelta(minutes=1))
+def test_pending_drops_expired_approvals(clock: _Clock, donkey: Donkey) -> None:
+    @donkey.tool(approval="required", approval_timeout=timedelta(minutes=1))
     def issue_refund(ticket_id: str) -> None:
         """Refund a ticket."""
 
     old = _requested(lambda: issue_refund("T-1")).approval
     clock.now += 45
     new = _requested(lambda: issue_refund("T-2")).approval
-    assert Approvals().pending() == (old, new)
+    assert donkey.approvals.pending() == (old, new)
     clock.now += 30
-    assert Approvals().pending() == (new,)
+    assert donkey.approvals.pending() == (new,)
 
 
-def test_the_default_timeout_is_fifteen_minutes() -> None:
-    @Donkey.tool(approval="required")
+def test_the_default_timeout_is_fifteen_minutes(donkey: Donkey) -> None:
+    @donkey.tool(approval="required")
     def issue_refund(ticket_id: str) -> None:
         """Refund a ticket."""
 
@@ -362,8 +376,10 @@ def _events(exporter: Any) -> list[tuple[str, dict[str, Any]]]:
     ]
 
 
-def test_a_pending_approval_is_a_span_event_without_the_arguments(spans: Any) -> None:
-    @Donkey.tool(approval="required", risk="financial")
+def test_a_pending_approval_is_a_span_event_without_the_arguments(
+    spans: Any, donkey: Donkey
+) -> None:
+    @donkey.tool(approval="required", risk="financial")
     def issue_refund(ticket_id: str) -> None:
         """Refund a ticket."""
 
@@ -378,18 +394,18 @@ def test_a_pending_approval_is_a_span_event_without_the_arguments(spans: Any) ->
     assert "T-secret" not in repr(spans.get_finished_spans()[0].to_json())
 
 
-def test_decisions_and_timeouts_are_span_events(spans: Any, clock: _Clock) -> None:
-    @Donkey.tool(approval="required", approval_timeout=10)
+def test_decisions_and_timeouts_are_span_events(spans: Any, clock: _Clock, donkey: Donkey) -> None:
+    @donkey.tool(approval="required", approval_timeout=10)
     def issue_refund(ticket_id: str) -> None:
         """Refund a ticket."""
 
     approved = _requested(lambda: issue_refund("T-1")).approval
     rejected = _requested(lambda: issue_refund("T-2")).approval
     expired = _requested(lambda: issue_refund("T-3")).approval
-    Approvals().resolve(approved.id, approved_by="m.keller")
-    Approvals().reject(rejected.id, rejected_by="a.ops")
+    donkey.approvals.resolve(approved.id, approved_by="m.keller")
+    donkey.approvals.reject(rejected.id, rejected_by="a.ops")
     clock.now += 10
-    assert Approvals().pending() == ()
+    assert donkey.approvals.pending() == ()
     decisions = [(n, a) for n, a in _events(spans) if n != "donkey.approval.pending"]
     assert decisions == [
         (
@@ -421,10 +437,116 @@ def test_decisions_and_timeouts_are_span_events(spans: Any, clock: _Clock) -> No
     ]
 
 
-def test_every_donkey_shares_one_registry() -> None:
+# --- which client records it (ADR 0018, #1423) -----------------------------
+def test_each_donkey_owns_its_own_registry() -> None:
     with Donkey(_cfg()) as a, Donkey(_cfg()) as b:
-        assert a.approvals is b.approvals
         assert isinstance(a.approvals, Approvals)
+        assert a.approvals is a.approvals
+        assert a.approvals is not b.approvals
+
+
+def test_a_call_in_a_clients_run_records_on_that_client() -> None:
+    @Donkey.tool(approval="required")
+    def issue_refund(ticket_id: str) -> None:
+        """Refund a ticket."""
+
+    with Donkey(_cfg()) as a, Donkey(_cfg()) as b:
+        with b.run():
+            err = _requested(lambda: issue_refund("T-1"))
+        assert b.approvals.pending() == (err.approval,)
+        assert a.approvals.pending() == ()
+        with pytest.raises(ApprovalNotFound) as info:
+            a.approvals.resolve(err.approval.id, approved_by="m.keller")
+        assert info.value.approval_id == err.approval.id
+        assert b.approvals.get(err.approval.id) == err.approval
+
+
+async def test_a_call_in_a_clients_as_user_block_records_on_that_client() -> None:
+    @Donkey.tool(approval="required")
+    async def issue_refund(ticket_id: str) -> None:
+        """Refund a ticket."""
+
+    with Donkey(_cfg()) as a, Donkey(_cfg()) as b:
+        async with b.as_user(token="user-token"):
+            with pytest.raises(ApprovalRequired) as info:
+                await issue_refund("T-1")
+        assert b.approvals.pending() == (info.value.approval,)
+        assert a.approvals.pending() == ()
+
+
+def test_the_running_scope_wins_over_the_declaring_client() -> None:
+    with Donkey(_cfg()) as a, Donkey(_cfg()) as b:
+
+        @a.tool(approval="required")
+        def issue_refund(ticket_id: str) -> None:
+            """Refund a ticket."""
+
+        with b.run():
+            err = _requested(lambda: issue_refund("T-1"))
+        assert b.approvals.pending() == (err.approval,)
+        assert a.approvals.pending() == ()
+        # Outside every scope it falls back to the client it was declared on.
+        later = _requested(lambda: issue_refund("T-2"))
+        assert a.approvals.pending() == (later.approval,)
+
+
+def test_a_bare_instance_decorator_declares_on_that_client(donkey: Donkey) -> None:
+    @donkey.tool
+    def lookup(ticket_id: str) -> str:
+        """Look a ticket up."""
+        return ticket_id
+
+    assert lookup("T-1") == "T-1"
+    # Declaring on an instance leaves nothing bound afterwards.
+    assert current_approvals_client() is None
+
+
+def test_a_class_declared_tool_outside_every_scope_raises_config_error() -> None:
+    ran: list[str] = []
+
+    @Donkey.tool(approval="required")
+    def issue_refund(ticket_id: str) -> None:
+        """Refund a ticket."""
+        ran.append(ticket_id)
+
+    with pytest.raises(ConfigError, match="no Donkey owns this call") as info:
+        issue_refund("T-1")
+    assert "donkey.run()" in info.value.remediation
+    assert ran == []
+
+
+def test_an_ungated_class_declared_tool_still_runs_anywhere() -> None:
+    @Donkey.tool
+    def lookup(ticket_id: str) -> str:
+        """Look a ticket up."""
+        return ticket_id
+
+    assert lookup("T-1") == "T-1"
+
+
+def test_a_used_approval_is_not_found_with_a_readable_message(donkey: Donkey) -> None:
+    @donkey.tool(approval="required")
+    def issue_refund(ticket_id: str) -> None:
+        """Refund a ticket."""
+
+    err = _requested(lambda: issue_refund("T-1"))
+    donkey.approvals.reject(err.approval.id, rejected_by="m.keller")
+    with pytest.raises(ApprovalNotFound) as info:
+        donkey.approvals.reject(err.approval.id, rejected_by="m.keller")
+    assert isinstance(info.value, KeyError)
+    assert isinstance(info.value, DonkeyError)
+    # Not KeyError's quoted repr.
+    assert str(info.value).startswith("no pending approval")
+    assert info.value.remediation.strip()
+
+
+def test_the_approval_errors_share_one_base() -> None:
+    assert issubclass(ApprovalRejected, ApprovalError)
+    assert issubclass(GatewayApprovalDenied, ApprovalError)
+    assert issubclass(GatewayApprovalDenied, PolicyViolation)
+    assert not issubclass(ApprovalRejected, PolicyViolation)
+    assert not issubclass(ApprovalRequired, ApprovalError)
+    assert not issubclass(ApprovalTimedOut, ApprovalError)
 
 
 def test_approval_is_a_frozen_value_object() -> None:

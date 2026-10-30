@@ -22,6 +22,7 @@ import sys
 import warnings
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
 from .core import _verify, spanflush
@@ -33,7 +34,6 @@ from .core.approvals import (
     gate,
     parse_timeout,
 )
-from .core.approvals import approvals as _approvals
 from .core.auth import AuthProvider
 from .core.budget import Budget
 from .core.cachecontrol import CacheControls, CacheScope, cache_scope
@@ -91,6 +91,7 @@ __all__ = ["Donkey", "ToolsFacade"]
 _Callable = TypeVar("_Callable", bound=Callable[..., Any])
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+_T = TypeVar("_T")
 
 
 def _missing_module(probe: tuple[str, ...]) -> str | None:
@@ -159,16 +160,53 @@ def _adk_approval(tool: str, arguments: Mapping[str, Any], risk: str | None) -> 
 # Strands and ADK hooks only for a call their hook or plugin approved.
 _NATIVES = (_openai_agents_approval, _strands_approval, _adk_approval, _langgraph_interrupt)
 
+# The approvals of the client whose ``donkey.tool`` is running, so a tool gated
+# there records on that client outside any of its scopes (ADR 0018).
+_declaring: ContextVar[Approvals | None] = ContextVar("donkey_declaring_client", default=None)
+
+
+class _ClientTool(staticmethod):  # type: ignore[type-arg]
+    """``Donkey.tool``: still a staticmethod, so ``@Donkey.tool`` names no client,
+    but read from an instance it declares the tools it gates on that client."""
+
+    def __get__(self, obj: object, *_: object) -> Callable[..., Any]:
+        func: Callable[..., Any] = self.__func__
+        if not isinstance(obj, Donkey):
+            return func
+        approvals = obj.approvals
+
+        @functools.wraps(func)
+        def declare(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+            token = _declaring.set(approvals)
+            try:
+                return func(*args, **kwargs)
+            finally:
+                _declaring.reset(token)
+
+        return declare
+
+
+def _client_bound(method: _T) -> _T:
+    return cast(_T, _ClientTool(cast(Any, method).__func__))
+
 
 class ToolsFacade:
     """``donkey.tools`` — discovery + lock (BG §2.7)."""
 
     def __init__(
-        self, registry: ExchangeRegistry, cfg: DonkeyConfig, llm_auth: AuthProvider | None
+        self,
+        registry: ExchangeRegistry,
+        cfg: DonkeyConfig,
+        llm_auth: AuthProvider | None,
+        approvals: Approvals | None = None,
     ) -> None:
         self._registry = registry
         self._discovery = Discovery(
-            registry, cfg, auth=gateway_auth(cfg, llm_auth), natives=_NATIVES
+            registry,
+            cfg,
+            auth=gateway_auth(cfg, llm_auth),
+            natives=_NATIVES,
+            approvals=approvals,
         )
 
     async def discover(
@@ -384,7 +422,8 @@ class Donkey:
         self._control_http: DonkeyAsyncClient = self._runtime.control_http
         self._llm = LLMClient(self._cfg, self._http, self._sync_http_client)
         self._registry = ExchangeRegistry(self._cfg, self._control_http)
-        self._tools = ToolsFacade(self._registry, self._cfg, self._llm_auth)
+        self._approvals = Approvals()
+        self._tools = ToolsFacade(self._registry, self._cfg, self._llm_auth, self._approvals)
         self._adapter_cache: dict[str, Adapter] = {}
 
     @classmethod
@@ -681,6 +720,7 @@ class Donkey:
             business_group,
             ledger_max_entries=ledger_max_entries,
             surface=self._unobservable_surface,
+            client=self._approvals,
         )
 
     def run_from_headers(
@@ -736,6 +776,7 @@ class Donkey:
             inbound.source,
             ledger_max_entries=ledger_max_entries,
             surface=self._unobservable_surface,
+            client=self._approvals,
         )
 
     def correlation_headers(self) -> dict[str, str]:
@@ -926,7 +967,7 @@ class Donkey:
                 directory's config files, which only receive the token with
                 ``DONKEY_TRUST_PROJECT_CONFIG=1`` (#1439).
         """
-        return UserScope(self._cfg, token)
+        return UserScope(self._cfg, token, client=self._approvals)
 
     # --- one-line on-ramps: decorators (#200) ------------------------------
     # The overloads keep the decorated callable's own signature, for both the
@@ -1049,6 +1090,7 @@ class Donkey:
         server: str | None = None,
     ) -> Callable[[_Callable], _Callable]: ...
 
+    @_client_bound
     @staticmethod
     def tool(
         func: _Callable | None = None,
@@ -1097,6 +1139,12 @@ class Donkey:
                 ...  # ask a human, then:
                 await donkey.approvals.resolve(err.approval.id, approved_by="m.keller")
 
+        The approval is recorded on the client whose :meth:`run` or
+        :meth:`as_user` block runs the call; outside one, on the client the
+        tool was declared on (``@donkey.tool`` on an instance). A gated tool
+        declared on the class (``@Donkey.tool``) and called outside every
+        block raises :class:`~donkey_kit.core.errors.ConfigError` (ADR 0018).
+
         Inside a LangGraph graph run with a checkpointer, the call pauses the
         graph with LangGraph's own ``interrupt()`` instead. Under the OpenAI
         Agents SDK, build the tool with
@@ -1138,9 +1186,14 @@ class Donkey:
         timeout = parse_timeout(approval_timeout)
         if server is not None:
             validate_service_id(server)
+        declared_on = _declaring.get()
 
         def decorate(fn: _Callable) -> _Callable:
-            target = gate(fn, risk=risk, timeout=timeout, natives=_NATIVES) if approval else fn
+            target = (
+                gate(fn, risk=risk, timeout=timeout, natives=_NATIVES, declared_on=declared_on)
+                if approval
+                else fn
+            )
             return register_tool(target, approval=approval, risk=risk, server=server)
 
         # Bare ``@donkey.tool`` passes the callable positionally; the
@@ -1262,14 +1315,16 @@ class Donkey:
 
     @property
     def approvals(self) -> Approvals:
-        """The pending tool approvals of this process (`BG §2.3`): resolve or
-        reject the call a :class:`~donkey_kit.core.approvals.ApprovalRequired`
-        names. Process-wide, like the tool registry, so every ``Donkey`` returns
-        the same one.
+        """This client's pending tool approvals (`BG §2.3`): resolve or reject
+        the call a :class:`~donkey_kit.core.approvals.ApprovalRequired` names.
+        Each ``Donkey`` owns its own (ADR 0018): it holds the gated calls run
+        in this client's :meth:`run` / :meth:`as_user` blocks, and those of the
+        tools declared on it with :meth:`tool` or bound from its
+        ``tools.discover()`` when they run outside any block.
 
         Docs: https://docs.donkey-kit.dev/hitl
         """
-        return _approvals
+        return self._approvals
 
     def on(self, refusal: type[PolicyViolation]) -> OnRefusal:
         """Declare once what to do when a call is refused with ``refusal`` (`BG §2.1`).

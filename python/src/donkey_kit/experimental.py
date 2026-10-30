@@ -38,6 +38,7 @@ from .registry import (
     Publication,
     PublicationAssetType,
 )
+from .registry.introspect import DescriptorMismatch
 
 if TYPE_CHECKING:
     # The redundant ``as`` marks an explicit re-export, so a type checker still
@@ -73,6 +74,7 @@ __all__ = [
     "AssetRef",
     "AssetType",
     "Contact",
+    "DescriptorMismatch",
     "Publication",
     "PublicationAssetType",
     "PublicationDrift",

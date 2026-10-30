@@ -229,7 +229,7 @@ _BLOCKED_ONLY = {
 
 # Blocked-only names added to donkey_kit.experimental after #730. They were never
 # in the stable namespace, so they have no deprecated top-level alias.
-_NEW_IN_EXPERIMENTAL = {"tool_access_denial"}
+_NEW_IN_EXPERIMENTAL = {"DescriptorMismatch", "tool_access_denial"}
 
 # Names that moved up from donkey_kit.experimental once the surfaces that take
 # and raise them were verified (#1425). experimental keeps a deprecated alias.

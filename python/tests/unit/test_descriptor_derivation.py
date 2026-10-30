@@ -26,6 +26,7 @@ from typing import Any
 
 import pytest
 
+from donkey_kit import DonkeyError
 from donkey_kit.registry.introspect import DerivationMode, DescriptorMismatch, derive_descriptor
 from donkey_kit.registry.publication import content_digest
 
@@ -239,8 +240,12 @@ async def test_check_fails_on_drift(user_module: str, tmp_path: Path) -> None:
     committed = tmp_path / "descriptor.json"
     committed.write_text(json.dumps({"tools": _EXPECTED["tools"][:1]}), encoding="utf-8")
 
-    with pytest.raises(DescriptorMismatch, match="differs from"):
+    with pytest.raises(DescriptorMismatch, match="differs from") as drift:
         await derive_descriptor(f"{user_module}:TOOLS", mode="auto:check", against=committed)
+    # A DonkeyError with a next step, and still the ValueError it was (#1423).
+    assert isinstance(drift.value, DonkeyError)
+    assert isinstance(drift.value, ValueError)
+    assert "mode='auto'" in drift.value.remediation
 
 
 @pytest.mark.parametrize(

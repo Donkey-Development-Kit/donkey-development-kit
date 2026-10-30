@@ -26,7 +26,7 @@ import pytest
 
 from donkey_kit import ApprovalRequired, Donkey
 from donkey_kit import donkey as donkey_mod
-from donkey_kit.core.approvals import Approval
+from donkey_kit.core.approvals import Approval, Approvals
 from donkey_kit.core.correlation import run_scope
 from donkey_kit.integrations import adk as adk_mod
 from donkey_kit.integrations.adk import (
@@ -320,7 +320,7 @@ def test_an_approved_call_runs_once_under_the_pause(
     assert issue_refund("T-1") == "refunded T-1"  # the gate lets it through
     assert ran == ["T-1"]
     # One approval runs one call.
-    with pytest.raises(ApprovalRequired):
+    with run_scope("run-2", client=Approvals()), pytest.raises(ApprovalRequired):
         issue_refund("T-1")
 
 

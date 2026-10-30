@@ -306,7 +306,7 @@ Guide: [`/a2a`](/a2a)
 donkey.approvals: Approvals
 ```
 
-The pending tool approvals of this process: resolve or reject the call a `ApprovalRequired` names. Process-wide, like the tool registry, so every `Donkey` returns the same one.
+This client's pending tool approvals: resolve or reject the call a `ApprovalRequired` names. Each `Donkey` owns its own: it holds the gated calls run in this client's `run` / `as_user` blocks, and those of the tools declared on it with `tool` or bound from its `tools.discover()` when they run outside any block.
 
 Guide: [`/hitl`](/hitl)
 
@@ -613,7 +613,9 @@ is raised.
 | Exception | Base | Meaning |
 |---|---|---|
 | `AgentKilled` | `PolicyViolation` | The gateway's Agent Kill Switch blocked this agent — it is quarantined in Governance > Security, or listed in the policy's *Killed Agent IDs*. |
-| `ApprovalRejected` | `DonkeyError` | A human rejected an approval-gated call that a framework paused natively, so the tool was not run. `approval` is the call. |
+| `ApprovalError` | `DonkeyError` | An approval was refused, so the call it gated did not happen. |
+| `ApprovalNotFound` | `DonkeyError` | No approval with this id is pending in this client's `donkey.approvals`: it was already resolved or rejected, it was recorded by another `Donkey` or process, or the process restarted. `approval_id` is the id. |
+| `ApprovalRejected` | `ApprovalError` | A human rejected an approval-gated call that a framework paused natively, so the tool was not run. `approval` is the call. |
 | `ApprovalRequired` | `DonkeyError` | A `@donkey.tool(approval="required")` tool was called, and was not run. |
 | `ApprovalTimedOut` | `DonkeyError` | A pending approval passed its timeout before anyone resolved it, so the call was not made. `approval` is the expired call. |
 | `AuthError` | `DonkeyError` | Rejected credentials on the Anypoint control plane or LLM-proxy data plane. |
@@ -644,7 +646,7 @@ is raised.
 | `A2ATask` | class | One A2A task handed to a `donkey.serve()` handler. |
 | `AgentSpec` | class | An introspectable record of a `@donkey.agent`-marked entry point. |
 | `Approval` | class | One call of an approval-gated tool, waiting for a human. A framework adapter's approval helpers carry the framework's own object on `native`. |
-| `Approvals` | class | `donkey.approvals`: this process's pending tool approvals. |
+| `Approvals` | class | `donkey.approvals`: one client's pending tool approvals. |
 | `AttributionScope` | class | A **dual sync/async** context manager that attributes the governed calls in its block to a business group and cost tags, without starting a run. |
 | `Budget` | class | The token-budget window for one `Donkey`, updated in-band from each response's budget headers (numeric `x-token-*` or the prose `x-llm-proxy-ratelimit` fallback). Its request-count sibling is `requests`. |
 | `CacheControls` | class | The per-request semantic-cache steering controls. |

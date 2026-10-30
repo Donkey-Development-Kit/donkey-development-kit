@@ -43,6 +43,7 @@ __all__ = [
     "CorrelationSource",
     "RunScope",
     "attribution_scope",
+    "current_approvals_client",
     "current_business_group",
     "current_correlation_id",
     "current_correlation_source",
@@ -73,6 +74,15 @@ _cost_tags: ContextVar[CostTags | None] = ContextVar("donkey_cost_tags", default
 # teams attributes each call to its own group. Read by the transport per send, so
 # it overrides ``DonkeyConfig.business_group`` for the block only.
 _business_group: ContextVar[str | None] = ContextVar("donkey_business_group", default=None)
+# The approvals registry of the client whose ``donkey.run()`` or ``donkey.as_user()``
+# block runs this code (#1423, ADR 0018): a gated tool records its pending call
+# there. Typed ``object``: ``approvals.Approvals`` sits above this module.
+_approvals_client: ContextVar[object | None] = ContextVar("donkey_approvals_client", default=None)
+
+
+def current_approvals_client() -> object | None:
+    """The approvals registry bound by the enclosing client scope, or ``None``."""
+    return _approvals_client.get()
 
 
 def new_correlation_id() -> str:
@@ -174,6 +184,9 @@ class RunScope:
     refusal in it, read inside at ``donkey.current_run`` and after exit at
     :attr:`ledger`. A scope that rebinds the enclosing run's own id shares that
     run's ledger.
+
+    ``donkey.run()`` also binds its client's approvals registry (#1423), so an
+    approval-gated tool called in the block is resolved on that client.
     """
 
     __slots__ = (
@@ -190,6 +203,8 @@ class RunScope:
         "_surface",
         "_ledger",
         "_ledger_token",
+        "_client",
+        "_client_token",
     )
 
     def __init__(
@@ -201,8 +216,11 @@ class RunScope:
         source: CorrelationSource | None = None,
         ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
         surface: Callable[[], str | None] | None = None,
+        client: object | None = None,
     ) -> None:
         self._run_id = run_id
+        self._client = client
+        self._client_token: Any = None
         self._source = source
         self._refusals = refusals
         self._max_entries = checked_max_entries(ledger_max_entries)
@@ -229,6 +247,8 @@ class RunScope:
         if self._group is not None:
             self._group_token = _business_group.set(self._group)
         self._ledger, self._ledger_token = bind_run_ledger(rid, self._max_entries)
+        if self._client is not None:
+            self._client_token = _approvals_client.set(self._client)
         return rid
 
     @property
@@ -240,6 +260,9 @@ class RunScope:
         return self._ledger.snapshot(self._surface() if self._surface is not None else None)
 
     def _unbind(self) -> None:
+        if self._client_token is not None:
+            _approvals_client.reset(self._client_token)
+            self._client_token = None
         if self._ledger_token is not None:
             unbind_run_ledger(self._ledger_token)
             self._ledger_token = None
@@ -365,14 +388,19 @@ def run_scope(
     source: CorrelationSource | None = None,
     ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
     surface: Callable[[], str | None] | None = None,
+    client: object | None = None,
 ) -> RunScope:
     """Build a :class:`RunScope` — the dual sync/async run correlation binding
     behind ``donkey.run(id=...)`` (BG §1.1, #195), optionally carrying per-run
     cost-tag overrides (#196), a per-request business group (#310), the
     typed-refusal bridge applied on exit (#724), and where an inbound run's id
     came from (#308), with a run ledger of ``ledger_max_entries`` (#613).
-    ``surface`` names the adapters that cannot feed the ledger, if any."""
-    return RunScope(run_id, cost, refusals, business_group, source, ledger_max_entries, surface)
+    ``surface`` names the adapters that cannot feed the ledger, if any. ``client``
+    is the approvals registry of the ``Donkey`` opening the run, bound for the
+    block so a gated tool called in it records its approval there (#1423)."""
+    return RunScope(
+        run_id, cost, refusals, business_group, source, ledger_max_entries, surface, client
+    )
 
 
 def run_context(run_id: str | None = None) -> RunScope:

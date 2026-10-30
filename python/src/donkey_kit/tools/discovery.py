@@ -25,7 +25,7 @@ from typing import Any, Literal
 import httpx
 
 from ..core import _verify, telemetry
-from ..core.approvals import NativePause
+from ..core.approvals import Approvals, NativePause
 from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, RegistryError
@@ -78,6 +78,8 @@ class Discovery:
             by :func:`~donkey_kit.tools.auth.gateway_auth`; the endpoint check
             weighs it by the source of the fields it was built from.
         natives: The framework approval pauses (#1153).
+        approvals: The client's ``donkey.approvals``, which a gated tool of a
+            discovered set records on outside any client scope (ADR 0018).
     """
 
     def __init__(
@@ -87,11 +89,13 @@ class Discovery:
         *,
         auth: McpAuth | None,
         natives: tuple[NativePause, ...] = (),
+        approvals: Approvals | None = None,
     ) -> None:
         self._registry = registry
         self._cfg = cfg
         self._auth = auth
         self._natives = natives
+        self._approvals = approvals
         self._cache: TTLCache[_Found] = TTLCache(ttl_s=cfg.registry_cache_ttl_s)
         self._said_unfiltered = False
 
@@ -122,6 +126,7 @@ class Discovery:
         return ToolSet(
             list(found.servers),
             _natives=self._natives,
+            _approval_registry=self._approvals,
             _auth=auth if auth is not None else self._auth,
             _discovered=(found.at, found.started, self._cfg.registry_cache_ttl_s),
             _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
@@ -225,6 +230,7 @@ class Discovery:
         return ToolSet(
             [handle],
             _natives=self._natives,
+            _approval_registry=self._approvals,
             _auth=auth if auth is not None else self._auth,
             _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
             _user_header=user_token_header(self._cfg),

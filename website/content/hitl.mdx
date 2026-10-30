@@ -102,8 +102,22 @@ never the arguments.
 
 ## Resolving
 
-`donkey.approvals` is the process's registry of pending approvals. Every
-`Donkey` in the process returns the same one.
+`donkey.approvals` holds this client's pending approvals. Each `Donkey` owns
+its own, so a client resolves only the approvals its own calls recorded. A
+gated call records its approval on the first of these that applies:
+
+1. The client whose `donkey.run()` or `donkey.as_user()` block runs the call.
+2. The client the tool was declared on: `@donkey.tool(approval="required")` on
+   an instance, or the client whose `tools.discover()` built the
+   [`ToolSet`](#discovered-tools-local-round-trip).
+3. Neither: the call raises `ConfigError` and the tool does not run. This is a
+   tool declared on the class, `@Donkey.tool(approval="required")`, called
+   outside every block. Call it inside `donkey.run()`, or declare it on your
+   `Donkey` instance.
+
+So the decorator form at the top of this page records on `donkey`, wherever the
+tool is called, unless another client's block runs it. Bare `@Donkey.tool`
+without `approval=` names no client and needs none.
 
 - `resolve(id, approved_by=...)` records the approver and runs the tool with
   the arguments it was called with. It returns what the tool returns. For an
@@ -114,8 +128,10 @@ never the arguments.
   returns one.
 
 `approved_by` and `rejected_by` must be non-empty. Each approval is decided
-once: resolving or rejecting an id that is no longer pending raises
-`KeyError`. DDK records the name you pass and does not authenticate it.
+once: resolving or rejecting an id that is no longer pending, or that another
+`Donkey` recorded, raises `ApprovalNotFound`. It is a `DonkeyError` and still a
+`KeyError`, so an `except KeyError` keeps working. DDK records the name you
+pass and does not authenticate it.
 
 The resumed call runs under the approval's `correlation_id`, not the
 correlation of the code that resolves it. So the gateway's records for every
@@ -159,9 +175,11 @@ SDK, call `pending_approvals` inside the `as_user()` block that ran the agent.
 
 <Callout type="warning">
   A framework pause keeps its requester in process memory only, for the most
-  recent 1,024 pauses. DDK never writes the token into a checkpoint or a run
-  state. A pause resumed after a restart, or in another process, runs as the
-  resuming code's own binding. Only the gated tool is re-bound, so the
+  recent 1,024 pauses, by the framework's approval id. DDK never writes the
+  token into a checkpoint or a run state. A pause resumed after a restart, or
+  in another process, runs as the resuming code's own binding, and DDK logs a
+  `WARNING` on the `donkey_kit.core.approvals` logger naming the approval.
+  Only the gated tool is re-bound, so the
   framework's other model calls in the resumed run use the resuming code's
   binding too. To run the whole resumed run as the requester, resume it inside
   their `as_user()` block.
@@ -190,6 +208,12 @@ whatever span is current, with one event:
 | `donkey.approval.approved` | `donkey.approval.approved_by` |
 | `donkey.approval.rejected` | `donkey.approval.rejected_by` |
 | `donkey.approval.timed_out` | — |
+| `donkey.approval.resume_refused` | — |
+
+`donkey.approval.resume_refused` marks a framework pause that was approved but
+whose resume DDK refused with `AuthError`, because it ran as another user (see
+[Who a resumed call runs as](#who-a-resumed-call-runs-as)). The trail then
+shows that the approved tool never ran.
 
 Every event also carries `gen_ai.tool.name`, `donkey.approval.id`,
 `donkey.correlation_id` and, when the tool declared one,
@@ -208,8 +232,8 @@ read, so `DONKEY_TELEMETRY=false` does not stop them reaching a
 
 ## Pending approvals live in memory
 
-The registry is in-process memory. A restart forgets every pending approval,
-and resolving one after a restart raises `KeyError`. When a pause has to
+Each client's registry is in-process memory. A restart forgets every pending
+approval, and resolving one after a restart raises `ApprovalNotFound`. When a pause has to
 survive a restart, use a framework's own durable pause, such as LangGraph's
 checkpointer or the OpenAI Agents SDK's serialised `RunState` (see below).
 
@@ -637,7 +661,9 @@ tools = tools.require_approval(tools=["issue_refund", "void_invoice"], risk="fin
 
 A call to a gated tool behaves exactly like a gated `@donkey.tool`: it raises
 `ApprovalRequired`, or pauses a LangGraph graph with `interrupt()`, records the
-same span events, and resolves through `donkey.approvals`. `Approval.arguments`
+same span events, and resolves through `donkey.approvals`: the client whose
+`donkey.run()` or `as_user()` block runs the call, else the client whose
+`tools.discover()` built the set. `Approval.arguments`
 holds the tool's arguments by name, taken from its input schema.
 
 | Keyword | Default | Meaning |
@@ -652,7 +678,9 @@ holds the tool's arguments by name, taken from its input schema.
   `"billing__issue_refund"`, gates only that server's tool.
 - **Per-tool bindings only.** LangGraph, LlamaIndex and the Anthropic SDK
   gate the call. The whole-server bindings (ADK, Strands, the OpenAI Agents
-  SDK, Agent Framework, CrewAI) raise `NotImplementedError` for a set with a rule; see
+  SDK, Agent Framework, CrewAI) raise `ConfigError` for a set with a rule,
+  because they bind a whole server as one object and there is no per-tool call
+  to hold. Bind a per-tool framework, or use the framework's own approval; see
   [Whole-server bindings](/tool-access/binding#whole-server-bindings).
 - **A typo fails at bind time.** Binding raises `ConfigError` for a name that no
   server in the set exposes, so a misspelt name can never leave a tool ungated.
@@ -681,7 +709,14 @@ for what it is, not as a bad credential:
 | `502`, `{"error":"ciba_initiation_failed"}` | `UpstreamModelError`, as for any `5xx` | The gateway could not start the approval request. |
 
 `GatewayApprovalPending` is a `DonkeyError`, not a `PolicyViolation`: nothing
-has been refused yet. Each rule needs its status and its body, so a plain `401`
+has been refused yet.
+
+`GatewayApprovalDenied` and `ApprovalRejected` share the base
+`ApprovalError`, so one `except ApprovalError` catches both refusals. They stay
+two types because different parties said no. `GatewayApprovalDenied` is the
+gateway's own step-up, refused by the user out of band, and is also a
+`PolicyViolation`. `ApprovalRejected` is a reviewer rejecting a DDK approval in
+a framework pause, and no gateway was involved. Each rule needs its status and its body, so a plain `401`
 or `403` is still an `AuthError`. See [Typed refusals](/errors) for the rest of
 the taxonomy.
 

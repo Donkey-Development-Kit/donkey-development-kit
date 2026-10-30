@@ -33,6 +33,7 @@ from typing import Any, TypeVar
 
 from . import errors
 from ._refusal_body import retry_after, str_or_none
+from .approval_types import ApprovalError
 from .errors import DonkeyError, PolicyViolation
 
 __all__ = ["GatewayApprovalDenied", "GatewayApprovalPending", "wait_for_approval"]
@@ -67,13 +68,17 @@ class GatewayApprovalPending(DonkeyError):
         self.retry_after = retry_after
 
 
-class GatewayApprovalDenied(PolicyViolation):
+class GatewayApprovalDenied(PolicyViolation, ApprovalError):
     """The user denied the out-of-band (CIBA) approval the gateway requested (#1320).
 
     Terminal and never retried, like every
-    :class:`~donkey_kit.core.errors.PolicyViolation`. The gateway caches the decision. On OBO
-    policy 1.1.3 the cache key is the user (``login_hint``) rather than the conversation, so a
-    retry, a fresh token or a new A2A ``contextId`` gets the same denial until that entry
+    :class:`~donkey_kit.core.errors.PolicyViolation`. Also an
+    :class:`~donkey_kit.core.approval_types.ApprovalError`, beside
+    ``ApprovalRejected``: here the gateway said no, there a human did (#1423).
+
+    The gateway caches the decision. On OBO policy 1.1.3 the cache key is the
+    user (``login_hint``) rather than the conversation, so a retry, a fresh
+    token or a new A2A ``contextId`` gets the same denial until that entry
     expires (up to an hour was observed).
     """
 
