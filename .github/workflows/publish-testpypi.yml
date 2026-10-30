@@ -1,6 +1,8 @@
-# Publish to TestPyPI (dev dry-run) via Trusted Publishing (OIDC) — #206/#410/#674.
+# Publish to TestPyPI via Trusted Publishing (OIDC) — #206/#410/#674.
+# Takes any version on the ladder (.devN, aN, bN, rcN, or a final X.Y.Z staged
+# for its acceptance run before the PyPI upload); see docs/releasing.md (#1435).
 # Strictly MANUAL: fires only on workflow_dispatch, and only from `develop`
-# (the branch dev snapshots originate on). It does NOT listen to release events
+# (the branch every version is bumped on). It does NOT listen to release events
 # — a pre-release GitHub Release, if one is ever cut, publishes nowhere; it no
 # longer falls through to TestPyPI. Trust is keyed on this filename
 # (publish-testpypi.yml) + the `testpypi` Environment; register it once on
@@ -66,7 +68,7 @@ jobs:
       - name: twine check (PyPI long description renders cleanly)
         run: twine check dist/*
       - name: every dist carries the declared version (#767)
-        # No tag here (dev snapshots are not GitHub Releases), but a stale or
+        # No tag here (TestPyPI builds are not GitHub Releases), but a stale or
         # mis-spelled version must still fail before the unreusable upload.
         run: python scripts/check_release_version.py dist/*
       - name: the declared version, for the acceptance dispatch (#1082)
@@ -108,8 +110,8 @@ jobs:
     # Every gate passes first: the suite at this commit, and the build job's
     # version check and clean-install smoke test (#767).
     needs: [test, build]
-    # develop-scoped: a dispatch from any other ref is skipped — a dev snapshot
-    # only ever ships from develop, matching the branch model.
+    # develop-scoped: a dispatch from any other ref is skipped — a TestPyPI
+    # build only ever ships from develop, matching the branch model.
     if: ${{ github.ref == 'refs/heads/develop' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10

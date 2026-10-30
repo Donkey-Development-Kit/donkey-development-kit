@@ -73,9 +73,11 @@ X.Y.Z.dev0  <  X.Y.Z.dev1  <  …  <  X.Y.Za1  <  X.Y.Zb1  <  X.Y.Zrc1  <  X.Y.Z
    dev0            devN            alpha 1       beta 1      rc 1        final
 ```
 
-Each rung maps to a different publish outcome. Only `.devN` builds reach
-TestPyPI, and only a final `X.Y.Z` reaches production PyPI. Amber boxes are
-indexes a build lands on. The grey box is the dead end for pre-release
+Every rung can reach TestPyPI, by a manual dispatch from `develop`: `.devN`
+snapshots, `aN` / `bN` / `rcN` candidates, and a final `X.Y.Z` staged there
+for the acceptance run before its production upload. Only a final `X.Y.Z`
+reaches production PyPI, through a non-pre-release GitHub Release. Amber boxes
+are indexes a build lands on. The grey box is the dead end for pre-release
 GitHub Releases.
 
 ```mermaid
@@ -88,6 +90,10 @@ flowchart LR
 
   dev0 -.->|manual dispatch| testpypi[("TestPyPI")]
   devN -.->|manual dispatch| testpypi
+  a1 -.->|manual dispatch| testpypi
+  b1 -.->|manual dispatch| testpypi
+  rc1 -.->|manual dispatch| testpypi
+  final -.->|manual dispatch, staging| testpypi
   a1 -.->|pre-release Release| nowhere["Publishes nowhere"]
   b1 -.->|pre-release Release| nowhere
   rc1 -.->|pre-release Release| nowhere
@@ -150,7 +156,7 @@ overlap:
 flowchart TD
   start{What are you shipping?}
 
-  start -->|dev snapshot| bump["Bump .devN in __version__<br/>and land it on develop"]
+  start -->|any ladder version<br/>to TestPyPI| bump["Bump __version__<br/>and land it on develop"]
   bump --> dispatch["Actions → Publish to TestPyPI<br/>→ Run workflow"]
   dispatch --> ref{Dispatched from develop?}
   ref -->|no| skipped["publish job skipped"]
@@ -175,18 +181,19 @@ flowchart TD
   class skipped,nowhere dead
 ```
 
-- **Dev snapshots → TestPyPI, via `publish-testpypi.yml`'s manual
-  `workflow_dispatch`.** Dev builds are deliberately **not** GitHub Releases —
-  the Releases page is reserved for real releases. To dry-run: bump the
-  `.devN` counter (see [Versioning & naming](#versioning--naming)) in
-  `__version__` (`scripts/bump-version.sh`), land it on `develop`, then
-  **Actions → Publish to TestPyPI → Run workflow** on `develop`. The publish
-  job is guarded to `refs/heads/develop` — a dispatch from any other ref is
-  skipped. It
-  publishes to `https://test.pypi.org/legacy/` via OIDC — the same
-  trusted-publishing path prod uses. Each dry-run needs a fresh `.devN`: a
-  filename, once uploaded to TestPyPI, can never be reused, even after
-  deletion.
+- **Any ladder version → TestPyPI, via `publish-testpypi.yml`'s manual
+  `workflow_dispatch`.** The workflow takes whatever `__version__` reads, as
+  long as it is a normalised ladder version: a `.devN` snapshot, an
+  `aN` / `bN` / `rcN` candidate, or a final `X.Y.Z` staged for its acceptance
+  run before the production upload. None of these builds is a GitHub Release, because the Releases page is
+  reserved for tagged releases on `main`. To publish one: bump `__version__` (see
+  [Versioning & naming](#versioning--naming); `scripts/bump-version.sh`), land
+  it on `develop`, then **Actions → Publish to TestPyPI → Run workflow** on
+  `develop`. The publish job is guarded to `refs/heads/develop` — a dispatch
+  from any other ref is skipped. It publishes to
+  `https://test.pypi.org/legacy/` via OIDC — the same trusted-publishing path
+  prod uses. Each upload needs a version TestPyPI has not seen: a filename,
+  once uploaded to TestPyPI, can never be reused, even after deletion.
 - **Final release → production PyPI, via `publish-pypi.yml` reacting to a
   published GitHub Release.** The **first published GitHub Release is
   `0.1.0`**; that and every later final `X.Y.Z` route to prod. Finish the
@@ -262,7 +269,7 @@ green and consumers still can't use the package.
 Half of it runs itself (#1082). After the TestPyPI upload,
 `publish-testpypi.yml`'s `acceptance` job dispatches the suite's offline groups
 (public surface, packaging, verification-blocked surfaces: no credentials, no
-gateway) against the `.devN` it just published, waits for them, and posts the
+gateway) against the version it just published, waits for them, and posts the
 result as the `acceptance (published)` commit status on the published commit.
 That commit is the promotion PR's head, so the PR shows the result. A red,
 errored or missing status blocks the promotion the same way a failed run does.
@@ -270,7 +277,7 @@ If `develop` moved after the publish, the status sits on the older commit:
 publish again from the new tip, or check the status on that commit.
 
 The live groups stay manual, because they call a real gateway. Run them
-against the same `.devN` before you open the promotion PR. How to run them, and
+against the same version before you open the promotion PR. How to run them, and
 how to tell a run that tested something from one that skipped everything, is
 documented in that repository.
 
