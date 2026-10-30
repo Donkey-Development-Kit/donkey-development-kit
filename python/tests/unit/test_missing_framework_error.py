@@ -28,7 +28,7 @@ from donkey_kit import Donkey
 from donkey_kit.core.approvals import Approval
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.transport import build_http_client
-from donkey_kit.integrations import ADAPTERS, _base, adk
+from donkey_kit.integrations import ADAPTERS, _base, adk, langgraph
 
 _MISSING_DEP = "_ddk_test_missing_dependency"
 
@@ -82,6 +82,26 @@ def _paused_adk_approval() -> Approval:
     )
 
 
+def _paused_langgraph_approval() -> Approval:
+    """An approval as LangGraph's ``pending_approvals()`` returns it: ``approve()``
+    and ``reject()`` check its ``native`` interrupt before importing
+    ``langgraph.types``."""
+    interrupt = types.SimpleNamespace(
+        id="interrupt-1",
+        value={"type": langgraph.APPROVAL_INTERRUPT, "approval_id": "a1"},
+    )
+    return Approval(
+        id="a1",
+        tool="issue_refund",
+        arguments=types.MappingProxyType({}),
+        risk=None,
+        correlation_id="a1",
+        requested_at=0.0,
+        expires_at=math.inf,
+        native=interrupt,
+    )
+
+
 # (helper, the module it imports lazily, call) for the module-level helpers that
 # import their framework with no adapter to go through (#1440). The call takes
 # the adapter's module.
@@ -91,6 +111,23 @@ HELPERS: dict[str, list[tuple[str, str, _Call]]] = {
         ("approval_plugin", "google.adk.plugins", lambda m: m.approval_plugin()),
         ("approve", "google.genai", lambda m: m.approve(_paused_adk_approval(), by="m.keller")),
         ("reject", "google.genai", lambda m: m.reject(_paused_adk_approval(), by="m.keller")),
+    ],
+    "langgraph": [
+        (
+            "approve",
+            "langgraph.types",
+            lambda m: m.approve(_paused_langgraph_approval(), by="m.keller"),
+        ),
+        (
+            "reject",
+            "langgraph.types",
+            lambda m: m.reject(_paused_langgraph_approval(), by="m.keller"),
+        ),
+        (
+            "approval_interrupt",
+            "langgraph.config",
+            lambda m: m.approval_interrupt("issue_refund", {}, None),
+        ),
     ],
 }
 
