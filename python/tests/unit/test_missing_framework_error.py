@@ -61,6 +61,21 @@ CASES = [
     for factory, module, call in factories
 ]
 
+# (method, the module it imports lazily, call) for the adapter methods that
+# import their framework but have no module-level form (#1503). The call takes
+# the adapter.
+METHODS: dict[str, list[tuple[str, str, _Call]]] = {
+    "agent_framework": [
+        ("policy_middleware", "agent_framework", lambda a: a.policy_middleware()),
+    ],
+}
+
+METHOD_CASES = [
+    pytest.param(attr, method, module, call, id=f"{attr}.{method}")
+    for attr, methods in METHODS.items()
+    for method, module, call in methods
+]
+
 
 def _paused_adk_approval() -> Approval:
     """An approval as ADK's ``pending_approvals()`` returns it: ``approve()`` and
@@ -212,7 +227,7 @@ def test_every_adapter_has_its_factories_listed() -> None:
     assert set(FACTORIES) == set(ADAPTERS)
 
 
-@pytest.mark.parametrize(("attr", "factory", "module", "call"), CASES)
+@pytest.mark.parametrize(("attr", "factory", "module", "call"), [*CASES, *METHOD_CASES])
 def test_donkey_form_raises_curated_error(
     attr: str, factory: str, module: str, call: _Call, missing: Callable[[str], str]
 ) -> None:
@@ -224,7 +239,7 @@ def test_donkey_form_raises_curated_error(
     assert reported in str(exc.value) or "no module named" in str(exc.value)
 
 
-@pytest.mark.parametrize(("attr", "factory", "module", "call"), CASES)
+@pytest.mark.parametrize(("attr", "factory", "module", "call"), [*CASES, *METHOD_CASES])
 async def test_adapter_method_raises_curated_error(
     attr: str, factory: str, module: str, call: _Call, missing: Callable[[str], str]
 ) -> None:
