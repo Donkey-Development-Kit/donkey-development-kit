@@ -1058,6 +1058,9 @@ def api_reference() -> str:
         "`RefusalContext` (what a [refusal handler](/refusal-handlers) receives),",
         "`RunUsage` (`RunLedger.usage`) and `PolicyRegistration` (what",
         "`classify.registered()` returns); import them from `donkey_kit.core`.",
+        "So is a method of a stable object whose docstring says *Provisional*",
+        "(`help()` shows it), such as `donkey.tools.live_tools()` and",
+        "`donkey.tools.live_card()`.",
         "`donkey_kit.experimental` holds types for surfaces that are still blocked",
         "on verification, and they may change in any release.",
     ]

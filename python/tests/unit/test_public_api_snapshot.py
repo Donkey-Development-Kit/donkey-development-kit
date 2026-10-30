@@ -4,11 +4,15 @@
 stable classes in ``_SNAPSHOTTED``: each method with its parameter names, kinds
 and simple defaults, marked ``[async]`` when it is a coroutine function, and each
 property marked ``[property]``. Annotations are left out, so the lists read the
-same on every Python version. Both lists are hard-coded on purpose: a PR that
-changes the stable surface changes them too, so the change is visible in review.
+same on every Python version. ``PROVISIONAL_MEMBERS`` is the public members of
+those classes whose docstring carries ``PROVISIONAL_MARK`` (ADR 0020): they may
+change in a minor release with a migration note. Every public member is in
+exactly one of the two. The lists are hard-coded on purpose: a PR that changes
+the surface or a member's tier changes them too, so the change is visible in
+review.
 
 To update them after a deliberate change, run this file from ``python/`` and
-paste what it prints over the two lists::
+paste what it prints over the three lists::
 
     python tests/unit/test_public_api_snapshot.py
 
@@ -27,6 +31,9 @@ import donkey_kit
 from donkey_kit import Donkey, ToolSet, ToolsFacade
 
 _SNAPSHOTTED: tuple[type, ...] = (Donkey, ToolsFacade, ToolSet)
+
+#: The docstring words that make a public member of a stable class Provisional.
+PROVISIONAL_MARK = "Provisional (ADR 0020)"
 
 ROOT_ALL = [
     "A2AResult",
@@ -142,11 +149,14 @@ MEMBERS = [
     "ToolSet.strands() [async]",
     "ToolSet.wait_for_gateway_approval(timeout='2m')",
     "ToolsFacade.discover(*, domain=None, tags=None, governed=True, locked=False, auth=None) [async]",
-    "ToolsFacade.live_card(ref) [async]",
-    "ToolsFacade.live_tools(ref) [async]",
     "ToolsFacade.lock()",
     "ToolsFacade.refresh()",
     "ToolsFacade.warm(*, domain=None, tags=None, governed=True) [async]",
+]
+
+PROVISIONAL_MEMBERS = [
+    "ToolsFacade.live_card(ref) [async]",
+    "ToolsFacade.live_tools(ref) [async]",
 ]
 
 
@@ -187,25 +197,33 @@ def _member_line(owner: type, attr: str, member: object) -> str:
     return f"{name}{_parameters(owner, attr, member)}{suffix}"
 
 
-def current_members() -> list[str]:
-    """The public members of the snapshotted classes, as ``MEMBERS`` lists them."""
+def current_members(*, provisional: bool | None = False) -> list[str]:
+    """The public members of the snapshotted classes, as ``MEMBERS`` lists them:
+    the stable ones, the ``provisional=True`` ones, or with ``None`` all of them."""
     return sorted(
         _member_line(owner, attr, member)
         for owner in _SNAPSHOTTED
         for attr, member in inspect.getmembers(owner)
         if not attr.startswith("_")
+        if provisional is None or _is_provisional(member) is provisional
     )
+
+
+def _is_provisional(member: object) -> bool:
+    return PROVISIONAL_MARK in (inspect.getdoc(member) or "")
 
 
 def _drift(name: str, expected: list[str], actual: list[str]) -> str:
     added = sorted(set(actual) - set(expected))
     removed = sorted(set(expected) - set(actual))
-    lines = [f"the stable surface changed: {name} no longer matches the snapshot."]
+    lines = [f"the public surface changed: {name} no longer matches the snapshot."]
     lines += [f"  + {item}" for item in added]
     lines += [f"  - {item}" for item in removed]
     lines += [
         "If the change is deliberate, run `python tests/unit/test_public_api_snapshot.py`",
-        "from python/ and paste its output over ROOT_ALL and MEMBERS in that file.",
+        "from python/ and paste its output over ROOT_ALL, MEMBERS and PROVISIONAL_MEMBERS",
+        "in that file. A member is provisional when its docstring says "
+        f"{PROVISIONAL_MARK!r} (ADR 0020).",
         "A name that shipped in a release keeps a deprecated alias for one minor",
         "release before it is removed or renamed (ADR 0006 rule 2).",
     ]
@@ -222,19 +240,42 @@ def test_stable_class_members_match_the_snapshot() -> None:
     assert actual == sorted(MEMBERS), _drift("MEMBERS", MEMBERS, actual)
 
 
+def test_provisional_class_members_match_the_snapshot() -> None:
+    """ADR 0020: the docstring says Provisional and the list says so too."""
+    actual = current_members(provisional=True)
+    assert actual == sorted(PROVISIONAL_MEMBERS), _drift(
+        "PROVISIONAL_MEMBERS", PROVISIONAL_MEMBERS, actual
+    )
+
+
+def test_every_public_member_is_in_exactly_one_tier_list() -> None:
+    assert not set(MEMBERS) & set(PROVISIONAL_MEMBERS)
+    assert sorted(MEMBERS + PROVISIONAL_MEMBERS) == current_members(provisional=None)
+
+
 def test_the_snapshot_lists_are_sorted_and_unique() -> None:
-    for name, items in (("ROOT_ALL", ROOT_ALL), ("MEMBERS", MEMBERS)):
+    lists = (
+        ("ROOT_ALL", ROOT_ALL),
+        ("MEMBERS", MEMBERS),
+        ("PROVISIONAL_MEMBERS", PROVISIONAL_MEMBERS),
+    )
+    for name, items in lists:
         assert items == sorted(set(items)), f"{name} must be sorted, with no duplicates"
 
 
-def _print_lists() -> None:
-    print("ROOT_ALL = [")
-    for name in sorted(donkey_kit.__all__):
-        print(f"    {json.dumps(name)},")
-    print("]\n\nMEMBERS = [")
-    for line in current_members():
-        print(f"    {json.dumps(line)},")
+def _print_list(name: str, items: list[str]) -> None:
+    print(f"{name} = [")
+    for item in items:
+        print(f"    {json.dumps(item)},")
     print("]")
+
+
+def _print_lists() -> None:
+    _print_list("ROOT_ALL", sorted(donkey_kit.__all__))
+    print()
+    _print_list("MEMBERS", current_members())
+    print()
+    _print_list("PROVISIONAL_MEMBERS", current_members(provisional=True))
 
 
 if __name__ == "__main__":

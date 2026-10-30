@@ -77,7 +77,7 @@ is not rewritten.
 | [0003](0003-core-runtime.md) | A core `Runtime` with a process default | Accepted | #725 |
 | [0004](0004-adapter-protocol-and-roster.md) | The adapter contract and a single roster | Accepted | #726 |
 | [0005](0005-config-precedence.md) | Config precedence: kwargs, env, local file, project file, user file, default | Accepted | #727 |
-| [0006](0006-api-tiers-and-deprecation.md) | API stability tiers and the 0.x deprecation policy | Accepted | #236 |
+| [0006](0006-api-tiers-and-deprecation.md) | API stability tiers and the 0.x deprecation policy | Accepted (rule 1 amended by [0020](0020-provisional-members-of-stable-classes.md)) | #236 |
 | [0007](0007-dependency-policy.md) | Dependency policy: verified floors, locked PR CI, the nightly run as the canary | Proposed | #731 |
 | [0008](0008-legacy-quarantine-and-cli-home.md) | Quarantine the legacy provisioning code and give the CLI its own package | Accepted | #730 |
 | [0009](0009-sans-io-transport.md) | A sans-IO transport policy, and no default retry of model POSTs on 502/504 | Accepted | #728 |
@@ -90,3 +90,4 @@ is not rewritten.
 | [0016](0016-policy-source-evidence-class.md) | A gateway response shape read from the policy's own source may be typed, at `VERIFIED (POLICY SOURCE)` | Accepted | #1429 |
 | [0017](0017-governed-discovery-default.md) | Discovery is governed by default; binding still refuses an ungoverned server, with no opt-out | Accepted | #1424 |
 | [0019](0019-derived-endpoint-trust.md) | A URL read from a configured endpoint follows that endpoint's trust rule, for every credential sent to it | Accepted | #1479 |
+| [0020](0020-provisional-members-of-stable-classes.md) | A public member of a stable class may be provisional, when its docstring and the snapshot both say so | Accepted | #1499 |
