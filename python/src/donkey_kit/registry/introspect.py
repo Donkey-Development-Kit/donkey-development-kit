@@ -37,6 +37,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from ..core import _verify
+from ..core.errors import DonkeyError
 
 __all__ = ["DerivationMode", "DescriptorMismatch", "derive_descriptor"]
 
@@ -51,12 +52,17 @@ _MODES = ("auto", "auto:live", "auto:check")
 _Tool = dict[str, Any]
 
 
-class DescriptorMismatch(ValueError):
+class DescriptorMismatch(DonkeyError, ValueError):
     """``auto:check``: the derived descriptor differs from the committed one.
 
-    Regenerate the committed file from the code (``auto``) if the change is
-    intended, or fix the tool definition if it is not.
+    A :class:`~donkey_kit.core.errors.DonkeyError`, and still a ``ValueError``
+    so an ``except ValueError`` keeps catching it (#1423).
     """
+
+    remediation: str = (
+        "Regenerate the committed descriptor from the code with mode='auto' if the "
+        "change is intended, or fix the tool definition if it is not."
+    )
 
 
 async def derive_descriptor(

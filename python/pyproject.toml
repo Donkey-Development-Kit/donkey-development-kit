@@ -668,7 +668,9 @@ type = "layers"
 # lastcall records and errors' DonkeyErrors and is bound by correlation.
 # approvals (the @donkey.tool approval gate, #211) sits beside transport: it
 # reads correlation, errors, identity and telemetry, and neither imports the
-# other.
+# other. approval_types (the Approval value object and the approval errors,
+# #1423, ADR 0018) sits between step_up and errors: step_up's
+# GatewayApprovalDenied subclasses its ApprovalError, and approvals re-exports it.
 # inbound (the run an inbound A2A task binds, #225) sits there too: it binds
 # correlation and opens a telemetry span, and imports neither sibling. Two
 # deviations from the order sketched in #729: lastcall sits BELOW errors, because a DonkeyError reads its request id
@@ -690,6 +692,7 @@ layers = [
     "classifier | cost | endpoints | header_names | reactions | refusals",
     "_policy_spec",
     "runledger | step_up | tool_access",
+    "approval_types",
     "errors",
     "_refusal_body | lastcall | masking",
     "_verify",

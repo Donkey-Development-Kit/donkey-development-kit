@@ -35,6 +35,8 @@ if TYPE_CHECKING:
     from .a2a.types import A2AResult, A2ATask
     from .core.approvals import (
         Approval,
+        ApprovalError,
+        ApprovalNotFound,
         ApprovalRejected,
         ApprovalRequired,
         Approvals,
@@ -90,6 +92,8 @@ _LAZY = {
     "A2ATask": ".a2a.types",
     "AgentKilled": ".core.errors",
     "Approval": ".core.approvals",
+    "ApprovalError": ".core.approvals",
+    "ApprovalNotFound": ".core.approvals",
     "ApprovalRequired": ".core.approvals",
     "ApprovalRejected": ".core.approvals",
     "ApprovalTimedOut": ".core.approvals",
@@ -212,6 +216,8 @@ __all__ = [
     "AgentKilled",
     "AgentSpec",
     "Approval",
+    "ApprovalError",
+    "ApprovalNotFound",
     "ApprovalRejected",
     "ApprovalRequired",
     "ApprovalTimedOut",

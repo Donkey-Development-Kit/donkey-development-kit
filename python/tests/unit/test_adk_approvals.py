@@ -221,6 +221,8 @@ async def test_a_gated_tool_without_the_plugin_raises_approval_required() -> Non
     runner, sessions = _runner()
     session = await sessions.create_session(app_name="refunds", user_id="u")
     ask = types.Content(role="user", parts=[types.Part(text="refund T-1")])
-    with pytest.raises(ApprovalRequired):
-        await _send(runner, session.id, ask)
+    with _donkey() as donkey:
+        with donkey.run(), pytest.raises(ApprovalRequired) as info:
+            await _send(runner, session.id, ask)
+        assert donkey.approvals.pending() == (info.value.approval,)
     assert ran == []

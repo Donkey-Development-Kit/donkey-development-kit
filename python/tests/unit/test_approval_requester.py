@@ -18,6 +18,7 @@ Driven with ``httpx.MockTransport``, so no network is touched.
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 from collections.abc import Awaitable, Mapping
@@ -26,8 +27,9 @@ from typing import Any
 import httpx
 import pytest
 
-from donkey_kit import ApprovalRequired, Approvals, Donkey, DonkeyConfig
+from donkey_kit import ApprovalRequired, Donkey, DonkeyConfig
 from donkey_kit.core import approvals as approvals_mod
+from donkey_kit.core import telemetry
 from donkey_kit.core.approvals import Approval, gate, record_pending
 from donkey_kit.core.correlation import current_business_group, current_cost_tags
 from donkey_kit.core.cost import CostTags
@@ -223,8 +225,9 @@ async def test_resolve_runs_the_tool_with_the_requesters_attribution() -> None:
 async def test_a_service_request_drops_the_resolvers_attribution() -> None:
     seen: Seen = []
     issue_refund = _refund_tool(seen)
-    approval = _requested_sync(issue_refund, "T-1")
     async with Donkey(_cfg()) as donkey:
+        with donkey.run():
+            approval = _requested_sync(issue_refund, "T-1")
         with donkey.attribution(team="ops", business_group="risk-us"):
             donkey.approvals.resolve(approval.id, approved_by="m.keller")
     assert seen == [(None, None, None)]
@@ -278,13 +281,14 @@ async def test_resolve_under_the_requesters_own_token_runs() -> None:
 async def test_a_service_request_resolved_inside_as_user_is_refused() -> None:
     seen: Seen = []
     issue_refund = _refund_tool(seen)
-    approval = _requested_sync(issue_refund, "T-1")
     async with Donkey(_cfg()) as donkey:
+        with donkey.run():
+            approval = _requested_sync(issue_refund, "T-1")
         async with donkey.as_user(token=_BOB):
             with pytest.raises(AuthError, match="as the service"):
                 donkey.approvals.resolve(approval.id, approved_by="m.keller")
+        assert donkey.approvals.get(approval.id) == approval
     assert seen == []
-    assert Approvals().get(approval.id) == approval
 
 
 async def test_an_async_tool_awaited_under_another_user_is_refused() -> None:
@@ -378,9 +382,11 @@ async def test_a_native_resume_under_another_user_is_refused() -> None:
     assert seen == []
 
 
-async def test_a_pause_this_process_did_not_record_runs_as_the_resumer() -> None:
+async def test_a_pause_this_process_did_not_record_runs_as_the_resumer(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """After a restart DDK holds no requester for a framework's pause, so the
-    resuming code's own binding stands."""
+    resuming code's own binding stands, with a warning (#1423)."""
     seen: Seen = []
     tool = _native_tool(seen, _FakeFramework())
     async with Donkey(_cfg()) as donkey:
@@ -389,8 +395,42 @@ async def test_a_pause_this_process_did_not_record_runs_as_the_resumer() -> None
                 tool("T-1")
         approvals_mod._reset_for_tests()
         async with donkey.as_user(token=_BOB):
-            tool("T-1")
+            with caplog.at_level(logging.WARNING, logger="donkey_kit.core.approvals"):
+                tool("T-1")
     assert seen == [(_BOB, None, None)]
+    (record,) = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert "native-1" in record.getMessage()
+    assert "no recorded requester" in record.getMessage()
+    assert _BOB not in record.getMessage()
+
+
+async def test_a_refused_native_resume_is_a_span_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("opentelemetry.sdk")
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(telemetry, "_tracer", lambda: provider.get_tracer("t"))
+
+    tool = _native_tool([], _FakeFramework())
+    async with Donkey(_cfg()) as donkey:
+        async with donkey.as_user(token=_ALICE):
+            with pytest.raises(_Paused):
+                tool("T-1")
+        async with donkey.as_user(token=_BOB):
+            with pytest.raises(AuthError):
+                tool("T-1")
+    events = [
+        (e.name, dict(e.attributes or {})) for s in exporter.get_finished_spans() for e in s.events
+    ]
+    assert [name for name, _ in events] == [
+        "donkey.approval.pending",
+        "donkey.approval.resume_refused",
+    ]
+    assert events[1][1]["donkey.approval.id"] == "native-1"
 
 
 def test_only_the_latest_native_pauses_are_kept(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -404,5 +444,6 @@ def test_only_the_latest_native_pauses_are_kept(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_a_raised_approval_is_not_kept_as_a_native_pause() -> None:
-    _requested_sync(_refund_tool([]), "T-1")
+    with Donkey(_cfg()) as donkey, donkey.run():
+        _requested_sync(_refund_tool([]), "T-1")
     assert approvals_mod._NATIVE_REQUESTERS == {}

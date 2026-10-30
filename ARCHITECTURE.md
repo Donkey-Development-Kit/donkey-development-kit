@@ -164,7 +164,7 @@ Beside it:
 - **core is layered too:** `runtime` → `transport | approvals | inbound` → `budget | cache |
   cachecontrol | identity | telemetry | toolspec` → `auth | correlation | spanflush` → `config` →
   `classifier | cost | endpoints | header_names | reactions | refusals` →
-  `_policy_spec` → `runledger | step_up | tool_access` → `errors` →
+  `_policy_spec` → `runledger | step_up | tool_access` → `approval_types` → `errors` →
   `_refusal_body | lastcall | masking` → `_verify` →
   `_wire | _response | _budget_headers | _window`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
@@ -173,8 +173,13 @@ Beside it:
   each typed refusal to it. `reactions` holds the `donkey.on(...)` refusal handlers (#208):
   sans-IO, it decides each next step and the clients sleep and send.
   `approvals` holds the `@donkey.tool(approval="required")` gate and the
-  `donkey.approvals` registry (#211): it reads correlation, errors, identity and
-  telemetry, sits beside `transport`, and neither imports the other. A resumed
+  `Approvals` registry each `Donkey` owns (#211, ADR 0018): it reads correlation, errors, identity and
+  telemetry, sits beside `transport`, and neither imports the other. A gated
+  call records on the registry `correlation` binds for the client's
+  `donkey.run()` / `donkey.as_user()` block, else on the client it was declared
+  on. `approval_types` holds the `Approval` value object and the approval
+  errors, below `step_up`, whose `GatewayApprovalDenied` is also an
+  `ApprovalError` (#1423). A resumed
   tool's model calls go through the transport like any other, so an approval
   never overrides a refusal. A resumed tool runs as its requester: `identity`
   captures the user and attribution bound when the call was asked for, and

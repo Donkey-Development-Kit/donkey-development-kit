@@ -34,6 +34,8 @@ ROOT_ALL = [
     "AgentKilled",
     "AgentSpec",
     "Approval",
+    "ApprovalError",
+    "ApprovalNotFound",
     "ApprovalRejected",
     "ApprovalRequired",
     "ApprovalTimedOut",

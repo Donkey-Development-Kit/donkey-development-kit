@@ -133,7 +133,7 @@ DonkeyError                     # base of the whole tree
 ├─ PolicyViolation              # base for every governance rejection
 │  ├─ PIIDetected               # 403, type=pii_detected; .entities, .gateway_message
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
-│  ├─ GatewayApprovalDenied     # 403, error=access_denied — the user denied the CIBA step-up
+│  ├─ GatewayApprovalDenied     # 403, error=access_denied — the user denied the CIBA step-up; also an ApprovalError
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
 │  ├─ RequestRateLimitExceeded  # 429, rate-limiting policy; .retry_after (seconds); sibling of TokenBudgetExceeded
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
@@ -147,10 +147,13 @@ DonkeyError                     # base of the whole tree
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at/.window
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
 ├─ ApprovalRequired             # client-side: an approval-gated tool was called, not run; .approval
-├─ ApprovalRejected             # client-side: a reviewer refused a LangGraph-paused tool; .approval
+├─ ApprovalError                # an approval was refused, so the call did not happen
+│  ├─ ApprovalRejected          # client-side: a reviewer refused a framework-paused tool; .approval
+│  └─ GatewayApprovalDenied     # (also under PolicyViolation, above)
 ├─ ApprovalTimedOut             # client-side: nobody decided before approval_timeout; .approval
+├─ ApprovalNotFound             # client-side, also a KeyError: no such pending approval on this Donkey; .approval_id
 ├─ UngovernedMcpServer          # client-side: a ToolSet binding refused an ungoverned server; .servers, .reasons
-└─ ToolInvocationError, RegistryError, PublicationDrift
+└─ ToolInvocationError, RegistryError, PublicationDrift, DescriptorMismatch
                                 # tool calls, registry and publishing (Roadmap surfaces;
                                 # import them from donkey_kit.experimental)
 ```
@@ -186,6 +189,9 @@ never burn an exhausted budget or replay a blocked prompt.
 | `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider) | **No** — a client configuration mistake, terminal; the upstream was never called. | Use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries a `503`, and a `502` / `504` too unless the request was a model call (set `retry_model_calls_on_gateway_errors` to include those); a persistent `5xx` is safe for you to retry once you accept a possible second charge. | Transient provider failure — retry, then escalate if it persists. |
 | `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://docs.donkey-kit.dev/cli.md). |
+| `ApprovalError` | client-side base of `ApprovalRejected` (a reviewer refused a [framework-paused](https://docs.donkey-kit.dev/hitl.md#the-framework-approval-helpers) tool) and `GatewayApprovalDenied` (the user refused the gateway's step-up). Catch it to handle both refusals at once. | **No** — the call was refused at its approval step. | Tell the user or the agent that the action was not authorized; don't retry it unchanged. |
+| `ApprovalNotFound` | client-side, also a `KeyError`: `donkey.approvals.get`, `resolve` or `reject` of an id this `Donkey` holds no pending approval for. It was already decided, [another `Donkey` recorded it](https://docs.donkey-kit.dev/hitl.md#resolving), or the process restarted. `.approval_id` is the id. | **No** — the same id is never pending again. | Decide each approval once, on the `Donkey` that recorded it. After a restart, call the tool again to ask for a fresh decision. |
+| `DescriptorMismatch` | client-side, also a `ValueError`, from `donkey_kit.experimental`: `derive_descriptor(..., mode="auto:check")` derived a descriptor that differs from the committed file. | **No** — the code and the file disagree until one changes. | Regenerate the committed descriptor with `mode="auto"` if the change is intended, or fix the tool definition. |
 
 More `DonkeyError`s are **client-side signals**, not gateway refusals, so
 they sit outside the retry question. `BudgetReserveReached` is raised *before* a
@@ -201,7 +207,9 @@ different model than requested (opt-in via `on_model_substitution="raise"`).
 waiting for a human decision, the second that nobody decided in time.
 `ApprovalRejected` comes from a gated tool that LangGraph paused and a reviewer
 refused on resume. None of them is a `PolicyViolation`, and refusal handlers
-never see them.
+never see them. `ApprovalRejected` shares the `ApprovalError` base with the
+gateway's `GatewayApprovalDenied`, and `ApprovalNotFound` means the id is not
+pending on this `Donkey` (see [Resolving](https://docs.donkey-kit.dev/hitl.md#resolving)).
 `ConfigError` is raised locally, before any request. It reports every missing
 field at once, and it also reports an endpoint that may not receive the
 configured credentials: a non-`https://` URL, or a URL from the project's config

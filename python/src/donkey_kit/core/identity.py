@@ -60,7 +60,12 @@ from typing import TYPE_CHECKING
 
 from . import _verify
 from .config import TOKEN_AUTH_MODES
-from .correlation import _exact_attribution, current_business_group, current_cost_tags
+from .correlation import (
+    _approvals_client,
+    _exact_attribution,
+    current_business_group,
+    current_cost_tags,
+)
 from .errors import AuthError, ConfigError
 
 if TYPE_CHECKING:
@@ -140,10 +145,12 @@ class UserScope:
     and restore like ``donkey.run(...)``.
     """
 
-    __slots__ = ("_binding", "_reset")
+    __slots__ = ("_binding", "_client", "_client_reset", "_reset")
 
-    def __init__(self, cfg: DonkeyConfig, token: str) -> None:
-        """
+    def __init__(self, cfg: DonkeyConfig, token: str, *, client: object | None = None) -> None:
+        """``client`` is the approvals registry of the ``Donkey`` opening the
+        block, bound for it so a gated tool called in it is resolved there (#1423).
+
         Raises:
             AuthError: ``token`` is missing or empty.
             ConfigError: The user token would ride in the default
@@ -179,11 +186,18 @@ class UserScope:
         check_user_token_endpoint(cfg, need="llm")
         self._binding = _UserBinding(token)
         self._reset: Token[_UserBinding | None] | None = None
+        self._client = client
+        self._client_reset: Token[object | None] | None = None
 
     def _bind(self) -> None:
         self._reset = _current_user.set(self._binding)
+        if self._client is not None:
+            self._client_reset = _approvals_client.set(self._client)
 
     def _unbind(self) -> None:
+        if self._client_reset is not None:
+            _approvals_client.reset(self._client_reset)
+            self._client_reset = None
         if self._reset is not None:
             _current_user.reset(self._reset)
             self._reset = None

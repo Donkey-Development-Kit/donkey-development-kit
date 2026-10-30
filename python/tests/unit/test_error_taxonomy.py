@@ -70,7 +70,12 @@ def test_every_error_is_exported_from_donkey_kit(cls: type[DonkeyError]) -> None
     assert getattr(homes[0], cls.__name__) is cls
 
 
-_EXPERIMENTAL_ERRORS = {"PublicationDrift", "RegistryError", "ToolInvocationError"}
+_EXPERIMENTAL_ERRORS = {
+    "DescriptorMismatch",
+    "PublicationDrift",
+    "RegistryError",
+    "ToolInvocationError",
+}
 
 
 def test_only_blocked_surface_errors_are_experimental() -> None:

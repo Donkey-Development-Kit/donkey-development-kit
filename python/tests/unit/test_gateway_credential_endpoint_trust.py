@@ -18,6 +18,8 @@ developer's real config is never read.
 from __future__ import annotations
 
 import os
+import sys
+import types
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,7 @@ from typing import Any
 import httpx
 import pytest
 
+from donkey_kit import ApprovalRequired, Approvals
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import ConfigError
 from donkey_kit.core.identity import UserScope
@@ -233,6 +236,71 @@ async def test_inside_as_user_both_the_pair_and_the_token_are_named(
         (message,) = await _refused(ts.describe())
     assert f"Not sending {_PAIR}, the donkey.as_user() token to cp.attacker.test" in message
     assert sent == []
+
+
+@pytest.fixture
+def connections(monkeypatch: pytest.MonkeyPatch) -> list[Mapping[str, Any]]:
+    """What a fake ``MultiServerMCPClient`` is built with, for ``ToolSet.langgraph()``;
+    its one tool, ``add``, records its call's arguments under ``"called"``."""
+    made: list[Any] = []
+
+    class _Tool:
+        name = "add"
+
+        async def coroutine(self, **arguments: Any) -> str:
+            made.append({"called": arguments})
+            return "sent"
+
+    class _Client:
+        def __init__(self, connections: Mapping[str, Any]) -> None:
+            made.append(connections)
+
+        async def get_tools(self, *, server_name: str) -> list[Any]:
+            return [_Tool()]
+
+    package = types.ModuleType("langchain_mcp_adapters")
+    client = types.ModuleType("langchain_mcp_adapters.client")
+    client.MultiServerMCPClient = _Client  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "langchain_mcp_adapters", package)
+    monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client)
+    return made
+
+
+@pytest.mark.parametrize("trusted", [False, True])
+async def test_a_gated_tool_bound_as_a_user_resumes_only_behind_a_checked_endpoint(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sent: list[dict[str, str]],
+    connections: list[Mapping[str, Any]],
+    trusted: bool,
+) -> None:
+    # The approved call re-runs under its requester (#1416) with the headers of the
+    # bind, so the bind is where the user token meets the endpoint check.
+    _checkout(project)
+    _env_pair(monkeypatch)
+    if trusted:
+        monkeypatch.setenv("DONKEY_TRUST_PROJECT_CONFIG", "1")
+    cfg = DonkeyConfig.from_env()
+    registry = Approvals()
+    discovery = Discovery(_Registry(), cfg, auth=gateway_auth(cfg, None), approvals=registry)  # type: ignore[arg-type]
+    ts = (await discovery.resolve("com.acme/inv/1.0.0", auth=None)).require_approval(tools=["add"])
+
+    if not trusted:
+        async with UserScope(cfg, "alice-token"):
+            (message,) = await _refused(ts.langgraph())
+        assert "the donkey.as_user() token to cp.attacker.test" in message
+        assert (sent, connections, registry.pending()) == ([], [], ())
+        return
+
+    async with UserScope(cfg, "alice-token"):
+        (tool,) = await ts.langgraph()
+        with pytest.raises(ApprovalRequired) as paused:
+            await tool.coroutine(a=1)
+    assert [a.id for a in registry.pending()] == [paused.value.approval.id]
+    assert await registry.resolve(paused.value.approval.id, approved_by="m.keller") == "sent"
+    (bound, called) = connections
+    assert bound["com.acme/inv/1.0.0"]["headers"]["Authorization"] == "Bearer alice-token"
+    assert called == {"called": {"a": 1}}
 
 
 # --- sent: the rule lets it through ----------------------------------------------

@@ -23,7 +23,7 @@ from typing import Any
 import pytest
 
 from donkey_kit import ApprovalRequired, Donkey, PIIDetected
-from donkey_kit.core.approvals import Approval
+from donkey_kit.core.approvals import Approval, Approvals
 from donkey_kit.core.correlation import run_scope
 from donkey_kit.integrations import strands as strands_mod
 from donkey_kit.integrations.strands import (
@@ -274,7 +274,7 @@ def test_an_approved_call_runs_once_under_the_approval(
     assert ran == ["T-1"]
     # One approval runs one call, even before AfterToolCallEvent (#1438).
     assert approved_call("issue_refund") is None
-    with pytest.raises(ApprovalRequired):
+    with run_scope("run-2", client=Approvals()), pytest.raises(ApprovalRequired):
         issue_refund("T-1")
     assert ran == ["T-1"]
     hook._after_tool(object())
