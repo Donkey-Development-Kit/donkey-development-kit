@@ -640,6 +640,16 @@ serves the agent are not compared: `url`, `supportedInterfaces`,
 asset's) and the security fields (`securitySchemes`, `security`,
 `securityRequirements`), which the upstream declares and the gateway enforces.
 
+You can read the live side yourself, with the same governance check and
+credential and no cache: `live_tools()` returns what the MCP server's
+`tools/list` returns now, and `live_card()` the card the A2A agent serves now.
+Each takes the asset version as `group_id/asset_id/version`:
+
+```python
+tools = await donkey.tools.live_tools("${ANYPOINT_ORG_ID}/hr-tools-mcp/1.3.0")
+card = await donkey.tools.live_card("${ANYPOINT_ORG_ID}/hr-agent/0.1.0")
+```
+
 By default each difference is logged at `WARNING` and returned, so a drifted
 catalog is loud without taking down production traffic. With
 `raise_on_drift=True` it raises `PublicationDrift`, whose message

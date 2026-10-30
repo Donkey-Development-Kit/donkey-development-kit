@@ -34,16 +34,19 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from ..core import _verify
 from ..core.errors import PublicationDrift
+from .exchange import ExchangeRegistry
 
 __all__ = [
     "Contact",
     "DescriptionIssue",
+    "LiveAssets",
     "Publication",
     "PublicationAssetType",
+    "PublicationSource",
     "VersionStrategy",
     "card_drift",
     "check_description_quality",
@@ -88,6 +91,35 @@ class DescriptionIssue:
     tool: str
     kind: str  # "missing" | "tautological" | "too-short"
     detail: str
+
+
+class LiveAssets(Protocol):
+    """The live side :meth:`Publication.verify` compares against, read through
+    the asset's gateway instance (BG §2.5). ``donkey.tools`` is one: the tools
+    layer sits above this one, so it is reached through this protocol (§1.1)."""
+
+    async def live_tools(self, ref: str) -> Sequence[Mapping[str, Any]]:
+        """The tools MCP server ``ref`` lists now."""
+        ...
+
+    async def live_card(self, ref: str) -> Mapping[str, Any]:
+        """The card A2A agent ``ref`` serves now."""
+        ...
+
+
+class PublicationSource(Protocol):
+    """What :meth:`Publication.verify` reads: the published side from
+    ``registry`` and the live side from ``tools``. A ``Donkey`` is one."""
+
+    @property
+    def registry(self) -> ExchangeRegistry:
+        """The Exchange registry the published descriptors are read from."""
+        ...
+
+    @property
+    def tools(self) -> LiveAssets:
+        """The live side, read through the gateway."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -140,31 +172,36 @@ class Publication:
         )
 
     # ---- verb: verify (runtime, READ-ONLY) --------------------------------
-    async def verify(self, donkey: Any, *, raise_on_drift: bool = False) -> tuple[str, ...]:  # noqa: ANN401
+    async def verify(
+        self, donkey: PublicationSource, *, raise_on_drift: bool = False
+    ) -> tuple[str, ...]:
         """Compare the live asset against what this version was published with
         in Exchange (BG §2.5). Read-only: nothing is written anywhere.
 
         For an MCP server, the published side is the ``tools`` of the version's
-        ``mcp-metadata`` file, read with ``donkey.registry`` (docs/verified-apis.md
-        §7). The live side is the server's ``tools/list`` through its gateway
-        instance, after the same governance check and with the same credential
-        as a ``donkey.tools`` binding (§9). A tool added or removed, a changed
+        ``mcp-metadata`` file, ``donkey.registry.published_tools()``
+        (docs/verified-apis.md §7). The live side is the server's ``tools/list``
+        through its gateway instance, ``donkey.tools.live_tools()``, after the
+        same governance check and with the same credential as a ``donkey.tools``
+        binding (§9). A tool added or removed, a changed
         description, or a changed set of parameter names is drift. Parameter
         types are not compared: ``donkey publish`` records only the bare
         annotations it can read without importing the code.
 
         For an A2A agent (``AGENT`` or ``A2A_AGENT``), the published side is the
-        version's agent card file, and the live side the card its gateway
-        instance serves at ``/.well-known/agent-card.json``, read after the same
-        governance check and with the same credential (#1354). The comparison is
-        :func:`card_drift`.
+        version's agent card file (``donkey.registry.published_card()``), and the
+        live side the card its gateway instance serves at
+        ``/.well-known/agent-card.json`` (``donkey.tools.live_card()``), read
+        after the same governance check and with the same credential (#1354).
+        The comparison is :func:`card_drift`.
 
         Defaults to warn-and-continue: a drifted catalog must be loud, but must
         not take down production traffic. Each difference is logged as a
         warning, and the differences are returned (empty when the two agree).
 
         Args:
-            donkey: The ``Donkey`` whose registry and gateway credential to use.
+            donkey: The ``Donkey`` whose registry and gateway credential to use
+                (any :class:`PublicationSource`).
             raise_on_drift: Raise :class:`~donkey_kit.core.errors.PublicationDrift`
                 instead of warning.
 
@@ -181,13 +218,10 @@ class Publication:
         ref = f"{self.group_id}/{self.asset_id}/{self.version}"
         if self.asset_type is PublicationAssetType.MCP_SERVER:
             published = await donkey.registry.published_tools(ref)
-            # The one-server ToolSet discovery builds: tools/ is a higher layer.
-            toolset = await donkey.tools._resolve(ref)  # noqa: SLF001
-            (server,) = (await toolset.describe()).servers
-            differences = tool_drift(published, server.tool_descriptors or ())
+            differences = tool_drift(published, await donkey.tools.live_tools(ref))
         elif self.asset_type in (PublicationAssetType.AGENT, PublicationAssetType.A2A_AGENT):
             card = await donkey.registry.published_card(ref)
-            differences = card_drift(card, await donkey.tools._agent_card(ref))  # noqa: SLF001
+            differences = card_drift(card, await donkey.tools.live_card(ref))
         else:
             raise _verify.blocked(
                 f"Publication.verify() for a {self.asset_type.value!r} asset: only MCP "

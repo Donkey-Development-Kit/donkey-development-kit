@@ -134,11 +134,31 @@ Strands forwards to its internal OpenAI client.
   as an `Approval`; resume the agent on `approve(...).native` or
   `reject(...).native`, the interrupt response each helper returns on the
   `Approval`. See [Human-in-the-loop](/hitl#in-a-strands-agent).
-- **Refusals inside tools stop the agent.** With `ApprovalHook()` installed,
-  a governed refusal inside an approved or ungated tool leaves the tool loop
-  before a retry or another model turn. Use `donkey.run()` or `@donkey.governed`
-  around the invocation to recover its typed error from Strands' event-loop
-  wrapper. Ordinary tool errors still go to the model as error tool results.
+- **Refusals inside tools stop the agent.** Strands sends a tool's exception
+  to the model as an error tool result, a governed refusal included. Add
+  `GovernedToolHook()` from `donkey_kit.integrations.strands` to the agent's
+  `hooks`, and a governed refusal inside a tool leaves the tool loop before a
+  retry or another model turn. You add the hook yourself: the model and the
+  MCP clients the SDK builds can't reach the `Agent`. An `ApprovalHook` is a
+  `GovernedToolHook`, so an agent with `ApprovalHook()` needs no other hook,
+  and the refusal stops the agent in an approved tool as in an ungated one.
+
+  ```python
+  from strands import Agent
+  from donkey_kit.integrations.strands import GovernedToolHook
+
+  agent = Agent(
+      model=donkey.strands.model("gpt-4o"),
+      tools=[lookup_order],
+      hooks=[GovernedToolHook()],
+  )
+  ```
+
+  Use `donkey.run()` or `@donkey.governed` around the invocation to recover
+  the typed error from Strands' event-loop wrapper. Ordinary tool errors still
+  go to the model as error tool results. With `GovernedToolHook()` alone, a
+  `@donkey.tool(approval="required")` call raises its `ApprovalRequired` to
+  your code instead of pausing: add `ApprovalHook()` for the pause.
 - Strands forwards `client_args` verbatim to the underlying OpenAI client, so
   both header injection (`default_headers`) and transport injection
   (`http_client`) are available.

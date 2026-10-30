@@ -222,16 +222,48 @@ class ToolsFacade:
             domain=domain, tags=tags, governed=governed, auth=auth
         )
 
-    async def _resolve(self, ref: str) -> ToolSet:
-        """A ``ToolSet`` of the one MCP server asset version ``ref``, with its
-        verdict and endpoint read as :meth:`discover` reads them. What
-        ``Publication.verify()`` lists the live tools through (#991)."""
-        return await self._discovery.resolve(ref, auth=None)
+    async def live_tools(self, ref: str) -> tuple[dict[str, object], ...]:
+        """The tools MCP server asset version ``ref`` lists now, through its
+        gateway instance: the live side of ``donkey.registry.published_tools(ref)``.
 
-    async def _agent_card(self, ref: str) -> dict[str, Any]:
-        """The card A2A agent ``ref`` serves through its gateway instance, read
-        with the governance check and credential a binding uses. What
-        ``Publication.verify()`` compares an agent's published card against (#1354)."""
+        Reads the server's default-criteria verdict and its endpoint as
+        :meth:`discover` does, then its ``tools/list`` with the credential a
+        binding sends. Not cached. ``Publication.verify()`` compares the two
+        (BG §2.5, #991).
+
+        Args:
+            ref: ``group_id/asset_id/version``.
+
+        Raises:
+            UngovernedMcpServer: The server is not governed, so nothing is sent
+                to it (ADR 0013).
+            RegistryError: ``ref`` does not resolve to one gateway instance.
+            AuthError: The gateway refused the credential.
+            ToolInvocationError: The server could not list its tools.
+
+        Docs: https://docs.donkey-kit.dev/publishing#verifying-at-runtime-verify
+        """
+        return await self._discovery.live_tools(ref)
+
+    async def live_card(self, ref: str) -> dict[str, Any]:
+        """The card A2A agent asset version ``ref`` serves now, through its
+        gateway instance: the live side of ``donkey.registry.published_card(ref)``.
+
+        Reads ``.well-known/agent-card.json`` after the governance check and
+        with the credential a binding sends. Not cached.
+        ``Publication.verify()`` compares the two (BG §2.5, #1354).
+
+        Args:
+            ref: ``group_id/asset_id/version``.
+
+        Raises:
+            RegistryError: The agent is not governed (nothing is sent to it), does
+                not resolve to one deployed A2A instance behind an ``https://``
+                gateway URL, or the read failed.
+            AuthError: The gateway refused the credential.
+
+        Docs: https://docs.donkey-kit.dev/publishing#verifying-at-runtime-verify
+        """
         return await self._discovery.agent_card(ref)
 
     async def warm(

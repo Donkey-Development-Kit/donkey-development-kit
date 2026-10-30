@@ -73,8 +73,8 @@ _GOVERNED = GovernanceReport(governed=True, checks=[Check("deployed", True, "ok"
 
 @dataclass
 class _Donkey:
-    """``registry.published_tools``/``published_card`` and ``tools._resolve``/
-    ``_agent_card``, recording the refs read."""
+    """``registry.published_tools``/``published_card`` and ``tools.live_tools``/
+    ``live_card``, recording the refs read."""
 
     published: list[dict[str, Any]] = field(default_factory=lambda: [_TOOL])
     refused: bool = False
@@ -85,13 +85,13 @@ class _Donkey:
         self.registry = SimpleNamespace(
             published_tools=self._published_tools, published_card=self._published_card
         )
-        self.tools = SimpleNamespace(_resolve=self._resolve, _agent_card=self._agent_card)
+        self.tools = SimpleNamespace(live_tools=self._live_tools, live_card=self._live_card)
 
     async def _published_card(self, ref: str) -> dict[str, Any]:
         self.read.append(ref)
         return dict(_CARD)
 
-    async def _agent_card(self, ref: str) -> dict[str, Any]:
+    async def _live_card(self, ref: str) -> dict[str, Any]:
         return self.live_card
 
     async def _published_tools(self, ref: str) -> list[dict[str, Any]]:
@@ -100,13 +100,15 @@ class _Donkey:
             raise RegistryError(f"Exchange has no asset version {ref}.")
         return self.published
 
-    async def _resolve(self, ref: str) -> ToolSet:
+    async def _live_tools(self, ref: str) -> tuple[dict[str, object], ...]:
         handle = McpServerHandle(
             ref=AssetRef.parse(ref),
             endpoint_url="https://gw.example.test/sku/",
             governance=_GOVERNED,
         )
-        return ToolSet([handle], _auth=ClientIdAuth("cid", "secret"))
+        toolset = ToolSet([handle], _auth=ClientIdAuth("cid", "secret"))
+        (server,) = (await toolset.describe()).servers
+        return server.tool_descriptors or ()
 
     async def __aenter__(self) -> _Donkey:
         return self

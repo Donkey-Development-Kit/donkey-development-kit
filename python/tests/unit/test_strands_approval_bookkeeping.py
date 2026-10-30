@@ -29,6 +29,7 @@ from donkey_kit.integrations import strands as strands_mod
 from donkey_kit.integrations.strands import (
     APPROVAL_INTERRUPT,
     ApprovalHook,
+    GovernedToolHook,
     approve,
     approved_call,
     pending_approvals,
@@ -184,6 +185,27 @@ def test_a_refusal_clears_the_approval_before_it_leaves_the_hook() -> None:
 
 def test_an_ordinary_exception_is_not_re_raised() -> None:
     ApprovalHook()._after_tool(SimpleNamespace(exception=ValueError("ordinary tool error")))
+
+
+# --- GovernedToolHook: typed tool refusals without approvals (#1446) -------------
+def test_the_governed_tool_hook_registers_only_the_after_tool_callback() -> None:
+    added: list[tuple[type, Any]] = []
+    registry = type("Registry", (), {"add_callback": lambda _, e, cb: added.append((e, cb))})()
+    GovernedToolHook().register_hooks(registry)
+    assert [e for e, _ in added] == [_AfterToolCall]
+
+
+def test_the_governed_tool_hook_re_raises_a_refusal_typed() -> None:
+    refusal = PIIDetected("refused")
+    with pytest.raises(PIIDetected) as caught:
+        GovernedToolHook()._after_tool(SimpleNamespace(exception=refusal))
+    assert caught.value is refusal
+    GovernedToolHook()._after_tool(SimpleNamespace(exception=ValueError("ordinary tool error")))
+    GovernedToolHook()._after_tool(SimpleNamespace(exception=None))
+
+
+def test_an_approval_hook_is_a_governed_tool_hook() -> None:
+    assert isinstance(ApprovalHook(), GovernedToolHook)
 
 
 # --- the pause --------------------------------------------------------------------

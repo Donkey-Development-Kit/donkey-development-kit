@@ -25,6 +25,7 @@ from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import PublicationDrift, RegistryError
 from donkey_kit.core.runtime import Runtime
+from donkey_kit.donkey import ToolsFacade
 from donkey_kit.registry import publication as publication_module
 from donkey_kit.registry.criteria import Check, GovernanceReport
 from donkey_kit.registry.exchange import ExchangeRegistry
@@ -176,19 +177,26 @@ def test_every_difference_is_reported_in_name_order() -> None:
 
 
 def _donkey(
-    runtime: Runtime, exchange: _Exchange, report: GovernanceReport = _GOVERNED
+    runtime: Runtime,
+    exchange: _Exchange,
+    monkeypatch: pytest.MonkeyPatch,
+    report: GovernanceReport = _GOVERNED,
 ) -> tuple[SimpleNamespace, list[str]]:
+    """A ``Donkey`` stand-in: the real registry and the real ``ToolsFacade``,
+    whose discovery resolves ``ref`` to one server with ``report``."""
+    registry = _registry(runtime, exchange)
+    tools = ToolsFacade(registry, _CFG, None)
     resolved: list[str] = []
 
-    async def resolve(ref: str) -> ToolSet:
+    async def resolve(ref: str, *, auth: Any) -> ToolSet:
         resolved.append(ref)
         handle = McpServerHandle(
             ref=AssetRef.parse(ref), endpoint_url="https://gw.example.test/sku/", governance=report
         )
         return ToolSet([handle], _auth=ClientIdAuth("cid", "secret"))
 
-    tools = SimpleNamespace(_resolve=resolve)
-    return SimpleNamespace(registry=_registry(runtime, exchange), tools=tools), resolved
+    monkeypatch.setattr(tools._discovery, "resolve", resolve)
+    return SimpleNamespace(registry=registry, tools=tools), resolved
 
 
 def _live(monkeypatch: pytest.MonkeyPatch, tools: list[dict[str, Any]]) -> list[Mapping[str, str]]:
@@ -217,7 +225,7 @@ async def test_an_unchanged_server_verifies_clean(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     seen = _live(monkeypatch, _PUBLISHED)
-    donkey, resolved = _donkey(runtime, _Exchange())
+    donkey, resolved = _donkey(runtime, _Exchange(), monkeypatch)
 
     with caplog.at_level(logging.WARNING, logger=publication_module.__name__):
         assert await _publication().verify(donkey) == ()
@@ -230,7 +238,7 @@ async def test_an_added_tool_warns_by_default(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     _live(monkeypatch, [*_PUBLISHED, _tool("delete_sku", "Deletes a product by SKU.", "sku")])
-    donkey, _ = _donkey(runtime, _Exchange())
+    donkey, _ = _donkey(runtime, _Exchange(), monkeypatch)
 
     with caplog.at_level(logging.WARNING, logger=publication_module.__name__):
         differences = await _publication().verify(donkey)
@@ -248,7 +256,7 @@ async def test_an_added_tool_on_the_live_server_raises_publication_drift(
     # publication_verify_drift (#991): a tool the server added since its
     # version was published is drift.
     _live(monkeypatch, [*_PUBLISHED, _tool("delete_sku", "Deletes a product by SKU.", "sku")])
-    donkey, _ = _donkey(runtime, _Exchange())
+    donkey, _ = _donkey(runtime, _Exchange(), monkeypatch)
 
     with pytest.raises(PublicationDrift, match="no longer matches its Exchange descriptor") as info:
         await _publication().verify(donkey, raise_on_drift=True)
@@ -261,15 +269,17 @@ async def test_an_ungoverned_server_is_never_sent_the_credential(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen = _live(monkeypatch, _PUBLISHED)
-    donkey, _ = _donkey(runtime, _Exchange(), _UNGOVERNED)
+    donkey, _ = _donkey(runtime, _Exchange(), monkeypatch, _UNGOVERNED)
 
     with pytest.raises(UngovernedMcpServer):
         await _publication().verify(donkey)
     assert seen == []
 
 
-async def test_an_api_asset_is_not_verified(runtime: Runtime) -> None:
-    donkey, _ = _donkey(runtime, _Exchange())
+async def test_an_api_asset_is_not_verified(
+    runtime: Runtime, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    donkey, _ = _donkey(runtime, _Exchange(), monkeypatch)
 
     with pytest.raises(NotImplementedError, match=r"^blocked on verification:.*'api'"):
         await _publication(PublicationAssetType.API).verify(donkey)

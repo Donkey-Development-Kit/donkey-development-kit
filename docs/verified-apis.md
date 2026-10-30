@@ -888,16 +888,19 @@ after-hook invocation; raising again escapes the tool loop. The concurrent
 executor forwards that exception and cancels its other tasks; the event loop
 wraps it in `EventLoopException` with the original on `__cause__`.
 
-`integrations.strands.ApprovalHook` clears the call's approval context, recovers
-only governed errors through `core.refusals.translate`, and re-raises them at
-this seam. The existing `run()` / `@governed` bridge unwraps the event-loop
+`integrations.strands.GovernedToolHook` clears the call's approval context,
+recovers only governed errors through `core.refusals.translate`, and re-raises
+them at this seam. `ApprovalHook` subclasses it (#1446), so either hook types a
+tool refusal. The existing `run()` / `@governed` bridge unwraps the event-loop
 exception. Ordinary tool errors and human rejections remain error tool results.
 Evidence: `tests/unit/test_strands_approvals.py` (sync/async tools, both
-executors, refusal identity, retry prevention, cleanup and ordinary failures),
+executors, both hooks, refusal identity, retry prevention, cleanup, ordinary
+failures and the no-hook control),
 `tests/unit/test_strands_approval_bookkeeping.py` (framework-free cleanup), and
-the `strands.tool` surface in `tests/conformance/test_typed_refusal_bridge.py`
-(PII refusal, model substitution and transport failure, both bridge scopes and
-the bridge-disabled control). No live gateway check or verification-status
+the `strands.tool` and `strands.governed_tool` surfaces in
+`tests/conformance/test_typed_refusal_bridge.py` (PII refusal, model
+substitution and transport failure, both bridge scopes and the bridge-disabled
+control). No live gateway check or verification-status
 promotion is implied.
 
 #### OpenAI Agents SDK tracing opt-out (#1434)

@@ -23,6 +23,7 @@ from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import AuthError, PublicationDrift, RegistryError
 from donkey_kit.core.runtime import Runtime
+from donkey_kit.donkey import ToolsFacade
 from donkey_kit.registry.criteria import Check, GovernanceReport
 from donkey_kit.registry.exchange import ExchangeRegistry
 from donkey_kit.registry.models import AgentHandle, AssetRef
@@ -141,13 +142,12 @@ def _wire(
 
 
 class _Donkey:
+    """The real registry and the real ``ToolsFacade``, on ``discovery``."""
+
     def __init__(self, registry: ExchangeRegistry, discovery: Discovery) -> None:
         self.registry = registry
-        self.tools = self
-        self._discovery = discovery
-
-    async def _agent_card(self, ref: str) -> Mapping[str, Any]:
-        return await self._discovery.agent_card(ref)
+        self.tools = ToolsFacade(registry, _CFG, None)
+        self.tools._discovery = discovery
 
 
 # ---- the published side: registry.published_card() ------------------------------
@@ -348,7 +348,7 @@ async def test_an_added_skill_raises_publication_drift(
     async def live(ref: str) -> Mapping[str, Any]:
         return added
 
-    monkeypatch.setattr(donkey, "_agent_card", live)
+    monkeypatch.setattr(donkey.tools, "live_card", live)
 
     with pytest.raises(PublicationDrift, match="skill refund is live but was not published"):
         await _publication().verify(donkey, raise_on_drift=True)

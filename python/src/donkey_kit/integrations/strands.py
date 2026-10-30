@@ -42,6 +42,13 @@ rejection as an error tool result, and nothing raises ``ApprovalRejected``.
 Without the hook the gate raises ``ApprovalRequired`` inside the tool, which
 Strands turns into an error tool result, so nothing pauses.
 
+TOOL REFUSALS (BG §1.2, #1237): Strands turns a tool's exception into an error
+tool result for the model, a governed refusal included. A
+:class:`GovernedToolHook` on the agent re-raises the refusal instead, from
+``AfterToolCallEvent``, so it stops the agent typed. An ``ApprovalHook`` is a
+``GovernedToolHook``. Neither factory sees the ``Agent``, so the caller adds
+the hook to ``Agent(hooks=[...])``.
+
 Class names / kwargs UNVERIFIED — docs/verified-apis.md §8.
 """
 
@@ -77,6 +84,7 @@ if TYPE_CHECKING:
 __all__ = [
     "APPROVAL_INTERRUPT",
     "ApprovalHook",
+    "GovernedToolHook",
     "StrandsAdapter",
     "approve",
     "model",
@@ -244,7 +252,45 @@ _APPROVED: contextvars.ContextVar[Approval | None] = contextvars.ContextVar(
 )
 
 
-class ApprovalHook:
+class GovernedToolHook:
+    """A Strands ``HookProvider`` that stops the agent on a governed refusal
+    inside a tool (BG §1.2, #1237).
+
+    Pass it to the agent: ``Agent(model=..., tools=[...],
+    hooks=[GovernedToolHook()])``. A tool that hits a governance refusal (a
+    ``PIIDetected`` from a model call it makes, say) raises it from
+    ``AfterToolCallEvent``, before Strands can retry the tool or send its error
+    text to the model. ``donkey.run()`` / ``@donkey.governed`` unwrap Strands'
+    event-loop exception to recover the typed error. Ordinary tool failures
+    remain error tool results.
+
+    The adapter cannot add it for you: ``donkey.strands.model()`` builds the
+    model and ``ToolSet.strands()`` the tools, and neither sees the ``Agent``.
+    An :class:`ApprovalHook` is a ``GovernedToolHook``, so an agent that has one
+    needs no other.
+    """
+
+    def register_hooks(self, registry: Any, **kwargs: Any) -> None:
+        """Register the callback: Strands' ``HookProvider`` protocol."""
+        from strands.hooks import AfterToolCallEvent
+
+        registry.add_callback(AfterToolCallEvent, self._after_tool)
+
+    def _after_tool(self, event: Any) -> None:
+        # The call is over: the approval an ApprovalHook granted for it ends here.
+        _APPROVED.set(None)
+        exception = getattr(event, "exception", None)
+        if isinstance(exception, Exception):
+            typed = translate(exception, (refusal_translator,))
+            if typed is not None:
+                # Strands preserves the tool exception on the after-event. It
+                # catches a hook failure once and fires this hook again; the
+                # second raise escapes the executor without a retry (#1237).
+                del exception, event
+                raise typed from typed.__cause__
+
+
+class ApprovalHook(GovernedToolHook):
     """A Strands ``HookProvider`` that pauses approval-gated tool calls with
     Strands' own interrupt (BG §2.3, #1234).
 
@@ -259,11 +305,9 @@ class ApprovalHook:
     cancelled, so Strands hands the model the rejection message as an error tool
     result.
 
-    The hook also re-raises a governed tool refusal from ``AfterToolCallEvent``
-    before Strands can retry the tool or send its error text to the model
-    (BG §1.2, #1237). ``donkey.run()`` / ``@donkey.governed`` unwrap Strands'
-    event-loop exception to recover the typed error. Ordinary tool failures
-    remain error tool results.
+    It is a :class:`GovernedToolHook`, so it also re-raises a governed tool
+    refusal from ``AfterToolCallEvent`` before Strands can retry the tool or
+    send its error text to the model (BG §1.2, #1237).
 
     The approval id is derived from Strands' tool-use id, the tool and its
     arguments. Strands holds the pause, so ``approval_timeout`` does not apply,
@@ -281,10 +325,10 @@ class ApprovalHook:
 
     def register_hooks(self, registry: Any, **kwargs: Any) -> None:
         """Register the callbacks: Strands' ``HookProvider`` protocol."""
-        from strands.hooks import AfterInvocationEvent, AfterToolCallEvent, BeforeToolCallEvent
+        from strands.hooks import AfterInvocationEvent, BeforeToolCallEvent
 
         registry.add_callback(BeforeToolCallEvent, self._before_tool)
-        registry.add_callback(AfterToolCallEvent, self._after_tool)
+        super().register_hooks(registry, **kwargs)
         registry.add_callback(AfterInvocationEvent, self._after_invocation)
 
     def _before_tool(self, event: Any) -> None:
@@ -329,18 +373,6 @@ class ApprovalHook:
             event.cancel_tool = (
                 message or f"A human rejected this call of {approval.tool!r}, so it was not run."
             )
-
-    def _after_tool(self, event: Any) -> None:
-        _APPROVED.set(None)
-        exception = getattr(event, "exception", None)
-        if isinstance(exception, Exception):
-            typed = translate(exception, (refusal_translator,))
-            if typed is not None:
-                # Strands preserves the tool exception on the after-event. It
-                # catches a hook failure once and fires this hook again; the
-                # second raise escapes the executor without a retry (#1237).
-                del exception, event
-                raise typed from typed.__cause__
 
     def _after_invocation(self, event: Any) -> None:
         with self._lock:

@@ -221,6 +221,14 @@ class Discovery:
             _user_endpoint_check=self._user_endpoint_check,
         )
 
+    async def live_tools(self, ref: AssetRef | str) -> tuple[dict[str, object], ...]:
+        """The tools MCP server ``ref`` lists now: its ``tools/list`` through its
+        gateway instance, after the governance check and with the credential a
+        :meth:`resolve` binding uses (§9). What ``Publication.verify()`` compares
+        the published ``mcp-metadata`` tools against (#991). Not cached."""
+        (server,) = (await (await self.resolve(ref, auth=None)).describe()).servers
+        return server.tool_descriptors or ()
+
     async def agent_card(self, ref: AssetRef | str) -> dict[str, Any]:
         """The A2A card agent ``ref`` serves through its gateway instance (#1354):
         ``GET <endpoint>/.well-known/agent-card.json``, with the gateway
