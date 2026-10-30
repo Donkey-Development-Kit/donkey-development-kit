@@ -8,7 +8,7 @@ as the local round-trip in ``scripts/mcp_binding`` verified it
 never in ``discover()`` (BG §2.7).
 
 Binding refuses a set holding any server that is not governed, before anything
-else (#1150, ADR 0013): the governed transport attaches the consumer's gateway
+else (#1150, ADR 0017): the governed transport attaches the consumer's gateway
 credentials to every request, so they must never reach a server the gateway
 does not front. There is no opt-out.
 
@@ -96,7 +96,7 @@ _STEP_UP_FLOW_S = 120.0
 
 class UngovernedMcpServer(DonkeyError):
     """A ``ToolSet`` binding was refused because a server in it is not governed
-    (#1150, ADR 0013).
+    (#1150, ADR 0017).
 
     Raised locally, before any connection opens: the governed transport attaches
     the consumer's gateway credentials to every request, so binding a server the
@@ -149,7 +149,7 @@ class ToolSet:
     return each framework's native tool objects (docs/verified-apis.md §9).
     Each first raises
     :class:`UngovernedMcpServer` if any server in the set is not governed
-    (ADR 0013), then lists the tools with :meth:`describe`.
+    (ADR 0017), then lists the tools with :meth:`describe`.
 
     Docs: https://docs.donkey-kit.dev/tool-access/binding
     """
@@ -403,7 +403,8 @@ class ToolSet:
     ) -> Callable[..., Any]:
         """The invoker a binding hands its framework for one tool: ``invoke``
         itself, or ``invoke`` behind the approval gate when a rule matches
-        ``tool`` (#1153). Bindings call :meth:`_check_approvals` once first."""
+        ``tool`` (#1153). Bindings call :meth:`describe` first, which refuses a
+        ``require_approval()`` name that matches no tool."""
         rule = rule_for(self._approvals, tool)
         if rule is None:
             return invoke
@@ -415,11 +416,6 @@ class ToolSet:
             natives=self._natives,
             declared_on=self._approval_registry,
         )
-
-    def _check_approvals(self) -> None:
-        """Refuse a ``require_approval()`` name that matches no tool on any
-        server, checked against every tool before ``filter()`` (#1153)."""
-        check_rules(self._approvals, self._descriptors(filtered=False))
 
     @property
     def name_map(self) -> dict[str, str]:
@@ -453,7 +449,7 @@ class ToolSet:
         return [d for _, d in _index(self._servers, self._filters if filtered else None)]
 
     def _require_governed(self) -> None:
-        """Refuse to bind unless every server is governed (#1150, ADR 0013).
+        """Refuse to bind unless every server is governed (#1150, ADR 0017).
 
         Runs before any connection or credential exists, so a refused server
         never receives a request. A server with no verdict is refused too."""
@@ -492,7 +488,7 @@ class ToolSet:
         ``donkey.as_user(...)``, where it was the user's token that was refused.
 
         Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            UngovernedMcpServer: A server in the set is not governed (ADR 0017).
             ConfigError: No gateway credential is configured outside a
                 ``donkey.as_user(...)`` block; the server URLs were read from a
                 ``base_url`` in the working directory's config files that may
@@ -662,7 +658,7 @@ class ToolSet:
     # ---- per-framework binding (native types BG §2.7, docs/verified-apis.md §9) --
     # Each method binds the framework's own MCP class, as the local round-trip in
     # scripts/mcp_binding verified it, and returns what that class returns. Each
-    # first refuses an ungoverned set (ADR 0013), then loads the descriptors.
+    # first refuses an ungoverned set (ADR 0017), then loads the descriptors.
     # The per-tool ones (LangGraph, LlamaIndex, Anthropic) wrap each tool's call so
     # the gateway's tool-access denial raises ToolNotInProfile (#312) and a call
     # under another user than the bind's raises AuthError (#1418); the
@@ -676,7 +672,7 @@ class ToolSet:
         and a ``require_approval()`` tool pauses the graph with ``interrupt()``.
 
         Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            UngovernedMcpServer: A server in the set is not governed (ADR 0017).
             ImportError: ``langchain-mcp-adapters`` is not installed.
         """
         self._require_governed()
@@ -715,7 +711,7 @@ class ToolSet:
         each tool call opens its own session.
 
         Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            UngovernedMcpServer: A server in the set is not governed (ADR 0017).
             ImportError: ``llama-index-tools-mcp`` is not installed.
         """
         self._require_governed()
@@ -756,7 +752,7 @@ class ToolSet:
         servers dial that URL, and it has no field for the credential headers.
 
         Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            UngovernedMcpServer: A server in the set is not governed (ADR 0017).
             ImportError: ``anthropic`` is not installed.
         """
         self._require_governed()
@@ -794,7 +790,7 @@ class ToolSet:
         tools. The tools left after ``filter()`` go in its ``tool_filter``.
 
         Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            UngovernedMcpServer: A server in the set is not governed (ADR 0017).
             ConfigError: Two servers expose a tool under one name.
             ImportError: ``google-adk`` is not installed.
         """
@@ -824,7 +820,7 @@ class ToolSet:
         after ``filter()`` go in its ``tool_filters``.
 
         Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            UngovernedMcpServer: A server in the set is not governed (ADR 0017).
             ConfigError: Two servers expose a tool under one name.
             ImportError: ``strands-agents`` is not installed.
         """
@@ -853,7 +849,7 @@ class ToolSet:
         ``filter()`` go in its static ``tool_filter``.
 
         Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            UngovernedMcpServer: A server in the set is not governed (ADR 0017).
             ConfigError: Two servers expose a tool under one name.
             ImportError: ``openai-agents`` is not installed.
         """
@@ -886,7 +882,7 @@ class ToolSet:
         origin, and the tools left after ``filter()`` in ``allowed_tools``.
 
         Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            UngovernedMcpServer: A server in the set is not governed (ADR 0017).
             ConfigError: Two servers expose a tool under one name.
             ImportError: ``agent-framework`` is not installed.
         """
@@ -923,7 +919,7 @@ class ToolSet:
         ``streamablehttp_client``.
 
         Raises:
-            UngovernedMcpServer: A server in the set is not governed (ADR 0013).
+            UngovernedMcpServer: A server in the set is not governed (ADR 0017).
             ConfigError: Two servers expose a tool under one name.
             ImportError: ``crewai-tools[mcp]`` is not installed.
         """

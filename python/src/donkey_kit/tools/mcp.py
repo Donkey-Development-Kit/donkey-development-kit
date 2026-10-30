@@ -1,6 +1,6 @@
 """The SDK's own MCP client calls: ``tools/list`` for a ``ToolSet``'s descriptors (#221).
 
-Opened only after the governance guard (ADR 0013), with the binding's credential
+Opened only after the governance guard (ADR 0017), with the binding's credential
 headers, over the official ``mcp`` package's streamable-HTTP client: the
 baseline ``scripts/mcp_binding/probe_mcp_sdk.py`` round-trips (docs/verified-apis.md
 §9). ``mcp`` 1.x builds that client on ``httpx`` and 2.x on ``httpx2``; the same

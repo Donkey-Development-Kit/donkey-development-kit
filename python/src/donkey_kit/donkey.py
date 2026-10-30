@@ -277,7 +277,7 @@ class ToolsFacade:
 
         Raises:
             UngovernedMcpServer: The server is not governed, so nothing is sent
-                to it (ADR 0013).
+                to it (ADR 0017).
             RegistryError: ``ref`` does not resolve to one gateway instance.
             ConfigError: The gateway credential may not go to a URL read from a
                 control plane the working directory's config files named (ADR 0019).

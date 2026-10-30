@@ -158,8 +158,8 @@ class ConfigError(DonkeyError):
 
 
 class ConfigWarning(UserWarning):
-    """A config file holds something that belongs elsewhere, or an env switch
-    relaxes a config check (config resolution)."""
+    """A setting accepted but likely a mistake: a misplaced config entry, an env switch that relaxes
+    a check, a non-loopback ``serve()`` host, or a ``wait_for_gateway_approval()`` over 2 min."""
 
 
 class AuthError(DonkeyError):

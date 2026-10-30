@@ -155,11 +155,9 @@ _.escalate  # unused method (src/donkey_kit/core/reactions.py)
 # #211); only user code and the tests use them.
 _.reject  # unused method (src/donkey_kit/core/approvals.py)
 requested_at  # unused variable (src/donkey_kit/core/approvals.py)
-# ToolSet approval on discovered tools (#1153): require_approval is public API;
-# _check_approvals is used by tests/unit/test_toolset_approval.py. inspect reads
-# __signature__.
+# ToolSet approval on discovered tools (#1153): require_approval is public API.
+# inspect reads __signature__.
 _.require_approval  # unused method (src/donkey_kit/tools/session.py)
-_._check_approvals  # unused method (src/donkey_kit/tools/session.py)
 # ToolSet.wait_for_gateway_approval (#214) is public API; only user code and
 # tests/unit/test_step_up_wait.py call it.
 _.wait_for_gateway_approval  # unused method (src/donkey_kit/tools/session.py)
