@@ -123,7 +123,7 @@
   "anypoint/mcp_instance/policy-client-id-enforcement.request.json": "sha256:64400e129e40e0a8a832f4c15f76e71eb0db53247e10dd83786537f1d01ca000",
   "anypoint/mcp_instance/policy-mcp-support.201.json": "sha256:c4f64c6bcd3f3c1795298e9ab812b1f0c8e7311f250dc515be01f29eaeb6541b",
   "anypoint/mcp_instance/policy-mcp-support.request.json": "sha256:4364e876bf49b58444ef30066807a9e2b264749ff89709b131aa0ea64464a4e4",
-  "anypoint/mcp_policies/README.md": "sha256:a3490d7d574cfa258eb9e66241f291fdf1ef9f805c91b9a0f276d0b0f6fdb36b",
+  "anypoint/mcp_policies/README.md": "sha256:8b063afe542a8e08c9718fb3cfebc6478c9c68704f8798dd95ebd4192ca8dc9c",
   "anypoint/mcp_policies/abac-denied.json": "sha256:2047aeb83298e71c45eae37a202a829136fc0c117623b8b14572e5c627beb4a9",
   "anypoint/mcp_policies/mapping-call.json": "sha256:e60e41403c03a119fb8a7ce0becab5aafd6d340b5f657c7829572d47bcb4d668",
   "anypoint/mcp_policies/mapping-list.json": "sha256:9f18dd159e270ddb3c699c64a6d345ac65898365be324c4c9ffe6336eaeeb3e2",

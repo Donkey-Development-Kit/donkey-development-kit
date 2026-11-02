@@ -1,8 +1,7 @@
 # Live MCP policy captures (#1384, partial)
 
-Captured 2026-11-02 in DDK organization
-`826ba985-9894-4f7b-ba71-6965832ef0d6`, Sandbox environment
-`14d3b31e-4e3b-4d90-b77a-63c9d6b7ea6a`, on API instance `21261437`
+Captured 2026-11-02 in the DDK organization, Sandbox environment,
+on API instance `21261437`
 (`ddk-langgraph-mcp`, `shared-omni-gateway`, Omni Gateway `1.14.4`).
 The upstream is the deployed framework-built server, not a local simulator.
 All policy assets are from MuleSoft group `68ef9520-24e9-4cf2-b2f5-620025690913`.
