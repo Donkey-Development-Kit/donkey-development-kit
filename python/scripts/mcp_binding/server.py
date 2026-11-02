@@ -47,13 +47,17 @@ RECORDED_VALUES = ("client_id", "client_secret", "x-correlation-id")
 SKU_RECORD = {"sku": "SKU-1001", "name": "Widget", "price": 9.99, "in_stock": True}
 
 
-def lookup_sku(sku: str) -> dict[str, Any]:
+def lookup_sku(sku: str, expected_info: str | None = None) -> dict[str, Any]:
     """Look up a product by SKU and return its record.
 
     Args:
         sku: The stock keeping unit to look up.
+        expected_info: Optional extraction intent, echoed unchanged for binding probes.
     """
-    return {**SKU_RECORD, "sku": sku}
+    result = {**SKU_RECORD, "sku": sku}
+    if expected_info is not None:
+        result["expected_info"] = expected_info
+    return result
 
 
 def add(a: int, b: int) -> int:
