@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":1,"error":{"code":-32700,"message":"Invalid JSON data","data":"EOF while parsing a value at line 1 column 60"}}

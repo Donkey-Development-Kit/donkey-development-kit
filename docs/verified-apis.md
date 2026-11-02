@@ -731,6 +731,22 @@ names (from `api-mgr:policy:describe <interface> --policyVersion <v> -o json`,
 `action` (enum: `Reject`, `Log`, `Log and mask`; default `Log` — only `Reject`
 blocks). Both were applied to `21133858` for capture, then removed.
 
+### A2A instance policy captures (#1393)
+
+These are response-shape facts, **not shipped A2A classification or simulator
+support** (#1394, #1397). Captured 2026-11-02 on `ddk-langgraph-agent`, instance
+`21206128`, Sandbox, managed `shared-omni-gateway` **1.14.4**. Test-only fixture
+pairs and exact triggers: `python/tests/fixtures/anypoint/a2a_policies/README.md`.
+Each temporary policy was removed and the original policy chain restored.
+
+| Policy | Status | Verified response shape | Date | Source |
+|---|---|---|---|---|
+| A2A v0.3 PII Detector, `a-two-a-pii-detector` 1.0.2 | VERIFIED (LIVE) | `message/send`, synthetic email, `Reject`: HTTP 403, JSON-RPC `-32602`, `Invalid params`; `error.data` is a string prefixed `Request contains PII data: ` carrying a JSON findings list (`pii_type`, **raw synthetic `value`**, `start`, `end`), not v1 `ErrorInfo`. No `www-authenticate`. Redaction remains #1398 | 2026-11-02 | instance 21206128, gateway 1.14.4; `a2a_policies/v03-pii-send.*` |
+| A2A v0.3 Schema Validation, `a-two-a-schema-validation` 1.0.2 | VERIFIED (LIVE) | Missing `parts`: HTTP 400 / `-32602`; unknown method: HTTP **400** / `-32601`; malformed JSON: HTTP 400 / `-32700` with response ID **1**. `error.data` is a string describing the schema error, not an `ErrorInfo` list | 2026-11-02 | same instance/gateway; `a2a_policies/v03-schema-{params,method,parse}.*` |
+| A2A v0.3 Token Based Rate Limit, `a-two-a-token-rate-limit` 1.0.1 | VERIFIED (LIVE) | Request exceeds a one-token window: bare HTTP 429, empty body, `x-token-limit: 1`, `x-token-remaining: 1`, `x-token-reset: 60000` (ms), no `retry-after`. Positive remaining does not imply the request fits the window. Accepted-call headers are not captured | 2026-11-02 | same instance/gateway; `a2a_policies/v03-rate-send.headers.txt` |
+| A2A v1 PII / Schema Validation / Token Based Rate Limit | UNVERIFIED | No v1 capture. API Manager refused attachment of `a2a-v1-pii-detector` 1.0.0 to the existing `a2a` instance: HTTP 400 `PolicyValidationError`, "The policy can only be applied to APIs which have a A2A_V1 asset type". A compatible asset/instance is a prerequisite; upstream v1 support alone is insufficient | — | #1393 preflight, 2026-11-02 |
+| A2A v1 Azure / Bedrock Guardrails, Quality Evaluation, In-Task Authorization Code | UNVERIFIED | No live response capture; documentation is not evidence of the response shape | — | #1393 remains open |
+
 ## 5. MCP Bridge / Agent Network provisioning — **gates whether §5 is viable at all**
 
 FINDING (CLI, 2026-08-28): provisioning is delivered as a **Maven-project + CLI**
@@ -1085,9 +1101,13 @@ Fronting an agent with an Omni Gateway A2A instance is `donkey expose` (#226);
 the control-plane calls it makes are recorded in §12.5 (#254, and #1278 for an
 MCP instance). `donkey dev`'s
 simulated ingress (#1284) answers inbound rejections with the LLM-proxy fixtures
-of §4. Of the gateway's own policy rejections on an A2A agent instance, only
-`client-id-enforcement`'s with no client id was seen (`401`
-`{"error":"Client ID is not present"}`, #226); none is captured as a fixture.
+of §4. The v0.3 PII, schema-validation and token-rate-limit rejections on an
+A2A instance are now captured in `tests/fixtures/anypoint/a2a_policies/` (#1393,
+§4). They do not yet change the simulator or add typed outbound A2A calls.
+`client-id-enforcement`'s rejection with no client id was also seen (`401`
+`{"error":"Client ID is not present"}`, #226). V1 policy captures still need a
+compatible API Manager asset/instance; the old `a2a` registration rejects the
+v1 PII policy before attachment.
 
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 
