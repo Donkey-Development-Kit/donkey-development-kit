@@ -710,21 +710,20 @@ def classify(
       ``GatewayApprovalPending`` / ``GatewayApprovalDenied`` (``core/step_up``, #1320). Also
       checked before the auth rule: the credential was accepted.
 
-    These shapes have no ``_verify.py`` constant — ``classify()`` reads them straight from the
-    response — so their verification record is the docs/verified-apis.md §4 rows. Any other
-    content-moderation / federated-guardrail shape falls through to a generic
+    Other content-moderation / federated-guardrail shapes fall through to a generic
     :class:`PolicyViolation` whose message names what was observed and says the shape is
     unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate`` shape, a **403
     carrying no ``www-authenticate`` header** and matching none of the policy discriminators
     above is treated as one of these unconfirmed refusals, not mis-typed as an :class:`AuthError`.
 
-    A shape a customer registered with ``classify.register()`` (BG §2.2, #210,
-    ``core/classifier``) is matched after every built-in above and before the upstream-envelope
-    rule, so a verified shape always wins and a custom policy's nested-envelope 403 is not
-    mis-typed as an :class:`UpstreamRequestError`.
+    Registered shapes follow built-ins and precede upstream rules (BG §2.2).
+    JSON-RPC envelopes use the shared hook, never upstream diagnostic rendering.
     """
 
     shape = _shape(response, correlation_id=correlation_id, call_id=call_id)
+    if shape.body is not None and "jsonrpc" in shape.body and "error" in shape.body:
+        if _JSONRPC_MATCHER:
+            return _JSONRPC_MATCHER[0](shape)
     for matcher in _MATCHERS:
         error = matcher(shape)
         if error is not None:
@@ -983,6 +982,7 @@ def _match_upstream_failure(s: _Shape) -> DonkeyError | None:
 #: it is imported. A hook slot, not an import: this module sits below the registry in the core
 #: layers, and with no registry imported there is nothing registered to match.
 _REGISTERED_MATCHER: list[Callable[[_Shape], DonkeyError | None]] = []
+_JSONRPC_MATCHER: list[Callable[[_Shape], DonkeyError]] = []
 
 #: The OBO policy's CIBA pending/denied rules (#1320), installed by ``core/step_up``, whose
 #: types subclass this module's. ``core`` imports it, so the slot is always filled.

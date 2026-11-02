@@ -168,6 +168,12 @@ async def enrich(record: dict[str, str]) -> None:
 
 ## Framework support
 
+JSON-RPC [custom registrations](https://docs.donkey-kit.dev/custom-policies.md#json-rpc-errors) share the
+classifier registry, not an additional handler interception path. The standalone
+`jsonrpc_refusal()` returns a typed refusal for your code to handle; it does not
+invoke `donkey.on(...)`. Registering an HTTP-200 JSON-RPC shape does not make the
+transport inspect successful responses or add MCP/A2A binding coverage.
+
 Handlers run at the SDK's transport, so they apply to every adapter whose calls
 go through the SDK's HTTP client. CrewAI's provider owns its own transport, so
 its refusals never reach the hook and handlers do not run for its calls. That

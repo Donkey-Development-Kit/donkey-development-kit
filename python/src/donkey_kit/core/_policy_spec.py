@@ -7,14 +7,16 @@ module is the part that needs no registry state.
 from __future__ import annotations
 
 import re
-import string
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any, TypeAlias
 
 import httpx
 
+from . import _wire
+from ._policy_sample import sample
 from ._refusal_body import code_str
+from ._tool_access import ToolNotInProfile, match_tool_access
 from .errors import (
     _POLICY_MATCHERS,
     AgentKilled,
@@ -28,9 +30,28 @@ from .errors import (
     _Shape,
     _shape,
 )
+from .jsonrpc_refusals import (
+    PROVIDER_VALUES as _PROVIDER_VALUES,
+)
+from .jsonrpc_refusals import (
+    RpcShape,
+    policy_header,
+    policy_identity,
+    rpc_error,
+    rpc_shape,
+    valid_envelope,
+)
 from .step_up import GatewayApprovalDenied
 
-__all__ = ["POLICY_SLUGS", "BodyValue", "PolicyRegistration", "condition_key", "holds", "validated"]
+__all__ = [
+    "POLICY_SLUGS",
+    "BodyValue",
+    "PolicyRegistration",
+    "condition_key",
+    "holds",
+    "holds_rpc",
+    "validated",
+]
 
 #: A ``body`` leaf: compared by type-strict equality, or ``fullmatch`` for a
 #: compiled pattern (string leaves only).
@@ -55,7 +76,7 @@ POLICY_SLUGS: tuple[tuple[type[DonkeyError], str], ...] = (
 _RESERVED_SLUGS = frozenset(
     {slug for _kind, slug in POLICY_SLUGS}
     | {str(getattr(kind, "policy", "")) for kind, _slug in POLICY_SLUGS}
-    | {"regex-prompt-guard"}
+    | {"regex-prompt-guard", ToolNotInProfile.policy}
 )
 _SLUG_RE = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 
@@ -63,21 +84,8 @@ _SLUG_RE = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 #: nested ``type``, Gemini's ``status``, and ``code``). A spec discriminated by
 #: these alone would claim real provider mistakes. Pinned against the captured
 #: fixtures by tests/unit/test_classifier.py.
-_PROVIDER_VALUES = frozenset(
-    {
-        "",
-        "400",
-        "404",
-        "INVALID_ARGUMENT",
-        "NOT_FOUND",
-        "decimal_above_max_value",
-        "invalid_request_error",
-        "model_not_found",
-        "upstream_error",
-    }
-)
 _PROVIDER_PATHS = frozenset({"error.type", "error.status", "error.code"})
-_MATCH_KEYS = frozenset({"status", "error_type", "error_code", "headers", "body"})
+_MATCH_KEYS = frozenset({"status", "error_type", "error_code", "headers", "body", "jsonrpc_code"})
 
 
 @dataclass(frozen=True)
@@ -87,7 +95,8 @@ class PolicyRegistration:
 
     ``headers`` are ``(lowercased name, exact value)`` pairs and ``body`` is
     ``(dotted path, leaf)`` pairs over the top-level JSON object, both sorted.
-    ``policy`` is the slug the raised exception and its span carry."""
+    ``policy`` is the slug the raised exception and its span carry.
+    ``jsonrpc_code`` opts into JSON-RPC matching, never ordinary HTTP rules."""
 
     raises: type[PolicyViolation]
     policy: str
@@ -96,12 +105,17 @@ class PolicyRegistration:
     error_code: str | None = None
     headers: tuple[tuple[str, str], ...] = ()
     body: tuple[tuple[str, BodyValue], ...] = ()
+    jsonrpc_code: int | None = None
 
     @property
     def conditions(self) -> int:
         """How many discriminators the spec names (``status`` excluded): the
         specificity that settles two registrations matching one response."""
-        named = (self.error_type is not None) + (self.error_code is not None)
+        named = (
+            (self.error_type is not None)
+            + (self.error_code is not None)
+            + (self.jsonrpc_code is not None)
+        )
         return named + len(self.headers) + len(self.body)
 
     def example(self) -> httpx.Response:
@@ -109,7 +123,8 @@ class PolicyRegistration:
         and a JSON body built from ``error_type`` / ``error_code`` / the body
         paths (a pattern leaf gets a sample value it fullmatches). The
         registration checks run it through the built-in rules, and
-        ``donkey.simulate()`` serves it.
+        ``donkey.simulate()`` serves error-status examples. HTTP 200 JSON-RPC
+        examples are for explicit matching only, not transport injection.
 
         Raises:
             ValueError: No response satisfies every condition (a contradictory
@@ -122,7 +137,14 @@ class PolicyRegistration:
             response = httpx.Response(self.status, headers=headers)
         else:
             response = httpx.Response(self.status, headers=headers, json=body)
-        if not holds(self, _shape(response, correlation_id=None, call_id=None)):
+        shape = _shape(response, correlation_id=None, call_id=None)
+        satisfied = holds(self, shape)
+        if self.jsonrpc_code is not None and shape.error_obj is not None and body is not None:
+            satisfied = holds_rpc(
+                self,
+                rpc_shape(shape.error_obj, status=self.status, headers=headers, body=shape.body),
+            ) and valid_envelope(body)
+        if not satisfied:
             raise ValueError(
                 f"Contradictory match spec for {self.raises.__name__}: no response "
                 "can satisfy every condition (e.g. a body path and error_type both "
@@ -136,7 +158,7 @@ def condition_key(reg: PolicyRegistration) -> tuple[object, ...]:
     they raise. 1 and True compare equal in Python; the leaf's type keeps them
     apart."""
     body = tuple((path, type(leaf).__name__, leaf) for path, leaf in reg.body)
-    return (reg.status, reg.error_type, reg.error_code, reg.headers, body)
+    return (reg.status, reg.error_type, reg.error_code, reg.headers, body, reg.jsonrpc_code)
 
 
 # --- register() validation --------------------------------------------------
@@ -158,7 +180,13 @@ def validated(match: object, raises: object) -> PolicyRegistration:
     status = match["status"]
     if type(status) is not int:
         raise TypeError(f"match status must be an int, got {status!r}.")
-    if not 400 <= status < 500 or status in (401, 429):
+    jsonrpc_code = match.get("jsonrpc_code")
+    if "jsonrpc_code" in match and type(jsonrpc_code) is not int:
+        raise TypeError("match jsonrpc_code must be an int (not bool or string).")
+    if (not 400 <= status < 500 and not (status == 200 and jsonrpc_code is not None)) or status in (
+        401,
+        429,
+    ):
         raise ValueError(
             f"match status {status} is not registrable: use a 4xx other than 401 "
             "(always auth) and 429 (always a rate limit or token budget)."
@@ -173,7 +201,19 @@ def validated(match: object, raises: object) -> PolicyRegistration:
             f"every {status}; add error_type, error_code, headers or body."
         )
     kind = _registrable(raises)
-    spec = PolicyRegistration(kind, "", status, error_type, error_code, headers, body)
+    spec = PolicyRegistration(kind, "", status, error_type, error_code, headers, body, jsonrpc_code)
+    if jsonrpc_code is not None:
+        identifying = any(policy_header(name, value) for name, value in headers) or any(
+            policy_identity(path, leaf) for path, leaf in body
+        )
+        if not identifying:
+            raise ValueError(
+                "jsonrpc_code requires a policy-identifying body or header discriminator."
+            )
+        if not any(
+            "policy" in vars(k) for k in kind.__mro__[: kind.__mro__.index(PolicyViolation)]
+        ):
+            raise ValueError("JSON-RPC registrations require policy = '<slug>' on the class.")
     if _provider_values_only(spec):
         raise ValueError(
             "This spec is discriminated only by upstream provider error values "
@@ -191,6 +231,11 @@ def _unshadowed(spec: PolicyRegistration) -> None:
     would always win, so the registration could never match. Derived from the
     rules themselves, so it stays right as built-ins are added."""
     shape = _shape(spec.example(), correlation_id=None, call_id=None)
+    if spec.jsonrpc_code is not None:
+        if shape.error_obj is not None and match_tool_access(shape.error_obj) is not None:
+            raise ValueError("The built-in tool_access rule claims this spec (ToolNotInProfile).")
+        if _wire.WWW_AUTHENTICATE_HEADER in dict(spec.headers):
+            raise ValueError("The built-in auth rule claims this spec.")
     for matcher in _POLICY_MATCHERS:
         claimed = matcher(shape)
         if claimed is not None:
@@ -326,11 +371,21 @@ def _probe(kind: type[PolicyViolation], policy: str) -> None:
 
 
 def _example_body(reg: PolicyRegistration) -> dict[str, Any] | None:
-    if not reg.body and reg.error_type is None and reg.error_code is None:
+    if (
+        not reg.body
+        and reg.error_type is None
+        and reg.error_code is None
+        and reg.jsonrpc_code is None
+    ):
         return None
     body: dict[str, Any] = {}
     for path, leaf in reg.body:
-        _put(body, path.split("."), _sample(leaf) if isinstance(leaf, re.Pattern) else leaf)
+        _put(body, path.split("."), sample(leaf) if isinstance(leaf, re.Pattern) else leaf)
+    if reg.jsonrpc_code is not None:
+        _put(body, ["jsonrpc"], "2.0")
+        _put(body, ["id"], 1)
+        _put(body, ["error", "code"], reg.jsonrpc_code)
+        _put(body, ["error", "message"], "Request refused.")
     if reg.error_type is not None:
         _put(body, ["error", "type"], reg.error_type)
     if reg.error_code is not None:
@@ -354,103 +409,6 @@ def _put(body: dict[str, Any], segments: list[str], value: object) -> None:
     node.setdefault(segments[-1], value)
 
 
-# Characters tried, in order, for one single-character atom of a pattern.
-_ALPHABET = string.ascii_letters + string.digits + " _-.:/" + string.printable
-
-
-def _sample(pattern: re.Pattern[str]) -> str:
-    """A value ``pattern`` fullmatches, for the example body. A small heuristic
-    over the pattern source (literals, escapes, classes, groups, the first
-    alternative, each quantifier's minimum), confirmed by ``fullmatch``."""
-    source = pattern.pattern
-    try:
-        sample, _end = _sample_seq(source, 0, pattern.flags)
-    except (re.error, IndexError, ValueError):
-        sample = None
-    if sample is None or pattern.fullmatch(sample) is None:
-        raise ValueError(
-            f"Cannot synthesise a value that {source!r} fullmatches, which the "
-            "registration checks and donkey.simulate() need. Use a simpler pattern."
-        )
-    return sample
-
-
-def _sample_seq(src: str, i: int, flags: int) -> tuple[str, int]:
-    """The sample for the first alternative of the sequence at ``src[i]``, and
-    the index of the ``)`` (or end) that closes it."""
-    parts: list[str] = []
-    while i < len(src) and src[i] != ")":
-        if src[i] == "|":
-            depth = 0
-            while i < len(src) and not (src[i] == ")" and depth == 0):
-                depth += {"(": 1, ")": -1}.get(src[i], 0)
-                i += 2 if src[i] == "\\" else 1
-            break
-        atom, i = _sample_atom(src, i, flags)
-        count, i = _quantifier(src, i)
-        parts.append(atom * count)
-    return "".join(parts), i
-
-
-def _sample_atom(src: str, i: int, flags: int) -> tuple[str, int]:
-    char = src[i]
-    if char == "(":
-        if src.startswith("(?P<", i):
-            i = src.index(">", i) + 1
-        elif src.startswith("(?:", i):
-            i += 3
-        elif src.startswith("(?", i):  # a flag group or lookaround: zero-width
-            return "", _close(src, i) + 1
-        else:
-            i += 1
-        inner, i = _sample_seq(src, i, flags)
-        return inner, i + 1
-    if char in "^$":
-        return "", i + 1
-    if char == "[":
-        end = src.index("]", i + 2 if src.startswith("[^", i) else i + 1)
-        if src[end - 1] == "\\":
-            end = src.index("]", end + 1)
-        atom = src[i : end + 1]
-        return _one_char(atom, flags), end + 1
-    atom = src[i : i + 2] if char == "\\" else char
-    return _one_char(atom, flags), i + len(atom)
-
-
-def _one_char(atom: str, flags: int) -> str:
-    """The first character of :data:`_ALPHABET` that ``atom`` fullmatches, or
-    ``""`` for a zero-width escape (``\\b``, ``\\A``)."""
-    compiled = re.compile(atom, flags)
-    return next((c for c in _ALPHABET if compiled.fullmatch(c)), "")
-
-
-def _quantifier(src: str, i: int) -> tuple[int, int]:
-    """The minimum repeat count of the quantifier at ``src[i]`` (1 when there is
-    none), and the index after it and any lazy/possessive suffix."""
-    count = 1
-    if i < len(src) and src[i] in "*?+":
-        count = 0 if src[i] in "*?" else 1
-        i += 1
-    else:
-        repeat = re.match(r"\{(\d*)(?:,\d*)?\}", src[i:])
-        if repeat is None:
-            return count, i
-        count = int(repeat.group(1) or 0)
-        i += repeat.end()
-    if i < len(src) and src[i] in "?+":
-        i += 1
-    return count, i
-
-
-def _close(src: str, i: int) -> int:
-    depth = 0
-    while True:
-        depth += {"(": 1, ")": -1}.get(src[i], 0)
-        if depth == 0:
-            return i
-        i += 2 if src[i] == "\\" else 1
-
-
 # --- classify-time matching -------------------------------------------------
 
 _MISSING = object()
@@ -458,7 +416,7 @@ _MISSING = object()
 
 def holds(reg: PolicyRegistration, s: _Shape) -> bool:
     """Every condition of ``reg`` holds on the parsed response ``s``."""
-    if reg.status != s.status:
+    if reg.jsonrpc_code is not None or reg.status != s.status:
         return False
     if reg.error_type is not None and s.error_type != reg.error_type:
         return False
@@ -473,10 +431,26 @@ def holds(reg: PolicyRegistration, s: _Shape) -> bool:
     return all(_leaf_holds(expected, _leaf(s.body, path)) for path, expected in reg.body)
 
 
-def _leaf(body: dict[str, Any] | None, path: str) -> object:
+def holds_rpc(reg: PolicyRegistration, s: RpcShape) -> bool:
+    """Match only explicit JSON-RPC registrations using the same strict leaves."""
+    if reg.jsonrpc_code is None or reg.status != s.status or rpc_error(s.error) is None:
+        return False
+    if type(s.error.get("code")) is not int or reg.jsonrpc_code != s.error["code"]:
+        return False
+    error_type = s.error.get("type") or s.error.get("status")
+    if reg.error_type is not None and reg.error_type != error_type:
+        return False
+    if reg.error_code is not None and reg.error_code != code_str(s.error.get("code")):
+        return False
+    if any(s.headers.get(name) != value for name, value in reg.headers):
+        return False
+    return all(_leaf_holds(expected, _leaf(s.body, path)) for path, expected in reg.body)
+
+
+def _leaf(body: Mapping[str, object] | None, path: str) -> object:
     node: object = body
     for segment in path.split("."):
-        if not isinstance(node, dict) or segment not in node:
+        if not isinstance(node, Mapping) or segment not in node:
             return _MISSING
         node = node[segment]
     return node

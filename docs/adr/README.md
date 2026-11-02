@@ -92,3 +92,4 @@ is not rewritten.
 | [0018](0018-per-client-approvals.md) | Each Donkey owns its pending approvals; a gated call records on the client that runs it, else the one it was declared on | Accepted | #1423 |
 | [0019](0019-derived-endpoint-trust.md) | A URL read from a configured endpoint follows that endpoint's trust rule, for every credential sent to it | Accepted | #1479 |
 | [0020](0020-provisional-members-of-stable-classes.md) | A public member of a stable class may be provisional, when its docstring and the snapshot both say so | Accepted | #1499 |
+| [0021](0021-jsonrpc-refusal-matching.md) | JSON-RPC refusals share the custom-policy registry through an explicit opt-in | Accepted | #1385 |

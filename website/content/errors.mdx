@@ -48,7 +48,7 @@ ordinary refusal. The two CIBA step-up answers are checked before the auth rule
 too: the gateway accepted the credential and is asking the user to approve the
 call on another device, so an `AuthError` would point you at the wrong fix.
 
-`classify()` checks the policy discriminators first, whatever the status, and
+For ordinary HTTP envelopes, `classify()` checks the policy discriminators first, whatever the status, and
 only then falls back to the status code. Within each step the first match wins,
 top to bottom:
 
@@ -129,6 +129,34 @@ body.
 
 ## The exception tree
 
+### JSON-RPC refusal matching
+
+`from donkey_kit import jsonrpc_refusal` provides a
+framework-free matcher for raw error mappings, full envelopes or exceptions
+with `.error`, including causes, contexts and exception groups. It returns a
+policy refusal or `None` when the error is ordinary or ambiguous (BG §2.2).
+
+The existing `-32008` / `"Unable to access"` pair remains `ToolNotInProfile`.
+Explicit `data.policy` or `policy_*` reason markers without a matching custom
+registration become `PolicyViolation(policy="unknown")`, not a guessed PII or
+schema type. Generic codes, diagnostic strings and A2A ErrorInfo reasons such
+as `FORBIDDEN` / `INVALID_PARAMS` do not identify a policy. See
+[JSON-RPC custom registrations](/custom-policies#json-rpc-errors).
+
+When you explicitly call `classify(response)` on a `jsonrpc: "2.0"` error
+envelope, genuine HTTP 401/auth challenges and 429 win. Other ordinary/ambiguous
+JSON-RPC failures become a safe `ToolInvocationError`, without repeating raw
+error.message/data. The original response stays on `.response`; handle it as
+potentially sensitive. The legacy access denial still parses only its tool name.
+Existing HTTP/header built-in discriminators still win, but their RPC rendering
+does not derive labels from raw RPC diagnostics. For example, `PIIDetected`
+from an RPC envelope has no message-derived entities or `gateway_message`;
+the raw bytes remain only on the original `.response`. Auth challenges on
+explicitly classified HTTP 200/400 envelopes are auth errors too; 429 retains
+rate-limit precedence.
+Normal HTTP classification is unchanged. This does not add automatic HTTP-200
+interception, per-policy MCP/A2A PII/schema types or new framework binding coverage.
+
 All importable from `donkey_kit`, along with `classify`, except the Roadmap-surface errors on the last line, which are in `donkey_kit.experimental`:
 
 ```
@@ -188,7 +216,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `RequestRateLimitExceeded` | `429` with `x-ratelimit-limit` and `x-ratelimit-remaining` and **no** `x-token-limit` | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
 | `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR, whose shape is read from the policy's source and not captured live) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager (for Google Model Armor, the template's filters in Google Cloud; for CrowdStrike AIDR, the collector's AIDR policy in the Falcon console). |
-| `ToolNotInProfile` | An MCP `tools/call` answered with HTTP `200` and the JSON-RPC error `-32008` `"Unable to access"` (the gateway's MCP Global Access or Attribute-Based Access Control policy). Not an HTTP error, so `classify()` never sees it; the LangGraph, LlamaIndex and Anthropic `ToolSet` bindings raise it, and `tool_access_denial(exc)` converts the error elsewhere. See [Tools outside your access profile](/tool-access/binding#tools-outside-your-access-profile). | **No** — a `PolicyViolation`, never retried; a configuration problem that no retry or rephrasing fixes. | Ask the server's owner to grant the tool (`.tool_name`) in the MCP access policy on its API instance in API Manager, or stop offering it to the agent. |
+| `ToolNotInProfile` | An MCP `tools/call` answered with HTTP `200` and the JSON-RPC error `-32008` `"Unable to access"` (the gateway's MCP Global Access or Attribute-Based Access Control policy). The LangGraph, LlamaIndex and Anthropic `ToolSet` bindings raise it; `tool_access_denial(exc)`, `jsonrpc_refusal(exc)` or an explicit `classify(response)` can convert it elsewhere. The transport does not automatically inspect successful 200 bodies. See [Tools outside your access profile](/tool-access/binding#tools-outside-your-access-profile). | **No** — a `PolicyViolation`, never retried; a configuration problem that no retry or rephrasing fixes. | Ask the server's owner to grant the tool (`.tool_name`) in the MCP access policy on its API instance in API Manager, or stop offering it to the agent. |
 | `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider) | **No** — a client configuration mistake, terminal; the upstream was never called. | Use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. |

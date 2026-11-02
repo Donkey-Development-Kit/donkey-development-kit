@@ -10,8 +10,8 @@ the gateway still decides, and the SDK only names the decision.
 The rules that keep a registration honest are checked at ``register()`` time,
 never deferred to the first refusal:
 
-* the match names a 4xx ``status`` (not 401, always auth; not 429, always a
-  rate limit) and at least one discriminator;
+* HTTP matches require a 4xx ``status`` (not 401 or 429); JSON-RPC opts in with
+  an integer ``jsonrpc_code``, status 200 or 4xx, and a body/header policy marker;
 * the minimal response the spec describes (:meth:`PolicyRegistration.example`)
   is run through the built-in rules, and a spec one of them claims is rejected
   by name: a verified shape always wins, so it could never match;
@@ -33,7 +33,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 
-from ._policy_spec import POLICY_SLUGS, PolicyRegistration, condition_key, holds, validated
+from ._policy_spec import (
+    POLICY_SLUGS,
+    PolicyRegistration,
+    condition_key,
+    holds,
+    holds_rpc,
+    validated,
+)
 from ._response import ResponseLike
 from .errors import (
     _REGISTERED_MATCHER,
@@ -42,6 +49,7 @@ from .errors import (
     _Shape,
 )
 from .errors import classify as _classify_response
+from .jsonrpc_refusals import REGISTERED_MATCHER, RpcShape
 
 __all__ = ["Classifier", "PolicyRegistration", "classify", "policy_type_slug"]
 
@@ -94,15 +102,19 @@ class Classifier:
         """Type a custom policy's refusal as ``raises``.
 
         Args:
-            match: ``status`` (a 4xx other than 401 and 429) plus at least one
+            match: Required ``status`` (a 4xx other than 401 and 429) plus at least one
                 of ``error_type`` (the nested error ``type``, or Gemini's
                 ``status``), ``error_code`` (the nested ``code``, as a string),
                 ``headers`` (``{name: exact value}``, names case-insensitive)
                 and ``body`` (``{dotted.path: str | int | bool |
-                re.Pattern}``). Every condition must hold.
+                re.Pattern}``). Optional ``jsonrpc_code`` is an exact integer
+                (not bool/string), allows status 200, and requires a policy-identifying
+                body or header condition. Body paths start at the envelope (error.data.*).
+                Every condition must hold. Without jsonrpc_code the match is HTTP-only.
             raises: A :class:`PolicyViolation` subclass that defines its own
                 ``remediation``. Its ``policy`` is the slug; when it sets none,
-                the ``error_type`` or ``error_code`` value is.
+                the ``error_type`` or ``error_code`` value is. JSON-RPC requires
+                a class-defined policy slug.
 
         Returns:
             The stored :class:`PolicyRegistration`.
@@ -172,14 +184,24 @@ def _match_registered(s: _Shape) -> DonkeyError | None:
     tie is never settled by registration order: it is the honest generic
     refusal, naming the competitors, and is logged once."""
     hits = [reg for reg in _registry if holds(reg, s)]
+    return _resolve(hits, s.status, s.kw)
+
+
+def _match_rpc_registered(s: RpcShape) -> PolicyViolation | None:
+    return _resolve([reg for reg in _registry if holds_rpc(reg, s)], s.status, s.kw)
+
+
+def _resolve(
+    hits: list[PolicyRegistration], status: int | None, kw: dict[str, object]
+) -> PolicyViolation | None:
     if not hits:
         return None
     best = max(reg.conditions for reg in hits)
     top = [reg for reg in hits if reg.conditions == best]
     if len(top) == 1:
         reg = top[0]
-        message = f"Request refused by custom policy {reg.policy} ({s.status})."
-        return reg.raises(message, policy=reg.policy, **s.kw)
+        message = f"Request refused by custom policy {reg.policy} ({status})."
+        return reg.raises(message, policy=reg.policy, **kw)
     names = ", ".join(f"{reg.raises.__name__} ({reg.policy})" for reg in top)
     tie = frozenset(top)
     if tie not in _reported_ties:
@@ -187,21 +209,22 @@ def _match_registered(s: _Shape) -> DonkeyError | None:
         _log.warning(
             "classify: %d registrations match a %d refusal with %d conditions each: %s",
             len(top),
-            s.status,
+            status,
             best,
             names,
         )
     return PolicyViolation(
         f"Request refused by a custom policy; {len(top)} registrations match it "
-        f"equally ({s.status}).",
+        f"equally ({status}).",
         policy="unknown",
         remediation=(
             f"These classify.register() entries match this refusal with {best} "
             f"condition(s) each: {names}. A tie is never settled by registration "
             "order. Add a condition to the one that should win, or unregister the other."
         ),
-        **s.kw,
+        **kw,
     )
 
 
 _REGISTERED_MATCHER[:] = [_match_registered]
+REGISTERED_MATCHER[:] = [_match_rpc_registered]
