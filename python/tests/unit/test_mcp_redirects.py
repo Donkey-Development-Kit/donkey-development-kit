@@ -11,12 +11,14 @@ leg. The real frameworks are bound to a redirecting server in
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 import threading
 import types
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -132,7 +134,8 @@ class _Servers:
             def do_POST(self) -> None:
                 self.rfile.read(int(self.headers.get("content-length") or 0))
                 self.send_response(307)
-                self.send_header("location", f"{target}{self.path}")
+                path = self.path.replace("\r", "").replace("\n", "")
+                self.send_header("location", f"{target}{path}")
                 self.send_header("content-length", "0")
                 self.end_headers()
 
@@ -157,6 +160,59 @@ def redirecting() -> Iterator[_Servers]:
         yield servers
     finally:
         servers.stop()
+
+
+@pytest.fixture(params=["unit", "harness"])
+def redirect_url(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """Exercise both redirect helpers without starting a real MCP framework."""
+    if request.param == "unit":
+        servers = _Servers()
+        try:
+            yield servers.url
+        finally:
+            servers.stop()
+        return
+    path = Path(__file__).resolve().parents[2] / "scripts" / "mcp_binding" / "_harness.py"
+    spec = importlib.util.spec_from_file_location("ddk_mcp_binding_harness", path)
+    assert spec is not None and spec.loader is not None
+    harness = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, harness)
+    spec.loader.exec_module(harness)
+    with harness.cross_origin_redirect(types.SimpleNamespace(url="http://127.0.0.1:9/mcp/")) as srv:
+        yield srv.url
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/mcp/",
+        "/mcp/a%2Fb?next=%2Ftools&value=one%20two",
+        "/mcp/?value=%0D%0AX-Injected%3Ayes",
+        "/mcp/\rX-Injected:yes",
+        "/mcp/\nX-Injected:yes",
+        "/mcp/\r\nX-Injected:yes\r\n\r\ninjected-body",
+    ],
+)
+def test_redirect_headers_strip_line_breaks_but_preserve_valid_paths(
+    redirect_url: str, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """#1528: enforce header safety even if the HTTP parser supplies raw CR/LF."""
+    parse_request = BaseHTTPRequestHandler.parse_request
+
+    def parse_with_path(handler: BaseHTTPRequestHandler) -> bool:
+        parsed = parse_request(handler)
+        if parsed:
+            handler.path = path
+        return parsed
+
+    monkeypatch.setattr(BaseHTTPRequestHandler, "parse_request", parse_with_path)
+    with httpx.Client(trust_env=False) as client:
+        response = client.post(redirect_url)
+    assert response.status_code == 307
+    assert httpx.URL(response.headers["location"]).path.startswith("/mcp/")
+    assert response.headers["location"].endswith(path.replace("\r", "").replace("\n", ""))
+    assert "x-injected" not in response.headers
+    assert response.content == b""
 
 
 async def test_a_followed_cross_origin_redirect_arrives_without_the_credential(

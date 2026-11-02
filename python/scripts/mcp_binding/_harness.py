@@ -118,7 +118,8 @@ def cross_origin_redirect(target: LocalServer) -> Iterator[Redirect]:
             redirect.seen.append({k: self.headers.get(k) for k in ("client_id", "client_secret")})
             self.rfile.read(int(self.headers.get("content-length") or 0))
             self.send_response(307)
-            self.send_header("location", f"{target_origin}{self.path}")
+            path = self.path.replace("\r", "").replace("\n", "")
+            self.send_header("location", f"{target_origin}{path}")
             self.send_header("content-length", "0")
             self.end_headers()
 
