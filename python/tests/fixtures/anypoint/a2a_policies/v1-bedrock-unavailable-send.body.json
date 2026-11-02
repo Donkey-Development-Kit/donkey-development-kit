@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"1393","error":{"code":-32603,"message":"Amazon Bedrock Guardrails service unavailable","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"UNAVAILABLE","domain":"a2a-protocol.org","metadata":{"detail":"Amazon Bedrock Guardrails service unavailable"}}]}}

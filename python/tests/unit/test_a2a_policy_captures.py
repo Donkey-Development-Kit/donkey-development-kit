@@ -125,3 +125,47 @@ def test_v1_schema_refusals_use_error_info(
     assert info["domain"] == "a2a-protocol.org"
     assert info["reason"] == reason
     assert detail in info["metadata"]["detail"]
+
+
+@pytest.mark.parametrize("method", ["send", "stream"])
+@pytest.mark.parametrize(
+    ("provider", "kind", "status", "code", "reason", "detail"),
+    [
+        ("azure", "block", 403, -32600, "FORBIDDEN", "prompt_shield"),
+        ("azure", "unavailable", 503, -32603, "UNAVAILABLE", "service_unavailable"),
+        (
+            "bedrock",
+            "unavailable",
+            503,
+            -32603,
+            "UNAVAILABLE",
+            "Amazon Bedrock Guardrails service unavailable",
+        ),
+    ],
+)
+def test_v1_guardrail_refusals_use_error_info_and_observability_headers(
+    method: str, provider: str, kind: str, status: int, code: int, reason: str, detail: str
+) -> None:
+    """Pre-upstream stream refusals are JSON, and unavailable is not a content block."""
+    response = _response(f"v1-{provider}-{kind}-{method}")
+    assert response.status_code == status
+    assert response.headers["content-type"] == "application/json"
+    assert "www-authenticate" not in response.headers
+    prefix = f"x-flex-{provider}-guardrails"
+    assert response.headers[f"{prefix}-action"] == "reject"
+    assert response.headers[f"{prefix}-phase"] == "request"
+    assert response.headers[f"{prefix}-reason"] == (
+        "prompt_shield" if kind == "block" else "service_unavailable"
+    )
+    payload = response.json()
+    assert payload["jsonrpc"] == "2.0"
+    assert payload["id"] == "1393"
+    assert payload["error"]["code"] == code
+    assert payload["error"]["data"] == [
+        {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            "domain": "a2a-protocol.org",
+            "reason": reason,
+            "metadata": {"detail": detail},
+        }
+    ]

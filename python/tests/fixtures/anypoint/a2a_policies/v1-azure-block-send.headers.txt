@@ -1,0 +1,12 @@
+HTTP/1.1 403 Forbidden
+x-flex-azure-guardrails-action: reject
+x-flex-azure-guardrails-phase: request
+x-flex-azure-guardrails-reason: prompt_shield
+content-type: application/json
+content-length: 269
+date: Mon, 02 Nov 2026 17:05:25 GMT
+server: Anypoint Flex Gateway
+x-correlation-id: 00000000-0000-4000-8000-af82e7563f0d
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Close
+

@@ -62,6 +62,13 @@ an unknown method returns HTTP 404. Token rate limiting can return a bare
 HTTP 429 with the same `x-token-*` headers. A rejected streaming request can
 return an ordinary HTTP error before any SSE stream starts.
 
+Azure Content Guardrails can return HTTP 403 with `FORBIDDEN` and a
+`prompt_shield` detail. Fail-closed Azure and Bedrock guardrail service failures
+return HTTP 503 with `UNAVAILABLE`. The `x-flex-azure-guardrails-*` or
+`x-flex-bedrock-guardrails-*` headers identify the action, phase and reason.
+A `service_unavailable` refusal is not a content-moderation verdict. These
+captures cover request-phase refusals, not response moderation or successful SSE.
+
 These gateway response shapes do not make outbound A2A calls or their typed
 refusals available in DDK yet. `as_tool()` remains on the Roadmap, and
 [`donkey dev`](/a2a) does not yet replay these A2A-specific policy responses.
