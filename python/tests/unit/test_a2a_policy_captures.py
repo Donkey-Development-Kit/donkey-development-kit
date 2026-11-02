@@ -76,6 +76,22 @@ def test_v03_auth_challenge_is_a_successful_json_task_not_an_error(method: str) 
     ]
 
 
+def test_quality_evaluation_annotates_a_successful_response() -> None:
+    """Section 4: quality headers annotate HTTP success, not a gateway refusal."""
+    response = _response("v03-quality-send")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    assert response.headers["x-quality-evaluation"] == "yes"
+    assert response.headers["x-quality-score"] == "3"
+    assert response.headers["x-quality-status"] == "completed"
+    assert response.headers["x-quality-explanation"] == (
+        "The agent fully addressed the user's request by responding with 'PONG' as required, "
+        "successfully fulfilling the user intent."
+    )
+    # Only the header evidence is retained; absence of a fixture body is not a wire claim.
+    assert not (_FIXTURES / "v03-quality-send.body.json").exists()
+
+
 def test_pii_refusal_embeds_synthetic_findings_in_string_data() -> None:
     """Section 4: v0.3 PII echoes findings in data, not a v1 ErrorInfo list."""
     response = _response("v03-pii-send")
