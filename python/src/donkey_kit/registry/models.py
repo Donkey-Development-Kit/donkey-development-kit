@@ -9,7 +9,7 @@ from .criteria import GovernanceReport
 
 __all__ = ["AgentHandle", "AssetRef", "AssetType", "McpServerHandle"]
 
-AssetType = Literal["mcp", "a2a-agent", "agent", "api"]
+AssetType = Literal["mcp", "a2a-agent", "agent", "api", "llm"]
 
 
 @dataclass(frozen=True)
