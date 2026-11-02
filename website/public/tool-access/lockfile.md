@@ -4,6 +4,12 @@ Status: Roadmap. Planned design; not shipped yet.
 
 This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the API shown here is the planned design.
 
+`donkey.tools.lock()` and `discover(locked=True)` currently raise
+`NotImplementedError("blocked on verification: ...")`. There is no shipped
+lockfile behavior to pin mapped tool names or a progressive-disclosure catalog.
+For today's filter and approval naming, use the
+[gateway-visible catalog](https://docs.donkey-kit.dev/tool-access/binding.md#gateway-visible-catalogs).
+
 Governed tool catalogs change under you. A platform team edits an MCP server's
 tool schema, bumps a policy, or republishes an asset — and if your agent
 resolves `version="latest"` at startup, that change silently alters agent
