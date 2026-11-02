@@ -1187,6 +1187,27 @@ _SUCCESS_BODY = {
 }
 
 
+async def test_v2_chain_span_omits_provider_and_routing_attributes(monkeypatch) -> None:
+    # #1405: an llm-gw-v2 proxy sends only the served-model header. The span keeps
+    # gen_ai.response.model and drops gen_ai.system and the routing attributes
+    # instead of recording an empty provider or fallback=False.
+    exporter = _use_tracer(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={_LLM_MODEL_HEADER: "gpt-5-mini"}, json=_SUCCESS_BODY)
+
+    client = DonkeyAsyncClient(_LLM_CFG, None, transport=httpx.MockTransport(handler))
+    async with client:
+        await client.post("https://proxy/chat", json={"model": "openai/gpt-5-mini", "input": "hi"})
+
+    (span,) = exporter.get_finished_spans()
+    attrs = dict(span.attributes)
+    assert attrs["gen_ai.response.model"] == "gpt-5-mini"
+    assert "gen_ai.system" not in attrs
+    assert telemetry.DONKEY_ROUTING_TYPE not in attrs
+    assert telemetry.DONKEY_ROUTING_FALLBACK not in attrs
+
+
 async def test_llm_post_emits_one_span_with_both_namespaces(monkeypatch) -> None:
     exporter = _use_tracer(monkeypatch)
 
@@ -2328,6 +2349,23 @@ async def test_on_model_substitution_raise_is_silent_for_a_provider_prefixed_mat
                 _ROUTING_FALLBACK: "false",
             },
             json={"model": "gpt-5-mini"},
+        )
+
+    cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")
+    async with _client(handler, cfg) as client:
+        resp = await client.post(
+            "https://proxy/chat", json={"model": "openai/gpt-5-mini", "input": "hi"}
+        )
+    assert resp.status_code == 200
+
+
+async def test_on_model_substitution_raise_is_silent_with_no_provider_header() -> None:
+    # #1405: an llm-gw-v2 proxy sends only `x-llm-proxy-llm-model`, with no
+    # provider or routing headers. A `provider/model` request must not be read as
+    # a substitution just because the provider header is gone.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, headers={_LLM_MODEL_HEADER: "gpt-5-mini"}, json={"model": "gpt-5-mini"}
         )
 
     cfg = DonkeyConfig(llm_proxy_url="https://proxy", on_model_substitution="raise")
