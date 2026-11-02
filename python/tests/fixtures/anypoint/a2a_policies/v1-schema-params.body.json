@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"1393","error":{"code":-32602,"message":"missing field `messageId` at line 1 column 13","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"INVALID_PARAMS","domain":"a2a-protocol.org","metadata":{"detail":"missing field `messageId` at line 1 column 13"}}]}}
