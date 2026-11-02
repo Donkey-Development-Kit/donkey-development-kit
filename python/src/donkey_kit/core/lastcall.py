@@ -300,18 +300,18 @@ def is_substitution(
     provider in ``x-llm-proxy-llm-provider`` (live on OpenAI, Gemini, Azure OpenAI
     and Bedrock routes, #586). So when the requested name's prefix — split on the
     FIRST ``/``; Bedrock ids use dots — names the served provider
-    (case-insensitive), only the remainder is compared. Any other shape, including
-    an absent provider header, compares verbatim: a different provider serving the
-    same model name is still a substitution, and an unknown one is never hidden.
-    A missing requested or served model is not a substitution claim. Shared by
-    :attr:`LastCall.substituted` and the ``on_model_substitution="raise"`` path so
-    the two can never disagree."""
-    if requested_model is None or served_model is None:
+    (case-insensitive), only the remainder is compared; a header naming another
+    provider compares verbatim. An ABSENT header also compares only the model part:
+    ``llm-gw-v2`` proxies emit no provider header (#1405, read from the policy
+    source, not captured live), and an unknowable provider is not a difference.
+    A missing model is no claim. Shared by :attr:`LastCall.substituted` and the
+    ``on_model_substitution="raise"`` path so the two can never disagree."""
+    if requested_model is None or served_model is None or requested_model == served_model:
         return False
     prefix, sep, model = requested_model.partition("/")
-    if sep and served_provider is not None and prefix.lower() == served_provider.lower():
+    if sep and (served_provider is None or prefix.lower() == served_provider.lower()):
         return model != served_model
-    return requested_model != served_model
+    return True
 
 
 def request_id(response: ResponseLike) -> str | None:
