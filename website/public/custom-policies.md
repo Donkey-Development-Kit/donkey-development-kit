@@ -314,7 +314,9 @@ ErrorInfo `@type` and `domain` are protocol metadata, not policy identifiers.
 Unknown errors with explicit structured
 `data.policy` or `policy_*` reason markers return `PolicyViolation(policy="unknown")`;
 ordinary or ambiguous errors return `None`. The captured tool-access denial
-always wins over custom registrations. HTTP 401, auth challenges and 429 remain
+always wins over custom registrations. The [MCP PII built-in](https://docs.donkey-kit.dev/errors.md#mcp-pii-metadata)
+also wins when both PII markers and its phase/code pair match; a registration
+fully claimed by that rule is rejected. HTTP 401, auth challenges and 429 remain
 auth/rate-limit errors.
 
 `jsonrpc_refusal()` also walks exception `.error`, causes, contexts and exception
@@ -325,8 +327,9 @@ without a simultaneous result or tool-result `isError: true`. Malformed envelope
 are not traversed or treated as policy refusals, whether mappings or duck objects.
 Plain exception `.error` wrappers without protocol metadata remain supported.
 
-  This is a classification helper, not new per-policy PII/schema support or
-  framework binding coverage. Calling `classify(response)` explicitly recognizes
+  This is a classification helper, not new framework binding coverage or
+  schema typing. MCP PII matching is described on [Errors](https://docs.donkey-kit.dev/errors.md#mcp-pii-metadata).
+  Calling `classify(response)` explicitly recognizes
   JSON-RPC error envelopes, but the transport does not automatically inspect
   successful HTTP 200 bodies. Registering a JSON-RPC shape does not make
   `donkey.run()`, handlers or `simulate()` intercept those responses.

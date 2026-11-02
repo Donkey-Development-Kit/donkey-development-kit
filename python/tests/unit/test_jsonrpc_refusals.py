@@ -13,7 +13,13 @@ import pytest
 
 from donkey_kit._testing import isolated_classify
 from donkey_kit.core.classifier import classify
-from donkey_kit.core.errors import AuthError, DonkeyError, PolicyViolation, TokenBudgetExceeded
+from donkey_kit.core.errors import (
+    AuthError,
+    DonkeyError,
+    PIIDetected,
+    PolicyViolation,
+    TokenBudgetExceeded,
+)
 from donkey_kit.core.jsonrpc_refusals import jsonrpc_refusal
 from donkey_kit.core.tool_access import ToolNotInProfile, tool_access_denial
 
@@ -262,7 +268,7 @@ def test_mcp_captures_only_explicit_markers_or_existing_denial(name: str) -> Non
     body = json.loads(capture["body"])
     result = jsonrpc_refusal(body, status=capture["status"], headers=capture["headers"])
     if name.startswith("pii-"):
-        assert type(result) is PolicyViolation and result.policy == "unknown"
+        assert type(result) is PIIDetected and result.policy == "mcp-pii-detector"
         assert "example.com" not in str(result)
     elif name == "abac-denied":
         assert type(result) is ToolNotInProfile

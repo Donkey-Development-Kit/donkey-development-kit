@@ -35,6 +35,7 @@ from .jsonrpc_refusals import (
 )
 from .jsonrpc_refusals import (
     RpcShape,
+    _match_mcp_pii,
     policy_header,
     policy_identity,
     rpc_error,
@@ -71,12 +72,12 @@ POLICY_SLUGS: tuple[tuple[type[DonkeyError], str], ...] = (
 )
 
 #: Slugs a registration may not use: every ``donkey.policy.type`` value above
-#: and every built-in ``.policy`` value (``"regex-prompt-guard"`` is set per
-#: instance by the Regex Prompt Guard rule), so neither field is ever ambiguous.
+#: and every built-in ``.policy`` value, including the per-instance Regex Prompt
+#: Guard and MCP PII values, so neither field is ever ambiguous.
 _RESERVED_SLUGS = frozenset(
     {slug for _kind, slug in POLICY_SLUGS}
     | {str(getattr(kind, "policy", "")) for kind, _slug in POLICY_SLUGS}
-    | {"regex-prompt-guard", ToolNotInProfile.policy}
+    | {"regex-prompt-guard", "mcp-pii-detector", ToolNotInProfile.policy}
 )
 _SLUG_RE = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 
@@ -227,13 +228,22 @@ def validated(match: object, raises: object) -> PolicyRegistration:
 
 
 def _unshadowed(spec: PolicyRegistration) -> None:
-    """Run the spec's own example through the built-in rules: one that claims it
-    would always win, so the registration could never match. Derived from the
-    rules themselves, so it stays right as built-ins are added."""
+    """Check built-in claims on the spec's example. MCP PII checks only literal
+    body specs: one sampled regex value cannot establish full overlap, so those
+    registrations rely on built-in runtime precedence."""
     shape = _shape(spec.example(), correlation_id=None, call_id=None)
     if spec.jsonrpc_code is not None:
         if shape.error_obj is not None and match_tool_access(shape.error_obj) is not None:
             raise ValueError("The built-in tool_access rule claims this spec (ToolNotInProfile).")
+        if (
+            shape.error_obj is not None
+            and not any(isinstance(leaf, re.Pattern) for _path, leaf in spec.body)
+            and _match_mcp_pii(
+                rpc_shape(shape.error_obj, status=spec.status, headers=dict(spec.headers))
+            )
+            is not None
+        ):
+            raise ValueError("The built-in mcp_pii rule claims this spec (PIIDetected).")
         if _wire.WWW_AUTHENTICATE_HEADER in dict(spec.headers):
             raise ValueError("The built-in auth rule claims this spec.")
     for matcher in _POLICY_MATCHERS:
