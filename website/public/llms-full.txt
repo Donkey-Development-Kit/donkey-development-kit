@@ -8275,6 +8275,14 @@ For A2A v0.3, PII detection returns HTTP 403 with a JSON-RPC error whose
 400 with a JSON-RPC error, and token rate limiting can return HTTP 429 with
 an empty body and `x-token-*` headers. Do not log raw PII refusal bodies.
 
+For A2A v1, PII detection returns HTTP 403 with a JSON-RPC `ErrorInfo`
+detail (`FORBIDDEN`, domain `a2a-protocol.org`). Both the error message and
+its detail can contain the detected value. Schema validation uses the same
+detail envelope: bad parameters and malformed JSON return HTTP 400, while
+an unknown method returns HTTP 404. Token rate limiting can return a bare
+HTTP 429 with the same `x-token-*` headers. A rejected streaming request can
+return an ordinary HTTP error before any SSE stream starts.
+
 These gateway response shapes do not make outbound A2A calls or their typed
 refusals available in DDK yet. `as_tool()` remains on the Roadmap, and
 [`donkey dev`](https://docs.donkey-kit.dev/a2a.md) does not yet replay these A2A-specific policy responses.

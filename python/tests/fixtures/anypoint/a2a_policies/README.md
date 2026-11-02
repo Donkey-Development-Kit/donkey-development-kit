@@ -42,14 +42,54 @@ requests do not send `A2A-Version`. The JSON-RPC request ID is `1393`.
   than the window can be refused while remaining is positive; do not infer
   exhaustion from `x-token-remaining == 0`.
 
+## V1 Captures
+
+Captured 2026-11-02 on temporary instance `21269788`,
+`ddk-capture1393v1-agent` `1.0.0`, on the same Sandbox gateway (1.14.4).
+The separate Exchange asset used `agent-metadata.protocol: a2a_v1`,
+`properties.protocol: a2a_v1`, and classifier `a2a-v1-card`; the instance
+used `endpoint.type: a2a_v1`. The original v0.3 instance was not modified.
+The temporary instance was deleted and its asset version **hard-deleted**
+after capture; control-plane reads confirmed both gone. Receipts are in #1393.
+
+These requests send `A2A-Version: 1.0`, numeric request ID `1393`, and the
+same content/encoding headers as above. Messages have role `ROLE_USER`,
+message ID `ddk-1393-synthetic`, and parts `{text: ...}` without `kind`.
+Policies ran in isolation, with no upstream access credential. These are
+pre-upstream refusals, not successful agent round-trips or SSE streams.
+The registration card is a staged v1-only projection of the hosted dual card;
+it does not prove dual-card publication or the SDK publication path.
+
+- `v1-pii-{send,stream}`: `a2a-v1-pii-detector` **1.0.0**, the same PII
+  config and synthetic email as v0.3. `SendMessage` and
+  `SendStreamingMessage`: HTTP 403, `-32600`, response ID **string** `"1393"`.
+  `error.data` is an `ErrorInfo` list (`@type: type.googleapis.com/google.rpc.ErrorInfo`,
+  `domain: a2a-protocol.org`, `reason: FORBIDDEN`). **Both** `error.message`
+  and `metadata.detail` contain the raw synthetic findings. No `www-authenticate`.
+- `v1-schema-params`: `a-two-a-v1-schema-validation` **1.0.1**, empty config,
+  `SendMessage`, `params: {message: {}}`: 400 / `-32602`, `INVALID_PARAMS`,
+  missing `messageId`, response ID string `"1393"`.
+- `v1-schema-method`: same policy, `UnknownMethod`, empty params:
+  **404** / `-32601`, `METHOD_NOT_FOUND`, response ID string `"1393"`.
+- `v1-schema-parse`: same policy, truncated request
+  `{"jsonrpc":"2.0","id":1393,"method":"SendMessage","params":`:
+  400 / `-32700`, `PARSE_ERROR`, response ID **null**.
+  All three schema responses carry an `ErrorInfo` list with the same type/domain
+  and their diagnostic in `metadata.detail`.
+- `v1-rate-{send,stream}`: `a-two-a-v1-token-rate-limit` **1.0.1**,
+  one-token window, `timePeriodInMilliseconds: 60000`,
+  `keySelector: #["ddk-1393-v1-capture"]`, the same oversized text as v0.3.
+  Both methods return bare 429 with empty body and the same `x-token-*`
+  values as v0.3, no `retry-after`. No body files exist for these empty responses.
+
 ## Remaining Verification
 
-These captures do not verify v1, guardrails, quality evaluation, accepted-call
-rate headers, streaming refusals or the authorization-code challenge. #1393
-remains open. Attaching `a2a-v1-pii-detector` 1.0.0 to this existing `a2a`
+These captures do not verify guardrails, quality evaluation, accepted-call
+rate headers, successful streaming or the authorization-code challenge. #1393
+remains open. Attaching `a2a-v1-pii-detector` 1.0.0 to the existing `a2a`
 instance returned HTTP 400 `PolicyValidationError`: the policy requires an
 `A2A_V1` asset type. No v1 policy was attached. A compatible registered asset
-and instance must be verified before the v1 captures; an upstream speaking v1
+and instance were verified separately above; an upstream speaking v1
 does not by itself make the API Manager registration compatible.
 
 Official policy references:

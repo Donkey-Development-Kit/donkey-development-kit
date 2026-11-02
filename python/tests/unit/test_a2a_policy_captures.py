@@ -1,4 +1,4 @@
-"""Pin the live v0.3 A2A policy shapes (docs/verified-apis.md section 4, #1393).
+"""Pin live v0.3 and v1 A2A policy shapes (docs/verified-apis.md section 4, #1393).
 
 These tests verify fixture contracts, not runtime typing (#1394) or simulator
 support (#1397). No a2a-sdk or framework dependency is needed.
@@ -67,12 +67,61 @@ def test_schema_refusals_have_string_details(
     assert detail in payload["error"]["data"]
 
 
-def test_oversized_request_refused_with_positive_remaining_tokens() -> None:
+@pytest.mark.parametrize("name", ["v03-rate-send", "v1-rate-send", "v1-rate-stream"])
+def test_oversized_request_refused_with_positive_remaining_tokens(name: str) -> None:
     """Section 4: an empty 429 carries the window in milliseconds, no retry-after."""
-    response = _response("v03-rate-send")
+    response = _response(name)
     assert response.status_code == 429
     assert response.content == b""
     assert response.headers["x-token-limit"] == "1"
     assert response.headers["x-token-remaining"] == "1"
     assert response.headers["x-token-reset"] == "60000"
     assert "retry-after" not in response.headers
+
+
+@pytest.mark.parametrize("name", ["v1-pii-send", "v1-pii-stream"])
+def test_v1_pii_echoes_findings_in_message_and_error_info(name: str) -> None:
+    """V1 PII is FORBIDDEN, not an authentication challenge; both detail fields need redaction."""
+    response = _response(name)
+    assert response.status_code == 403
+    assert "www-authenticate" not in response.headers
+    payload = response.json()
+    assert payload["jsonrpc"] == "2.0"
+    assert payload["id"] == "1393"
+    error = payload["error"]
+    assert error["code"] == -32600
+    info = error["data"][0]
+    assert info["@type"] == "type.googleapis.com/google.rpc.ErrorInfo"
+    assert info["domain"] == "a2a-protocol.org"
+    assert info["reason"] == "FORBIDDEN"
+    assert info["metadata"]["detail"] == error["message"]
+    prefix = "Request contains PII data: "
+    assert error["message"].startswith(prefix)
+    assert json.loads(error["message"][len(prefix) :]) == [
+        {"pii_type": "Email", "value": "capture@example.com", "start": 6, "end": 25}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("name", "status", "code", "request_id", "reason", "detail"),
+    [
+        ("v1-schema-params", 400, -32602, "1393", "INVALID_PARAMS", "missing field `messageId`"),
+        ("v1-schema-method", 404, -32601, "1393", "METHOD_NOT_FOUND", "UnknownMethod"),
+        ("v1-schema-parse", 400, -32700, None, "PARSE_ERROR", "EOF while parsing a value"),
+    ],
+)
+def test_v1_schema_refusals_use_error_info(
+    name: str, status: int, code: int, request_id: str | None, reason: str, detail: str
+) -> None:
+    """V1 unknown methods are HTTP 404; malformed JSON cannot retain a request ID."""
+    response = _response(name)
+    assert response.status_code == status
+    payload = response.json()
+    assert payload["jsonrpc"] == "2.0"
+    assert payload["id"] == request_id
+    assert payload["error"]["code"] == code
+    info = payload["error"]["data"][0]
+    assert info["@type"] == "type.googleapis.com/google.rpc.ErrorInfo"
+    assert info["domain"] == "a2a-protocol.org"
+    assert info["reason"] == reason
+    assert detail in info["metadata"]["detail"]
