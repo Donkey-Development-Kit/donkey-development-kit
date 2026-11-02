@@ -8338,6 +8338,20 @@ return HTTP 503 with `UNAVAILABLE`. The `x-flex-azure-guardrails-*` or
 A `service_unavailable` refusal is not a content-moderation verdict. These
 captures cover request-phase refusals, not response moderation or successful SSE.
 
+## Authentication Challenges
+
+The v0.3 In-Task Authorization Code policy can return HTTP 200 with a
+JSON-RPC **result**, not an error: a task whose status is `auth-required`.
+Its status message contains an `authChallenge` data part with OAuth metadata,
+including authorization/token endpoints, scopes, audience and redirect URI.
+A `message/stream` challenge can also be ordinary JSON rather than SSE.
+HTTP success alone therefore does not mean the delegated task completed.
+
+The captured missing-token responses generated new task and context IDs,
+despite IDs supplied in the request params, and returned the numeric JSON-RPC
+request ID as a string. These observations do not verify token forwarding,
+caching, authentication failures or a completed OAuth flow.
+
 These gateway response shapes do not make outbound A2A calls or their typed
 refusals available in DDK yet. `as_tool()` remains on the Roadmap, and
 [`donkey dev`](https://docs.donkey-kit.dev/a2a.md) does not yet replay these A2A-specific policy responses.
