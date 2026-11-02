@@ -39,6 +39,14 @@ _ERROR_BODY_CAP = 64 * 1024
 # ``response.stream`` (verified against httpx 0.28), so a wrapper there sees every
 # close path — full drain, mid-iteration abandonment, and exception — and is the
 # one place that can fill usage and end the span exactly once.
+#
+# Known gateway gap, deliberately NOT worked around here (#1548): on
+# some Azure OpenAI routes a chat-completions ``stream=True`` request returns a
+# gateway 502 unless the caller already sent ``stream_options.include_usage``.
+# The azure-openai-transcoding policy (impl 1.0.6) appears to inject the option
+# without resizing Content-Length. The SDK never rewrites the request body, so
+# the caller adds the option; usage arrives in a final empty-``choices`` chunk
+# either way. Remove this note once the gateway fix ships.
 
 
 def _is_streaming_success(response: httpx.Response) -> bool:
