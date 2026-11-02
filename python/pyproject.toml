@@ -662,7 +662,7 @@ type = "layers"
 # #210) sits beside cost and the rest, over _policy_spec (its match-spec
 # checks); it fills a hook slot in errors, so errors never imports it. step_up
 # (the CIBA step-up types, #1320) fills another and sits just above errors,
-# beside tool_access (the MCP tool-access denial, #312), which only subclasses
+# beside _tool_access (the MCP tool-access type/rule, #312), which only subclasses
 # errors' PolicyViolation, and runledger (the run ledger, #613), which holds
 # lastcall records and errors' DonkeyErrors and is bound by correlation.
 # approvals (the @donkey.tool approval gate, #211) sits beside transport: it
@@ -677,6 +677,8 @@ type = "layers"
 # verification placeholders name wire headers. A sibling group with `|` is
 # independent: its members never import each other. `exhaustive` makes a new
 # core module fail until it is placed. _response (the structural response
+# JSON-RPC matching sits below _policy_spec and above _tool_access (ADR 0021).
+# tool_access delegates to it; classifier fills its registry hook without a cycle.
 # Protocols, #933) imports nothing from core, so it sits at the bottom, as does
 # _budget_headers (budget's header parsers and receive-time stamp, #311) and
 # _window (the window state every budget window shares, #1025).
@@ -689,13 +691,15 @@ layers = [
     "auth | correlation | spanflush",
     "config",
     "classifier | cost | endpoints | header_names | reactions | refusals",
+    "tool_access",
     "_policy_spec",
-    "runledger | step_up | tool_access",
+    "jsonrpc_refusals",
+    "runledger | step_up | _tool_access",
     "approval_types",
     "errors",
     "_refusal_body | lastcall | masking",
     "_verify",
-    "_wire | _response | _budget_headers | _window",
+    "_wire | _response | _budget_headers | _window | _policy_sample",
 ]
 
 [[tool.importlinter.contracts]]

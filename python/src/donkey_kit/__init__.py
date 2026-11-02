@@ -67,6 +67,7 @@ if TYPE_CHECKING:
         UpstreamRequestError,
     )
     from .core.identity import UserScope
+    from .core.jsonrpc_refusals import jsonrpc_refusal
     from .core.lastcall import LastCall, LastCallStatus
     from .core.reactions import OnRefusal
     from .core.refusals import TypedRefusals
@@ -149,6 +150,7 @@ _LAZY = {
     "UpstreamModelError": ".core.errors",
     "UpstreamRequestError": ".core.errors",
     "classify": ".core.classifier",
+    "jsonrpc_refusal": ".core.jsonrpc_refusals",
     "registered_agents": ".core.toolspec",
     "registered_tools": ".core.toolspec",
     "typed_refusals": ".integrations",
@@ -273,6 +275,7 @@ __all__ = [
     "UserScope",
     "__version__",
     "classify",
+    "jsonrpc_refusal",
     "registered_agents",
     "registered_tools",
     "typed_refusals",

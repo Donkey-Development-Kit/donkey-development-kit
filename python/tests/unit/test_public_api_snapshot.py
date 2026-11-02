@@ -98,6 +98,7 @@ ROOT_ALL = [
     "UserScope",
     "__version__",
     "classify",
+    "jsonrpc_refusal",
     "registered_agents",
     "registered_tools",
     "typed_refusals",

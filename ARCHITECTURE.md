@@ -166,9 +166,10 @@ Beside it:
 - **core is layered too:** `runtime` → `transport | approvals | inbound` → `budget | cache |
   cachecontrol | identity | telemetry | toolspec` → `auth | correlation | spanflush` → `config` →
   `classifier | cost | endpoints | header_names | reactions | refusals` →
-  `_policy_spec` → `runledger | step_up | tool_access` → `approval_types` → `errors` →
+   `tool_access` → `_policy_spec` → `jsonrpc_refusals` →
+   `runledger | step_up | _tool_access` → `approval_types` → `errors` →
   `_refusal_body | lastcall | masking` → `_verify` →
-  `_wire | _response | _budget_headers | _window`.
+   `_wire | _response | _budget_headers | _window | _policy_sample`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
   through it. `runledger` holds the run ledger (#613): `correlation` binds one per
   `donkey.run()` block and the transport appends each call's `lastcall` record and
@@ -204,9 +205,12 @@ Beside it:
   `errors`, so `errors` never imports it. `step_up` (#1320) holds the OAuth2
   OBO policy's CIBA step-up types, which subclass `errors`' own, and fills a
   second hook slot there the same way, ahead of the auth rule. `tool_access`
-  (#312) holds the MCP tool-access denial: `ToolNotInProfile`, a `PolicyViolation`
-  read from a JSON-RPC error rather than an HTTP response, so it fills no hook
-  slot. This contract is exhaustive too.
+   (#312) re-exports the MCP tool-access type from `_tool_access` and delegates
+   to `jsonrpc_refusals`, the framework-free error walk (ADR 0021, #1385).
+   `classifier` fills its registry hook; explicit `jsonrpc_code` entries use the
+   same specificity/tie resolver, without letting HTTP-only entries claim RPC errors.
+   `_policy_sample` holds the existing regex sample generator, keeping `_policy_spec`
+   within budget. This contract is exhaustive too.
 
 Two rules the import graph can't express are tests in
 `tests/unit/test_architecture.py`:

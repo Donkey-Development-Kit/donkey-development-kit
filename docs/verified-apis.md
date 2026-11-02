@@ -734,6 +734,12 @@ blocks). Both were applied to `21133858` for capture, then removed.
 
 ### A2A instance policy captures (#1393)
 
+The shared `core/jsonrpc_refusals.jsonrpc_refusal` matcher (#1385, BG §2.2)
+does not establish per-policy or framework-binding support. Generic JSON-RPC
+codes and ErrorInfo FORBIDDEN / INVALID_PARAMS reasons remain ambiguous; raw
+diagnostics are not used to infer PII/schema types. No verification status or
+guard is changed by introducing that matcher.
+
 These are response-shape facts, **not shipped A2A classification or simulator
 support** (#1394, #1397). Captured 2026-11-02 on `ddk-langgraph-agent`, instance
 `21206128`, Sandbox, managed `shared-omni-gateway` **1.14.4**. Test-only fixture
@@ -1138,6 +1144,11 @@ v1 PII policy before attachment.
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 
 ### MCP Gateway Policy Captures (#1384)
+
+The shared matcher (#1385) recognizes the existing tool-access denial and
+explicit structured policy markers as generic unknown-policy refusals. This
+is not per-policy PII/schema typing or new framework-binding coverage; captures
+without explicit markers remain ambiguous. The evidence statuses below stand.
 
 Captured 2026-11-02 on `ddk-langgraph-mcp` instance `21261437`, DDK / Sandbox,
 Omni Gateway `1.14.4`, MCP Support `1.1.1`, protocol `2025-06-18`.
