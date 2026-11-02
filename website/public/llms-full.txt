@@ -8267,6 +8267,18 @@ carrying `a2a-sdk` exists today for the server side,
   conventions as [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
 - To make *your* agent callable by others over A2A, see [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
+## Gateway Refusals
+
+Gateway policies can reject a remote A2A call before it reaches the agent.
+For A2A v0.3, PII detection returns HTTP 403 with a JSON-RPC error whose
+`data` string can contain the detected value. Schema validation returns HTTP
+400 with a JSON-RPC error, and token rate limiting can return HTTP 429 with
+an empty body and `x-token-*` headers. Do not log raw PII refusal bodies.
+
+These gateway response shapes do not make outbound A2A calls or their typed
+refusals available in DDK yet. `as_tool()` remains on the Roadmap, and
+[`donkey dev`](https://docs.donkey-kit.dev/a2a.md) does not yet replay these A2A-specific policy responses.
+
 ---
 
 Source: https://docs.donkey-kit.dev/a2a.md
