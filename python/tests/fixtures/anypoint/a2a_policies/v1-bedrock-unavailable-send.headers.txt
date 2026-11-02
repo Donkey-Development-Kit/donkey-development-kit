@@ -1,0 +1,12 @@
+HTTP/1.1 503 Service Unavailable
+content-type: application/json
+x-flex-bedrock-guardrails-action: reject
+x-flex-bedrock-guardrails-phase: request
+x-flex-bedrock-guardrails-reason: service_unavailable
+content-length: 294
+date: Mon, 02 Nov 2026 17:06:16 GMT
+server: Anypoint Flex Gateway
+x-correlation-id: 00000000-0000-4000-8000-250922b14596
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Close
+
