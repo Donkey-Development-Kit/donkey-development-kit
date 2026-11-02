@@ -45,15 +45,18 @@ _GLOB = re.compile(r"[*?\[]")
 # API Governance's conformance stats for one asset version (docs/verified-apis.md §6, #1298).
 _GOVERNANCE_TARGETS = "/governance/xapi/api/v1/stats/organization/targets"
 # The SDK's discovery types → Exchange's ``type`` values. ``a2a-agent`` has no
-# Exchange type of its own: an A2A agent publishes as ``agent`` (#1260).
+# Exchange type of its own: an A2A agent publishes as ``agent`` (#1260). ``llm``
+# is a custom LLM provider, published with an ``llm-metadata`` file (#1408).
 _EXCHANGE_TYPES: dict[str, tuple[str, ...]] = {
     "mcp": ("mcp",),
     "agent": ("agent",),
     "api": ("rest-api", "http-api", "soap-api"),
+    "llm": ("llm",),
 }
 _SDK_TYPES: dict[str, AssetType] = {
     "mcp": "mcp",
     "agent": "agent",
+    "llm": "llm",
     "rest-api": "api",
     "http-api": "api",
     "soap-api": "api",

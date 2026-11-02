@@ -62,7 +62,7 @@ types or a result limit, call `donkey.registry.search()` directly. It returns
 ```python
 refs = await donkey.registry.search(
     query="*accounts*",       # a glob over asset ID, name and description; None = no text filter
-    asset_types=["mcp"],      # "mcp", "agent" or "api"
+    asset_types=["mcp"],      # "mcp", "agent", "api" or "llm"
     tags=["approved"],        # all tags must be present
     limit=50,                 # max results (default 50)
 )
@@ -81,7 +81,8 @@ latest version:
   inside words, so a glob query reads the group's assets that pass the other
   filters, 250 at a time, until it has `limit` matches.
 - `asset_types` and `tags` are applied by Exchange. `"api"` covers Exchange's
-  REST, HTTP and SOAP API types. A tag is an Exchange tag.
+  REST, HTTP and SOAP API types. `"llm"` is an LLM proxy or a custom LLM
+  provider. A tag is an Exchange tag.
 - `domain`, `environment`, `governed` and the `"a2a-agent"` type raise
   `NotImplementedError` for now. Exchange has no domain filter, and
   `environment` and `governed` need the governed-state join below.

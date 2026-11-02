@@ -79,6 +79,29 @@ async def test_api_is_every_exchange_api_type() -> None:
     assert fake.variables[0]["types"] == ["rest-api", "http-api", "soap-api"]
 
 
+async def test_llm_is_an_exchange_type() -> None:
+    """An LLM proxy or custom LLM provider is an Exchange ``llm`` asset (#1408).
+
+    A live search on 2026-11-02 returned the business group's LLM proxies, each
+    with ``type: llm``; the body below has their shape."""
+    asset = {
+        "groupId": ORG,
+        "assetId": "ddk-openai-model-routing",
+        "version": "1.0.0",
+        "name": "DDK OpenAI Model Routing",
+        "type": "llm",
+        "description": None,
+        "tags": [],
+    }
+    fake = _Exchange(lambda _: httpx.Response(200, json={"data": {"assets": [asset]}}))
+
+    (ref,) = await _registry(fake).search(asset_types=["llm"])
+
+    assert fake.variables[0]["types"] == ["llm"]
+    assert ref.type == "llm"
+    assert ref.asset_id == "ddk-openai-model-routing"
+
+
 async def test_a_plain_query_is_exchanges_search_term() -> None:
     fake = _replay("search.term.json")
 
