@@ -40,7 +40,7 @@ _ERROR_BODY_CAP = 64 * 1024
 # close path — full drain, mid-iteration abandonment, and exception — and is the
 # one place that can fill usage and end the span exactly once.
 #
-# Known gateway gap (live 2026-11-02), deliberately NOT worked around here: on
+# Known gateway gap, deliberately NOT worked around here (#1548): on
 # some Azure OpenAI routes a chat-completions ``stream=True`` request returns a
 # gateway 502 unless the caller already sent ``stream_options.include_usage``.
 # The azure-openai-transcoding policy (impl 1.0.6) appears to inject the option
