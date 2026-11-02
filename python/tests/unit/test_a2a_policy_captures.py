@@ -7,7 +7,9 @@ support (#1397). No a2a-sdk or framework dependency is needed.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 import pytest
@@ -24,6 +26,54 @@ def _response(name: str) -> httpx.Response:
         headers=[(key, value.strip()) for key, value in headers],
         content=body.read_bytes() if body.exists() else b"",
     )
+
+
+@pytest.mark.parametrize("method", ["send", "stream"])
+def test_v03_auth_challenge_is_a_successful_json_task_not_an_error(method: str) -> None:
+    """Section 4: missing-token challenges generate IDs and do not start SSE."""
+    response = _response(f"v03-auth-challenge-{method}")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    assert "www-authenticate" not in response.headers
+    payload = response.json()
+    assert payload["jsonrpc"] == "2.0"
+    assert payload["id"] == "1393"
+    assert "error" not in payload
+    task = payload["result"]
+    assert task["kind"] == "task"
+    assert task["id"] != "ddk-1393-task"
+    assert task["contextId"] != "ddk-1393-context"
+    assert UUID(task["id"]).version == 4
+    assert UUID(task["contextId"]).version == 4
+    status = task["status"]
+    assert status["state"] == "auth-required"
+    assert datetime.fromisoformat(status["timestamp"].replace("Z", "+00:00")).tzinfo is not None
+    message = status["message"]
+    assert message["kind"] == "message"
+    assert message["role"] == "agent"
+    assert UUID(message["messageId"]).version == 4
+    assert message["taskId"] == task["id"]
+    assert message["contextId"] == task["contextId"]
+    assert message["metadata"] == {}
+    assert message["parts"] == [
+        {"kind": "text", "text": "To continue this task, additional authorization is required."},
+        {
+            "kind": "data",
+            "data": {
+                "authChallenge": {
+                    "secondaryAuthProvider": "okta",
+                    "authorizationEndpoint": "https://dev-12345.okta.com/oauth2/v1/authorize",
+                    "tokenEndpoint": "https://dev-12345.okta.com/oauth2/v1/token",
+                    "scopes": ["openid", "profile", "email"],
+                    "audience": "https://my-agent.example.com/api",
+                    "redirectUri": "https://myapp.example.com/oauth/callback",
+                    "responseType": "code",
+                    "codeChallengeMethod": "S256",
+                    "bodyEncoding": "form",
+                }
+            },
+        },
+    ]
 
 
 def test_pii_refusal_embeds_synthetic_findings_in_string_data() -> None:

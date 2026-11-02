@@ -4,7 +4,8 @@ Captured 2026-11-02 on `ddk-langgraph-agent` (instance `21206128`), Sandbox,
 through the managed `shared-omni-gateway`, Omni Gateway **1.14.4**. These are
 actual JSON-RPC HTTP responses, not examples copied from policy documentation.
 The captures are test-only; `donkey dev` does not replay them yet (#1397).
-Response bodies retain their bytes; headers were scrubbed with
+Response bodies retain their bytes except the UUID pseudonymization noted
+for authorization challenges below; headers were scrubbed with
 `scripts/scrub_fixtures.py`. No credentials or real PII were sent or retained.
 
 Each policy was applied in isolation alongside the existing outbound
@@ -129,11 +130,49 @@ Azure's documented example has a null response ID; these live responses retain
 the request ID as a string. Bedrock's unavailable detail repeats the human
 message, unlike Azure's machine-readable reason.
 
+## V0.3 Authorization-Code Challenges
+
+Captured 2026-11-02 on isolated `a2a` instance `21270026`, asset
+`ddk-capture1393-auth` `1.0.0`, shared gateway 1.14.4 in the same Sandbox.
+Exchange metadata/property protocol `a2a`, classifier `a2a-card`;
+`intask-authorization-code-policy` **1.0.1** attached outbound to its upstream
+as policy `9713117`. The instance was deleted and asset version hard-deleted;
+independent reads returned 404 for both, neither remained listed or soft-deleted,
+and the original instance's policy chain remained `[9682382]`.
+
+`v03-auth-challenge-{send,stream}` POST `message/send` and `message/stream`,
+numeric request ID 1393, no `A2A-Version` or inbound authorization header.
+Params: `taskId: ddk-1393-task`, `contextId: ddk-1393-context`, message ID
+`ddk-1393-synthetic`, role `user`, one text part `Synthetic benign capture.`.
+No secondary token was supplied. Config: `secondaryAuthProvider: okta`,
+`authorizationEndpoint: https://dev-12345.okta.com/oauth2/v1/authorize`,
+`tokenEndpoint: https://dev-12345.okta.com/oauth2/v1/token`,
+`scopes: openid profile email`, `redirectUri: https://myapp.example.com/oauth/callback`,
+`tokenAudience: https://my-agent.example.com/api`, `responseType: code`,
+`codeChallengeMethod: S256`, `bodyEncoding: form`, `tokenTimeout: 300`,
+`challengeResponseStatusCode: 200`, `distributed: true`.
+These are synthetic documentation-example OAuth values, not a tested IdP.
+No OAuth flow was started and no IdP resources were changed.
+
+Both responses are HTTP 200 `application/json`, **not SSE or a JSON-RPC error**,
+with response ID string `"1393"`, `result.kind: task` and
+`result.status.state: auth-required`; no `www-authenticate` header.
+The status message contains the text and data `authChallenge`, including
+`scopes` as a list and `tokenAudience` exposed as `audience`.
+Despite the supplied params IDs, **new UUID task and context IDs** were generated;
+the status message references those generated IDs. The standard fixture scrubber
+deterministically pseudonymizes UUIDs in bodies and headers, preserving their
+equality relationships and byte lengths; timestamps and other body bytes remain
+unchanged. Raw responses remain in ignored capture storage. This differs from the documented ID-preservation
+example; it does not establish behavior for every placement of request IDs.
+Official reference: https://docs.mulesoft.com/gateway/latest/policies-outbound-a2a-intask-authorization-code.
+
 ## Remaining Verification
 
 These captures do not verify Bedrock content blocks, response-phase guardrails,
 quality evaluation, accepted-call
-rate headers, successful streaming or the authorization-code challenge. #1393
+rate headers, successful streaming, authorization-code authentication failures,
+token forwarding/removal, caching or a completed OAuth flow. #1393
 remains open. Attaching `a2a-v1-pii-detector` 1.0.0 to the existing `a2a`
 instance returned HTTP 400 `PolicyValidationError`: the policy requires an
 `A2A_V1` asset type. No v1 policy was attached. A compatible registered asset
