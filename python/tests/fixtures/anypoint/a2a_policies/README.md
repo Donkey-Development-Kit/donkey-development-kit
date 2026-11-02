@@ -5,10 +5,11 @@ through the managed `shared-omni-gateway`, Omni Gateway **1.14.4**. These are
 actual JSON-RPC HTTP responses, not examples copied from policy documentation.
 The captures are test-only; `donkey dev` does not replay them yet (#1397).
 Response bodies retain their bytes except the UUID pseudonymization noted
-for authorization challenges below; headers were scrubbed with
+for authorization challenges below. The quality capture retains selected headers
+only, as documented below; other headers were scrubbed with
 `scripts/scrub_fixtures.py`. No credentials or real PII were sent or retained.
 
-Each policy was applied in isolation alongside the existing outbound
+The initial refusal policies were applied in isolation alongside the existing outbound
 Credential Injection - API Key policy, then removed. The original policy IDs
 were checked after each removal and the instance redeployed. A baseline and
 restored `GetTask` for a nonexistent synthetic task both returned HTTP 200,
@@ -167,10 +168,39 @@ unchanged. Raw responses remain in ignored capture storage. This differs from th
 example; it does not establish behavior for every placement of request IDs.
 Official reference: https://docs.mulesoft.com/gateway/latest/policies-outbound-a2a-intask-authorization-code.
 
+## Quality Evaluation Headers
+
+`v03-quality-send` retains selected response headers from the 2026-11-02
+20:44:58 GMT capture on existing `ddk-langgraph-agent` `0.1.0`, instance
+`21206128`, shared gateway 1.14.4. Inbound `a2a-quality-evaluation-policy`
+**1.0.0** (policy `9714700`) ran alongside the unchanged outbound Credential
+Injection - API Key policy `9682382`. The evaluator used
+`qualityLlmUrl: https://api.openai.com`, `qualityLlmModel: gpt-4o-mini`,
+`timeout: 10000` and an existing provider key, never retained here.
+
+POST `message/send`, numeric request ID `1393`, message ID
+`ddk-quality-synthetic`, role `user`, one text part `Reply with PONG.`;
+content/encoding headers as above, no `A2A-Version`. The live response was
+HTTP 200 JSON with an agent message containing `PONG`. Its selected headers
+are retained verbatim: `x-quality-evaluation: yes`, `x-quality-score: 3`,
+`x-quality-status: completed`, and the evaluator's `x-quality-explanation`.
+The score and explanation are observations of this request, not a deterministic
+grading guarantee.
+
+The body is deliberately **omitted**, not empty on the wire: it contains nested
+model-call metadata outside this header contract. Transport length, correlation
+and reporting headers are also omitted, including signed reporting URLs.
+The ignored raw capture is retained privately; this fixture does not establish
+a body contract, successful SSE, v1 evaluation, failure status vocabulary or
+the evaluator's score range. The policy remains intentionally attached at the
+maintainer's request, unlike the temporary policies above; no other agent was
+opted in. SDK span recording remains #1399.
+Official reference: https://docs.mulesoft.com/gateway/latest/policies-included-a2a-quality-evaluation.
+
 ## Remaining Verification
 
 These captures do not verify Bedrock content blocks, response-phase guardrails,
-quality evaluation, accepted-call
+v1 or streaming quality evaluation, evaluator failures, accepted-call
 rate headers, successful streaming, authorization-code authentication failures,
 token forwarding/removal, caching or a completed OAuth flow. #1393
 remains open. Attaching `a2a-v1-pii-detector` 1.0.0 to the existing `a2a`

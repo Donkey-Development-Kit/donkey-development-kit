@@ -79,6 +79,17 @@ despite IDs supplied in the request params, and returned the numeric JSON-RPC
 request ID as a string. These observations do not verify token forwarding,
 caching, authentication failures or a completed OAuth flow.
 
+## Quality Evaluation
+
+Quality Evaluation can annotate a successful agent response with
+`x-quality-evaluation`, `x-quality-score`, `x-quality-explanation` and
+`x-quality-status` headers. A captured v0.3 `message/send` reply returned
+HTTP 200 with `x-quality-evaluation: yes`, `x-quality-score: 3` and
+`x-quality-status: completed`; its explanation described how the agent fulfilled
+the request. That single response does not establish a score range, evaluator
+failure behavior, v1 evaluation or streaming support. DDK does not yet record
+these annotations on its telemetry spans.
+
 These gateway response shapes do not make outbound A2A calls or their typed
 refusals available in DDK yet. `as_tool()` remains on the Roadmap, and
 [`donkey dev`](https://docs.donkey-kit.dev/a2a.md) does not yet replay these A2A-specific policy responses.
