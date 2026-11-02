@@ -1170,6 +1170,16 @@ four tools and `calculate("6*7")` returned `42`. #1384 remains open for the
 JSON-only response and elicitation captures; #1390 tracks detailed optimization.
 No verification guard is lifted by these rows.
 
+For #1389, `tests/unit/test_gateway_catalogs.py` replays the captured mapped and
+progressive catalogs at `tools.session.list_tools`. `ToolSet.describe` preserves
+the gateway-visible descriptors; filters and approval rules use those names,
+and a rule for a hidden upstream name raises `ConfigError`. Approval invocation
+uses a stand-in, not a live policy-and-framework round trip. A gate on
+`invoke_tool` covers every invocation of that meta-tool, not one nested tool
+name. `describe` reports the presence of `search_tools` / `invoke_tool` at info
+level without asserting which policy is installed. Discovery stays
+connection-free, and the lockfile verification guards remain unchanged.
+
 Each row marked `VERIFIED (local round-trip)` was produced by a probe in
 `python/scripts/mcp_binding/` (harness, reference server and how to run one:
 `python/scripts/mcp_binding/README.md`). The probe binds the framework's own MCP

@@ -58,6 +58,14 @@ narrow it with `tags=`. A server that does not resolve to exactly one deployed
 MCP instance in the environment is listed with a failed `resolve_mcp` check, so
 `governed=True` leaves it out and binding refuses it.
 
+## Catalog-changing policies
+
+Discovery finds servers, not their current tool names. It opens no MCP
+connection, so MCP Tool Mapping and Tools Progressive Disclosure become visible
+only when you call `describe()` or bind. Use the gateway-visible names in
+filters and approval rules; see
+[Gateway-visible catalogs](/tool-access/binding#gateway-visible-catalogs).
+
 ## Registry search
 
 `donkey.registry.search()` is <Badge tone="live">Live</Badge>. `discover(...)`

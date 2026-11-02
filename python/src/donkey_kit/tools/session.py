@@ -422,6 +422,9 @@ class ToolSet:
         """``exposed_name -> original_name`` so a developer can debug why the
         model called ``hr__get_employee`` (BG §2.7).
 
+        ``original_name`` is the gateway-visible name from ``tools/list``, not
+        a name hidden by Tool Mapping or Progressive Disclosure (#1389).
+
         Raises:
             ConfigError: Two tools would still be exposed under one name, such
                 as two servers that share a short name.
@@ -487,6 +490,10 @@ class ToolSet:
         (#1320), which is raised as it is, or the call ran inside
         ``donkey.as_user(...)``, where it was the user's token that was refused.
 
+        A catalog exposing both ``search_tools`` and ``invoke_tool`` is reported
+        at info level before filtering (#1389). It is bound as-is; names alone
+        do not prove which gateway policy produced it.
+
         Raises:
             UngovernedMcpServer: A server in the set is not governed (ADR 0017).
             ConfigError: No gateway credential is configured outside a
@@ -508,6 +515,16 @@ class ToolSet:
             listed = await self._list(missing)
             for index, tools in zip(missing, listed, strict=True):
                 servers[index] = dataclasses.replace(servers[index], tool_descriptors=tools)
+        for server in servers:
+            names = [tool.get("name") for tool in server.tool_descriptors or ()]
+            if "search_tools" in names and "invoke_tool" in names:
+                _log.info(
+                    "MCP server %s exposes search_tools / invoke_tool: bind the "
+                    "gateway-visible catalog as-is. Filters and approvals name these "
+                    "meta-tools (or other listed tools), not hidden upstream tools. "
+                    "Tool names alone do not identify an installed gateway policy.",
+                    server.ref.coordinates,
+                )
         every = [d for _, d in _index(servers, None)]
         for each in self._filters:
             check_patterns(each, every)

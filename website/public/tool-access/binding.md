@@ -159,6 +159,40 @@ async with donkey.as_user(token=user_token):
   Bind a whole-server binding inside the `as_user()` block that uses it, and
   don't reuse it outside that block.
 
+## Gateway-visible catalogs
+
+Bindings use the names, descriptions and schemas returned by the gateway's
+`tools/list`, not the upstream server's original catalog. `ToolSet.name_map`
+explains the SDK's collision prefixes; it does not reverse a gateway rename.
+
+With **MCP Tool Mapping**, use the mapped name in filters and approval rules.
+For example, if the gateway exposes `calculate` as `arithmetic`:
+
+```python
+tools = await (await donkey.tools.discover()).describe()
+tools = tools.filter(allow=["arithmetic"]).require_approval(tools=["arithmetic"])
+```
+
+A rule naming the hidden `calculate` raises `ConfigError` when the tools are
+listed. The SDK does not translate that rule back to an upstream name.
+
+With **MCP Tools Progressive Disclosure**, the default catalog contains
+`search_tools` and `invoke_tool`. Bind those meta-tools as-is: the gateway owns
+search and invocation. The SDK reports a catalog containing both names at info
+level when `describe()` runs, before filtering; those names alone do not prove
+which policy is installed. Additional listed tools remain ordinary tools.
+
+  A filter on a hidden upstream tool does not restrict what `invoke_tool` can
+  invoke. An approval rule on `invoke_tool` gates every call to that meta-tool,
+  not just a particular value of its `name` argument. Use gateway access
+  policies for enforcement. Client-side approval remains advisory, and
+  whole-server bindings still cannot apply `require_approval()` rules.
+
+The mapped catalog and call, and the default progressive-disclosure catalog,
+were observed through the gateway. Filter and approval naming are covered by
+offline replay of those catalogs, not a live policy-and-approval round trip.
+No client-side search, TOON decoding or policy enforcement is added.
+
 ## Filtering
 
 `filter()` takes an allow-list, a deny-list and a predicate, and deny wins.
