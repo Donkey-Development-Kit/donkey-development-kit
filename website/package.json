@@ -34,7 +34,8 @@
   "overrides": {
     "zod": "4.6.7",
     "@xmldom/xmldom": "0.9.12",
-    "katex": "0.18.10"
+    "katex": "0.18.10",
+    "minimatch": "11.0.1"
   },
   "engines": {
     "node": ">=22"
