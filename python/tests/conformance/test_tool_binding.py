@@ -401,6 +401,19 @@ async def test_single_tool_call(binding: Binding, servers: _Servers) -> None:
     assert servers.headers(a) == _PAIR
 
 
+async def test_expected_info_is_forwarded_unchanged(binding: Binding, servers: _Servers) -> None:
+    """A declared extraction intent reaches the real local MCP tool unchanged (#1390).
+
+    This checks native argument forwarding (BG §2.7), not gateway optimization.
+    """
+    a, _ = servers.pair()
+    expected_info = "  Return ONLY sku and price; keep  internal spacing.  "
+    async with _bound(binding, _toolset(("inv-a", a))) as bound:
+        result = await bound.call("lookup_sku", {"sku": "SKU-1390", "expected_info": expected_info})
+    assert expected_info in result, result
+    assert "SKU-1390" in result, result
+
+
 # --- tool_filtering ---------------------------------------------------------------
 
 

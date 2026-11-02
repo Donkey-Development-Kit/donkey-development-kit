@@ -11,7 +11,10 @@ Files:
 - `server.py` - the reference server (official `mcp` SDK, streamable HTTP at
   `http://127.0.0.1:<port>/mcp/`, trailing slash on purpose: the governed gateway
   only routes that form, ledger §6). Tools: `lookup_sku(sku: str) -> dict` and
-  `add(a: int, b: int) -> int`. `--port N`, `--record PATH` (one JSON line per
+  `add(a: int, b: int) -> int`. `lookup_sku` also declares an optional
+  `expected_info` string and echoes it unchanged when supplied: the binding
+  conformance test checks this through all eight native call paths (#1390),
+  without simulating gateway extraction. `--port N`, `--record PATH` (one JSON line per
   HTTP request: method, path, header names, and the values of `client_id`,
   `client_secret` and `x-correlation-id` only). Prints `READY <port>` once
   listening; stops cleanly on SIGTERM. Works on `mcp` 1.x (`FastMCP`) and 2.x
