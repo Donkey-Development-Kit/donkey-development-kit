@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "headers": {"content-type": "application/json", "server": "Anypoint Flex Gateway"},
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32600,\"message\":\"Invalid JSON-RPC Request\",\"data\":\"Non-notification requests must include an 'id' field\"}}"
+}

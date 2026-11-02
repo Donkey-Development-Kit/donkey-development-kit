@@ -1091,6 +1091,39 @@ of §4. Of the gateway's own policy rejections on an A2A agent instance, only
 
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 
+### MCP Gateway Policy Captures (#1384)
+
+Captured 2026-11-02 on `ddk-langgraph-mcp` instance `21261437`, DDK / Sandbox,
+Omni Gateway `1.14.4`, MCP Support `1.1.1`, protocol `2025-06-18`.
+Source for every live row below: `python/tests/fixtures/anypoint/mcp_policies/`
+(its README records the requests, policy configurations and restoration).
+These rows verify gateway response shapes only, **not SDK classification or
+framework surfacing**. Those remain #1385–#1388; website documentation is #1392.
+
+| Policy / surface | Status | Verified value | Date | Source |
+| --- | --- | --- | --- | --- |
+| MCP PII Detector `1.0.1`, request Reject | VERIFIED (LIVE) | HTTP 403 JSON, `-32602`, `data.reason=policy_pii_detected`, `data.policy=mcp-pii-detector`, `phase=request`, masked findings | 2026-11-02 | `pii-request.json` |
+| MCP PII Detector `1.0.1`, response Reject on SSE upstream | VERIFIED (LIVE) | **HTTP 403 application/json**, `-32603`, `phase=response`, masked findings; not an error event in HTTP 200 | 2026-11-02 | `pii-response-sse.json`; baseline upstream returned HTTP 200 SSE text `42` |
+| MCP PII Detector `1.0.1`, Log and mask on SSE | VERIFIED (LIVE) | HTTP 200 SSE, text `42` replaced by `**` using a synthetic custom pattern | 2026-11-02 | `pii-mask-sse.json` |
+| MCP PII Detector, JSON-only response / elicitation decline | UNVERIFIED | — | — | — |
+| MCP Schema Validation `1.3.0`, invalid tool arguments | VERIFIED (LIVE) | **HTTP 200**, `-32602`; string `data` names the tool and echoes rejected values, with no structured policy discriminator | 2026-11-02 | `schema-invalid-args.json` |
+| MCP Schema Validation `1.3.0`, missing request id | VERIFIED (LIVE) | **HTTP 200**, `-32600`, `Invalid JSON-RPC Request`; response id `1` | 2026-11-02 | `schema-missing-id.json` |
+| MCP Schema Validation `1.3.0`, poisoning BlockResponse | VERIFIED (LIVE) | HTTP 200 SSE, `-32603`, `tools/list response blocked by tool poisoning detection`, `data.findings` with four `inputSchema` drift findings | 2026-11-02 | `poisoning-block-list.json`; descriptor drift, not a malicious-server claim |
+| MCP Schema Validation `1.3.0`, poisoning RemoveTool | VERIFIED (LIVE) | HTTP 200 SSE, empty `result.tools` after removing the four drifted descriptors | 2026-11-02 | `poisoning-remove-list.json` |
+| MCP ABAC `1.0.2`, denied tool call | VERIFIED (LIVE) | **HTTP 200**, `-32008`, `Unable to access`, quoted tool name in string `data`; denied tool omitted from list | 2026-11-02 | `abac-denied.json`; confirms #303, not the docs' 400 token-error description |
+| MCP Progressive Disclosure `1.0.1`, default catalog | VERIFIED (LIVE) | HTTP 200 SSE; only `search_tools` and `invoke_tool` | 2026-11-02 | `progressive-list.json` |
+| MCP Progressive Disclosure `1.0.1`, invalid invoke parameters | VERIFIED (LIVE) | HTTP 200 JSON, `-32602`, `data.reason=invalid_params`; no `data.policy` | 2026-11-02 | `progressive-invalid-params.json` |
+| MCP Tool Mapping `1.0.2` | VERIFIED (LIVE) | SSE catalog renames `calculate` to `arithmetic`; calling `arithmetic` returns text `42` | 2026-11-02 | `mapping-list.json`, `mapping-call.json` |
+| MCP Payload Optimization `1.2.1`, HTML / whitespace | VERIFIED (LIVE) | HTTP 200 SSE; HTML echoed by an upstream tool error converted to Markdown, whitespace collapsed; remains `isError: true`, not a refusal | 2026-11-02 | `optimization-html.json` |
+| MCP Payload Optimization, base64 / null / TOON / LLM trimming | UNVERIFIED | — | — | — |
+
+Policies were attached one at a time and the instance redeployed individually;
+API Manager attachment alone did not activate the policy. Every temporary
+policy was removed and the original chain redeployed. Final discovery returned
+four tools and `calculate("6*7")` returned `42`. #1384 remains open for the
+JSON-only response and elicitation captures; #1390 tracks detailed optimization.
+No verification guard is lifted by these rows.
+
 Each row marked `VERIFIED (local round-trip)` was produced by a probe in
 `python/scripts/mcp_binding/` (harness, reference server and how to run one:
 `python/scripts/mcp_binding/README.md`). The probe binds the framework's own MCP
