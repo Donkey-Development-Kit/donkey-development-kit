@@ -273,6 +273,24 @@ SHAPES: dict[str, _Spec] = {
         "responses.finance.body.json",
         200,
     ),
+    # Qualified-vendor 200s (docs/verified-apis.md §2 qualified-vendor row, #1405,
+    # #1412): model-based-routing def 1.0.5 returns the configured
+    # ``groupId:vendor`` in ``x-llm-proxy-llm-provider`` (``mulesoft:openai``), on
+    # a matched route and on the policy fallback. Live /chat/completions captures
+    # (the directory README has the provenance); ``last_call`` keeps the provider
+    # verbatim and the span records the bare vendor.
+    "success-qualified-vendor": _Spec(
+        "anypoint/model_routing_qualified_vendor",
+        "chat_completions.success.headers.txt",
+        "chat_completions.success.body.json",
+        200,
+    ),
+    "fallback-qualified-vendor": _Spec(
+        "anypoint/model_routing_qualified_vendor",
+        "chat_completions.fallback.headers.txt",
+        "chat_completions.fallback.body.json",
+        200,
+    ),
     "stream": _Spec(
         "anypoint/llm_proxy",
         "responses.stream.headers.txt",

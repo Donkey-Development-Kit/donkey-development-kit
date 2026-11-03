@@ -94,7 +94,11 @@ _REJECTION_SHAPES = frozenset(
 # ``routing_score`` branch of ``donkey.last_call`` offline (#601). Kept apart from
 # the rejections because these are 200s; both are served as-is from the captured
 # fixture (no synthesised budget window), so the replay stays byte-faithful.
-_HAPPY_SHAPES = frozenset({"success-semantic"})
+# The two qualified-vendor 200s (#1412) drive a ``groupId:vendor`` provider
+# (``mulesoft:openai``) on a matched route and on the policy fallback.
+_HAPPY_SHAPES = frozenset(
+    {"success-semantic", "success-qualified-vendor", "fallback-qualified-vendor"}
+)
 
 # Every shape the model-id sentinel can force to a specific captured fixture.
 _SENTINEL_SHAPES = _REJECTION_SHAPES | _HAPPY_SHAPES

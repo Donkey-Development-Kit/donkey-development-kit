@@ -253,6 +253,40 @@ async def test_semantic_success_sentinel_populates_matched_topic_and_score() -> 
     assert record.fallback is False
 
 
+@pytest.mark.parametrize(
+    ("shape", "fallback", "substituted"),
+    [
+        ("success-qualified-vendor", False, False),
+        ("fallback-qualified-vendor", True, True),
+    ],
+)
+async def test_qualified_vendor_sentinel_replays_the_live_capture(
+    shape: str, fallback: bool, substituted: bool
+) -> None:
+    # #1412: the model-based-routing 1.0.5 qualified-vendor 200s, byte-identical,
+    # so the `groupId:vendor` provider and the fallback path work offline.
+    from donkey_kit.core.lastcall import LastCall
+
+    async with _client() as client:
+        resp = await client.post(
+            "/v1/chat/completions",
+            json={
+                "model": SIM_MODEL_PREFIX + shape,
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+    assert resp.status_code == 200
+    assert resp.content == fx.load(shape).body
+    assert resp.headers[SIMULATOR_HEADER] == "true"
+    assert resp.headers["x-llm-proxy-llm-provider"] == "mulesoft:openai"
+    assert "set-cookie" not in resp.headers
+    requested = "openai/gpt-5-mini" if not fallback else "mistral/mistral-small-latest"
+    record = LastCall.from_response(resp, requested_model=requested)
+    assert record.served_provider == "mulesoft:openai"
+    assert record.served_model == "gpt-5-mini"
+    assert (record.fallback, record.substituted) == (fallback, substituted)
+
+
 # --- POST /chat/completions (#895) -------------------------------------------
 
 
