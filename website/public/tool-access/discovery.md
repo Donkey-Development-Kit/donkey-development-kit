@@ -59,6 +59,8 @@ connection, so MCP Tool Mapping and Tools Progressive Disclosure become visible
 only when you call `describe()` or bind. Use the gateway-visible names in
 filters and approval rules; see
 [Gateway-visible catalogs](https://docs.donkey-kit.dev/tool-access/binding.md#gateway-visible-catalogs).
+For access-scoped lists, refusal handling and result transformations, see
+[MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md).
 
 ## Registry search
 

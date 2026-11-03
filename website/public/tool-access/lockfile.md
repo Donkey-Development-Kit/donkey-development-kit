@@ -9,6 +9,8 @@ This capability is on the [Roadmap](https://docs.donkey-kit.dev/roadmap.md); the
 lockfile behavior to pin mapped tool names or a progressive-disclosure catalog.
 For today's filter and approval naming, use the
 [gateway-visible catalog](https://docs.donkey-kit.dev/tool-access/binding.md#gateway-visible-catalogs).
+The [MCP gateway policy inventory](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) describes
+those catalog changes without lifting the lockfile's verification guard.
 
 Governed tool catalogs change under you. A platform team edits an MCP server's
 tool schema, bumps a policy, or republishes an asset — and if your agent
