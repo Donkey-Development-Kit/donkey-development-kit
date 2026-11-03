@@ -625,7 +625,7 @@ is raised.
 | `GatewayUnavailable` | `DonkeyError` | The gateway could not be reached at all — a transport-level failure (DNS, refused connection, TLS error, timeout) with NO HTTP response behind it. |
 | `ModelNotRoutable` | `DonkeyError` | The gateway could not pick a provider for the requested model, so it rejected the request before any upstream call. |
 | `ModelSubstituted` | `DonkeyError` | The gateway served a *different* model than the one requested — a routing fallback substituted the model, and `on_model_substitution="raise"` opted the caller into treating that as an error. |
-| `PIIDetected` | `PolicyViolation` | The PII-detection policy blocked the request or response. |
+| `PIIDetected` | `PolicyViolation` | PII policy refusal; MCP adds safe `phase` / `findings` metadata. |
 | `PolicyViolation` | `DonkeyError` | Base for gateway-enforced refusals. NEVER retried. |
 | `PromptInjectionBlocked` | `PolicyViolation` | The prompt-injection-protection policy flagged the request as an injection attempt. |
 | `RequestRateLimitExceeded` | `PolicyViolation` | A request-rate-limit policy refused the request: the window's request count is spent. |

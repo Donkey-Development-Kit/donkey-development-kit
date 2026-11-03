@@ -1151,17 +1151,34 @@ v1 PII policy before attachment.
 
 ### MCP Gateway Policy Captures (#1384)
 
-The shared matcher (#1385) recognizes the existing tool-access denial and
-explicit structured policy markers as generic unknown-policy refusals. This
-is not per-policy PII/schema typing or new framework-binding coverage; captures
-without explicit markers remain ambiguous. The evidence statuses below stand.
+The shared matcher (#1385) recognizes the existing tool-access denial. For
+#1386 it also types MCP PII as `PIIDetected` only with both exact markers
+(`policy=mcp-pii-detector`, `reason=policy_pii_detected`) and the capture-backed
+phase/code pair (`request` / `-32602`, `response` / `-32603`). Other explicit
+structured policy markers remain generic unknown-policy refusals; captures
+without explicit markers remain ambiguous. No new framework binding coverage
+or verification guard is introduced; the evidence statuses below stand.
 
 Captured 2026-11-02 on `ddk-langgraph-mcp` instance `21261437`, DDK / Sandbox,
 Omni Gateway `1.14.4`, MCP Support `1.1.1`, protocol `2025-06-18`.
 Source for every live row below: `python/tests/fixtures/anypoint/mcp_policies/`
 (its README records the requests, policy configurations and restoration).
-These rows verify gateway response shapes only, **not SDK classification or
-framework surfacing**. Those remain #1385–#1388; website documentation is #1392.
+These rows verify gateway response shapes only. Local replay tests in
+`tests/unit/test_mcp_pii_refusals.py` establish SDK classification of the two PII
+JSON refusals, not a new live SDK/framework round trip. Framework surfacing
+remains #1388; schema typing remains #1387; website documentation is #1392.
+
+The MCP projection adds `phase` and `findings` to `PIIDetected`. Findings retain
+only canonical `pii_type` identifiers and fully star-masked `masked_value`
+strings (length capped at 256); custom labels and unknown/malformed findings
+are discarded. `entities` derives from that projection, `gateway_message` is
+None, and `.response` remains raw/sensitive. The existing LLM contract keeps
+its entities/message behavior and gains only defaults `phase=None`, `findings=[]`.
+The legacy tool-access built-in and HTTP auth/429/5xx/policy precedence remain;
+MCP PII wins over custom registrations. HTTP 403 remains terminal, and HTTP 200
+matching requires explicit `classify`/`jsonrpc_refusal`, not transport interception.
+`pii-response-sse.json` records an HTTP 403 **JSON** rejection: no PII SSE
+error event is captured. SSE errors and elicitation remain #1384/#1236.
 
 | Policy / surface | Status | Verified value | Date | Source |
 | --- | --- | --- | --- | --- |

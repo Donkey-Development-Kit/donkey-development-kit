@@ -208,7 +208,11 @@ Beside it:
    (#312) re-exports the MCP tool-access type from `_tool_access` and delegates
    to `jsonrpc_refusals`, the framework-free error walk (ADR 0021, #1385).
    `classifier` fills its registry hook; explicit `jsonrpc_code` entries use the
-   same specificity/tie resolver, without letting HTTP-only entries claim RPC errors.
+    same specificity/tie resolver, without letting HTTP-only entries claim RPC errors.
+    The capture-backed MCP PII built-in (#1386) requires exact policy/reason and
+    phase/code pairs, ahead of custom matches. It projects canonical finding types
+    and fully star-masked values; raw diagnostics remain only on `.response`.
+    This does not add SSE decoding, HTTP-200 interception or framework binding wiring.
    `_policy_sample` holds the existing regex sample generator, keeping `_policy_spec`
    within budget. This contract is exhaustive too.
 

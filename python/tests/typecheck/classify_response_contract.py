@@ -15,6 +15,7 @@ import httpx2
 import openai
 from typing_extensions import assert_type
 
+from donkey_kit import PIIDetected, jsonrpc_refusal
 from donkey_kit.core.errors import DonkeyError, ResponseLike, classify
 
 
@@ -42,3 +43,12 @@ def check_carried_response(err: DonkeyError) -> None:
 
 def check_rejects_non_response() -> None:
     classify(object())  # type: ignore[arg-type]
+
+
+def check_pii_metadata(source: object) -> None:
+    error = jsonrpc_refusal(source)
+    if isinstance(error, PIIDetected):
+        assert_type(error.phase, str | None)
+        assert_type(error.findings, list[dict[str, str]])
+        assert_type(error.entities, list[str])
+        assert_type(error.gateway_message, str | None)

@@ -419,19 +419,15 @@ class ContentSafetyBlocked(PolicyViolation):
 
 
 class PIIDetected(PolicyViolation):
-    """The PII-detection policy blocked the request or response.
+    """PII policy refusal; MCP adds safe ``phase`` / ``findings`` metadata.
 
-    ``entities`` lists the flagged entity types (e.g. ``["Email"]``). The message
-    (``str(exc)``, ``exc.args``, ``repr(exc)``) names those types with their count
-    and character offsets but never the flagged values, so logging the exception
-    or printing it in ``donkey doctor`` does not re-emit what the policy blocked.
-
-    ``gateway_message`` is the gateway's own rejection text, which echoes every
-    flagged value verbatim; it is kept for callers that need it and is not
-    rendered by ``str()`` or ``repr()``. The raw body is also on ``.response``.
-    Treat both as carrying the blocked content.
-
-    Terminal and never retried by the SDK, like every :class:`PolicyViolation`.
+    LLM ``entities`` and safe messages retain entity types/counts/offsets;
+    ``gateway_message`` retains sensitive gateway text without rendering it.
+    MCP ``phase`` is ``request`` / ``response``; ``findings`` is a safe projection:
+    canonical ``pii_type`` identifiers only (custom labels become ``Custom``),
+    ``masked_value`` replaced entirely by asterisks, length capped at 256.
+    Unknown/malformed findings are omitted; MCP ``entities`` derives from them.
+    Defaults: phase None, findings [], MCP gateway_message None. Raw .response stays sensitive.
 
     Docs: https://docs.donkey-kit.dev/errors
     """
@@ -450,11 +446,15 @@ class PIIDetected(PolicyViolation):
         *,
         entities: list[str] | None = None,
         gateway_message: str | None = None,
+        phase: str | None = None,
+        findings: list[dict[str, str]] | None = None,
         **kw: Any,
     ) -> None:
         super().__init__(message, **kw)
         self.entities = entities or []
         self.gateway_message = gateway_message
+        self.phase = phase
+        self.findings = findings or []
 
 
 class AgentKilled(PolicyViolation):

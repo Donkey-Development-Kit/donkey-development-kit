@@ -2935,7 +2935,11 @@ with `.error`, including causes, contexts and exception groups. It returns a
 policy refusal or `None` when the error is ordinary or ambiguous (BG §2.2).
 
 The existing `-32008` / `"Unable to access"` pair remains `ToolNotInProfile`.
-Explicit `data.policy` or `policy_*` reason markers without a matching custom
+MCP PII rejections with `data.policy="mcp-pii-detector"` **and**
+`data.reason="policy_pii_detected"` become `PIIDetected` when the phase/code
+pair is `request` / `-32602` or `response` / `-32603`. Both markers and the
+pair are required; the code or diagnostic text alone never identifies PII.
+Other explicit `data.policy` or `policy_*` reason markers without a matching custom
 registration become `PolicyViolation(policy="unknown")`, not a guessed PII or
 schema type. Generic codes, diagnostic strings and A2A ErrorInfo reasons such
 as `FORBIDDEN` / `INVALID_PARAMS` do not identify a policy. See
@@ -2953,7 +2957,29 @@ the raw bytes remain only on the original `.response`. Auth challenges on
 explicitly classified HTTP 200/400 envelopes are auth errors too; 429 retains
 rate-limit precedence.
 Normal HTTP classification is unchanged. This does not add automatic HTTP-200
-interception, per-policy MCP/A2A PII/schema types or new framework binding coverage.
+interception, A2A PII/schema typing or new framework binding coverage.
+
+### MCP PII metadata
+
+For an MCP PII rejection, `.policy` is `"mcp-pii-detector"`, `.phase` is
+`"request"` or `"response"`, and `.findings` is a safe projection with only
+`pii_type` and `masked_value`. Types are canonical `SSN`, `Email`, `CreditCard`,
+`PhoneNumber` or `Custom`; custom pattern labels are discarded. Every character
+of the gateway's masked value is replaced with `*`, capped at 256 characters:
+even a partially masked email domain is withheld. Unknown or malformed findings
+are omitted, without losing the typed refusal when its discriminators match.
+`.entities` derives from these projected types and `.gateway_message` is `None`.
+The original `.response` remains raw and potentially sensitive; do not log it.
+
+The existing LLM PII contract is unchanged: `.entities` and `.gateway_message`
+retain their behavior, with additive defaults `.phase=None` and `.findings=[]`.
+MCP HTTP 403 PII refusals are terminal and never automatically retried. An HTTP
+200 JSON-RPC error is recognized only when you explicitly call `classify()` or
+`jsonrpc_refusal()`; successful transport responses are not intercepted.
+
+The captured response-phase rejection on an SSE upstream is **HTTP 403 JSON**,
+not an SSE error event. SSE error-event handling, elicitation decline and new
+framework binding surfacing are not established by this matcher.
 
 All importable from `donkey_kit`, along with `classify`, except the Roadmap-surface errors on the last line, which are in `donkey_kit.experimental`:
 
@@ -2962,7 +2988,7 @@ DonkeyError                     # base of the whole tree
 ├─ ConfigError                  # misconfiguration or client misuse (raised locally, no request sent)
 ├─ AuthError                    # rejected data-plane credentials or control-plane auth
 ├─ PolicyViolation              # base for every governance rejection
-│  ├─ PIIDetected               # 403, type=pii_detected; .entities, .gateway_message
+│  ├─ PIIDetected               # LLM type=pii_detected or MCP PII markers; .entities, .phase, .findings
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
 │  ├─ GatewayApprovalDenied     # 403, error=access_denied — the user denied the CIBA step-up; also an ApprovalError
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
@@ -3006,7 +3032,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | Exception | Discriminator | Retryable? | Next step (`.remediation`) |
 |---|---|---|---|
 | `AuthError` | Data plane: `401`, or `403` + `www-authenticate`. Control plane: Anypoint auth-provider or connected-app token acquisition fails, or a registry read is refused (`401`/`403`) because the connected app lacks a scope. Inside [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md#no-silent-fallback-a-deliberate-hard-failure): a missing `token` — never a fallback to the service identity. An approved tool [resumed](https://docs.donkey-kit.dev/hitl.md#who-a-resumed-call-runs-as) inside `as_user()` with a token other than its requester's: the tool is not run. A per-tool MCP binding [called under a different user](https://docs.donkey-kit.dev/tool-access/binding.md#acting-for-a-user) from the one it was bound for: the call is not sent. | **No** — terminal. In `jwt` mode the async data-plane client refreshes the wallet JWT and retries **once** on a `401`, then surfaces it; in client-id mode a data-plane `401` surfaces immediately. Control-plane token acquisition surfaces immediately and never affects model calls. | Data plane: check the consumer `client_id` / `client_secret` pair and API Manager authorization. Control plane: check the configured auth provider; for a connected app, verify `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` and the required scopes. A refused registry read names the missing scope; see [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). `as_user()`: pass the signed-in user's current token. A refused resume: resume outside `as_user()`, so the tool runs as its requester. A refused MCP tool call: bind the `ToolSet` inside the `as_user()` block that runs the agent. |
-| `PIIDetected` | `403`, nested `type: "pii_detected"`, **no** `www-authenticate` | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
+| `PIIDetected` | LLM: `403`, nested `type: "pii_detected"`, **no** `www-authenticate`. MCP: both PII markers and phase/code pair described above. | **No** — a `PolicyViolation`, never retried. | Remove or redact the flagged values (`.entities`), or relax the policy's entity list in API Manager. |
 | `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. It also stops [`donkey.budget.pace()`](https://docs.donkey-kit.dev/budget.md) loops, and spans are flushed before it reaches you. | Ask an administrator to restore this agent's model access in Governance > Security. |
 | `GatewayApprovalPending` | `401`, flat `error: "authorization_pending"`, **no** `www-authenticate` | **Yes, after `.retry_after`** — never auto-retried; the same request succeeds once the user approves. | Re-send after `.retry_after` seconds; don't change or refresh the credentials, they were accepted. |
 | `GatewayApprovalDenied` | `403`, flat `error: "access_denied"` | **No** — a `PolicyViolation`, never retried; the gateway keeps answering with the denial until its cached decision expires. | Tell the user the action was not authorized. |
@@ -3130,7 +3156,7 @@ exception never disagree.
 
 ## Refusal messages don't repeat blocked content
 
-The PII policy's rejection text repeats every value it flagged. `PIIDetected`
+The LLM PII policy's rejection text repeats every value it flagged. `PIIDetected`
 builds its own message instead, from the entity types, their count and their
 character offsets. So `str(exc)`, `repr(exc)` and `exc.args` never contain the
 blocked value, and neither does a log line, a traceback or
@@ -3143,7 +3169,8 @@ Request blocked: personally identifiable information detected (403): 1 entity (E
 `.entities` lists the flagged types (`["Email"]`). The gateway's own text is on
 `.gateway_message`, and the raw body is on `.response`. Neither is rendered by
 `str()` or `repr()`. Both carry the blocked content, so handle them like the
-prompt itself. The other refusal messages are built from status codes,
+prompt itself. For MCP PII, use the safe projection described above instead;
+the raw diagnostics are not copied to `.gateway_message`. The other refusal messages are built from status codes,
 headers, category names and policy pattern names, never from the request.
 
 `ContentSafetyBlocked.provider` names the moderation provider that blocked the
@@ -3889,7 +3916,9 @@ ErrorInfo `@type` and `domain` are protocol metadata, not policy identifiers.
 Unknown errors with explicit structured
 `data.policy` or `policy_*` reason markers return `PolicyViolation(policy="unknown")`;
 ordinary or ambiguous errors return `None`. The captured tool-access denial
-always wins over custom registrations. HTTP 401, auth challenges and 429 remain
+always wins over custom registrations. The [MCP PII built-in](https://docs.donkey-kit.dev/errors.md#mcp-pii-metadata)
+also wins when both PII markers and its phase/code pair match; a registration
+fully claimed by that rule is rejected. HTTP 401, auth challenges and 429 remain
 auth/rate-limit errors.
 
 `jsonrpc_refusal()` also walks exception `.error`, causes, contexts and exception
@@ -3900,8 +3929,9 @@ without a simultaneous result or tool-result `isError: true`. Malformed envelope
 are not traversed or treated as policy refusals, whether mappings or duck objects.
 Plain exception `.error` wrappers without protocol metadata remain supported.
 
-  This is a classification helper, not new per-policy PII/schema support or
-  framework binding coverage. Calling `classify(response)` explicitly recognizes
+  This is a classification helper, not new framework binding coverage or
+  schema typing. MCP PII matching is described on [Errors](https://docs.donkey-kit.dev/errors.md#mcp-pii-metadata).
+  Calling `classify(response)` explicitly recognizes
   JSON-RPC error envelopes, but the transport does not automatically inspect
   successful HTTP 200 bodies. Registering a JSON-RPC shape does not make
   `donkey.run()`, handlers or `simulate()` intercept those responses.
@@ -16110,7 +16140,7 @@ is raised.
 | `GatewayUnavailable` | `DonkeyError` | The gateway could not be reached at all — a transport-level failure (DNS, refused connection, TLS error, timeout) with NO HTTP response behind it. |
 | `ModelNotRoutable` | `DonkeyError` | The gateway could not pick a provider for the requested model, so it rejected the request before any upstream call. |
 | `ModelSubstituted` | `DonkeyError` | The gateway served a *different* model than the one requested — a routing fallback substituted the model, and `on_model_substitution="raise"` opted the caller into treating that as an error. |
-| `PIIDetected` | `PolicyViolation` | The PII-detection policy blocked the request or response. |
+| `PIIDetected` | `PolicyViolation` | PII policy refusal; MCP adds safe `phase` / `findings` metadata. |
 | `PolicyViolation` | `DonkeyError` | Base for gateway-enforced refusals. NEVER retried. |
 | `PromptInjectionBlocked` | `PolicyViolation` | The prompt-injection-protection policy flagged the request as an injection attempt. |
 | `RequestRateLimitExceeded` | `PolicyViolation` | A request-rate-limit policy refused the request: the window's request count is spent. |

@@ -2,7 +2,7 @@
 
 Only explicit policy markers or opt-in registrations name a refusal. Generic
 JSON-RPC codes, ErrorInfo reasons and diagnostic text never establish a policy.
-The legacy MCP access denial is the sole built-in typed rule here.
+Built-ins type the legacy MCP access denial and captured MCP PII refusals.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from .errors import (
     _POLICY_MATCHERS,
     AuthError,
     DonkeyError,
+    PIIDetected,
     PolicyViolation,
     ToolInvocationError,
     _match_request_rate_limit,
@@ -279,6 +280,9 @@ def jsonrpc_refusal(
                 (e, None) for e in (current.__cause__, current.__context__) if e is not None
             )
     for shape in candidates:
+        if (pii := _match_mcp_pii(shape)) is not None:
+            return pii
+    for shape in candidates:
         if REGISTERED_MATCHER and (matched := REGISTERED_MATCHER[0](shape)) is not None:
             return matched
     if any(policy_marked(shape.error) for shape in candidates):
@@ -291,6 +295,51 @@ def jsonrpc_refusal(
             response=response,
         )
     return None
+
+
+def _match_mcp_pii(s: RpcShape) -> PIIDetected | None:
+    """Capture-backed policy/reason AND phase/code pairs (ledger §9, #1386).
+
+    Metadata is a projection, never gateway diagnostics. Canonical enum names
+    follow pii-core's PiiType; custom pattern names and raw/part-masked values
+    are untrusted. Unknown fields stay only on the original response.
+    """
+    data = s.error.get("data")
+    if not isinstance(data, Mapping):
+        return None
+    phase = data.get("phase")
+    if (
+        data.get("policy") != "mcp-pii-detector"
+        or data.get("reason") != "policy_pii_detected"
+        or not (
+            (phase == "request" and s.error.get("code") == -32602)
+            or (phase == "response" and s.error.get("code") == -32603)
+        )
+    ):
+        return None
+    findings: list[dict[str, str]] = []
+    raw = data.get("findings")
+    for finding in raw if isinstance(raw, list) else ():
+        if not isinstance(finding, Mapping):
+            continue
+        kind, masked = finding.get("pii_type"), finding.get("masked_value")
+        if isinstance(kind, Mapping) and set(kind) == {"Custom"}:
+            kind = "Custom" if isinstance(kind["Custom"], str) else None
+        if (
+            not isinstance(kind, str)
+            or kind not in {"SSN", "Email", "CreditCard", "PhoneNumber", "Custom"}
+            or not isinstance(masked, str)
+        ):
+            continue
+        findings.append({"pii_type": kind, "masked_value": "*" * min(len(masked), 256)})
+    return PIIDetected(
+        f"MCP {phase} blocked: personally identifiable information detected. Values withheld.",
+        policy="mcp-pii-detector",
+        phase=phase,
+        findings=findings,
+        entities=[finding["pii_type"] for finding in findings],
+        **s.kw,
+    )
 
 
 def _match_http(s: _Shape) -> DonkeyError:
