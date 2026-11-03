@@ -17,6 +17,7 @@ from ._response import ResponseLike
 
 __all__ = [
     "MODEL_NOT_ROUTABLE_RE",
+    "PII_TYPES",
     "PiiSpan",
     "code_str",
     "content_safety_headers",
@@ -33,6 +34,9 @@ __all__ = [
 
 _PII_TYPE_RE = re.compile(r'"pii_type"\s*:\s*"([^"]+)"')
 
+# pii-core's canonical PiiType names; custom labels are untrusted diagnostics.
+PII_TYPES = frozenset({"SSN", "Email", "CreditCard", "PhoneNumber", "Custom"})
+
 #: One flagged PII entity: ``(entity type, start offset, end offset)``.
 PiiSpan = tuple[str, int | None, int | None]
 
@@ -41,8 +45,8 @@ def pii_spans(message: str | None) -> list[PiiSpan]:
     """Best-effort ``(entity type, start, end)`` for each entity the PII policy
     flagged, parsed from its rejection message (a JSON list of ``{"pii_type",
     "value", "start", "end"}`` objects; docs/verified-apis.md §4). The ``value``
-    is never read. Offsets are ``None`` when the list does not parse; an empty
-    list means no ``pii_type`` markers were found.
+    is never read. Unknown type labels become ``Custom``. Offsets are ``None``
+    when the list does not parse; an empty list means no ``pii_type`` markers were found.
 
     Deliberately best-effort (#289): the LLM PII Detection policy documents only
     the ``{"error":{"message","type":"pii_detected"}}`` envelope, not a structured
@@ -60,24 +64,32 @@ def pii_spans(message: str | None) -> list[PiiSpan]:
             parsed = None
         if isinstance(parsed, list):
             spans = [
-                (item["pii_type"], _int_or_none(item.get("start")), _int_or_none(item.get("end")))
+                (
+                    item["pii_type"] if item["pii_type"] in PII_TYPES else "Custom",
+                    _int_or_none(item.get("start")),
+                    _int_or_none(item.get("end")),
+                )
                 for item in parsed
                 if isinstance(item, dict) and isinstance(item.get("pii_type"), str)
             ]
             if spans:
                 return spans
-    return [(entity, None, None) for entity in _PII_TYPE_RE.findall(message)]
+    return [
+        (entity if entity in PII_TYPES else "Custom", None, None)
+        for entity in _PII_TYPE_RE.findall(message)
+    ]
 
 
 def pii_summary(status: int, spans: list[PiiSpan]) -> str:
     """The :class:`~donkey_kit.core.errors.PIIDetected` message: the entity types, their count and
-    offsets — never the flagged values the gateway echoes back."""
+    offsets — never the flagged values or untrusted type labels the gateway echoes back."""
     base = f"Request blocked: personally identifiable information detected ({status})"
     if not spans:
         return f"{base}."
     parts = [
-        entity if start is None or end is None else f"{entity} at chars {start}-{end}"
+        kind if start is None or end is None else f"{kind} at chars {start}-{end}"
         for entity, start, end in spans
+        for kind in (entity if entity in PII_TYPES else "Custom",)
     ]
     noun = "entity" if len(spans) == 1 else "entities"
     return (

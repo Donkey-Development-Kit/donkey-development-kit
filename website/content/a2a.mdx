@@ -124,8 +124,9 @@ sync handler works too: it runs in a worker thread.
 
 If the handler raises, the task fails and the caller sees only the exception's
 type, in the shape [governed inbound](#governed-inbound) describes. The
-exception's message can hold internal detail, so it goes to your logs (the
-`donkey_kit.a2a` logger), never to the caller. The server keeps serving.
+exception's message and traceback can contain blocked content or raw gateway
+diagnostics, so the `donkey_kit.a2a._server` logger records only its type and
+task/correlation IDs, never its message or traceback. The server keeps serving.
 
 ### Where it listens
 
@@ -240,9 +241,9 @@ branch on:
 `refusal` is `true` for a governance refusal (a `PolicyViolation`), and `false`
 for any other failure. Any other failure reads `the agent failed: <ExceptionType>`
 and carries the same `error` part. `call_id` appears when the failure was a
-governed call's. The refusal's `remediation` and the gateway's response body go
-to your logs, not to the caller: they name your configuration and can repeat
-the request's content.
+governed call's. The refusal's `remediation`, gateway response body, exception
+message and traceback are not emitted in the failed parts or the executor's
+log: they can name your configuration or repeat the request's content.
 
 `donkey_kit.a2a.build_app()` does the same for an app you mount yourself. Pass
 `telemetry=`, `correlation_header=` and `refusals=donkey_kit.typed_refusals()` to

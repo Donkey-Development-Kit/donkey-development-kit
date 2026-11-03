@@ -13,7 +13,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from . import _wire
-from ._refusal_body import content_safety_headers
+from ._refusal_body import PII_TYPES, content_safety_headers
 from ._response import ResponseLike
 from ._tool_access import match_tool_access
 from .errors import (
@@ -335,11 +335,7 @@ def _match_mcp_pii(s: RpcShape) -> PIIDetected | None:
         kind, masked = finding.get("pii_type"), finding.get("masked_value")
         if isinstance(kind, Mapping) and set(kind) == {"Custom"}:
             kind = "Custom" if isinstance(kind["Custom"], str) else None
-        if (
-            not isinstance(kind, str)
-            or kind not in {"SSN", "Email", "CreditCard", "PhoneNumber", "Custom"}
-            or not isinstance(masked, str)
-        ):
+        if not isinstance(kind, str) or kind not in PII_TYPES or not isinstance(masked, str):
             continue
         findings.append({"pii_type": kind, "masked_value": "*" * min(len(masked), 256)})
     return PIIDetected(

@@ -67,6 +67,13 @@ A **refused** request still produces a span, with `donkey.policy.decision=refuse
 and `otel.status_code=ERROR`. A streaming response produces **exactly one** span,
 with token counts filled in at stream end.
 
+DDK's GenAI spans mark escaping exceptions as `ERROR` without copying exception
+messages, tracebacks or chained diagnostics into events or status descriptions.
+This holds even with content capture enabled; the original exception still
+propagates to the caller. Raw refusal `.response` bodies and the LLM PII
+`.gateway_message` remain available for explicit inspection and may contain
+blocked values. Host or framework instrumentation has its own recording policy.
+
 A [tool that needs approval](https://docs.donkey-kit.dev/hitl.md) records each step of its approval as a
 `donkey.tool.approval` span with one event (`donkey.approval.pending`,
 `.approved`, `.rejected` or `.timed_out`). The event names the approver and
@@ -886,7 +893,8 @@ such as `donkey_kit.core.auth`, instead of the package.
 | The OTLP export bootstrap: inert, kept your `TracerProvider`, or installed (global or DDK-scoped) | `donkey_kit.core.telemetry` |
 | How many tool descriptors a `ToolSet` exposes after its filter, out of the total | `donkey_kit.tools.session` |
 | A rate-limit reset header that was ignored as negative or out of range, naming the budget window (never the value) | `donkey_kit.core._window` |
-| A best-effort step that failed and was skipped (with the traceback), e.g. a refusal translator or recording usage on a span | the module that skipped it |
+| A refusal translator that failed and was skipped, or a refusal capture that could not tag a framework error (type names only, no hook representation or traceback) | `donkey_kit.core.refusals` |
+| Other best-effort steps that failed and were skipped (with the traceback), e.g. recording usage on a span | the module that skipped it |
 
   **A log record never carries a credential.** Records name a request by
   method, scheme, host and path only. They never include a header value,

@@ -128,7 +128,9 @@ async def test_a_raising_handler_fails_the_task_with_the_type_name_only(
     assert error["data"]["error"]["type"] == "RuntimeError"
     assert error["data"]["error"]["refusal"] is False
     assert "hunter2" not in str(task)
-    assert "hunter2" in caplog.text  # the detail goes to the log, never the caller
+    assert "RuntimeError" in caplog.text
+    assert "hunter2" not in caplog.text
+    assert all(record.exc_info is None and record.exc_text is None for record in caplog.records)
 
 
 async def test_a_result_that_is_not_str_or_a2a_result_fails_the_task() -> None:

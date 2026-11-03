@@ -389,7 +389,9 @@ blocked value, and neither does a log line, a traceback or
 Request blocked: personally identifiable information detected (403): 1 entity (Email at chars 12-32). Values withheld; the gateway's text is on .gateway_message.
 ```
 
-`.entities` lists the flagged types (`["Email"]`). The gateway's own text is on
+`.entities` lists canonical types (`SSN`, `Email`, `CreditCard`, `PhoneNumber`,
+`Custom`); unrecognised or custom labels become `Custom`, so a label cannot
+smuggle a blocked value into rendered output. The gateway's own text is on
 `.gateway_message`, and the raw body is on `.response`. Neither is rendered by
 `str()` or `repr()`. Both carry the blocked content, so handle them like the
 prompt itself. For MCP PII, use the safe projection described above instead;

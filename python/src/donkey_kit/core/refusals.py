@@ -147,9 +147,12 @@ def _translate_one(exc: BaseException, hooks: tuple[Translator, ...]) -> DonkeyE
         for hook in hooks:
             try:
                 typed = hook(link)
-            except Exception:  # noqa: BLE001 — a broken translator must not mask the error
-                # A broken translator must not replace the user's error.
-                _log.debug("refusal translator %r failed; skipped", hook, exc_info=True)
+            except Exception as failure:  # noqa: BLE001 — a broken translator must not mask the error
+                _log.debug(
+                    "refusal translator %s failed (%s); skipped",
+                    type(hook).__name__,
+                    type(failure).__name__,
+                )
                 continue
             if typed is not None:
                 return typed
@@ -329,15 +332,14 @@ class RefusalCapture:
             self.error = error
 
     def tag(self, exc: BaseException) -> None:
-        """Mark ``exc``, the error the framework call raised, as standing for the
-        recorded typed error, so :func:`translate` returns it. Does nothing when
-        no error was recorded, and never raises."""
+        """Tag the framework's ``exc`` with the recorded error for :func:`translate`.
+        Does nothing when no error was recorded, and never raises."""
         if self.error is None or exc is self.error:
             return
         try:
             setattr(exc, _TAG, self.error)
         except (AttributeError, TypeError):  # an exception type without a __dict__
-            _log.debug("cannot tag %r with its refusal", type(exc), exc_info=True)
+            _log.debug("cannot tag %s with its refusal", type(exc).__name__)
 
 
 @contextlib.contextmanager
