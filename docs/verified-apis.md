@@ -1446,6 +1446,35 @@ only the message text, which is not a discriminator, so the SDK does not
 classify it. `tests/conformance/test_tool_binding.py::test_tool_access_denied_typed`
 holds each binding to this in the venvs above.
 
+**Binding refusal recovery: `VERIFIED (local capture replay)`, 2026-11-03,
+partial #1388.** `test_policy_refusal_typed` replays the captured HTTP 403 JSON
+responses `mcp_policies/pii-request.json` and `pii-response-sse.json` through
+each locked framework tool object. The latter capture is JSON despite its
+filename; no SSE error was captured. `tools/call` IDs are rebound to the local
+request; error fields, status and headers are retained. No model API call is made.
+
+| Binding | PII request / response | Access denial |
+|---|---|---|
+| LangGraph, LlamaIndex, Anthropic | `PIIDetected` from the per-tool wrapper | `ToolNotInProfile`, tool and server known |
+| OpenAI Agents | `PIIDetected` through `typed_refusals()` from the structured MCP error | `ToolNotInProfile` through the bridge, server unknown |
+| Agent Framework | Same, from the MCP cause retained in `ToolExecutionException` | Same, server unknown |
+| ADK, Strands | Asserted exemption: error text returned, policy metadata lost | Asserted exemption: denial text returned |
+| CrewAI | Asserted exemption: MCP 1.x background tool future does not settle on HTTP 403; bounded subprocess reproduction | `ToolNotInProfile` through the bridge, server unknown |
+
+`core.refusals.translate` recognizes structured JSON-RPC error ducks and the
+verified `agent_framework.exceptions.ToolExecutionException` cause/argument
+shape without framework imports; arbitrary user wrappers stop traversal.
+Binding HTTP clients mark same-origin requests and read HTTP error bodies for
+the bridge, bounded at 64 KiB and a five-second total deadline. Incomplete or
+encoded streaming bodies retain the HTTP status without policy inference;
+off-origin responses are not read. Malformed or unmarked MCP 403 responses
+retain their original HTTP errors; HTTP authentication, rate-limit and server
+errors keep precedence. Already-typed exceptions retain their identity,
+existing cause and framework metadata. No HTTP 200 response hook intercepts
+tool results. The legacy `tool_access_denial` API remains.
+Schema/poisoning captures lack policy markers and remain ambiguous (#1401,
+#1387); discovery typing is outside this slice. This does not close #1388.
+
 Collision renaming and the approval gate run in the SDK before any call. They
 were not repeated through the gateway.
 

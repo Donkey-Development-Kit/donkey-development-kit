@@ -9,8 +9,10 @@ response. Base-only: nothing here needs a framework extra.
 
 from __future__ import annotations
 
+import json
 import sys
 import types
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -192,6 +194,131 @@ def test_a_cyclic_chain_terminates() -> None:
     b = ConnectionErr(_request())
     a.__cause__, b.__cause__ = b, a
     assert translate(a) is None
+
+
+@pytest.mark.parametrize("capture", ["pii-request", "pii-response-sse"])
+def test_mcp_structured_error_and_framework_wrapper(capture: str) -> None:
+    fixture = Path(__file__).resolve().parents[1] / "fixtures/anypoint/mcp_policies"
+    error = json.loads(json.loads((fixture / f"{capture}.json").read_text("utf-8"))["body"])[
+        "error"
+    ]
+    inner = Exception("MCP error")
+    inner.error = types.SimpleNamespace(**error)  # type: ignore[attr-defined]
+    wrapper = type(
+        "ToolExecutionException", (Exception,), {"__module__": "agent_framework.exceptions"}
+    )
+    outer = wrapper("framework wrapper", inner)
+    outer.__cause__ = inner
+    assert isinstance(translate(inner), PIIDetected)
+    assert isinstance(translate(outer), PIIDetected)
+    user = RuntimeError("user wrapper")
+    user.__cause__ = inner
+    assert translate(user) is None
+    domain = ValueError("domain", inner)
+    domain.__cause__ = inner
+    assert translate(domain) is None
+    impostor = type("ToolExecutionException", (Exception,), {"__module__": "user.domain"})(
+        "domain", inner
+    )
+    impostor.__cause__ = inner
+    assert translate(impostor) is None
+
+
+@pytest.mark.parametrize("field", ["error", "code"])
+def test_mcp_duck_accessor_failure_does_not_replace_original(field: str) -> None:
+    def broken(self: object) -> object:
+        raise (
+            ValueError("accessor failure") if field == "error" else RuntimeError("accessor failure")
+        )
+
+    if field == "error":
+        original = type("Broken", (Exception,), {"error": property(broken)})("original")
+    else:
+        original = Exception("original")
+        original.error = type("Broken", (), {"code": property(broken)})()  # type: ignore[attr-defined]
+    assert translate(original) is None
+
+
+def test_mcp_duck_accessor_does_not_swallow_baseexception() -> None:
+    def interrupted(self: object) -> object:
+        raise KeyboardInterrupt
+
+    original = type("Interrupted", (Exception,), {"error": property(interrupted)})("original")
+    with pytest.raises(KeyboardInterrupt):
+        translate(original)
+
+
+@pytest.mark.parametrize("status", [401, 429, 500, 502, 503])
+def test_mcp_binding_http_errors_keep_http_precedence(status: int) -> None:
+    request = httpx.Request("POST", "https://proxy/mcp/", extensions={"donkey_mcp_binding": True})
+    fixture = (
+        Path(__file__).resolve().parents[1] / "fixtures/anypoint/mcp_policies/pii-request.json"
+    )
+    response = httpx.Response(
+        status, content=json.loads(fixture.read_text("utf-8"))["body"], request=request
+    )
+    error = httpx.HTTPStatusError("blocked", request=request, response=response)
+    assert not isinstance(translate(error), PIIDetected)
+
+
+def test_mcp_binding_auth_challenge_keeps_http_precedence() -> None:
+    request = httpx.Request("POST", "https://proxy/mcp/", extensions={"donkey_mcp_binding": True})
+    fixture = Path(__file__).resolve().parents[1] / "fixtures/anypoint/mcp_policies"
+    response = httpx.Response(
+        403,
+        content=json.loads((fixture / "pii-request.json").read_text("utf-8"))["body"],
+        headers={"WWW-Authenticate": "Bearer"},
+        request=request,
+    )
+    error = httpx.HTTPStatusError("blocked", request=request, response=response)
+    assert not isinstance(translate(error), PIIDetected)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"error":',
+        b"forbidden",
+        b"{}",
+        b'{"result":{}}',
+        b'{"error":{"code":-32603,"message":"Internal error"}}',
+    ],
+)
+def test_mcp_binding_unmarked_403_remains_original(body: bytes) -> None:
+    request = httpx.Request("POST", "https://proxy/mcp/", extensions={"donkey_mcp_binding": True})
+    response = httpx.Response(403, content=body, request=request)
+    error = httpx.HTTPStatusError("forbidden", request=request, response=response)
+    assert translate(error) is None
+
+
+@pytest.mark.parametrize("capture", ["pii-request", "pii-response-sse"])
+def test_mcp_binding_http_pii_retains_response_and_ids(capture: str) -> None:
+    fixture = Path(__file__).resolve().parents[1] / "fixtures/anypoint/mcp_policies"
+    request = httpx.Request(
+        "POST",
+        "https://proxy/mcp/",
+        headers={
+            "x-correlation-id": "correlation",
+            "x-call-id": "call",
+        },
+        extensions={
+            "donkey_mcp_binding": True,
+            "donkey_correlation_header": "x-correlation-id",
+            "donkey_call_id_header": "x-call-id",
+        },
+    )
+    response = httpx.Response(
+        403,
+        content=json.loads((fixture / f"{capture}.json").read_text("utf-8"))["body"],
+        headers={"x-request-id": "request"},
+        request=request,
+    )
+    typed = translate(httpx.HTTPStatusError("blocked", request=request, response=response))
+    assert isinstance(typed, PIIDetected)
+    assert typed.response is response
+    assert typed.correlation_id == "correlation"
+    assert typed.call_id == "call"
+    assert typed.request_id == "request"
 
 
 def test_an_httpx_error_without_a_request_does_not_raise() -> None:

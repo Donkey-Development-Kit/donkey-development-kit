@@ -39,6 +39,7 @@ _SCENARIOS = {
     "approval round trip": "approval_round_trip",
     "multi-server name collision": "multi_tool_multi_server",
     "MCP tool denial typed": "tool_access_denied_typed",
+    "MCP policy refusal typed": "policy_refusal_typed",
 }
 _PUBLIC_ONLY = {"retries_token_budget"}
 

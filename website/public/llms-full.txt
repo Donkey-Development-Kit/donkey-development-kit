@@ -8290,7 +8290,10 @@ The LangGraph, LlamaIndex and Anthropic bindings raise `ToolNotInProfile` (a
 problem, so it is never retried. The whole-server bindings leave the call to
 the framework. The OpenAI Agents SDK and CrewAI raise the `mcp` package's
 `McpError`, and Agent Framework wraps it in its `ToolExecutionException`.
-`tool_access_denial()` turns any of them into the typed error:
+[`typed_refusals()`](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary), also
+applied by `donkey.run()`, recovers the typed error from these raised errors.
+Unlike a per-tool binding, the recovered error has no server coordinates.
+The existing `tool_access_denial()` helper remains available for manual conversion:
 
 ```python
 from donkey_kit import ToolNotInProfile
@@ -8309,6 +8312,30 @@ ADK and Strands hand the agent an error result whose text is
 it, because the text alone could be any tool's failure. In the same way, a
 tool that ran and failed returns a result with `isError: true`, never
 `ToolNotInProfile`.
+
+### MCP policy refusals
+
+Captured MCP PII Detector refusals on tool requests and responses raise
+`PIIDetected` through LangGraph, LlamaIndex and Anthropic bindings. With
+OpenAI Agents and Agent Framework, wrap the framework call in
+`typed_refusals()` (or `donkey.run()`) to recover the same type. Its `.phase`,
+`.entities` and `.findings` contain safe metadata, not blocked values.
+The original framework exception is available as `.framework_error`; it may
+contain gateway diagnostics, so do not log it as safe metadata.
+Already-typed exceptions retain their identity, existing cause and framework
+metadata. Malformed or unmarked MCP HTTP 403 responses remain HTTP errors,
+not inferred policy refusals.
+
+ADK and Strands instead return error text and lose the structured policy
+fields. The SDK never infers a policy from that text. With the locked CrewAI
+MCP 1.x stack, replaying the captured HTTP 403 PII refusal leaves the tool call
+unresolved; this path is not supported as a typed refusal. All these binding
+results were checked locally against captured responses, not through live
+framework calls to the gateway.
+
+Schema-validation and tool-poisoning errors without explicit policy markers
+remain ambiguous, not typed policy refusals. Successful results and
+`isError: true` tool results keep their framework-native behavior.
 
 ## Related
 

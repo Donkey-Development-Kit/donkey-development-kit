@@ -214,7 +214,7 @@ def jsonrpc_refusal(
     guessed as 200. HTTP 401, 429 and auth challenges are left to HTTP classify.
     Ordinary or ambiguous errors return None. Raw message/data are never rendered,
     except the existing access-denial tool-name parsing (docs/verified-apis.md §9).
-    This helper does not wire new policies into framework bindings (#1388).
+    Framework bindings and the refusal bridge share this matcher (#1388).
     """
     lowered = {name.lower(): value for name, value in (headers or {}).items()}
     if status in (401, 429) or _wire.WWW_AUTHENTICATE_HEADER in lowered:

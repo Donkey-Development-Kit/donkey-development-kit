@@ -115,9 +115,10 @@ class DenyMiddleware:
     """Pure-ASGI middleware refusing ``tools/call`` of one tool with the
     gateway's captured access denial (``tests/fixtures/anypoint/mcp_access``)."""
 
-    def __init__(self, app: Any, tool: str | None) -> None:
+    def __init__(self, app: Any, tool: str | None, refusal: Path | None = None) -> None:
         self.app = app
         self.tool = tool
+        self.refusal = json.loads(refusal.read_text("utf-8")) if refusal else None
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         if scope["type"] != "http" or self.tool is None or scope["method"] != "POST":
@@ -149,12 +150,20 @@ class DenyMiddleware:
                 },
             }
             payload = json.dumps(denial, separators=(",", ":")).encode()
+            status = 200
+            headers = [(b"content-type", b"application/json")]
+            if self.refusal is not None:
+                captured = json.loads(self.refusal["body"])
+                captured["id"] = request.get("id")
+                payload = json.dumps(captured, separators=(",", ":")).encode()
+                status = self.refusal["status"]
+                headers = [(k.encode(), v.encode()) for k, v in self.refusal["headers"].items()]
             await send(
                 {
                     "type": "http.response.start",
-                    "status": 200,
+                    "status": status,
                     "headers": [
-                        (b"content-type", b"application/json"),
+                        *headers,
                         (b"content-length", str(len(payload)).encode()),
                     ],
                 }
@@ -259,10 +268,16 @@ class CibaMiddleware:
 
 
 async def serve(
-    port: int, record: Path | None, deny: str | None = None, ciba: str | None = None
+    port: int,
+    record: Path | None,
+    deny: str | None = None,
+    ciba: str | None = None,
+    refusal: Path | None = None,
 ) -> None:
     """Serve until SIGTERM/SIGINT, printing READY once the socket is listening."""
-    app = RecordingMiddleware(CibaMiddleware(DenyMiddleware(build_app(), deny), ciba), record)
+    app = RecordingMiddleware(
+        CibaMiddleware(DenyMiddleware(build_app(), deny, refusal), ciba), record
+    )
     config = uvicorn.Config(app, host=HOST, port=port, log_level="warning", lifespan="on")
     server = uvicorn.Server(config)
     loop = asyncio.get_running_loop()
@@ -283,6 +298,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--record", type=Path, default=None, help="append request JSON lines here")
     parser.add_argument("--deny", default=None, help="refuse tools/call of this tool (#312)")
+    parser.add_argument("--refusal", type=Path, help="replay a captured response for --deny")
     parser.add_argument(
         "--ciba",
         default=None,
@@ -293,7 +309,7 @@ def main() -> int:
     if args.record is not None:
         args.record.parent.mkdir(parents=True, exist_ok=True)
         args.record.touch()
-    asyncio.run(serve(args.port, args.record, args.deny, args.ciba))
+    asyncio.run(serve(args.port, args.record, args.deny, args.ciba, args.refusal))
     return 0
 
 
