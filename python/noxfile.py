@@ -202,6 +202,9 @@ assert "pydantic" not in sys.modules
 
 # BG §1.4, #746: load() reads the installed wheel's package data, not a checkout.
 _WHEEL_FIXTURES = """\
+import hashlib
+import json
+
 from donkey_kit.simulator import fixtures
 
 assert "site-packages" in fixtures.LOCK_PATH.parts, fixtures.LOCK_PATH
@@ -212,6 +215,15 @@ assert fixtures.compute_manifest() == fixtures.read_lock()
 before = fixtures.LOCK_PATH.read_bytes()
 fixtures.write_lock()
 assert fixtures.LOCK_PATH.read_bytes() == before
+
+# #1391: MCP captures are packaged evidence, not simulator-served shapes.
+mcp_lock = json.loads(fixtures.fixture_bytes("anypoint", "mcp-captures.lock"))
+assert len(mcp_lock) == 19
+assert not set(mcp_lock).intersection(fixtures.read_lock())
+for path, digest in mcp_lock.items():
+    directory, name = path.rsplit("/", 1)
+    assert "sha256:" + hashlib.sha256(fixtures.fixture_bytes(directory, name)).hexdigest() == digest
+assert fixtures.fixture_bytes("anypoint", "README.mcp.md")
 """
 
 _DEAD = "http://127.0.0.1:9"  # a closed port: any request through it fails

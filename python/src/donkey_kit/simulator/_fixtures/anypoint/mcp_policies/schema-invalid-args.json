@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "headers": {"content-type": "application/json", "server": "Anypoint Flex Gateway"},
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32602,\"message\":\"Request payload validation error\",\"data\":\"tools/call arguments for 'calculate' failed schema validation: value 42 is not of type \\\"string\\\" in property /expression\"}}"
+}
