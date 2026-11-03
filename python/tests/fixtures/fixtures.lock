@@ -152,7 +152,7 @@
   "anypoint/gemini_inbound_multiroute/generate_content.success.headers.txt": "sha256:7aac0e3377c605f7e6e0c5daa60f10fcf9a960190dfb72815c033b19b7d850b7",
   "anypoint/gemini_inbound_multiroute/generate_content.unresolvable.body.json": "sha256:ea48bc2a76c87bebbc2739f834fd4659a03a04f95806060c7addb8f5f2ae4aae",
   "anypoint/gemini_inbound_multiroute/generate_content.unresolvable.headers.txt": "sha256:948fe6b1461c631d1908ff0e44a312c08f2b5976c523db013b004acfcd7666cf",
-  "anypoint/gemini_inbound_multiroute/stream_generate_content.success.body.txt": "sha256:cb3d92e0cc832713eb79b2c6ec16cb8ab72c95b97c4c2b4fd2ac5c80515038ed",
+  "anypoint/gemini_inbound_multiroute/stream_generate_content.success.body.txt": "sha256:a44113a919c8ecd4f15f9ce2f8636b6f55268e2b26c80be162947d1605dc6330",
   "anypoint/gemini_inbound_multiroute/stream_generate_content.success.headers.txt": "sha256:6c384550ace12a66f768cc2fa9e95804dd0b9f4dfa616e966d9ce08a53a16f12",
   "anypoint/mcp_access/README.md": "sha256:bf3ef453060b722d8e2b58a1185a901fea18621fc89807b3d45fce3caa8ede13",
   "anypoint/mcp_access/tools-call.abac-denied.body.json": "sha256:d9e2e5ba4cac1952168303442825d78da1f50318dc6d371172556c1418f6d15f",
