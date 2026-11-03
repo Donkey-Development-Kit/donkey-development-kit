@@ -211,3 +211,41 @@ def test_out_of_range_param_classifies_as_upstream_request_error(
     assert err.code == code
     assert err.error_type == error_type
     assert "temperature" in str(err)
+
+
+def test_bedrock_responses_accepts_message_typed_input() -> None:
+    """#1409 step 1: `/responses` on the bedrock-anthropic transcoder (impl
+    1.0.4) accepts every input-item shape of the `BetaMessage` mapping: role-only
+    `developer`/`user` messages with string content, a prior assistant output
+    message fed back in, and list content."""
+    name = "bedrockanthropic.responses.message_input.success"
+    assert _status(name) == 200
+    assert _headers(name)["x-llm-proxy-llm-provider"] == "bedrockanthropic"
+    body = _json(name)
+    assert body["object"] == "response"
+    output = body["output"]
+    assert isinstance(output, list)
+    assert [item["type"] for item in output] == ["message"]
+    assert output[0]["role"] == "assistant"
+    assert output[0]["content"][0]["type"] == "output_text"
+    usage = body["usage"]
+    assert isinstance(usage, dict)
+    assert usage["total_tokens"] == usage["input_tokens"] + usage["output_tokens"]
+
+
+def test_bedrock_responses_stream_closes_an_item_it_never_opened() -> None:
+    """With message-typed input the transcoded stream opens with an
+    `output_item.done` for index 0, which no `output_item.added` announced; the
+    text item streams at index 1. No `output_item.done` carries an `item`."""
+    events, data = _sse("bedrockanthropic.responses.message_input.stream")
+    payloads = [json.loads(d) for d in data]
+    assert events[:2] == ["response.created", "response.output_item.done"]
+    assert payloads[1]["output_index"] == 0
+    added = [p for p in payloads if p["type"] == "response.output_item.added"]
+    assert [p["output_index"] for p in added] == [1]
+    deltas = [p for p in payloads if p["type"] == "response.output_text.delta"]
+    assert deltas
+    assert {p["output_index"] for p in deltas} == {1}
+    done = [p for p in payloads if p["type"] == "response.output_item.done"]
+    assert all("item" not in p for p in done)
+    assert events[-1] == "response.completed"
