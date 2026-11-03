@@ -609,8 +609,10 @@ async def test_cancelled_503_body_read_closes_response(close_fails: bool) -> Non
         task = asyncio.create_task(view.send(view.build_request("POST", _ENDPOINT), stream=True))
         await asyncio.wait_for(started.wait(), timeout=2)
         task.cancel("cancel body read")
-        with pytest.raises(asyncio.CancelledError, match="cancel body read"):
+        # Python 3.10 can drop the cancellation message when awaiting a task.
+        with pytest.raises(asyncio.CancelledError):
             await task
+        assert task.cancelled()
         assert response.is_closed
         assert body.closed
 
