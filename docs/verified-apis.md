@@ -1161,6 +1161,10 @@ v1 PII policy before attachment.
 
 ### MCP Gateway Policy Captures (#1384)
 
+The consumer-facing inventory is `website/content/tool-access/gateway-policies.mdx`
+(partial #1392, BG §2.7 / BG §1.2). It separates these live wire captures from
+local binding replay and unverified configurations; no evidence status changes.
+
 The shared matcher (#1385) recognizes the existing tool-access denial. For
 #1386 it also types MCP PII as `PIIDetected` only with both exact markers
 (`policy=mcp-pii-detector`, `reason=policy_pii_detected`) and the capture-backed

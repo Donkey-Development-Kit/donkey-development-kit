@@ -175,6 +175,9 @@ interception, A2A PII/schema typing or new framework binding coverage.
 
 ### MCP PII metadata
 
+The [MCP gateway policy inventory](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) covers
+policy configuration boundaries and which native bindings preserve these refusals.
+
 For an MCP PII rejection, `.policy` is `"mcp-pii-detector"`, `.phase` is
 `"request"` or `"response"`, and `.findings` is a safe projection with only
 `pii_type` and `masked_value`. Types are canonical `SSN`, `Email`, `CreditCard`,
@@ -192,8 +195,9 @@ MCP HTTP 403 PII refusals are terminal and never automatically retried. An HTTP
 `jsonrpc_refusal()`; successful transport responses are not intercepted.
 
 The captured response-phase rejection on an SSE upstream is **HTTP 403 JSON**,
-not an SSE error event. SSE error-event handling, elicitation decline and new
-framework binding surfacing are not established by this matcher.
+not an SSE error event. SSE error-event handling and elicitation decline are not
+established by this matcher. The [binding refusal coverage](https://docs.donkey-kit.dev/tool-access/binding.md#mcp-policy-refusals)
+is local capture replay, not new live framework calls to the gateway.
 
 All importable from `donkey_kit`, along with `classify`, except the Roadmap-surface errors on the last line, which are in `donkey_kit.experimental`:
 

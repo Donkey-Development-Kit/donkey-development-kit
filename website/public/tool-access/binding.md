@@ -418,6 +418,9 @@ tool that ran and failed returns a result with `isError: true`, never
 
 ### MCP policy refusals
 
+See [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) for the policy inventory,
+gateway-visible catalog changes and the limits of each captured behavior.
+
 Captured MCP PII Detector refusals on tool requests and responses raise
 `PIIDetected` through LangGraph, LlamaIndex and Anthropic bindings. With
 OpenAI Agents and Agent Framework, wrap the framework call in
