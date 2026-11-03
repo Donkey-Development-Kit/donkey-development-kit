@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "headers": {"content-type": "text/event-stream", "server": "Anypoint Flex Gateway"},
+  "body": "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32603,\"message\":\"tools/list response blocked by tool poisoning detection\",\"data\":{\"findings\":[{\"changedFields\":[\"inputSchema\"],\"tool\":\"current_time\",\"type\":\"drift\"},{\"changedFields\":[\"inputSchema\"],\"tool\":\"calculate\",\"type\":\"drift\"},{\"changedFields\":[\"inputSchema\"],\"tool\":\"convert_units\",\"type\":\"drift\"},{\"changedFields\":[\"inputSchema\"],\"tool\":\"lookup_proxy\",\"type\":\"drift\"}]}}}\n\n"
+}

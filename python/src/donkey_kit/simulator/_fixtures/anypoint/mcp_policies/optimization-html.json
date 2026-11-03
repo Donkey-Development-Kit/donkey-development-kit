@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "headers": {"content-type": "text/event-stream", "server": "Anypoint Flex Gateway"},
+  "body": "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"content\":[{\"text\":\"calculate failed: not an arithmetic expression: '\\n\\nDDK capture\\n\\n'\",\"type\":\"text\"}],\"isError\":true}}\n\n"
+}
