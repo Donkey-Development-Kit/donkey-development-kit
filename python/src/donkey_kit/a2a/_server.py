@@ -128,8 +128,8 @@ def _headers(context: RequestContext) -> dict[str, str]:
 def _failure(exc: Exception, run: InboundRun | None) -> tuple[str, dict[str, Any]]:
     """The text and the structured ``error`` part a failed task carries.
 
-    The exception's type name and the ids only: its message and a refusal's
-    remediation are for the agent's operator and go to the log, since either may
+    The exception's type name and the ids only. Neither the failed parts nor the
+    executor's log includes messages, remediation or tracebacks, since they may
     repeat request content or name internal configuration.
     """
     name = type(exc).__name__
@@ -175,7 +175,8 @@ def build_app(
     (``type``, ``refusal``, ``correlation_id``, and the failed call's ``call_id``
     for a ``DonkeyError``); a governance refusal is re-raised as its typed
     ``DonkeyError`` first, so ``type`` is ``PIIDetected``, not the framework's
-    wrapper. The message and stack trace go to this module's logger only.
+    wrapper. This module's logger records the type and ids only, never the
+    exception message or stack trace, which may contain raw gateway diagnostics.
 
     Tasks live in memory, in the ``a2a-sdk``'s ``InMemoryTaskStore``. The 1000
     most recently finished ones (completed, failed, canceled or rejected) stay
@@ -299,11 +300,12 @@ def build_app(
                     )
                     result = await _run(spec, task)
             except Exception as exc:  # noqa: BLE001 — any handler failure fails the task, never the server
-                _log.exception(
-                    "A2A agent %r failed task %s (correlation id %s)",
+                _log.error(
+                    "A2A agent %r failed task %s (correlation id %s): %s",
                     spec.name,
                     context.task_id,
                     run.correlation_id if run is not None else None,
+                    type(exc).__name__,
                 )
                 await updater.failed(_failed_message(exc, run, context))
                 return

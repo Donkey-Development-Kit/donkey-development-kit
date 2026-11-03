@@ -202,7 +202,7 @@ def test_pii_refusal_with_several_entities_counts_them_without_values() -> None:
     message = (
         'Request contains PII data: [\n  {\n    "pii_type": "Email",\n'
         '    "value": "a.person@example.com",\n    "start": 3,\n    "end": 23\n  },\n'
-        '  {\n    "pii_type": "Phone",\n    "value": "+1 555 0100",\n'
+        '  {\n    "pii_type": "PhoneNumber",\n    "value": "+1 555 0100",\n'
         '    "start": 30,\n    "end": 41\n  }\n]'
     )
     err = _pii_refusal_with_message(message)
@@ -210,8 +210,8 @@ def test_pii_refusal_with_several_entities_counts_them_without_values() -> None:
     assert "a.person@example.com" not in text
     assert "+1 555 0100" not in text
     assert "2 entities" in text
-    assert "Email" in text and "Phone" in text
-    assert err.entities == ["Email", "Phone"]
+    assert "Email" in text and "PhoneNumber" in text
+    assert err.entities == ["Email", "PhoneNumber"]
 
 
 def test_pii_refusal_with_unparseable_entity_list_omits_values() -> None:
