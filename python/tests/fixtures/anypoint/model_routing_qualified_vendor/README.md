@@ -1,0 +1,8 @@
+# Fixture provenance
+
+A `Format=OpenAI` model-based proxy on `model-based-routing` def 1.0.5 / impl 1.0.9 with its vendors in `groupId:vendor` form (#1405). The gateway returns the qualified value in `x-llm-proxy-llm-provider`. Pinned by `tests/unit/test_model_routing_1_0_5_contract.py`; see docs/verified-apis.md §2.
+
+- `chat_completions.success`: 2026-11-03, ddk-qualified-vendor (instance 21271481, model-based-routing 1.0.5 / impl 1.0.9, vendors mulesoft:openai + mulesoft:gemini, fallback Route A): openai/gpt-5-mini on the mulesoft:openai route; captured by Claude Code at the maintainer's request with the shared ddk-test-client pair.
+- `chat_completions.gemini`: 2026-11-03, ddk-qualified-vendor (instance 21271481, model-based-routing 1.0.5 / impl 1.0.9, vendors mulesoft:openai + mulesoft:gemini, fallback Route A): gemini/gemini-3.8-flash on the mulesoft:gemini route; captured by Claude Code at the maintainer's request with the shared ddk-test-client pair.
+- `chat_completions.fallback`: 2026-11-03, ddk-qualified-vendor (instance 21271481, model-based-routing 1.0.5 / impl 1.0.9, vendors mulesoft:openai + mulesoft:gemini, fallback Route A): unconfigured mistral/ prefix, policy fallback to Route A; captured by Claude Code at the maintainer's request with the shared ddk-test-client pair.
+- `chat_completions.bare_model_400`: 2026-11-03, ddk-qualified-vendor (instance 21271481, model-based-routing 1.0.5 / impl 1.0.9, vendors mulesoft:openai + mulesoft:gemini, fallback Route A): bare gpt-5-mini with two vendors configured; captured by Claude Code at the maintainer's request with the shared ddk-test-client pair.

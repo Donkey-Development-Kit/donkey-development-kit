@@ -1,0 +1,16 @@
+HTTP/1.1 404 Not Found
+content-length: 32
+content-type: text/plain
+x-llm-proxy-routing-type: ModelBased
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: bedrockanthropic
+x-llm-proxy-llm-model: us.anthropic.claude-sonnet-5
+x-llm-proxy-input-tokens-cost-per-1m: 2.2
+x-llm-proxy-output-tokens-cost-per-1m: 11
+x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: bedrockanthropic, Model: us.anthropic.claude-sonnet-5.
+date: Tue, 03 Nov 2026 15:03:11 GMT
+server: Anypoint Flex Gateway
+x-correlation-id: 00000000-0000-4000-8000-49586c5dceb2
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Keep-Alive
+
