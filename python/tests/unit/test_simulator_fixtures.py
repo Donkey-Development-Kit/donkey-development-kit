@@ -35,6 +35,8 @@ _CONTRACT_STATUS = {
     "client-id-missing": 401,
     "success": 200,
     "success-semantic": 200,
+    "success-qualified-vendor": 200,
+    "fallback-qualified-vendor": 200,
     "stream": 200,
     "models-notfound": 404,
     "chat-success": 200,

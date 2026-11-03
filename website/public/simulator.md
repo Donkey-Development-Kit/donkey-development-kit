@@ -39,6 +39,10 @@ variant is selectable the same way: `donkey-sim/success-semantic` replays the
 captured **semantic-routing** `200` (`routing_type == "Semantic"`), so
 `donkey.last_call.matched_topic` and `routing_score` light up offline (see
 [Gateway identity](https://docs.donkey-kit.dev/examples/general/gateway-identity.md#semantic-routing-the-matched-topic-and-score)).
+Two more replay a proxy whose vendors are configured as `groupId:vendor`:
+`donkey-sim/success-qualified-vendor` (a matched route) and
+`donkey-sim/fallback-qualified-vendor` (the routing fallback). Both report
+`x-llm-proxy-llm-provider: mulesoft:openai`, which `last_call.served_provider` keeps as is.
 Any other `model` value gets the default model-based happy path. The
 `donkey-sim/` prefix is a simulator-only control surface; the real gateway never
 interprets it.
