@@ -1603,10 +1603,14 @@ always sends it as `x-goog-api-key`; the gateway authenticates on the
 `total_tokens`, `cached_tokens`, `reasoning_tokens`) is read from Gemini's
 `usageMetadata`, and `requested_model` from the URL path. Gemini's
 `total_tokens` includes the thinking tokens it also reports as
-`reasoning_tokens`. A `Format=Gemini` proxy is a passthrough, so it sends no
-routing headers: `served_provider`, `served_model` and `routing_type` stay
-`None`, and `substituted` is `False`. `request_id` and `api_instance_id` are
-populated.
+`reasoning_tokens`. On `model-based-routing` 1.0.5 a `Format=Gemini` proxy
+sends the routing headers, so `served_provider` (`gemini`), `served_model` and
+`routing_type` are filled. Every model in the path is served by `gemini`, so a
+path model the proxy resolves to another model sets `substituted` to `True`.
+Older versions pass the request through with no routing headers:
+`served_provider`, `served_model` and `routing_type` stay `None`, and
+`substituted` is `False`. `request_id` and `api_instance_id` are populated on
+both.
 
 `last_call` is contextvar-scoped, and ADK's `Runner` makes the model call in a
 task of its own, so the caller of `runner.run_async(...)` reads `UNOBSERVED`.
@@ -2448,7 +2452,10 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   `/v1/messages` and 404s an OpenAI-shaped `/chat/completions` request. Auth is
   the same `client_id` / `client_secret` header pair as every other proxy.
   To use the native surface, set `DONKEY_LLM_PROXY_URL` (or `llm_proxy_url`)
-  to a `Format=Anthropic` proxy.
+  to a `Format=Anthropic` proxy. On `model-based-routing` 1.0.5 the proxy
+  sends the routing headers, so `served_provider` and `served_model` are
+  filled. A `bedrockanthropic/` route is not reachable behind this ingress
+  (it answers `404`).
 - **What `donkey.last_call` reads.** On a native Anthropic proxy,
   `request_id` is Anthropic's own `request-id` header. `cached_tokens` and
   `cache_write_tokens` come from `cache_read_input_tokens` and
@@ -3409,6 +3416,14 @@ your proxy sends a different shape, the call falls through to a generic
 `PolicyViolation` here; please file an issue with its status and headers.
 Because the shape is built in, `classify.register()` refuses a rule that
 matches it.
+
+Two native-ingress responses land here on `model-based-routing` 1.0.5. A body
+that is not valid JSON gets a `400` `{"error":"Invalid JSON body: …"}` with
+no routing headers, on every ingress Format; the SDK's own clients always send
+valid JSON, so you only see it from a hand-built request. On a
+`Format=Anthropic` proxy, a `bedrockanthropic/` model is routed to Bedrock
+and then answered with a `text/plain` `404`. Both come back as an unconfirmed
+`PolicyViolation`.
 
 One `400` that used to land here is now typed: a bare model name (`gpt-5-mini`)
 sent to a model-based proxy with more than one provider. The gateway rejects it
@@ -14271,8 +14286,17 @@ async with Donkey.from_env() as donkey:
 
 **You should see:** the reply; `served_provider`, `served_model`, and input and
 output tokens from `last_call`; then Anthropic's `request-id` header next to
-`last_call.request_id`. `request-id` is not one of the headers the SDK reads
-for `request_id` yet, so the two can differ, or the field can be `None`.
+`last_call.request_id`. On a native Anthropic proxy the SDK reads
+`request_id` from that header, so the two match.
+
+A proxy on `model-based-routing` 1.0.5 can carry more than one route behind
+the Anthropic ingress. A bare or `anthropic/`-prefixed model is served by
+`anthropic`, and a prefix the proxy has no route for is served by its
+fallback, with `last_call.fallback` set. A model the proxy cannot resolve is
+served by the ingress's own `anthropic` route, so `served_model` differs from
+the one you asked for and `last_call.substituted` is `True`. A
+`bedrockanthropic/` route is matched but answered `404`, so Bedrock is not
+reachable through this ingress.
 
 ## 02 — Typed refusals, simulated
 
@@ -14373,7 +14397,12 @@ print("routing      ", ok.headers.get("x-llm-proxy-model-based-routing-success")
 ```
 
 **You should see:** the reply, `total tokens` from `usageMetadata`, and the
-proxy's model-based `routing` header. A `KeyError: 'candidates'` means the
+proxy's model-based `routing` header. On `model-based-routing` 1.0.5 that
+header reads `Request successfully matched. Provider: gemini, …`, and the proxy
+also sends `x-llm-proxy-llm-provider` and `x-llm-proxy-llm-model`. Older
+versions answer `Request passed through without model-based routing.` and send
+neither. Every model in the path is served by `gemini`, even a
+`provider/model` naming another route on the proxy. A `KeyError: 'candidates'` means the
 proxy refused; print `ok.text` to see why. A `404` means the URL points at a
 `Format=OpenAI` proxy.
 

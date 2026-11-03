@@ -614,6 +614,14 @@ your proxy sends a different shape, the call falls through to a generic
 Because the shape is built in, `classify.register()` refuses a rule that
 matches it.
 
+Two native-ingress responses land here on `model-based-routing` 1.0.5. A body
+that is not valid JSON gets a `400` `{"error":"Invalid JSON body: …"}` with
+no routing headers, on every ingress Format; the SDK's own clients always send
+valid JSON, so you only see it from a hand-built request. On a
+`Format=Anthropic` proxy, a `bedrockanthropic/` model is routed to Bedrock
+and then answered with a `text/plain` `404`. Both come back as an unconfirmed
+`PolicyViolation`.
+
 One `400` that used to land here is now typed: a bare model name (`gpt-5-mini`)
 sent to a model-based proxy with more than one provider. The gateway rejects it
 before any upstream call, and `classify()` returns `ModelNotRoutable`. It keeps
