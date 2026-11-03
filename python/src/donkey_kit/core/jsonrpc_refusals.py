@@ -2,7 +2,7 @@
 
 Only explicit policy markers or opt-in registrations name a refusal. Generic
 JSON-RPC codes, ErrorInfo reasons and diagnostic text never establish a policy.
-Built-ins type the legacy MCP access denial and captured MCP PII refusals.
+Built-ins cover legacy MCP access denial, MCP PII and captured content-safety headers.
 """
 
 from __future__ import annotations
@@ -13,12 +13,14 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from . import _wire
+from ._refusal_body import content_safety_headers
 from ._response import ResponseLike
 from ._tool_access import match_tool_access
 from .errors import (
     _JSONRPC_MATCHER,
     _POLICY_MATCHERS,
     AuthError,
+    ContentSafetyBlocked,
     DonkeyError,
     PIIDetected,
     PolicyViolation,
@@ -282,6 +284,14 @@ def jsonrpc_refusal(
     for shape in candidates:
         if (pii := _match_mcp_pii(shape)) is not None:
             return pii
+        if (verdict := content_safety_headers(shape.status, shape.headers)) is not None:
+            provider, vendor, categories = verdict
+            return ContentSafetyBlocked(
+                f"Request blocked by {vendor} (403).",
+                provider=provider,
+                categories=categories,
+                **shape.kw,
+            )
     for shape in candidates:
         if REGISTERED_MATCHER and (matched := REGISTERED_MATCHER[0](shape)) is not None:
             return matched

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from . import _verify, _wire
@@ -18,6 +19,7 @@ __all__ = [
     "MODEL_NOT_ROUTABLE_RE",
     "PiiSpan",
     "code_str",
+    "content_safety_headers",
     "content_safety_reject",
     "json_body",
     "nested_error",
@@ -227,6 +229,12 @@ MODEL_NOT_ROUTABLE_RE = re.compile(r"Model '(?P<model>[^']*)' is not in the know
 # from a live gateway (ADR 0016, #1429; the capture is #1184).
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str, str], ...] = (
     (
+        _wire.A2A_AZURE_GUARDRAIL_ACTION_HEADER,
+        _wire.A2A_AZURE_GUARDRAIL_REASON_HEADER,
+        "azure-content-safety",
+        "Azure Content Safety",
+    ),
+    (
         _wire.AZURE_CONTENT_SAFETY_ACTION_HEADER,
         _wire.AZURE_CONTENT_SAFETY_REASON_HEADER,
         "azure-content-safety",
@@ -260,11 +268,22 @@ def content_safety_reject(response: ResponseLike) -> tuple[str, str, list[str]] 
     ``ContentSafetyBlocked.provider`` and ``donkey.policy.provider`` carry (#1183);
     ``vendor`` is the display name. Categories are the comma-separated flagged
     reasons from the sibling ``...-reason`` header (empty list if absent)."""
-    if response.status_code != 403:
+    return content_safety_headers(response.status_code, response.headers)
+
+
+def content_safety_headers(
+    status: int | None, headers: Mapping[str, str]
+) -> tuple[str, str, list[str]] | None:
+    """Read captured vendor verdicts with HTTP context, never from RPC diagnostic text.
+
+    Header names must be lowercase (as in RpcShape and HTTP response headers).
+    The A2A Azure family is captured live; Bedrock's A2A block is not (#1393).
+    """
+    if status != 403:
         return None
     for action_h, reason_h, provider, vendor in _CONTENT_SAFETY_VENDORS:
-        if response.headers.get(action_h) == "reject":
-            reason = response.headers.get(reason_h, "")
+        if headers.get(action_h) == "reject":
+            reason = headers.get(reason_h, "")
             categories = [c.strip() for c in reason.split(",") if c.strip()]
             return provider, vendor, categories
     return None
