@@ -1049,7 +1049,7 @@ install takes each framework's newest release.
 |---|---|---|---|---|---|---|
 | [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | Conformance-tested | `[langgraph]` | `langgraph` | 0.4 | 1.2.19 | `langgraph==0.5.0` with `langchain-core>=1.0` |
 |  |  |  | `langchain-openai` | 0.3.9 | 1.7.3 |  |
-|  |  |  | `langchain-core` | 0.3.45 | 1.7.3 |  |
+|  |  |  | `langchain-core` | 0.3.45 | 1.7.4 |  |
 | [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `connection_kwargs()` | `[adk]` | `google-adk` | 2.4 | 2.13.0 | None known |
 |  |  |  | `litellm` | 1.84 | 1.106.6 |  |
 | [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `connection_kwargs()` | `[strands]` | `strands-agents` | 1.57.1 | 1.63.0 | None known |
