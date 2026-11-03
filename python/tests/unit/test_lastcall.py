@@ -825,6 +825,11 @@ def test_substituted_is_true_only_when_both_known_and_differ() -> None:
         ("openai/gpt-5-mini", None, "openai/gpt-5-mini", False),  # served verbatim
         ("gpt-5.1", "openai", "gpt-5.1", False),  # bare names: verbatim, as before
         ("gpt-5.1", "openai", "gpt-4o", True),
+        # A qualified groupId:vendor provider (model-based-routing 1.0.5, live
+        # 2026-11-03, #1405): the vendor suffix is what the prefix names.
+        ("openai/gpt-5-mini", "mulesoft:openai", "gpt-5-mini", False),
+        ("gemini/gemini-3.8-flash", "mulesoft:gemini", "gemini-3.8-flash", False),
+        ("gemini/gemini-3.8-flash", "mulesoft:openai", "gpt-5-mini", True),  # a real fallback
     ],
 )
 def test_substituted_ignores_a_prefix_that_names_the_served_provider(
@@ -942,3 +947,13 @@ def test_no_unverified_warning_on_the_semantic_read_path() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
         LastCall.from_response(httpx.Response(200, headers={_SEMANTIC_HEADER: _SEMANTIC_SUCCESS}))
+
+
+@pytest.mark.parametrize(
+    ("provider", "vendor"),
+    [("mulesoft:openai", "openai"), ("openai", "openai"), (None, None), ("odd:", "odd:")],
+)
+def test_provider_vendor_takes_the_suffix_of_a_qualified_value(
+    provider: str | None, vendor: str | None
+) -> None:
+    assert lastcall.provider_vendor(provider) == vendor

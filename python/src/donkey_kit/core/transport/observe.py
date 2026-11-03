@@ -19,6 +19,7 @@ from ..cost import CostTags
 from ..errors import PolicyViolation
 from ..lastcall import (
     observe_last_call,
+    provider_vendor,
     routing_fallback,
     semantic_cache,
     semantic_routing,
@@ -121,7 +122,9 @@ def _record_response(
         matched_topic, routing_score = semantic_routing(response)
         cache_status, cache_score = semantic_cache(response)
         gspan.record(
-            system=response.headers.get(LLM_PROVIDER_HEADER),
+            # OTel's gen_ai.system is a bare system name: the vendor of a qualified
+            # groupId:vendor provider (#1405); last_call.served_provider keeps it raw.
+            system=provider_vendor(response.headers.get(LLM_PROVIDER_HEADER)),
             # Served model + routing facts (docs/verified-apis.md §3, #309):
             # request≠response model on
             # the span is the fastest read that a gateway failover happened, and

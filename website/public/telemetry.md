@@ -13,7 +13,10 @@ SDK itself does along the way, such as retries and token refreshes, see
 Every governed call produces a span following the OpenTelemetry **GenAI
 semantic conventions** — `gen_ai.system`, `gen_ai.request.model`,
 `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` — plus attributes
-for the governance layer that generic instrumentation cannot know about:
+for the governance layer that generic instrumentation cannot know about.
+`gen_ai.system` is the bare vendor the gateway served (`openai`), even when the
+proxy reports a qualified `mulesoft:openai`; `donkey.last_call.served_provider`
+keeps the qualified value.
 
 ```
 donkey.policy.decision      = allow | refuse
