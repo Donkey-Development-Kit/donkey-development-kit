@@ -72,8 +72,17 @@ async with Donkey.from_env() as donkey:
 
 **You should see:** the reply; `served_provider`, `served_model`, and input and
 output tokens from `last_call`; then Anthropic's `request-id` header next to
-`last_call.request_id`. `request-id` is not one of the headers the SDK reads
-for `request_id` yet, so the two can differ, or the field can be `None`.
+`last_call.request_id`. On a native Anthropic proxy the SDK reads
+`request_id` from that header, so the two match.
+
+A proxy on `model-based-routing` 1.0.5 can carry more than one route behind
+the Anthropic ingress. A bare or `anthropic/`-prefixed model is served by
+`anthropic`, and a prefix the proxy has no route for is served by its
+fallback, with `last_call.fallback` set. A model the proxy cannot resolve is
+served by the ingress's own `anthropic` route, so `served_model` differs from
+the one you asked for and `last_call.substituted` is `True`. A
+`bedrockanthropic/` route is matched but answered `404`, so Bedrock is not
+reachable through this ingress.
 
 ## 02 — Typed refusals, simulated
 

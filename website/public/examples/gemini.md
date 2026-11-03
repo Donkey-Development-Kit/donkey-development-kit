@@ -54,7 +54,12 @@ print("routing      ", ok.headers.get("x-llm-proxy-model-based-routing-success")
 ```
 
 **You should see:** the reply, `total tokens` from `usageMetadata`, and the
-proxy's model-based `routing` header. A `KeyError: 'candidates'` means the
+proxy's model-based `routing` header. On `model-based-routing` 1.0.5 that
+header reads `Request successfully matched. Provider: gemini, …`, and the proxy
+also sends `x-llm-proxy-llm-provider` and `x-llm-proxy-llm-model`. Older
+versions answer `Request passed through without model-based routing.` and send
+neither. Every model in the path is served by `gemini`, even a
+`provider/model` naming another route on the proxy. A `KeyError: 'candidates'` means the
 proxy refused; print `ok.text` to see why. A `404` means the URL points at a
 `Format=OpenAI` proxy.
 

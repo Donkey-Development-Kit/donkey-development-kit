@@ -215,10 +215,14 @@ always sends it as `x-goog-api-key`; the gateway authenticates on the
 `total_tokens`, `cached_tokens`, `reasoning_tokens`) is read from Gemini's
 `usageMetadata`, and `requested_model` from the URL path. Gemini's
 `total_tokens` includes the thinking tokens it also reports as
-`reasoning_tokens`. A `Format=Gemini` proxy is a passthrough, so it sends no
-routing headers: `served_provider`, `served_model` and `routing_type` stay
-`None`, and `substituted` is `False`. `request_id` and `api_instance_id` are
-populated.
+`reasoning_tokens`. On `model-based-routing` 1.0.5 a `Format=Gemini` proxy
+sends the routing headers, so `served_provider` (`gemini`), `served_model` and
+`routing_type` are filled. Every model in the path is served by `gemini`, so a
+path model the proxy resolves to another model sets `substituted` to `True`.
+Older versions pass the request through with no routing headers:
+`served_provider`, `served_model` and `routing_type` stay `None`, and
+`substituted` is `False`. `request_id` and `api_instance_id` are populated on
+both.
 
 `last_call` is contextvar-scoped, and ADK's `Runner` makes the model call in a
 task of its own, so the caller of `runner.run_async(...)` reads `UNOBSERVED`.
