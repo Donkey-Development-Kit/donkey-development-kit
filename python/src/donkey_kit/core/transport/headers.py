@@ -10,9 +10,12 @@ config; no I/O (#728).
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
+
 import httpx
 
-from .. import _verify
+from .. import _verify, _wire
 from ..cachecontrol import current_cache_controls
 from ..config import TOKEN_AUTH_MODES, DonkeyConfig
 from ..correlation import (
@@ -24,6 +27,7 @@ from ..correlation import (
 )
 from ..cost import CostTags
 from ..endpoints import require_secure_url
+from ..errors import ConfigError
 from ..identity import user_token_header
 from ..masking import SENSITIVE_NAMES, Secret, masked
 
@@ -33,6 +37,7 @@ __all__ = [
     "CREDENTIAL_HEADERS",
     "PROXY_API_KEY_SENTINEL",
     "Origin",
+    "a2a_scope",
     "attribution_headers",
     "cost_headers",
     "credential_headers",
@@ -222,6 +227,55 @@ def strip_credential_headers(
         del request.headers[name]
 
 
+@dataclass(frozen=True)
+class _A2AScope:
+    """Exact destinations and per-request credentials for one A2A view (#1395)."""
+
+    endpoint: httpx.URL
+    card: httpx.URL
+    headers: Callable[[httpx.Request], Awaitable[Mapping[str, str]]]
+
+    def validate(self, request: httpx.Request) -> None:
+        if request.url == self.endpoint or (request.url == self.card and request.method == "GET"):
+            return
+        # Do not echo an untrusted URL: its query or userinfo may contain secrets.
+        raise ConfigError(
+            "A2A requests must target the exact endpoint or GET its pinned agent-card URL."
+        )
+
+
+def a2a_scope(request: httpx.Request) -> _A2AScope | None:
+    """Validate and return a request's A2A scope; malformed markers fail closed."""
+    if "donkey_a2a" not in request.extensions:
+        return None
+    scope = request.extensions["donkey_a2a"]
+    if not isinstance(scope, _A2AScope):
+        raise ConfigError("Invalid A2A request scope; build requests through a2a_view().")
+    scope.validate(request)
+    return scope
+
+
+def _strip_a2a_headers(cfg: DonkeyConfig, request: httpx.Request) -> None:
+    names = (
+        credential_headers(cfg)
+        | {
+            _wire.ATTRIBUTION_APP_HEADER_PLACEHOLDER.lower(),
+            _wire.ATTRIBUTION_BUSINESS_GROUP_HEADER_PLACEHOLDER.lower(),
+            _wire.CACHE_SKIP_HEADER,
+            _wire.CACHE_NO_STORE_HEADER,
+            _wire.CACHE_TTL_HEADER,
+            _wire.CACHE_THRESHOLD_HEADER,
+            _wire.CACHE_PRINCIPAL_ID_HEADER,
+        }
+        | {
+            str(getattr(cfg, attr) or default).lower()
+            for _field, attr, default in _COST_HEADER_SOURCES
+        }
+        | {default.lower() for _field, _attr, default in _COST_HEADER_SOURCES}
+    )
+    strip_credential_headers(request, frozenset(names))
+
+
 class _CheckedEndpoints:
     """The origins a shared client sends credentials to.
 
@@ -267,6 +321,8 @@ class _CheckedEndpoints:
 
     def _guard(self, request: httpx.Request) -> bool:
         """Whether ``request`` may carry credentials. When not, strip any it has."""
+        if a2a_scope(request) is not None:
+            return True
         if origin_of(request.url) in self._origins:
             return True
         strip_credential_headers(request, self._credential_names)
@@ -318,7 +374,7 @@ def _apply_base_headers(
     # header-name override without core/errors importing DonkeyConfig (#363).
     # Idempotent across retries — same name each send.
     request.extensions["donkey_correlation_header"] = correlation_header
-    if control_plane:
+    if control_plane or a2a_scope(request) is not None:
         return
     for name, value in attribution_headers(cfg).items():
         request.headers[name] = value

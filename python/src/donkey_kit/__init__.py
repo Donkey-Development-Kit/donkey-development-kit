@@ -32,6 +32,7 @@ from importlib import import_module as _import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .a2a.client import A2AFacade
     from .a2a.types import A2AResult, A2ATask
     from .core.approvals import (
         Approval,
@@ -89,6 +90,7 @@ if TYPE_CHECKING:
 # every pytest run via its pytest11 entry point, so an eager import here would
 # pull the whole SDK into every test session in the environment (#746).
 _LAZY = {
+    "A2AFacade": ".a2a.client",
     "A2AResult": ".a2a.types",
     "A2ATask": ".a2a.types",
     "AgentKilled": ".core.errors",
@@ -213,6 +215,7 @@ _logging.getLogger(__name__).addHandler(_logging.NullHandler())
 __version__ = "0.2.0"
 
 __all__ = [
+    "A2AFacade",
     "A2AResult",
     "A2ATask",
     "AgentKilled",

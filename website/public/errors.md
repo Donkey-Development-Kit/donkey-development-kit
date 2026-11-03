@@ -170,8 +170,13 @@ from an RPC envelope has no message-derived entities or `gateway_message`;
 the raw bytes remain only on the original `.response`. Auth challenges on
 explicitly classified HTTP 200/400 envelopes are auth errors too; 429 retains
 rate-limit precedence.
-Normal HTTP classification is unchanged. This does not add automatic HTTP-200
-interception, A2A PII/schema typing or new framework binding coverage.
+Normal HTTP classification is unchanged. MCP binding coverage and A2A
+PII/schema-specific typing are unchanged. The scoped [outbound A2A
+facade](https://docs.donkey-kit.dev/tool-access/a2a.md) now intercepts non-success HTTP responses and buffered
+JSON-RPC errors, including HTTP 200 error envelopes, before SDK rendering.
+Successful streams remain unread by core; the official SDK handles their
+protocol events. SDK parsing/protocol failures become safe `ToolInvocationError`.
+Original HTTP responses on errors remain potentially sensitive; do not log them.
 
 ### MCP PII metadata
 
@@ -560,7 +565,7 @@ Drop the `await`: it is the same OpenAI SDK raising the same
 
 ## Retry behaviour
 
-Both clients retry only transient upstream/gateway failures (502/503/504).
+The ordinary model/control-plane clients retry only transient upstream/gateway failures (502/503/504).
 A 502 or 504 on a model call is not re-sent unless you set
 `retry_model_calls_on_gateway_errors`, because the provider may already have
 billed it. Every 4xx is terminal — **including a 429**: on this proxy a 429 is a
@@ -580,6 +585,14 @@ not a credential failure, but in `jwt` mode it still triggers that one refresh
 and re-send before it reaches you; the re-send just gets "pending" again. The Anypoint control-plane credential
 lives on a separate client: model calls never fetch, send or refresh it. See
 [What the SDK sends where](https://docs.donkey-kit.dev/reference/configuration.md#what-the-sdk-sends-where).
+
+The scoped outbound A2A plane is different: **no automatic replay**, including
+401 refresh/re-send, every 5xx, refusal-handler actions and stream
+resubscription. Model retry settings do not override this. A task returned
+with `auth-required` stays an SDK task response, not a completed OAuth flow.
+Leaving a stream context cleans up locally, not by cancelling the remote task.
+The facade is OFFLINE-VERIFIED; successful gateway send and SSE are NOT live
+verified by this implementation yet. Refusal captures do not prove SSE success.
 
 To watch the retries and the token refresh happen, turn on the SDK's
 [debug logging](https://docs.donkey-kit.dev/telemetry.md#debug-logging). It records each retry with its

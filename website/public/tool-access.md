@@ -18,8 +18,13 @@ agent = create_react_agent(donkey.langgraph.chat_model("gpt-4o"), await tools.la
 ```
 
 Everything else in this section — search filters, session management,
-per-framework binding, pinning, and A2A tool handles — makes those two lines
+per-framework binding and planned lockfile pinning — makes those two lines
 hold up in production.
+
+[Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md) is separate: `donkey.a2a.send()` and
+context-managed `stream()` use official SDK objects. They are offline-verified;
+successful gateway send/SSE is not yet live-verified by this implementation,
+and framework-native agent-as-tool binding remains planned.
 
 ## Discover and filter
 
@@ -52,4 +57,5 @@ Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-a
     Pin resolved versions and digests so a run is reproducible.
   
   
-    Treat a governed agent-to-agent endpoint as another bindable tool.
+    Send SDK requests and stream SDK events through a registry-pinned gateway.
+    Native framework binding remains planned.

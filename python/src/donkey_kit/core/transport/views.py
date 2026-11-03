@@ -12,12 +12,16 @@ through the shared client, so every hook, retry, span, ``simulate()`` swap and
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from ..config import TOKEN_AUTH_MODES
+from ..endpoints import require_secure_url
+from ..errors import ConfigError, classify
 from .failures import sync_token_auth_error
+from .headers import _A2AScope
 
 if TYPE_CHECKING:
     from httpx._client import UseClientDefault
@@ -26,7 +30,7 @@ if TYPE_CHECKING:
     from .async_client import DonkeyAsyncClient
     from .sync_client import DonkeyClient
 
-__all__ = ["DonkeyAsyncClientView", "DonkeyClientView", "built_on_httpx2"]
+__all__ = ["A2AAsyncClientView", "DonkeyAsyncClientView", "DonkeyClientView", "built_on_httpx2"]
 
 
 def built_on_httpx2(default_client: object) -> bool:
@@ -100,6 +104,76 @@ class DonkeyAsyncClientView(httpx.AsyncClient):
 
     async def __aexit__(self, *exc: object) -> None:
         """Leave the shared client open (see :meth:`aclose`)."""
+
+
+class A2AAsyncClientView(DonkeyAsyncClientView):
+    """Non-owning A2A client pinned to an endpoint and its agent-card URL (#1395).
+
+    ``headers`` runs on every request in the shared core hook, before any IO.
+    It must check credential provenance and return A2A-specific auth, including
+    the current user when applicable. No shared LLM auth or default headers are
+    inherited. Non-2xx and JSON-RPC errors raise ``classify(response)``
+    before the official SDK can render potentially sensitive diagnostics.
+    """
+
+    def __init__(
+        self,
+        shared: DonkeyAsyncClient,
+        endpoint_url: str,
+        *,
+        headers: Callable[[httpx.Request], Awaitable[Mapping[str, str]]],
+    ) -> None:
+        require_secure_url(endpoint_url, name="A2A endpoint")
+        endpoint = httpx.URL(endpoint_url)
+        if endpoint.query or endpoint.fragment:
+            raise ConfigError("A2A endpoint must not carry a query string or fragment.")
+        self._scope = _A2AScope(
+            endpoint,
+            endpoint.copy_with(path=endpoint.path.rstrip("/") + "/.well-known/agent-card.json"),
+            headers,
+        )
+        super().__init__(shared)
+        self.follow_redirects = False
+
+    async def send(
+        self,
+        request: httpx.Request,
+        *,
+        stream: bool = False,
+        auth: AuthTypes | UseClientDefault | None = httpx.USE_CLIENT_DEFAULT,
+        follow_redirects: bool | UseClientDefault = httpx.USE_CLIENT_DEFAULT,
+    ) -> httpx.Response:
+        """Send only to the pinned URLs, with no redirects or automatic replay.
+
+        Raises:
+            ConfigError: The URL is outside the scope, or auth/redirect overrides
+                would bypass the per-request credential callback.
+            DonkeyError: The gateway returned an HTTP or JSON-RPC error.
+        """
+        self._scope.validate(request)
+        if follow_redirects is True or (auth is not httpx.USE_CLIENT_DEFAULT and auth is not None):
+            raise ConfigError("A2A auth must use the headers callback; redirects are not allowed.")
+        request.extensions["donkey_a2a"] = self._scope
+        response = await super().send(request, stream=stream, auth=None, follow_redirects=False)
+        failed = not response.is_success
+        # Core buffers scoped JSON before settlement, including stream fallbacks.
+        # Successful SSE remains unread and belongs to the caller.
+        if (
+            not failed
+            and "text/event-stream" not in response.headers.get("content-type", "").lower()
+        ):
+            try:
+                body = response.json()
+            except (ValueError, httpx.ResponseNotRead):
+                body = None
+            failed = isinstance(body, dict) and "jsonrpc" in body and "error" in body
+        if failed:
+            error = classify(response)
+            # Some legacy classifiers render provider diagnostics. Preserve the
+            # typed error and raw response, but never render those diagnostics.
+            error.args = (f"A2A request failed ({response.status_code}); inspect .response.",)
+            raise error
+        return response
 
 
 class DonkeyClientView(httpx.Client):

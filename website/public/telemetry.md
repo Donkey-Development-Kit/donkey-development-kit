@@ -10,7 +10,7 @@ SDK itself does along the way, such as retries and token refreshes, see
 
 ## OpenTelemetry GenAI spans
 
-Every governed call produces a span following the OpenTelemetry **GenAI
+Every governed model call produces a span following the OpenTelemetry **GenAI
 semantic conventions** — `gen_ai.system`, `gen_ai.request.model`,
 `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` — plus attributes
 for the governance layer that generic instrumentation cannot know about.
@@ -84,6 +84,56 @@ emit path is Anypoint-specific**, so if your team already runs Grafana, Elastic,
 Honeycomb, New Relic, Datadog, Dynatrace, Langfuse or Phoenix, "policy refusals
 per hour by type" and "tokens per ticket" show up in the dashboard you already
 have. See [Send spans to your observability backend](#send-spans-to-your-observability-backend).
+
+### Outbound A2A spans
+
+  The official A2A SDK has its own instrumentation, independent of DDK's
+  `telemetry` setting. It can record response diagnostics with an `ALWAYS_ON`
+  host sampler. By default DDK refuses outbound A2A calls when SDK tracing is
+  enabled or its state cannot be determined, before registry reads or HTTP.
+  Disable SDK instrumentation before importing it with
+  `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED=false`; this does not disable DDK spans.
+  Alternatively, explicitly set `allow_a2a_sdk_telemetry=True` to accept the
+  SDK's diagnostic-recording risk. DDK's ordinary `telemetry=True` is not that
+  permission, and `telemetry=False` does not disable the SDK's recorder.
+
+To keep both tracing systems enabled:
+
+```python
+donkey = Donkey.from_env(allow_a2a_sdk_telemetry=True)
+```
+
+The equivalent configuration is `DONKEY_ALLOW_A2A_SDK_TELEMETRY=true` or
+`allow_a2a_sdk_telemetry = true` in the `[donkey]` TOML table. It defaults to
+`false`. The check uses the SDK's imported instrumentation state: changing
+`OTEL_INSTRUMENTATION_A2A_SDK_ENABLED` after import is too late; restart the
+process with the opt-out set. DDK never changes the environment or the global
+tracer provider for you. With explicit permission, SDK spans retain their
+normal parentage and may export exception messages and stack traces.
+
+[`donkey.a2a.send()` and `stream()`](https://docs.donkey-kit.dev/tool-access/a2a.md) open one
+`donkey.a2a.call` CLIENT span covering card discovery and delegation. This is
+not a GenAI span: A2A SSE is decoded by the official SDK and never scanned for
+model token usage. The shared transport still observes budget headers,
+`last_call` and typed HTTP refusals.
+
+The span preserves the enclosing run's correlation ID/source or temporarily
+mints one for the operation. It injects W3C `traceparent` and, when present,
+`tracestate`, without baggage. A remote DDK inbound `donkey.a2a.task` span can
+adopt that parent. Team/project/environment cost tags may be recorded, with
+run overrides winning; end-user IDs, message content, diagnostics and quality
+evaluation annotations are not recorded on this span. No LLM cost headers are
+sent on the scoped A2A plane.
+
+The stream span remains open until the `async with` context exits. Break,
+error and cancellation close local resources; cancellation does not send a
+remote cancel request. Failures record only `error.type`, with no exception
+message or exception event. `telemetry=False` disables the span and W3C
+propagation, but correlation still works.
+
+This behavior is **OFFLINE-VERIFIED**. Successful gateway send and SSE are
+NOT live verified by this implementation yet; refused streaming requests
+before SSE are not successful streaming evidence.
 
 ### Zero-config export
 

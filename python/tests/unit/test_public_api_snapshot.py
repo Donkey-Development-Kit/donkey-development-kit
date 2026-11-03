@@ -36,6 +36,7 @@ _SNAPSHOTTED: tuple[type, ...] = (Donkey, ToolsFacade, ToolSet)
 PROVISIONAL_MARK = "Provisional (ADR 0020)"
 
 ROOT_ALL = [
+    "A2AFacade",
     "A2AResult",
     "A2ATask",
     "AgentKilled",
@@ -158,6 +159,7 @@ MEMBERS = [
 ]
 
 PROVISIONAL_MEMBERS = [
+    "Donkey.a2a [property]",
     "ToolsFacade.live_card(ref) [async]",
     "ToolsFacade.live_tools(ref) [async]",
 ]
@@ -249,6 +251,14 @@ def test_provisional_class_members_match_the_snapshot() -> None:
     assert actual == sorted(PROVISIONAL_MEMBERS), _drift(
         "PROVISIONAL_MEMBERS", PROVISIONAL_MEMBERS, actual
     )
+
+
+def test_a2a_facade_is_the_provisional_root_export_exception() -> None:
+    """ADR 0022: the additive root export does not promise a stable facade."""
+    assert "A2AFacade" in ROOT_ALL
+    assert _is_provisional(donkey_kit.A2AFacade)
+    assert "Donkey.a2a [property]" in PROVISIONAL_MEMBERS
+    assert _is_provisional(Donkey.a2a)
 
 
 def test_every_public_member_is_in_exactly_one_tier_list() -> None:

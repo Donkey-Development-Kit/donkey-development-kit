@@ -1120,7 +1120,7 @@ Conformance-tested.
 | LlamaIndex | `donkey.llamaindex.llm()` | LlamaIndex | `/frameworks/llamaindex` |
 <!-- END ROSTER: framework-status -->
 
-### 8.5 A2A server classes (BG §2.9.1)
+### 8.5 A2A server and outbound client classes (BG §2.9)
 
 `donkey.serve()` wraps these `a2a-sdk` names and reimplements none of them
 (#224). Each name below was read from the installed `a2a-sdk` 1.2.3, and the
@@ -1151,11 +1151,52 @@ MCP instance). `donkey dev`'s
 simulated ingress (#1284) answers inbound rejections with the LLM-proxy fixtures
 of §4. The v0.3 and v1 PII, schema-validation and token-rate-limit rejections on an
 A2A instance are now captured in `tests/fixtures/anypoint/a2a_policies/` (#1393,
-§4). They do not yet change the simulator or add typed outbound A2A calls.
+§4). They do not change the simulator. The outbound implementation below
+replays selected captures locally; those captures are not proof of a successful
+SDK gateway send or SSE stream.
 `client-id-enforcement`'s rejection with no client id was also seen (`401`
 `{"error":"Client ID is not present"}`, #226). V1 policy captures still need a
 compatible API Manager asset/instance; the old `a2a` registration rejects the
 v1 PII policy before attachment.
+
+#### Scoped outbound client (#1395)
+
+**OFFLINE-VERIFIED, 2026-11-03.** These exact symbols and signatures were read
+from installed `a2a-sdk` **1.3.0** on Python 3.11.16. The public imports under
+`a2a.types` are protobuf classes whose runtime module is `a2a_pb2`, not the
+v0.3 pydantic models. `A2AFacade` wraps the official transports; DDK does not
+implement the A2A wire protocol. Successful gateway send and SSE are **NOT live
+verified by this implementation yet**. §4's refused streaming requests before
+SSE and the earlier quality-evaluation response are not evidence that this
+facade successfully sends or streams through a gateway.
+
+| Installed SDK symbol / signature | Used for | Status | Local evidence |
+|---|---|---|---|
+| `a2a.types.SendMessageRequest`, `Message`, `Part`, `Role.ROLE_USER`; `SendMessageResponse`, `StreamResponse` | `await donkey.a2a.send(ref, message, *, auth=None, criteria=None)` returns `SendMessageResponse`; `async with donkey.a2a.stream(...) as events` yields an async iterator of `StreamResponse`. Responses/events must have a protobuf `WhichOneof("payload")` value | OFFLINE-VERIFIED | `tests/conformance/test_a2a_outbound.py`: `test_send_official_response_pinned_gateway`, `test_stream_official_events_early_exit_and_reuse`, `test_empty_payload_is_not_success`, v1 and v0.3 mock HTTP |
+| `a2a.client.card_resolver.parse_agent_card(agent_card_data: dict[str, Any]) -> AgentCard`; `a2a.utils.constants.AGENT_CARD_WELL_KNOWN_PATH == "/.well-known/agent-card.json"`, `TransportProtocol.JSONRPC` | Read the card at the pinned gateway URL; select JSON-RPC, never its advertised destination | OFFLINE-VERIFIED | Same send test supplies a hostile card URL; `test_unsupported_transport_has_no_send` rejects `GRPC` and `HTTP+JSON` |
+| `a2a.client.transports.jsonrpc.JsonRpcTransport(httpx_client, agent_card, url, is_shared_httpx=False)` | v1 `SendMessage` / `SendStreamingMessage`; `url` is the registry endpoint | OFFLINE-VERIFIED | v1 branches of the official-response/send and stream tests |
+| `a2a.compat.v0_3.jsonrpc_transport.CompatJsonRpcTransport(httpx_client, agent_card, url, *, is_shared_httpx=False)`; `a2a.compat.v0_3.versions.is_legacy_version(version: str \| None) -> bool` | v0.3 `message/send` / `message/stream`, converted to the same current SDK response types | OFFLINE-VERIFIED | v0.3 branches of the same tests; `test_auth_required_is_returned_without_oauth_completion` replays the captured challenge |
+| `ClientTransport.send_message(request, *, context=None) -> SendMessageResponse`, `send_message_streaming(request, *, context=None) -> AsyncGenerator[StreamResponse]`, `close()` (async methods, implemented by both transports) | Official send, stream iteration and local transport close | OFFLINE-VERIFIED | `test_stream_cancellation_closes_response_without_remote_cancel`, `test_stream_exhaustion_and_span_lifetime`, `test_sse_protocol_error_is_safe` |
+| `a2a.utils.errors.A2AError`; `google.protobuf.json_format.Error`; `pydantic.ValidationError` | Safe conversion of SDK protocol/parser failures to `ToolInvocationError` without rendered diagnostics | OFFLINE-VERIFIED | `test_malformed_protocol_is_safely_rendered`, `test_sse_protocol_error_is_safe` |
+
+The local suite also includes `tests/unit/test_a2a_facade.py` (base-only and
+curated missing-extra failure), `test_a2a_transport.py` (exact URL confinement,
+auth per request, no redirects, retries, refresh or refusal replay, captured
+refusals and unread successful streams) and `test_a2a_outbound_spans.py`
+(`donkey.a2a.call`, run restoration, W3C propagation without baggage, safe
+failure/cancellation and concurrency). These use mock HTTP/in-memory tracing,
+not a live gateway. Reproduce from `python/` with the `[a2a,otel]` extras:
+
+```bash
+python -m pytest -q tests/unit/test_a2a_facade.py tests/unit/test_a2a_transport.py tests/unit/test_a2a_outbound_spans.py tests/conformance/test_a2a_outbound.py
+```
+
+Default `GovernanceCriteria()` or explicit `criteria=` is evaluated before
+resolution/card traffic. Per-request `McpAuth` and current-user headers pass
+derived-endpoint checks before acquisition. No OAuth completion, automatic
+replay/resubscription or remote cancellation is implemented. `AgentHandle`
+stays immutable and resolution-only; native-framework `as_tool()` stays
+planned. ADR 0022 records the scoped plane and proposed provisional API tier.
 
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
 

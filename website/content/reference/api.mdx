@@ -15,11 +15,18 @@ importable from `donkey_kit`.
 
 ## Stability
 
-Every name on this page is **stable**: the names in `donkey_kit.__all__`,
-and the public methods and properties of `Donkey`. During 0.x a stable name
+Except for the provisional APIs described below, the names in
+`donkey_kit.__all__` and the public methods and properties of `Donkey`
+are **stable**. During 0.x a stable name
 is removed or renamed only in a minor release, and only after an earlier
 minor release shipped it as a working alias that emits a
 `DeprecationWarning`. A patch release never breaks one.
+
+`A2AFacade` and `Donkey.a2a` (`donkey.a2a`) are **provisional** (ADR 0022).
+`A2AFacade` is an explicit exception to the stable-root-export rule,
+even though it is importable from `donkey_kit` and listed in
+`donkey_kit.__all__`. The facade's send/stream signatures and the accessor
+may change in a minor release with a migration note.
 
 `donkey_kit.core` and the other public submodules are **provisional**: they
 are documented and may change in a minor release, with a migration note.
@@ -138,6 +145,16 @@ donkey.registry: ExchangeRegistry
 The Exchange registry client used for tool discovery and resolution.
 
 Guide: [`/tool-access/discovery`](/tool-access/discovery)
+
+### `donkey.a2a`
+
+```python nocheck
+donkey.a2a: A2AFacade
+```
+
+Governed outbound A2A sends and context-managed streams.
+
+Guide: [`/tool-access/a2a`](/tool-access/a2a)
 
 ### `donkey.tools`
 
@@ -645,6 +662,7 @@ is raised.
 
 | Name | Kind | Meaning |
 |---|---|---|
+| `A2AFacade` | class | `donkey.a2a`: send official SDK requests through a governed gateway. |
 | `A2AResult` | class | What a handler returns when a plain string is not enough. |
 | `A2ATask` | class | One A2A task handed to a `donkey.serve()` handler. |
 | `AgentSpec` | class | An introspectable record of a `@donkey.agent`-marked entry point. |
