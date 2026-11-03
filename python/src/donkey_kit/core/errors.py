@@ -393,7 +393,7 @@ class ContentSafetyBlocked(PolicyViolation):
 
     ``provider`` is the vendor's stable slug (``azure-content-safety``, ``bedrock-guardrails``,
     ``google-model-armor``, ``crowdstrike-aidr``); ``categories`` the flagged reasons from its
-    ``x-llm-proxy-<vendor>-...-reason`` header (e.g. ``severity_hate``, ``denied_topic``), the
+    ``x-llm-proxy-<vendor>-...-reason`` or A2A ``x-flex-azure-guardrails-reason`` header, the
     moderation analog of :attr:`PIIDetected.entities`, empty when none was reported. Both ride
     the span as ``donkey.policy.provider`` / ``donkey.policy.categories`` (#1183)."""
 

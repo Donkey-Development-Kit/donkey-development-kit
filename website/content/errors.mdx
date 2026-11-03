@@ -147,6 +147,23 @@ schema type. Generic codes, diagnostic strings and A2A ErrorInfo reasons such
 as `FORBIDDEN` / `INVALID_PARAMS` do not identify a policy. See
 [JSON-RPC custom registrations](/custom-policies#json-rpc-errors).
 
+For the captured A2A Azure guardrail refusal, HTTP `403` with
+`x-flex-azure-guardrails-action: reject` yields
+`ContentSafetyBlocked(provider="azure-content-safety")`. Its `.categories`
+come from `x-flex-azure-guardrails-reason`; both `classify(response)` and
+`jsonrpc_refusal(error, status=403, headers=response.headers)` recognise it.
+The RPC helper requires HTTP status and headers for this rule; it does not
+guess them from the error body. A token-policy HTTP `429` with `x-token-*`
+headers is `TokenBudgetExceeded`, with the reset converted from milliseconds
+to seconds. Use `classify(response)` for that HTTP-only rate-limit path.
+
+A2A PII and schema-policy responses still lack a reliable policy identifier:
+`classify(response)` returns a safe `ToolInvocationError`, and
+`jsonrpc_refusal(...)` returns `None`. Neither diagnostic text nor missing
+guardrail headers identifies PII. Fail-closed Azure and Bedrock HTTP `503`
+responses remain `UpstreamModelError`, not `ContentSafetyBlocked` or
+`GatewayUnavailable`. A Bedrock A2A content-block shape remains unverified.
+
 When you explicitly call `classify(response)` on a `jsonrpc: "2.0"` error
 envelope, genuine HTTP 401/auth challenges and 429 win. Other ordinary/ambiguous
 JSON-RPC failures become a safe `ToolInvocationError`, without repeating raw

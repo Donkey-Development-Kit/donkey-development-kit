@@ -69,6 +69,15 @@ return HTTP 503 with `UNAVAILABLE`. The `x-flex-azure-guardrails-*` or
 A `service_unavailable` refusal is not a content-moderation verdict. These
 captures cover request-phase refusals, not response moderation or successful SSE.
 
+You can explicitly classify the captured Azure HTTP 403 reject headers as
+`ContentSafetyBlocked` using `classify(response)` or `jsonrpc_refusal(...)`
+with HTTP status and headers. The captured bare token-rate-limit HTTP 429 is
+`TokenBudgetExceeded`; its reset is exposed in seconds. HTTP 503 remains
+`UpstreamModelError`, not a content block or a no-response `GatewayUnavailable`.
+PII and schema failures remain ambiguous: generic protocol codes and `ErrorInfo`
+reasons do not identify those policies. Their diagnostics are not used for
+typing or repeated in exception text. See [JSON-RPC refusal matching](/errors#json-rpc-refusal-matching).
+
 ## Authentication Challenges
 
 The v0.3 In-Task Authorization Code policy can return HTTP 200 with a
@@ -94,6 +103,6 @@ the request. That single response does not establish a score range, evaluator
 failure behavior, v1 evaluation or streaming support. DDK does not yet record
 these annotations on its telemetry spans.
 
-These gateway response shapes do not make outbound A2A calls or their typed
-refusals available in DDK yet. `as_tool()` remains on the Roadmap, and
+Explicit classification does not add outbound A2A calls or automatic framework
+refusal translation. `as_tool()` remains on the Roadmap, and
 [`donkey dev`](/a2a) does not yet replay these A2A-specific policy responses.

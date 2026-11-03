@@ -736,13 +736,22 @@ blocks). Both were applied to `21133858` for capture, then removed.
 ### A2A instance policy captures (#1393)
 
 The shared `core/jsonrpc_refusals.jsonrpc_refusal` matcher (#1385, BG §2.2)
-does not establish per-policy or framework-binding support. Generic JSON-RPC
+types the captured HTTP 403 Azure reject headers as `ContentSafetyBlocked`
+(#1394), including its provider and header-derived categories. HTTP `classify`
+also types the captured bare 429 as `TokenBudgetExceeded` with a 60-second reset;
+captured fail-closed 503 responses remain `UpstreamModelError`, never
+`GatewayUnavailable` (which requires no HTTP response). Generic JSON-RPC
 codes and ErrorInfo FORBIDDEN / INVALID_PARAMS reasons remain ambiguous; raw
 diagnostics are not used to infer PII/schema types. No verification status or
-guard is changed by introducing that matcher.
+guard is changed by this classification. PII/schema captures remain safe
+`ToolInvocationError`s through HTTP `classify` and return `None` from the explicit
+RPC helper; structured identity is an upstream gap (#1401). Bedrock content-block
+typing remains gated on its missing capture. Outbound framework binding (#1395)
+and simulator support (#1397) remain separate.
 
-These are response-shape facts, **not shipped A2A classification or simulator
-support** (#1394, #1397). Captured 2026-11-02 on `ddk-langgraph-agent`, instance
+The table records response-shape facts, not a claim that every policy is typed
+or simulated. Classification contracts are pinned in
+`test_a2a_policy_refusals.py`. Captured 2026-11-02 on `ddk-langgraph-agent`, instance
 `21206128`, Sandbox, managed `shared-omni-gateway` **1.14.4**. Test-only fixture
 pairs, selected quality headers and exact triggers:
 `python/tests/fixtures/anypoint/a2a_policies/README.md`.

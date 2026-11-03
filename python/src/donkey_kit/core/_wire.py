@@ -117,6 +117,9 @@ SEMANTIC_CACHE_SCORE_HEADER = "x-semantic-cache-score"
 # (docs/verified-apis.md §4).
 AZURE_CONTENT_SAFETY_ACTION_HEADER = "x-llm-proxy-azure-content-safety-action"
 AZURE_CONTENT_SAFETY_REASON_HEADER = "x-llm-proxy-azure-content-safety-reason"
+# A2A Azure verdict captured on v1 send/stream (docs/verified-apis.md section 4, #1393).
+A2A_AZURE_GUARDRAIL_ACTION_HEADER = "x-flex-azure-guardrails-action"
+A2A_AZURE_GUARDRAIL_REASON_HEADER = "x-flex-azure-guardrails-reason"
 BEDROCK_GUARDRAIL_ACTION_HEADER = "x-llm-proxy-bedrock-guardrail-action"
 BEDROCK_GUARDRAIL_REASON_HEADER = "x-llm-proxy-bedrock-guardrail-reason"
 MODEL_ARMOR_ACTION_HEADER = "x-llm-proxy-model-armor-action"
