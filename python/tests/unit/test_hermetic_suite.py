@@ -105,6 +105,59 @@ def test_sandbox_tests_keep_the_ambient_env_and_real_sockets(
     result.assert_outcomes(passed=2)
 
 
+@pytest.mark.parametrize("offline_first", [True, False])
+def test_offline_socket_fixture_does_not_leak_guards(
+    pytester: pytest.Pytester, offline_first: bool
+) -> None:
+    """Exercise the actual async fixture, then its sandbox/default neighbours (#1551)."""
+    pytester.makeconftest(_CONFTEST.read_text(encoding="utf-8"))
+    pytester.makeini(
+        "[pytest]\nasyncio_mode = auto\nasyncio_default_fixture_loop_scope = function\n"
+        "markers =\n    sandbox: live\n"
+    )
+    pytester.makepyfile(
+        test_offline=(_CONFTEST.parent / "unit/test_transport_proxy_mounts.py").read_text(
+            encoding="utf-8"
+        ),
+        test_neighbours="""
+        import socket
+
+        import pytest
+        from pytest_socket import SocketConnectBlockedError
+
+        ORIGINAL_CONNECT = socket.socket.connect
+        ORIGINAL_CONNECT_EX = socket.socket.connect_ex
+
+        @pytest.mark.sandbox
+        def test_sandbox():
+            assert socket.socket.connect is ORIGINAL_CONNECT
+            assert socket.socket.connect_ex is ORIGINAL_CONNECT_EX
+
+        @pytest.mark.filterwarnings("ignore:A test tried to use socket")
+        def test_default():
+            assert socket.socket.connect_ex is ORIGINAL_CONNECT_EX
+            with socket.socket() as sock:
+                with pytest.raises(SocketConnectBlockedError, match="192.0.2.1"):
+                    sock.connect(("192.0.2.1", 80))
+        """,
+    )
+    nodes = [
+        "test_offline.py::test_simulate_stays_offline_under_proxy[HTTPS_PROXY]",
+        "test_neighbours.py::test_sandbox",
+    ]
+    if not offline_first:
+        nodes.reverse()
+    result = pytester.runpytest_subprocess(
+        "-q",
+        "--randomly-dont-reorganize",
+        "--allow-hosts=127.0.0.1",
+        "--allow-unix-socket",
+        *nodes,
+        "test_neighbours.py::test_default",
+    )
+    result.assert_outcomes(passed=3)
+
+
 # pytest-socket's error also emits a UserWarning carrying the same message.
 @pytest.mark.filterwarnings("ignore:A test tried to use socket")
 def test_non_loopback_connect_fails_fast() -> None:
