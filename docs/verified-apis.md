@@ -977,6 +977,21 @@ Neither version has a public getter for the effective state, so the adapter
 does not check or log it. It does not change the setting either (ADR 0010).
 This is an offline source read; no live export was observed.
 
+#### Anthropic release lock re-check (2026-11-03, #1554)
+
+The Anthropic adapter-contract lock now pins `anthropic==2.4.0` with
+`httpx2==2.16.0`, `mcp==2.3.0` and `openai==3.42.1`. On Python 3.12,
+`verify_frameworks.py --only anthropic --require-installed --emit-verified`
+confirms construction and the expected `anthropic.AsyncAnthropic` class.
+`nox -s 'adapter-contract(anthropic)'` passes (4,888 passed, 539 skipped,
+27 deselected), including the strict example smoke and conformance kit.
+The pinned-version descriptor fixture comparison is skipped because its capture
+is from 2.3.0; the descriptor shape tests still run. The release adds analytics,
+spend-limit and RBAC methods and fixes parameter validation; the existing adapter
+needs no constructor or transport changes. These are offline checks, not a new
+live Messages API round-trip or a re-capture of the MCP binding fixture.
+The historical live and local-capture evidence above remains unchanged.
+
 #### Framework-release lock re-check (2026-11-02, #1523)
 
 The coordinated refresh covers #1517 and #1523-#1526. On Python 3.12,
