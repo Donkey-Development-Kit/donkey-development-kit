@@ -135,6 +135,7 @@ class ConfigOverrides(TypedDict, total=False):
     telemetry: bool
     telemetry_capture_content: bool
     telemetry_install_global: bool
+    allow_a2a_sdk_telemetry: bool
     on_model_substitution: OnModelSubstitution
     send_cost_headers: bool
     retry_model_calls_on_gateway_errors: bool
@@ -336,8 +337,7 @@ class DonkeyConfig:
     timeout_s: float = 60.0
     max_retries: int = 3
     registry_cache_ttl_s: int = 300
-    # Warn when a ToolSet bind exposes more tools or descriptor tokens than these (0 turns
-    # one off). The defaults are published vendor guidance, cited in tools/session.py (#1257).
+    # ToolSet warning thresholds (0 disables); vendor sources: tools/session.py (#1257).
     tool_warn_count: int = 20
     tool_warn_tokens: int = 10_000
     telemetry: bool = True
@@ -351,6 +351,8 @@ class DonkeyConfig:
     # exports through a DDK-scoped provider and defers to any global one the host sets
     # (#732, docs/adr/0010-no-hidden-global-side-effects.md).
     telemetry_install_global: bool = False
+    # SDK tracing may export sensitive diagnostics; independent permission (#1395).
+    allow_a2a_sdk_telemetry: bool = False
     # On a model substitution (see ``OnModelSubstitution``, #309): default "off".
     on_model_substitution: OnModelSubstitution = "off"
     # Send the cost tags as request headers too. Default FALSE: nothing on the
@@ -368,9 +370,7 @@ class DonkeyConfig:
     retry_model_calls_on_gateway_errors: bool = False
 
     # --- Provenance (config resolution) ---
-    # Where each field was resolved from and a keyed digest of the value it had
-    # there, filled in by resolve(). A field with no entry, or whose value no
-    # longer matches, was set in code and counts as explicit.
+    # resolve() records source + keyed digest; absent/changed values count as explicit.
     _sources: Mapping[str, _Loaded] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -899,6 +899,7 @@ _FIELDS: tuple[_Field, ...] = (
     _Field("telemetry", "DONKEY_TELEMETRY", _as_bool, _is_bool),
     _Field("telemetry_capture_content", "DONKEY_TELEMETRY_CAPTURE_CONTENT", _as_bool, _is_bool),
     _Field("telemetry_install_global", "DONKEY_TELEMETRY_INSTALL_GLOBAL", _as_bool, _is_bool),
+    _Field("allow_a2a_sdk_telemetry", "DONKEY_ALLOW_A2A_SDK_TELEMETRY", _as_bool, _is_bool),
     _Field(
         "on_model_substitution", "DONKEY_ON_MODEL_SUBSTITUTION", _as_token, _one_of("off", "raise")
     ),
@@ -911,7 +912,6 @@ _FIELDS: tuple[_Field, ...] = (
     ),
 )
 
-# Views of the table.
 _ENV_VARS: dict[str, str] = {spec.name: spec.env for spec in _FIELDS}
 _CHECKED_KEYS: tuple[str, ...] = tuple(spec.name for spec in _FIELDS if spec.check is not None)
 _OVERRIDE_NAMES: frozenset[str] = frozenset(_ENV_VARS) | {"cost"}

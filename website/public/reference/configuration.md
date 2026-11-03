@@ -80,6 +80,7 @@ This table is generated from the field table in `core/config.py`.
 | `DONKEY_TELEMETRY` | `telemetry` | `telemetry` | `true` |
 | `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | `telemetry_capture_content` | `false` |
 | `DONKEY_TELEMETRY_INSTALL_GLOBAL` | `telemetry_install_global` | `telemetry_install_global` | `false` |
+| `DONKEY_ALLOW_A2A_SDK_TELEMETRY` | `allow_a2a_sdk_telemetry` | `allow_a2a_sdk_telemetry` | `false` |
 | `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `on_model_substitution` | `off` |
 | `DONKEY_SEND_COST_HEADERS` | `send_cost_headers` | `send_cost_headers` | `false` |
 | `DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS` | `retry_model_calls_on_gateway_errors` | `retry_model_calls_on_gateway_errors` | `false` |
@@ -410,6 +411,7 @@ In code, `Donkey.from_env(send_cost_headers=True)`.
 | `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
 | `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans (default **`false`**). |
 | `DONKEY_TELEMETRY_INSTALL_GLOBAL` | `telemetry_install_global` | Install DDK's OTLP provider as the process-global OpenTelemetry provider (default **`false`**). See [DDK leaves the global provider to you](https://docs.donkey-kit.dev/telemetry.md#ddk-leaves-the-global-provider-to-you). |
+| `DONKEY_ALLOW_A2A_SDK_TELEMETRY` | `allow_a2a_sdk_telemetry` | Permit outbound A2A calls with enabled SDK tracing (default **`false`**), accepting that it may export sensitive diagnostics. Independent of DDK's `telemetry` setting. |
 
 `telemetry_capture_content` defaults to `false` on purpose: spans are emitted
 inside your process, **upstream of the gateway's PII masking**, so capturing
@@ -422,7 +424,7 @@ trusted collector. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.
 |---|---|---|---|
 | `DONKEY_TIMEOUT_S` | `timeout_s` | `60.0` | HTTP timeout for governed calls, in seconds. |
 | `DONKEY_MAX_RETRIES` | `max_retries` | `3` | Retries for transient upstream failures (`502` / `503` / `504`) with backoff. A `502` or `504` on a model call is retried only with `retry_model_calls_on_gateway_errors` (below). Policy refusals are never retried, and a gateway fallback is never retried twice. |
-| `DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS` | `retry_model_calls_on_gateway_errors` | `false` | Also retry a `502` or `504` on a model call (a `POST` whose body, or native Gemini path, names a model). Off by default, because the provider may already have completed and billed the call, and the gateway offers no verified idempotency key. A `503`, and any other request, is retried either way. |
+| `DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS` | `retry_model_calls_on_gateway_errors` | `false` | Also retry a `502` or `504` on a model call (a `POST` whose body, or native Gemini path, names a model). Off by default, because the provider may already have completed and billed the call, and the gateway offers no verified idempotency key. A `503`, and other requests outside scoped A2A, are retried either way. A2A never automatically replays. |
 | `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing). |
 | `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `300` | How long registry lookups (used by [tool access](https://docs.donkey-kit.dev/tool-access.md)) are cached in memory, in seconds. |
 | `DONKEY_TOOL_WARN_COUNT` | `tool_warn_count` | `20` | Warn when a [tool binding](https://docs.donkey-kit.dev/tool-access/binding.md#what-the-tool-list-costs) exposes more tools than this. `0` turns the warning off. See [Tool-set size warnings](#tool-set-size-warnings). |
@@ -577,6 +579,7 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Registry: `resolve_mcp()` | Token request, then Access Management, API Manager and Omni Gateway Manager reads | Available. See [Resolving an MCP server](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-mcp-server). |
 | Registry: `explain()` | Token request, then Access Management, API Manager, Exchange and API Governance reads, only those the criteria need | Available. See [`explain()`](https://docs.donkey-kit.dev/tool-access/discovery.md#explain--why-a-tool-was-included-or-excluded). |
 | Registry: `resolve_agent()` | Token request, then the `resolve_mcp()` reads, for the agent's A2A instance | Available. See [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent). |
+| Outbound A2A: `donkey.a2a.send()` / `stream()` | Token request, then `explain()` and `resolve_agent()` reads; card GET and JSON-RPC use consumer auth, not the connected app | Offline-verified; provisional. Successful gateway send and SSE are NOT live verified by this implementation yet. See [Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md). |
 | Registry: `donkey.registry.warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()` | Token request, then the `search()`, `explain()` and `resolve_mcp()` reads | Available. Its `domain` filter and `locked=True` raise `NotImplementedError` before sending. `donkey.tools.warm()` does the same reads ahead of time. See [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md). |
 | Tool pinning: `donkey.tools.lock()` | Token request, then Exchange reads | Roadmap: raises `NotImplementedError` before sending |
@@ -596,6 +599,16 @@ or your own code asking for a connected-app token. The scopes each one needs
 are in [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md).
 
 ### Other headers
+
+Outbound A2A uses a distinct scoped credential plane over the shared async
+transport. Its `auth=` override accepts `McpAuth`; otherwise it uses the
+configured consumer client-ID pair or `llm_auth` bearer provider. Each HTTP
+request rechecks derived-endpoint provenance and obtains current credentials
+and the current `as_user()` token. A service/user header collision is refused.
+No shared LLM default headers, wallet selector, provider key, attribution,
+cache or cost headers are inherited. Correlation/call IDs and enabled W3C
+trace context are propagated. `max_retries` and
+`retry_model_calls_on_gateway_errors` never enable A2A replay or 401 refresh.
 
 The correlation and per-call IDs go on every request the SDK's HTTP clients
 send, on both planes. The other headers go only on model requests to the LLM

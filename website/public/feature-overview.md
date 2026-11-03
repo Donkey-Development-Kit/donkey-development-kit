@@ -152,6 +152,12 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     published. **Advantage:** the catalog stays in sync from CI, not by hand.
   
 
+    **Purpose:** `donkey.a2a.send()` and context-managed `stream()` delegate
+    using official SDK requests and responses. **Advantage:** registry-pinned
+    gateway routing, per-request credentials and local stream cleanup.
+    Provisional API; successful gateway send and SSE are not yet live-verified
+    by this implementation. Framework agent-as-tool binding remains planned.
+
 ## What DDK leaves to the platform
 
 DDK makes the platform's capabilities reachable and typed; it does not

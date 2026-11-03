@@ -25,6 +25,7 @@ from contextlib import AbstractContextManager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
+from .a2a.client import A2AFacade
 from .core import _verify, spanflush
 from .core.approvals import (
     APPROVAL_TIMEOUT,
@@ -428,6 +429,7 @@ class Donkey:
         self._control_http: DonkeyAsyncClient = self._runtime.control_http
         self._llm = LLMClient(self._cfg, self._http, self._sync_http_client)
         self._registry = ExchangeRegistry(self._cfg, self._control_http)
+        self._a2a = A2AFacade(self._registry, self._cfg, self._http, self._llm_auth)
         self._approvals = Approvals()
         self._tools = ToolsFacade(self._registry, self._cfg, self._llm_auth, self._approvals)
         self._adapter_cache: dict[str, Adapter] = {}
@@ -647,6 +649,17 @@ class Donkey:
         Docs: https://docs.donkey-kit.dev/tool-access/discovery
         """
         return self._registry
+
+    @property
+    def a2a(self) -> A2AFacade:
+        """Governed outbound A2A sends and context-managed streams (BG §2.9).
+
+        Provisional (ADR 0020): may change in a minor release with a migration
+        note. ADR 0022 also makes its root-exported ``A2AFacade`` provisional.
+
+        Docs: https://docs.donkey-kit.dev/tool-access/a2a
+        """
+        return self._a2a
 
     @property
     def tools(self) -> ToolsFacade:

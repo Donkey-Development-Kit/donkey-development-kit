@@ -4,5 +4,5 @@ export default {
   binding: 'Framework binding',
   'gateway-policies': 'MCP gateway policies',
   lockfile: 'Pinning & lockfile',
-  a2a: 'A2A agent tools',
+  a2a: 'Outbound A2A',
 }

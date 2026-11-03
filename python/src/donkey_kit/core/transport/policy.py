@@ -22,6 +22,7 @@ from ..config import DonkeyConfig
 from ..errors import ModelSubstituted, PolicyViolation, classify, parse_retry_after
 from ..lastcall import is_fallback, is_substitution, request_id, routing_fallback
 from ..telemetry import POLICY_DECISION_ALLOW, POLICY_DECISION_REFUSE, policy_type_slug
+from .headers import a2a_scope
 
 __all__ = ["Finish", "Refresh", "Retry", "RetryDecision", "decide_retry"]
 
@@ -93,6 +94,8 @@ def decide_retry(
     definitive-True-only, so a non-proxy 5xx with no routing header still
     retries. Everything else, every 4xx included, finishes (BG §1.2)."""
     status = response.status_code
+    if a2a_scope(request) is not None:
+        return Finish("a2a")
     if status == 401 and can_refresh:
         return Refresh()
     if status not in _RETRYABLE_STATUS:
@@ -122,7 +125,7 @@ def _mark_terminal(response: httpx.Response, decision: Finish) -> None:
     Other 5xx finishes are left alone: a caller may choose to retry a transient
     error after the transport's own retry budget is exhausted.
     """
-    if 400 <= response.status_code < 500 or decision.reason == "unsafe":
+    if 400 <= response.status_code < 500 or decision.reason in {"unsafe", "a2a"}:
         response.headers[_SHOULD_RETRY_HEADER] = "false"
 
 
@@ -172,6 +175,8 @@ def _request_model(request: httpx.Request) -> str | None:
     else the model segment of a native Gemini ``POST`` path. ``None`` marks "not a
     GenAI call": no span is opened, so GETs, token fetches and bodyless POSTs
     stay byte-identical."""
+    if a2a_scope(request) is not None:
+        return None
     model = _body_model(request)
     if model is not None:
         return model
@@ -187,7 +192,16 @@ def refusal(response: httpx.Response) -> PolicyViolation | None:
     :func:`classify` per final response feeds both the span decision and the
     ``_on_refusal`` hook (#208)."""
     if response.status_code // 100 == 2:
-        return None
+        if a2a_scope(response.request) is None:
+            return None
+        if "text/event-stream" in response.headers.get("content-type", "").lower():
+            return None
+        try:
+            body = response.json()
+        except (ValueError, httpx.ResponseNotRead):
+            return None
+        if not isinstance(body, dict) or "jsonrpc" not in body or "error" not in body:
+            return None
     error = classify(response)
     return error if isinstance(error, PolicyViolation) else None
 

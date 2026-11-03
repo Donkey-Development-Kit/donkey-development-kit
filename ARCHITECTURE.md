@@ -63,7 +63,7 @@ layer may import a higher one.**
 ```
 integrations/   per-framework adapters — return NATIVE framework objects, never wrappers
       |         (langgraph · adk · strands · agent_framework · openai_agents · anthropic · crewai · llamaindex)
-a2a/            beside integrations, independent of it: the donkey.serve() listener over the official a2a-sdk (ADR 0014)
+a2a/            beside integrations, independent of it: inbound serve() and outbound SDK transports (ADRs 0014, 0022)
       ↓
 tools/          MCP session management, tool discovery/filtering — resolves registry handles
       ↓
@@ -139,7 +139,7 @@ integrations | a2a → tools → registry → llm → core
 ```
 
 `a2a` (`donkey.serve()`, BG §2.9.1, #224) sits beside `integrations`, not in
-it: it is the inbound A2A listener, not a framework adapter. It wraps the
+it: it holds the inbound A2A listener and outbound facade, not a framework adapter. It wraps the
 official `a2a-sdk` (the `[a2a]` extra). The layers contract lists the two as
 independent siblings (`integrations | a2a`), so neither may import the other
 (ADR 0014).
@@ -192,7 +192,11 @@ Beside it:
   `inbound` binds the run for one inbound A2A task (#225): it adopts the
   caller's `X-Correlation-Id` or mints one, enters `run_scope`, and opens the
   `donkey.a2a.task` span. It takes headers as a plain mapping, so it imports no
-  `a2a-sdk` or `starlette`; `a2a` calls it, and so could another inbound surface.
+   `a2a-sdk` or `starlette`; `a2a` calls it, and so could another inbound surface.
+   It also owns `outbound_call()` and frozen `OutboundRun` (#1395): one
+   `donkey.a2a.call` CLIENT span and immutable W3C headers for card discovery
+   and delegation. It preserves an enclosing run or temporarily mints one,
+   propagates no baggage, and records failures by exception type only.
   `spanflush` flushes the span providers on a kill (#220); it imports nothing
   from core, so the transport reaches it without telemetry exposing its provider.
   `_refusal_body` holds the refusal-body parsers (`errors`' JSON
@@ -336,6 +340,27 @@ request either plane sends passes the same origin check.
   blocking `DonkeyClient` shares the async client's origin set. CrewAI, whose
   provider builds its own client, gets an `interceptor` that applies the same
   rule.
+- **Outbound A2A is a scoped plane** (#1395,
+  [ADR 0022](docs/adr/0022-scoped-a2a-outbound-plane.md)). `donkey.a2a` owns an
+  `A2AFacade` over the official SDK's JSON-RPC v1/v0.3 transports. `send()`
+  takes SDK `SendMessageRequest` and returns SDK `SendMessageResponse`;
+  `async with stream(...) as events` yields SDK `StreamResponse`. Each
+  operation checks default or explicit `GovernanceCriteria`, then resolves
+  its Exchange reference. The immutable `AgentHandle` remains resolution-only.
+  No card URL can retarget the registry-pinned endpoint. A distinct non-owning
+  `a2a_view()` uses the shared pool and observation hooks without extending
+  its LLM origin allowlist or inheriting LLM default headers. Only the exact
+  endpoint and GET of its pinned card are permitted. Auth/provenance and
+  current-user headers are read per request; redirects, 401 refresh/re-send,
+  5xx retries and refusal-action replay are disabled. Successful streams stay
+  unread by core and bypass GenAI scanning. Context exit closes local
+  resources and the span, never the remote task or the shared pool. REST,
+  gRPC, OAuth completion, resubscription and framework `as_tool()` are not
+  implemented. The facade's intended provisional tier still needs the
+  docstring/snapshot agreement described in ADR 0022. Evidence remains
+  **OFFLINE-VERIFIED** (ledger §8.5): successful gateway send and SSE are NOT
+  live verified by this implementation yet; refusal fixtures do not prove
+  streaming success.
 - **Adapters are lazy attributes.** `Donkey.__getattr__` resolves
   `donkey.<framework>` on first access through the `ADAPTERS` registry declared
   in `integrations/__init__.py`. Accessing an adapter whose optional extra is not
@@ -448,14 +473,15 @@ request either plane sends passes the same origin check.
   | `governed.py` | `GovernedTransport` / `GovernedSyncTransport`, the mount routers, the per-event-loop pool |
   | `async_client.py`, `sync_client.py` | `DonkeyAsyncClient` / `DonkeyClient`: only the send loop's IO |
   | `failures.py` | the typed errors a send raises instead of an httpx failure (`GatewayUnavailable`, the lifecycle `ConfigError`s, `sync_token_auth_error`) |
-  | `views.py` | the non-owning views (#733) and `built_on_httpx2()` |
+   | `views.py` | the non-owning views (#733), the exact-endpoint A2A view (#1395), and `built_on_httpx2()` |
   | `httpx2.py` | the `httpx2` bridge (lazy, never imported at package import) |
 
   A `502` or `504` on a model `POST` (a `POST` whose body, or native Gemini path, names a model) is
   not re-sent by default: the upstream call may have completed and billed, and
   no gateway idempotency key is verified (docs/verified-apis.md). Set
   `retry_model_calls_on_gateway_errors` to retry it; a `503`, and every other
-  request, still retries (docs/adr/0009-*.md, #728).
+   request outside the scoped A2A plane, still retries (docs/adr/0009-*.md, #728).
+   A2A never automatically replays any response, including 401 and every 5xx.
 
   Three contracts matter: **override the hook, not `send()`**; a subclass that
   overrides `_on_response` **must call `super()._on_response(...)`** or budget
