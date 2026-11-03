@@ -96,7 +96,9 @@ def render_ratelimit_prose(remaining: int, limit: int, reset_ms: int) -> str:
 # headers the SDK consumes — classify() surfaces `x-request-id` as
 # DonkeyError.request_id, and `donkey.last_call` parses the decorator op into the
 # API-instance/environment ids (#362) — so replaying them is what makes
-# simulate()/`donkey mock` populate the record from the committed fixtures. The
+# simulate()/`donkey mock` populate the record from the committed fixtures.
+# Anthropic's own `request-id` is kept for the same reason: it is the
+# `request_id` of a native Anthropic ingress (#827, #1562). The
 # `retry-after` is kept for the CIBA pending 401, whose poll interval it carries (#1320). The
 # honesty marker stays the injected `x-donkey-simulator: true`, not the absence
 # of identity headers. The unsuffixed request-window trio is kept (#974); the
@@ -111,6 +113,7 @@ _KEEP_EXACT = frozenset(
         _wire.INJECTION_PROTECTION_HEADER,
         _wire.CORRELATION_ID_HEADER.lower(),
         _wire.REQUEST_ID_HEADER,
+        _wire.ANTHROPIC_REQUEST_ID_HEADER,
         _wire.DECORATOR_OPERATION_HEADER,
     }
 )
@@ -290,6 +293,53 @@ SHAPES: dict[str, _Spec] = {
         "chat_completions.fallback.headers.txt",
         "chat_completions.fallback.body.json",
         200,
+    ),
+    # --- the native ingresses on model-based-routing 1.0.5 (#1404, #1562) ---
+    # Live captures from a two-route Format=Anthropic proxy and a two-route
+    # Format=Gemini proxy (docs/verified-apis.md §2 native-ingress rows; the
+    # directory READMEs have the provenance). Served on POST …/v1/messages and
+    # POST …/models/{model}:generateContent / :streamGenerateContent.
+    "anthropic-success": _Spec(
+        "anypoint/anthropic_inbound_multiroute",
+        "messages.success.headers.txt",
+        "messages.success.body.json",
+        200,
+    ),
+    "anthropic-fallback": _Spec(
+        "anypoint/anthropic_inbound_multiroute",
+        "messages.fallback.headers.txt",
+        "messages.fallback.body.json",
+        200,
+    ),
+    "anthropic-stream": _Spec(
+        "anypoint/anthropic_inbound_multiroute",
+        "messages.stream.headers.txt",
+        "messages.stream.body.txt",
+        200,
+    ),
+    "anthropic-invalid-json": _Spec(
+        "anypoint/anthropic_inbound_multiroute",
+        "messages.invalid_json.headers.txt",
+        "messages.invalid_json.body.json",
+        400,
+    ),
+    "gemini-success": _Spec(
+        "anypoint/gemini_inbound_multiroute",
+        "generate_content.success.headers.txt",
+        "generate_content.success.body.json",
+        200,
+    ),
+    "gemini-stream": _Spec(
+        "anypoint/gemini_inbound_multiroute",
+        "stream_generate_content.success.headers.txt",
+        "stream_generate_content.success.body.txt",
+        200,
+    ),
+    "gemini-invalid-json": _Spec(
+        "anypoint/gemini_inbound_multiroute",
+        "generate_content.invalid_json.headers.txt",
+        "generate_content.invalid_json.body.json",
+        400,
     ),
     "stream": _Spec(
         "anypoint/llm_proxy",

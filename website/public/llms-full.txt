@@ -6335,17 +6335,36 @@ against, a sentinel request surfaces in your agent as the typed exception — a
 
 ## Routes
 
-The simulator serves the two OpenAI-format model routes:
+The simulator serves the two OpenAI-format model routes and the two native
+ingresses:
 
-| Route | Non-streaming `200` | Streaming (`"stream": true`) |
+| Route | Non-streaming `200` | Streaming |
 |---|---|---|
-| `POST /responses` | the captured OpenAI-upstream `200` | the captured SSE sample (one `response.created` event, as captured) |
-| `POST /chat/completions` | the captured Azure OpenAI `chat.completion` `200` | a complete `chat.completion.chunk` stream ending in `data: [DONE]` |
+| `POST /responses` | the captured OpenAI-upstream `200` | `"stream": true`: the captured SSE sample (one `response.created` event, as captured) |
+| `POST /chat/completions` | the captured Azure OpenAI `chat.completion` `200` | `"stream": true`: a complete `chat.completion.chunk` stream ending in `data: [DONE]` |
+| `POST /v1/messages` | the captured native Anthropic `message` `200` | `"stream": true`: the captured Anthropic SSE stream |
+| `POST /models/{model}:generateContent` | the captured native Gemini `200` | `:streamGenerateContent`: the captured Gemini SSE stream |
 
 The streamed `/chat/completions` body follows OpenAI's public chunk format. It
 is not a gateway capture: no streamed `/chat/completions` response has been
-captured yet. Everything else on this page applies to both routes: the
-`donkey-sim/` sentinel, the scenarios below, one shared budget window, and the
+captured yet. The two native routes replay a `Format=Anthropic` and a
+`Format=Gemini` proxy on `model-based-routing` 1.0.5, so `donkey.last_call`
+reports the served provider and model. They are the offline target for
+`donkey.anthropic.client()` and ADK's native Gemini model.
+
+On the native routes:
+
+- A body that is not valid JSON gets the captured `400`
+  `{"error":"Invalid JSON body: …"}`.
+- Gemini reads the sentinel from the model in the path, and serves every other
+  path model as `gemini`, as the live proxy does.
+- `donkey-sim/anthropic-fallback` replays the Anthropic policy fallback
+  (`last_call.fallback` is `True`).
+- `model-not-routable` and `model-not-found` are not sentinels there, because
+  a native ingress serves an unresolvable model on its own vendor.
+
+Everything else on this page applies to all four routes: the `donkey-sim/`
+sentinel, the scenarios below, one shared budget window, and the
 `x-donkey-simulator` header. Any other route answers `404`.
 
 ## Choosing a port or host
@@ -6446,8 +6465,8 @@ override.
 
 ### `pii_block:every=N`
 
-Serves the captured `pii-detected` **403** on every Nth model call (`POST /responses`
-or `POST /chat/completions`); the
+Serves the captured `pii-detected` **403** on every Nth model call, on any model
+route; the
 other calls get the happy path.
 
 ```bash

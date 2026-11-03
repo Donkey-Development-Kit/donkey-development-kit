@@ -132,8 +132,9 @@ class FaultScenario(Protocol):
 
 def _texts(node: object) -> list[str]:
     """Recursively collect the human-readable strings out of an ``input`` /
-    ``messages`` / ``content`` node (str, list, or ``{role, content}`` /
-    ``{type, text}`` dict), so injection matching sees what a human wrote."""
+    ``messages`` / ``content`` / Gemini ``contents`` node (str, list, or
+    ``{role, content}`` / ``{type, text}`` / ``{role, parts}`` dict), so
+    injection matching sees what a human wrote."""
     if isinstance(node, str):
         return [node]
     if isinstance(node, list):
@@ -143,7 +144,7 @@ def _texts(node: object) -> list[str]:
         return out
     if isinstance(node, dict):
         out = []
-        for key in ("content", "text", "input"):
+        for key in ("content", "text", "input", "parts"):
             if key in node:
                 out.extend(_texts(node[key]))
         return out
@@ -152,16 +153,19 @@ def _texts(node: object) -> list[str]:
 
 def request_text(payload: object) -> str:
     """Extract the searchable request text from a ``/responses`` (``input`` /
-    ``instructions``) or Chat-Completions (``messages``) payload. Returns ``""``
-    for a non-dict or textless body."""
+    ``instructions``), Chat-Completions or Anthropic Messages (``messages``,
+    ``system``) or Gemini (``contents``) payload. Returns ``""`` for a non-dict
+    or textless body."""
     if not isinstance(payload, dict):
         return ""
     parts: list[str] = []
     instructions = payload.get("instructions")
     if isinstance(instructions, str):
         parts.append(instructions)
+    parts.extend(_texts(payload.get("system")))
     parts.extend(_texts(payload.get("input")))
     parts.extend(_texts(payload.get("messages")))
+    parts.extend(_texts(payload.get("contents")))
     return "\n".join(parts)
 
 
