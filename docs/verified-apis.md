@@ -992,6 +992,23 @@ needs no constructor or transport changes. These are offline checks, not a new
 live Messages API round-trip or a re-capture of the MCP binding fixture.
 The historical live and local-capture evidence above remains unchanged.
 
+#### LangChain Core release lock re-check (2026-11-03, #1555)
+
+Both LangGraph locks now pin `langchain-core==1.7.4`, alongside
+`langgraph==1.2.19`, `langchain-openai==1.7.3` and `openai==3.42.1`.
+On Python 3.12,
+`verify_frameworks.py --only langgraph --require-installed --emit-verified`
+confirms construction and the expected `langchain_openai.ChatOpenAI` class.
+`nox -s 'adapter-contract(langgraph)'` passes (4,925 passed, 535 skipped,
+27 deselected), including the strict example smoke and conformance kit.
+The pinned-version descriptor fixture comparison is skipped because no capture
+exists at 1.7.4; the descriptor shape tests still run. `nox -s langgraph-demo`
+also passes on Python 3.11, with conformance 4/4 in both in-process and server
+modes. The release fixes mutation of message content in the Anthropic translator;
+it does not require changes to the adapter's constructor kwargs. These are
+offline checks, not a new live gateway round-trip or MCP fixture capture.
+The historical live and local-capture evidence above remains unchanged.
+
 #### Framework-release lock re-check (2026-11-02, #1523)
 
 The coordinated refresh covers #1517 and #1523-#1526. On Python 3.12,
