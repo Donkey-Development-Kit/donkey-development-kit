@@ -108,6 +108,7 @@ __all__ = [
     "observe_usage",
     "open_last_call_bridge",
     "parse_usage",
+    "provider_vendor",
     "request_id",
     "routing_fallback",
     "semantic_cache",
@@ -290,26 +291,25 @@ def _parse_cache_score(raw: str | None) -> float | None:
         return None
 
 
+def provider_vendor(provider: str | None) -> str | None:
+    """The vendor in a provider header: ``mulesoft:openai`` → ``openai`` (#1405)."""
+    return None if provider is None else provider.partition(":")[2] or provider
+
+
 def is_substitution(
     requested_model: str | None, served_model: str | None, served_provider: str | None
 ) -> bool:
     """True iff the gateway served a different model than the one requested.
 
-    A model-based proxy routes on a ``provider/model`` name but reports the served
-    model WITHOUT the prefix (``x-llm-proxy-llm-model: gpt-5-mini``), carrying the
-    provider in ``x-llm-proxy-llm-provider`` (live on OpenAI, Gemini, Azure OpenAI
-    and Bedrock routes, #586). So when the requested name's prefix — split on the
-    FIRST ``/``; Bedrock ids use dots — names the served provider
-    (case-insensitive), only the remainder is compared; a header naming another
-    provider compares verbatim. An ABSENT header also compares only the model part:
-    ``llm-gw-v2`` proxies emit no provider header (#1405, read from the policy
-    source, not captured live), and an unknowable provider is not a difference.
-    A missing model is no claim. Shared by :attr:`LastCall.substituted` and the
-    ``on_model_substitution="raise"`` path so the two can never disagree."""
+    The served model comes WITHOUT the ``provider/`` prefix (#586), so when the
+    requested prefix (split on the FIRST ``/``) names the served vendor
+    (:func:`provider_vendor`, case-insensitive) or no provider header came
+    (``llm-gw-v2``, #1405), only the remainder is compared. A missing model is no
+    claim. Shared by :attr:`LastCall.substituted` and ``on_model_substitution``."""
     if requested_model is None or served_model is None or requested_model == served_model:
         return False
     prefix, sep, model = requested_model.partition("/")
-    if sep and (served_provider is None or prefix.lower() == served_provider.lower()):
+    if sep and prefix.lower() == (provider_vendor(served_provider) or prefix).lower():
         return model != served_model
     return True
 
