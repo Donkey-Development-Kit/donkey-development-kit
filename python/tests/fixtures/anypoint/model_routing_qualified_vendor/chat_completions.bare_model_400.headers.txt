@@ -1,0 +1,9 @@
+HTTP/1.1 400 Bad Request
+content-type: application/json
+content-length: 171
+date: Tue, 03 Nov 2026 15:03:10 GMT
+server: Anypoint Flex Gateway
+x-correlation-id: 00000000-0000-4000-8000-6cb7c759c705
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Keep-Alive
+

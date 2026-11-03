@@ -1,0 +1,36 @@
+HTTP/1.1 200 OK
+date: Tue, 03 Nov 2026 15:02:59 GMT
+content-type: application/json
+content-length: 774
+cf-ray: a54c43506e85b179-CMH
+cf-cache-status: DYNAMIC
+server: Anypoint Flex Gateway
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+x-content-type-options: nosniff
+access-control-expose-headers: X-Request-ID,CF-Ray,CF-Ray
+openai-organization: user-example385b3555e193f39bc
+openai-processing-ms: 1441
+openai-project: proj_example90bf04dfd2c09d7a7
+openai-version: 2020-10-01
+x-openai-proxy-wasm: v0.1
+x-ratelimit-limit-requests: 5000
+x-ratelimit-limit-tokens: 2000000
+x-ratelimit-remaining-requests: 4999
+x-ratelimit-remaining-tokens: 1999990
+x-ratelimit-reset-requests: 12ms
+x-ratelimit-reset-tokens: 0s
+x-request-id: req_1da4d817e80741a5a23ea4125fb526d7
+set-cookie: __cf_bm=kxE9CXfBz0.4RcDkCW88GtP3NUQQdCPCOovcvl_coKU-1793718177.3421535-1.0.1.1-TIz1F0zN.WknTsSJUJz6NNp1fv3NRv0VtC5Tit53J0f2TmbIdZ9TOCFWU_QH6pXC8t3FR50e208iB_lu8y.ZUP361xhIQ5Mv02CgMqZv72WPkFg_PSfDecIBfANZrZJT; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.openai.com; Expires=Tue, 03 Nov 2026 15:32:59 GMT
+alt-svc: h3=":443"; ma=86400
+x-llm-proxy-routing-type: ModelBased
+x-llm-proxy-routing-fallback: false
+x-llm-proxy-llm-provider: mulesoft:openai
+x-llm-proxy-llm-model: gpt-5-mini
+x-llm-proxy-input-tokens-cost-per-1m: 0.25
+x-llm-proxy-output-tokens-cost-per-1m: 2
+x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: mulesoft:openai, Model: gpt-5-mini.
+x-llm-proxy-request-success: Request completed successfully. Provider: mulesoft:openai, Model: gpt-5-mini.
+x-correlation-id: 00000000-0000-4000-8000-0e443131f9e1
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Keep-Alive
+

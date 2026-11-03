@@ -160,10 +160,11 @@ def _body_model(request: httpx.Request) -> str | None:
 
 # A Format=Gemini proxy carries the model in the URL path, never the body
 # (docs/verified-apis.md §2, #540/#691): ``/models/<model>:generateContent``
-# and its SSE twin ``:streamGenerateContent``. The ingress ignores
+# and its SSE twin ``:streamGenerateContent``. The model may carry a
+# ``provider/`` prefix on a multi-vendor ingress (#1404). The ingress ignores
 # a body ``model``, so this is read for the SDK's own bookkeeping only — the
 # request on the wire is never changed.
-_GEMINI_MODEL_PATH = re.compile(r"/models/([^/:]+):(?:generateContent|streamGenerateContent)$")
+_GEMINI_MODEL_PATH = re.compile(r"/models/([^:]+):(?:generateContent|streamGenerateContent)$")
 
 
 def _request_model(request: httpx.Request) -> str | None:
