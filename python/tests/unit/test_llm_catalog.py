@@ -44,6 +44,26 @@ def test_heuristic_capabilities_known_model_reads_the_bundled_row() -> None:
     assert caps.is_heuristic is True
 
 
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "gpt-5-mini",
+        "gpt-5.1",
+        "claude-opus-5-5",
+        "claude-fable-5-1",
+        "claude-sonnet-5-5",
+        "claude-haiku-4-5-20251001",
+        "gemini-3.8-flash",
+    ],
+)
+def test_heuristic_capabilities_knows_current_model_ids(model_id: str) -> None:
+    # #1413: the ids the DDK proxies serve today resolve to a bundled row, a
+    # dated id included, instead of the conservative default.
+    caps = heuristic_capabilities(model_id)
+    assert caps != ModelCapabilities()
+    assert caps.is_heuristic is True
+
+
 def test_heuristic_capabilities_unknown_model_falls_back_to_conservative_default() -> None:
     caps = heuristic_capabilities("some-model-nobody-has-heard-of")
     assert caps == ModelCapabilities()
