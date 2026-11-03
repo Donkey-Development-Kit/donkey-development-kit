@@ -68,8 +68,9 @@ from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, ConfigError, ConfigWarning, DonkeyError
 from ..core.identity import Requester, capture_requester, current_user
 from ..core.reactions import Duration
+from ..core.refusals import translate
 from ..core.step_up import wait_for_approval
-from ..core.tool_access import tool_access_denial
+from ..core.tool_access import ToolNotInProfile
 from ..registry.models import McpServerHandle
 from .approval import ApprovalRule, check_rules, gated_tool, rule_for
 from .auth import McpAuth
@@ -966,9 +967,9 @@ class ToolSet:
 def _refusing(
     invoke: Callable[..., Any], *, tool: str, server: str, bound_for: Requester
 ) -> Callable[..., Any]:
-    """``invoke``, an async MCP tool call, re-raising the gateway's tool-access
-    denial as :class:`~donkey_kit.core.tool_access.ToolNotInProfile` (#312). Every
-    other exception, and every result (an ``isError`` one too), passes through.
+    """``invoke``, re-raising verified JSON-RPC policy refusals as typed errors
+    (#1388), including the gateway's tool-access denial (#312). Other errors
+    and every result (an ``isError`` one too) pass through.
 
     The call carries the headers of the user it was bound for, so a call under
     any other user raises :class:`~donkey_kit.core.errors.AuthError` and is not
@@ -982,10 +983,18 @@ def _refusing(
         try:
             return await invoke(*args, **kwargs)
         except Exception as exc:
-            denied = tool_access_denial(exc, tool=tool, server=server)
-            if denied is None:
+            denied = translate(exc)
+            if denied is None or denied is exc:
                 raise
-            raise denied from exc
+            # Only the access-denial compatibility API retains its legacy cause.
+            if isinstance(denied, ToolNotInProfile):
+                denied.server = server
+                if denied.tool_name is None:
+                    denied.tool_name = tool
+                raise denied from exc
+            if denied.framework_error is None:
+                denied.framework_error = exc
+            raise denied from denied.__cause__
 
     return call
 

@@ -5,7 +5,7 @@ ONE suite, defined once. Its blocking scope is the conformance-tested roster
 #223) and the raw client. A framework is "supported" only when it passes all of
 it, or records a documented, asserted exemption in ``KNOWN_LIMITATIONS`` (the
 conformance kit) — never a silent skip. The other six frameworks are supported
-at ``connection_kwargs()`` only and are not run here, except for the four
+at ``connection_kwargs()`` only and are not run here, except for the five
 tool-binding scenarios, which run every ``ToolSet`` binding
 (``test_tool_binding.py``). A demoted framework rejoins with its own
 conformance run when demand promotes it (#223/#244). The
@@ -112,9 +112,12 @@ CONFORMANCE_SCENARIOS = [
     "tool_filtering",
     # The gateway's MCP tool-access denial (HTTP 200, JSON-RPC -32008, BG §2.7,
     # docs/verified-apis.md §9, #303) on a bound tool raises ToolNotInProfile
-    # through a per-tool binding (#312). The whole-server bindings leave the call
-    # to the framework and record an asserted exemption below.
+    # through a per-tool binding or the refusal bridge (#1388). ADK and Strands
+    # return text rather than raising and record an asserted exemption below.
     "tool_access_denied_typed",
+    # Capture-backed PII request/response refusals; frameworks that lose the
+    # structured error record an asserted limitation, never text inference.
+    "policy_refusal_typed",
     # discover(governed=True) leaves out every MCP server whose governed state
     # fails the criteria, and logs why (BG §2.7, #221, #991). Discovery reads the
     # registry, not a framework, so no adapter is exempt.
@@ -205,8 +208,9 @@ SCENARIO_BODIES: dict[str, tuple[str, ...]] = {
     "tool_filtering": (f"{_BINDING}::test_tool_filtering",),
     "tool_access_denied_typed": (
         f"{_BINDING}::test_tool_access_denied_typed",
-        f"{_BINDING}::test_the_denial_exemptions_are_exactly_the_whole_server_bindings",
+        f"{_BINDING}::test_the_denial_exemptions_are_exactly_the_result_bindings",
     ),
+    "policy_refusal_typed": (f"{_BINDING}::test_policy_refusal_typed",),
     "governed_filter_excludes": (
         "tests/unit/test_discover.py::test_governed_discover_leaves_out_ungoverned_with_reasons",
     ),
@@ -349,10 +353,9 @@ _WHOLE_SERVER_COLLISION = (
 # Agents, Agent Framework and CrewAI raise (the mcp error itself, or wrapped);
 # ADK and Strands turn it into an error result the model reads. Not a transport
 # limit, so it mirrors no AdapterCapabilities flag.
-_WHOLE_SERVER_DENIAL_RAISED = (
-    "{binding} lets {cls} make the tool call, and it raises the gateway's tool-access "
-    "denial as the mcp package's error{wrapped}, not ToolNotInProfile; "
-    "donkey_kit.experimental.tool_access_denial(exc) converts it (#312)."
+_POLICY_RESULT = (
+    "{binding} turns captured request/response PII refusals into error text, losing "
+    "the structured policy fields. Nothing is raised for typed_refusals() to recover (#1388)."
 )
 _WHOLE_SERVER_DENIAL_RESULT = (
     "{binding} lets {cls} make the tool call, and it turns the gateway's tool-access "
@@ -376,11 +379,14 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
             binding="ToolSet.crewai()", cls="crewai_tools MCPServerAdapter"
         ),
-        "tool_access_denied_typed": _WHOLE_SERVER_DENIAL_RAISED.format(
-            binding="ToolSet.crewai()", cls="crewai_tools MCPServerAdapter", wrapped=""
+        "policy_refusal_typed": (
+            "ToolSet.crewai() uses MCP 1.x through mcpadapt's background loop; captured "
+            "HTTP 403 PII refusals leave the tool future unresolved. The bounded local "
+            "probe asserts that timeout; HTTP 200 access denial remains recoverable (#1388)."
         ),
     },
     "adk": {
+        "policy_refusal_typed": _POLICY_RESULT.format(binding="ToolSet.adk()"),
         "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
             binding="ToolSet.adk()", cls="McpToolset"
         ),
@@ -389,6 +395,7 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "strands": {
+        "policy_refusal_typed": _POLICY_RESULT.format(binding="ToolSet.strands()"),
         "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
             binding="ToolSet.strands()", cls="MCPClient"
         ),
@@ -400,11 +407,6 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
         "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
             binding="ToolSet.agent_framework()", cls="MCPStreamableHTTPTool"
         ),
-        "tool_access_denied_typed": _WHOLE_SERVER_DENIAL_RAISED.format(
-            binding="ToolSet.agent_framework()",
-            cls="MCPStreamableHTTPTool",
-            wrapped=" (wrapped in its ToolExecutionException)",
-        ),
     },
     # The OpenAI Agents SDK's model calls record no exemption: deep since #223,
     # every transport scenario runs against a Runner.run surface,
@@ -412,9 +414,6 @@ KNOWN_LIMITATIONS: dict[str, dict[str, str]] = {
     "openai_agents": {
         "multi_tool_multi_server": _WHOLE_SERVER_COLLISION.format(
             binding="ToolSet.openai_agents()", cls="MCPServerStreamableHttp"
-        ),
-        "tool_access_denied_typed": _WHOLE_SERVER_DENIAL_RAISED.format(
-            binding="ToolSet.openai_agents()", cls="MCPServerStreamableHttp", wrapped=""
         ),
     },
 }

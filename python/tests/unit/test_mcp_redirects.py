@@ -11,6 +11,7 @@ leg. The real frameworks are bound to a redirecting server in
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 import threading
@@ -24,6 +25,8 @@ from typing import Any
 import httpx
 import pytest
 
+from donkey_kit.core.errors import PIIDetected
+from donkey_kit.core.refusals import translate
 from donkey_kit.registry.criteria import Check, GovernanceReport
 from donkey_kit.registry.models import AssetRef, McpServerHandle
 from donkey_kit.tools import mcp as mcp_module
@@ -107,6 +110,85 @@ def test_the_factory_imports_mcp_only_when_called(monkeypatch: pytest.MonkeyPatc
     factory = mcp_module.client_factory(_URL, _HEADERS)
     with pytest.raises(ImportError, match=r"donkey-kit\[mcp\]"):
         factory()
+
+
+@pytest.mark.parametrize("mode", ["large", "infinite", "slow", "offorigin", "compressed"])
+async def test_binding_error_reads_are_bounded_and_keep_status(
+    monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    monkeypatch.setattr(mcp_module, "_ERROR_BODY_TIMEOUT", 0.02, raising=False)
+
+    class Stream(httpx.AsyncByteStream):
+        reads = 0
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            while True:
+                self.reads += 1
+                if self.reads > 10:
+                    raise AssertionError("error body read exceeded test safety bound")
+                if mode == "slow":
+                    await asyncio.sleep(0.01)
+                    yield b" "
+                else:
+                    yield b"x" * (128 * 1024 if mode == "large" else 8192)
+
+    stream = Stream()
+    client = mcp_module.client_factory(_URL, {})()
+    guard = client.event_hooks["request"][0]
+    hook = client.event_hooks["response"][0]
+    request = httpx.Request("POST", _ELSEWHERE if mode == "offorigin" else _URL)
+    await guard(request)
+    response = httpx.Response(
+        403,
+        stream=stream,
+        request=request,
+        headers={"content-encoding": "gzip"} if mode == "compressed" else {},
+    )
+    try:
+        try:
+            await asyncio.wait_for(hook(response), 0.2)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            assert exc.response.status_code == 403
+            assert not isinstance(translate(exc), PIIDetected)
+            assert translate(exc) is None
+        assert stream.reads == 0 if mode in {"offorigin", "compressed"} else stream.reads <= 9
+    finally:
+        await response.aclose()
+        await client.aclose()
+
+
+async def test_buffered_error_body_cannot_bypass_binding_cap() -> None:
+    client = mcp_module.client_factory(_URL, {})()
+    request = httpx.Request("POST", _URL)
+    await client.event_hooks["request"][0](request)
+    response = httpx.Response(500, content=b"x" * (64 * 1024 + 1), request=request)
+    try:
+        with pytest.raises(httpx.HTTPStatusError) as caught:
+            await client.event_hooks["response"][0](response)
+        assert caught.value.response.status_code == 500
+        assert translate(caught.value) is None
+    finally:
+        await client.aclose()
+
+
+async def test_under_cap_malformed_stream_eof_is_not_a_policy() -> None:
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            yield b'{"jsonrpc":"2.0","error":'
+
+    client = mcp_module.client_factory(_URL, {})()
+    request = httpx.Request("POST", _URL)
+    await client.event_hooks["request"][0](request)
+    response = httpx.Response(403, stream=Stream(), request=request)
+    try:
+        await client.event_hooks["response"][0](response)
+        with pytest.raises(httpx.HTTPStatusError) as caught:
+            response.raise_for_status()
+        assert translate(caught.value) is None
+    finally:
+        await response.aclose()
+        await client.aclose()
 
 
 class _Servers:

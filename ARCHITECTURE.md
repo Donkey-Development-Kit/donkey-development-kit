@@ -778,16 +778,18 @@ keeps the table and each adapter's `AdapterCapabilities` equal:
 `typed_refusal_bridged` when `typed_refusals` is false, and `jwt_token_refreshed`
 when `transport` is `"framework"`.
 
-The four tool-binding scenarios (`single_tool_call`, `multi_tool_multi_server`,
-`tool_filtering`, #991, and `tool_access_denied_typed`, #312) run every
+The five tool-binding scenarios (`single_tool_call`, `multi_tool_multi_server`,
+`tool_filtering`, #991, `tool_access_denied_typed`, #312, and
+`policy_refusal_typed`, #1388) run every
 `ToolSet` binding against two local MCP servers
-(`tests/conformance/test_tool_binding.py`). They record two exemptions that are
-not about the transport, both for the whole-server bindings (ADK, Strands, the
-OpenAI Agents SDK, Agent Framework, CrewAI). Those bindings cannot rename one
-tool, so `multi_tool_multi_server` is asserted as a `ConfigError` refusal for
-them. They also leave each tool call to the framework, so the gateway's
-tool-access denial never reaches the SDK as `ToolNotInProfile`, and
-`tool_access_denied_typed` records what each framework does with it instead.
+(`tests/conformance/test_tool_binding.py`). Whole-server bindings (ADK, Strands,
+OpenAI Agents, Agent Framework, CrewAI) cannot rename one tool, so
+`multi_tool_multi_server` asserts a `ConfigError` refusal. ADK and Strands
+return refusal text: both denial and PII typing record asserted exemptions.
+CrewAI's MCP 1.x HTTP 403 path leaves the tool future unresolved, asserted in
+a bounded subprocess; its HTTP 200 access denial remains bridgeable. The other
+bindings type captured PII refusals. Whole-server raised MCP errors are recovered
+by `typed_refusals()`; native successful and `isError` results are unchanged.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to the deep adapters, and the deliverable becomes the **customer-facing

@@ -15,6 +15,7 @@ clients do (``core/transport/headers.py``).
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
@@ -31,6 +32,8 @@ MCP_INSTALL = "pip install 'donkey-kit[mcp]'"
 #: the read timeout is long because a server may hold a response stream open.
 _TIMEOUT = 30.0
 _READ_TIMEOUT = 300.0
+_ERROR_BODY_CAP = 64 * 1024
+_ERROR_BODY_TIMEOUT = 5.0
 
 
 def _streamable() -> Any:  # noqa: ANN401
@@ -105,6 +108,44 @@ def client_factory(url: str, credentials: Mapping[str, str]) -> Callable[..., An
     async def guard(request: Any) -> None:  # noqa: ANN401
         if origin_of(str(request.url)) != origin:
             strip_credential_headers(request, names)
+            request.extensions.pop("donkey_mcp_binding", None)
+        else:
+            request.extensions["donkey_mcp_binding"] = True
+
+    async def read_error(response: Any) -> None:  # noqa: ANN401
+        if response.status_code < 400 or origin_of(str(response.request.url)) != origin:
+            return
+        if response.is_stream_consumed:
+            if len(response.content) > _ERROR_BODY_CAP:
+                response.request.extensions.pop("donkey_mcp_binding", None)
+                response.raise_for_status()
+            return
+        streamable = _streamable()
+        http_lib = getattr(streamable, "httpx2", None) or streamable.httpx
+
+        async def read() -> None:
+            head: list[bytes] = []
+            size = 0
+            async for chunk in response.stream:
+                size += len(chunk)
+                if size > _ERROR_BODY_CAP:
+                    response.request.extensions.pop("donkey_mcp_binding", None)
+                    response.raise_for_status()
+                head.append(chunk)
+            await response.stream.aclose()
+            response.stream = http_lib.ByteStream(b"".join(head))
+            await response.aread()
+
+        # No public bounded-read seam exists in core.transport.streaming. Do not
+        # replay an incomplete body: the framework could drain it without a cap.
+        if response.headers.get("content-encoding", "identity") != "identity":
+            response.request.extensions.pop("donkey_mcp_binding", None)
+            response.raise_for_status()
+        try:
+            await asyncio.wait_for(read(), _ERROR_BODY_TIMEOUT)
+        except (asyncio.TimeoutError, http_lib.TransportError):
+            response.request.extensions.pop("donkey_mcp_binding", None)
+            response.raise_for_status()
 
     def build(
         headers: Mapping[str, str] | None = None,
@@ -118,7 +159,7 @@ def client_factory(url: str, credentials: Mapping[str, str]) -> Callable[..., An
             timeout=timeout or http_lib.Timeout(_TIMEOUT, read=_READ_TIMEOUT),
             auth=auth,
             follow_redirects=False,
-            event_hooks={"request": [guard]},
+            event_hooks={"request": [guard], "response": [read_error]},
         )
 
     return build
