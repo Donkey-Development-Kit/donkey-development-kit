@@ -14,6 +14,10 @@ adapter runs the full conformance suite in CI.
 - Typed gateway refusals (`PIIDetected`, `TokenBudgetExceeded`, …) inside nodes.
 - A conformance suite you can run against your own graph.
 
+**Listed upstream.** LangChain lists DDK as "Donkey Kit (governed ChatOpenAI)"
+in its [chat model integrations](https://docs.langchain.com/oss/python/integrations/chat)
+and on [All providers](https://docs.langchain.com/oss/python/integrations/providers/all_providers).
+
 ## Install
 
 ```bash
