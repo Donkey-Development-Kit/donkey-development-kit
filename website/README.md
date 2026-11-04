@@ -201,6 +201,14 @@ that section carries its own inline badge, as the framework card on the
 Feature overview does. A missing or unknown status fails `npm test`, `node scripts/generate-llms.mjs`
 and `npm run build`.
 
+A hand-written inline `<Badge>` that claims a status names the ledger row it
+rests on, as `<Badge tone="live" ledger="§2 Streaming support">Live</Badge>`
+(several rows joined with `;`). `python/scripts/check_doc_badges.py`, run by
+`nox -s typecheck-and-lint` in CI, fails a badge that claims more than its
+row's Status, cites no row, or cites one that does not exist (#1482). Roadmap
+and Not supported badges need no row; legends and in-process surfaces are in
+the script's `ALLOWED`, each with its reason.
+
 The status is also what the Python snippet check reads
 (`python/scripts/check_doc_snippets.py`, run by the unit suite in CI): every
 Python fence must import, resolve and bind against the real SDK, `roadmap`

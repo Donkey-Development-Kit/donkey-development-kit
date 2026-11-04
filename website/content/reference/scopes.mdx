@@ -66,23 +66,23 @@ unless the row says **plus**.
 
 | Operation | Platform call | Scopes | Status |
 |---|---|---|---|
-| Connected-app token | `POST /accounts/api/v2/oauth2/token` | None | <Badge tone="live">Live</Badge> |
-| `donkey.registry.search()` | Exchange Graph search | `read:exchange` | <Badge tone="live">Live</Badge> |
-| `resolve_mcp()`, `explain()`: find the environment | Access Management environment list | `view:environment`, `read:orgenvironments` or `read:servers` | <Badge tone="live">Live</Badge> |
-| `resolve_mcp()`, `explain()`: find the instance | API Manager instance list and describe | `read:api_configuration`, `read:api_policies`, `manage:api_configuration` or `manage:apis` | <Badge tone="live">Live</Badge> |
-| `explain()`: `require_any_policy`, `required_policies`, `forbidden_policies` | API Manager instance policies | `read:api_policies` or `manage:api_policies`. `read:api_configuration` is not enough. | <Badge tone="live">Live</Badge> |
-| `resolve_mcp()`: the gateway's public URL | Omni Gateway Manager gateway read | `read:servers` | <Badge tone="live">Live</Badge> |
-| `explain()`: `require_tags`, `require_lifecycle` | Exchange asset version read | `read:exchange` | <Badge tone="live">Live</Badge> |
-| `explain()`: `require_governance_pass` | API Governance conformance read | `read:exchange`, `view:ang_governance_profiles` or `admin:ang_governance_profiles` | <Badge tone="live">Live</Badge> |
-| `donkey.tools.discover()` | The `search()`, `explain()` and `resolve_mcp()` reads | Theirs | <Badge tone="live">Live</Badge> |
-| `Publication.verify()`, `donkey verify`: the published version | Exchange Graph API asset query, and the file download | `read:exchange` | <Badge tone="live">Live</Badge> |
-| `Publication.verify()`, `donkey verify`: find the instance | The `resolve_mcp()` or `resolve_agent()` and `explain()` reads | Theirs | <Badge tone="live">Live</Badge> |
-| A bound `ToolSet`, `Publication.verify()`: the live server or agent | MCP or A2A through its gateway instance | None: the consumer credential, not the connected app | <Badge tone="live">Live</Badge> |
-| `donkey publish` | Exchange publish, endpoint registration, asset name and description, page | `manage:exchange`. `create:exchange` and `edit:exchange` are not enough. | <Badge tone="live">Live</Badge> |
-| `donkey preflight`, `donkey expose`: find the gateway | Omni Gateway Manager gateway list and read | `read:servers` | <Badge tone="live">Live</Badge> |
-| `donkey expose`: create an instance | API Manager instance create | `manage:api_configuration` or `manage:apis`, **plus** `read:exchange` | <Badge tone="live">Live</Badge> |
-| `donkey expose`: inbound and outbound policies | API Manager policies | `manage:api_policies` | <Badge tone="live">Live</Badge> |
-| `donkey expose`: deploy, and its status | Proxy deployment | `read:servers` **plus** `manage:api_proxies` | <Badge tone="live">Live</Badge> |
+| Connected-app token | `POST /accounts/api/v2/oauth2/token` | None | <Badge tone="live" ledger="§1 Which ops require an **admin** connected app">Live</Badge> |
+| `donkey.registry.search()` | Exchange Graph search | `read:exchange` | <Badge tone="live" ledger="§1 Connected-app scopes: Exchange read; §7 Exchange asset search endpoint">Live</Badge> |
+| `resolve_mcp()`, `explain()`: find the environment | Access Management environment list | `view:environment`, `read:orgenvironments` or `read:servers` | <Badge tone="live" ledger="§6 How does an Exchange MCP asset resolve">Live</Badge> |
+| `resolve_mcp()`, `explain()`: find the instance | API Manager instance list and describe | `read:api_configuration`, `read:api_policies`, `manage:api_configuration` or `manage:apis` | <Badge tone="live" ledger="§6 How does an Exchange MCP asset resolve; §6 Are the instance-list filters server-side?">Live</Badge> |
+| `explain()`: `require_any_policy`, `required_policies`, `forbidden_policies` | API Manager instance policies | `read:api_policies` or `manage:api_policies`. `read:api_configuration` is not enough. | <Badge tone="live" ledger="§1 Connected-app scopes: policy management">Live</Badge> |
+| `resolve_mcp()`: the gateway's public URL | Omni Gateway Manager gateway read | `read:servers` | <Badge tone="live" ledger="§6 How does an Exchange MCP asset resolve">Live</Badge> |
+| `explain()`: `require_tags`, `require_lifecycle` | Exchange asset version read | `read:exchange` | <Badge tone="live" ledger="§6 Are an asset version's Exchange tags">Live</Badge> |
+| `explain()`: `require_governance_pass` | API Governance conformance read | `read:exchange`, `view:ang_governance_profiles` or `admin:ang_governance_profiles` | <Badge tone="live" ledger="§6 Are governance ruleset results">Live</Badge> |
+| `donkey.tools.discover()` | The `search()`, `explain()` and `resolve_mcp()` reads | Theirs | <Badge tone="live" ledger="§1 Which ops require an **admin** connected app">Live</Badge> |
+| `Publication.verify()`, `donkey verify`: the published version | Exchange Graph API asset query, and the file download | `read:exchange` | <Badge tone="live" ledger="§7 Read back a published version's `mcp-metadata` tools">Live</Badge> |
+| `Publication.verify()`, `donkey verify`: find the instance | The `resolve_mcp()` or `resolve_agent()` and `explain()` reads | Theirs | <Badge tone="live" ledger="§6 How does an Exchange MCP asset resolve; §6 Does an A2A agent resolve">Live</Badge> |
+| A bound `ToolSet`, `Publication.verify()`: the live server or agent | MCP or A2A through its gateway instance | None: the consumer credential, not the connected app | <Badge tone="live" ledger="§7 The live card through the agent's gateway instance; §13 User token on MCP `ToolSet` bindings">Live</Badge> |
+| `donkey publish` | Exchange publish, endpoint registration, asset name and description, page | `manage:exchange`. `create:exchange` and `edit:exchange` are not enough. | <Badge tone="live" ledger="§7 Can arbitrary metadata/tags be attached">Live</Badge> |
+| `donkey preflight`, `donkey expose`: find the gateway | Omni Gateway Manager gateway list and read | `read:servers` | <Badge tone="live" ledger="§12.5 `GET /gatewaymanager/api/v1/…/gateways/{id}`">Live</Badge> |
+| `donkey expose`: create an instance | API Manager instance create | `manage:api_configuration` or `manage:apis`, **plus** `read:exchange` | <Badge tone="live" ledger="§1 Connected-app scopes: API Manager write">Live</Badge> |
+| `donkey expose`: inbound and outbound policies | API Manager policies | `manage:api_policies` | <Badge tone="live" ledger="§1 Connected-app scopes: policy management">Live</Badge> |
+| `donkey expose`: deploy, and its status | Proxy deployment | `read:servers` **plus** `manage:api_proxies` | <Badge tone="live" ledger="§1 Connected-app scopes: API Manager write">Live</Badge> |
 
 Exchange, API Governance and `read:orgenvironments` scopes are granted on the
 business group only. The others are granted on the business group and the

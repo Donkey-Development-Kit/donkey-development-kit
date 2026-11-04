@@ -348,6 +348,7 @@ def typecheck_and_lint(session: nox.Session) -> None:
     session.run("lint-imports")  # framework-free core, §1.1
     session.run("python", "scripts/check_verification_claims.py")  # #718
     session.run("python", "scripts/check_doc_links.py")  # #785
+    session.run("python", "scripts/check_doc_badges.py")  # #1482
     session.run("python", "scripts/scrub_fixtures.py", "--check")  # #821
     session.run("vulture")  # #720
 

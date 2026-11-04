@@ -18,21 +18,21 @@ Omni Gateway later is an environment change, not a code change.
 
 | Capability | Status | Learn more |
 |---|---|---|
-| Governed model access (the raw client, through the proxy data plane) | <Badge tone="live">Live</Badge> | [Frameworks](/frameworks) |
+| Governed model access (the raw client, through the proxy data plane) | <Badge tone="live" ledger="§2 Ingress base URL the SDK targets; §2 Auth: header name / model">Live</Badge> | [Frameworks](/frameworks) |
 | Framework adapters for 8 frameworks | <Badge tone="accent">Conformance-tested</Badge> LangGraph and OpenAI Agents SDK · <Badge tone="live">Live-verified</Badge> the rest | [Frameworks](/frameworks#supported-frameworks) |
-| Typed refusals | <Badge tone="live">Live</Badge> | [Typed refusals](/errors) |
-| Budget & pacing | <Badge tone="live">Live</Badge> | [Budget & pacing](/budget) |
-| OpenTelemetry spans & cost attribution | <Badge tone="live">Live</Badge> | [Telemetry & cost](/telemetry) |
+| Typed refusals | <Badge tone="live" ledger="§2 Reject → SDK error; §4 PII detection">Live</Badge> | [Typed refusals](/errors) |
+| Budget & pacing | <Badge tone="live" ledger="§4 Token rate limiting; §4 Request rate limiting">Live</Badge> | [Budget & pacing](/budget) |
+| OpenTelemetry spans & cost attribution | <Badge tone="live" ledger="§2 Token accounting; §3 Gateway identity on response">Live</Badge> | [Telemetry & cost](/telemetry) |
 | Local simulator & `simulate()` | <Badge tone="live">Live</Badge> | [Local simulator](/simulator) |
 | Conformance testing with pytest | <Badge tone="live">Live</Badge> | [Testing & conformance](/testing) |
-| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `preflight`, `expose`) & decorators | <Badge tone="live">Live</Badge> | [CLI & decorators](/cli) |
-| Governed tool access (MCP) | <Badge tone="live">Live</Badge> | [Tool access](/tool-access) |
-| A2A agents: `donkey.serve()`, `donkey dev` | <Badge tone="neutral">Offline-verified</Badge> | [A2A agents](/a2a) |
-| A2A agents: `donkey expose` | <Badge tone="live">Live</Badge> | [A2A agents](/a2a) |
-| On-behalf-of identity: `donkey.as_user()` | <Badge tone="live">Live</Badge> | [Identity](/identity) |
-| Human-in-the-loop (tool approvals) | <Badge tone="live">Live</Badge> | [Human-in-the-loop](/hitl) |
+| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `preflight`, `expose`) & decorators | <Badge tone="live" ledger="§7 Read back a published version's `mcp-metadata` tools; §12.5 `POST /apimanager/xapi/v1/…/apis/{apiId}/policies/outbound-policies`; §12.5 `POST /proxies/xapi/v1/…/apis/{apiId}/deployments`">Live</Badge> | [CLI & decorators](/cli) |
+| Governed tool access (MCP) | <Badge tone="live" ledger="§6 How does an Exchange MCP asset resolve; §6 Does the gateway route the resolved MCP path?">Live</Badge> | [Tool access](/tool-access) |
+| A2A agents: `donkey.serve()`, `donkey dev` | <Badge tone="neutral" ledger="§8.5 `a2a.server.agent_execution.AgentExecutor`">Offline-verified</Badge> | [A2A agents](/a2a) |
+| A2A agents: `donkey expose` | <Badge tone="live" ledger="§12.5 `POST /apimanager/xapi/v1/…/apis/{apiId}/policies/outbound-policies`; §12.5 `POST /proxies/xapi/v1/…/apis/{apiId}/deployments`">Live</Badge> | [A2A agents](/a2a) |
+| On-behalf-of identity: `donkey.as_user()` | <Badge tone="live" ledger="§13 User-token request header">Live</Badge> | [Identity](/identity) |
+| Human-in-the-loop (tool approvals) | <Badge tone="live" ledger="§4 OAuth2 OBO Credential Injection, CIBA pending">Live</Badge> | [Human-in-the-loop](/hitl) |
 | `donkey scan` (agents, tools and MCP servers from code) | <Badge tone="live">Live</Badge> | [Scan & publish](/publishing) |
-| Publish to the registry and verify: `donkey publish`, `donkey verify` | <Badge tone="live">Live</Badge> | [Scan & publish](/publishing) |
+| Publish to the registry and verify: `donkey publish`, `donkey verify` | <Badge tone="live" ledger="§7 Can arbitrary metadata/tags be attached; §7 Read back a published version's `mcp-metadata` tools">Live</Badge> | [Scan & publish](/publishing) |
 | Policy handshake | <Badge tone="roadmap">Roadmap</Badge> | [Policy handshake](/policies) |
 
 ## Your first governed call
@@ -117,7 +117,7 @@ ask; against your Omni Gateway the model answers your actual prompt.
   it boots the simulator for you and runs the steps above end to end.
 </Callout>
 
-## Catch a typed refusal <Badge tone="live">Live</Badge>
+## Catch a typed refusal <Badge tone="live" ledger="§4 PII detection">Live</Badge>
 
 Ask the simulator for a specific rejection by using the model id
 `donkey-sim/<shape>`, then bridge the raw response into DDK's taxonomy with
@@ -149,7 +149,7 @@ A PII block is not an auth error, and a policy `429` must never be retried —
 typed refusals let the agent react correctly. The framework adapters
 (`donkey.langgraph`, …) classify for you. See [Typed refusals](/errors).
 
-## Pace against the budget <Badge tone="live">Live</Badge>
+## Pace against the budget <Badge tone="live" ledger="§4 Token rate limiting">Live</Badge>
 
 The gateway's token window is a first-class object. Keep a reserve in hand
 and wait for the window to reset instead of failing:
@@ -169,7 +169,7 @@ async with Donkey.from_env() as donkey:
 
 See [Budget & pacing](/budget).
 
-## See a span <Badge tone="live">Live</Badge>
+## See a span <Badge tone="live" ledger="§3 Gateway identity on response">Live</Badge>
 
 With `otel` installed, every governed call emits an OpenTelemetry GenAI span.
 Print them to the console:
@@ -226,7 +226,7 @@ Each `donkey.llm.chat` span carries `gen_ai.usage.*` token counts,
 Set `OTEL_EXPORTER_OTLP_ENDPOINT` and DDK exports over OTLP with no code at
 all. See [Telemetry & cost](/telemetry).
 
-## Attribute cost to a run <Badge tone="live">Live</Badge>
+## Attribute cost to a run <Badge tone="live" ledger="§2 Token accounting">Live</Badge>
 
 Group one logical task under a single correlation ID and cost tags. The
 correlation ID joins the gateway record, your logs and your spans; the cost
