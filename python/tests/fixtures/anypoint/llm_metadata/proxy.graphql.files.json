@@ -1,0 +1,35 @@
+{
+  "data": {
+    "asset": {
+      "type": "llm",
+      "version": "1.0.0",
+      "files": [
+        {
+          "classifier": "fat-llm-metadata",
+          "packaging": "zip",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": "llm-metadata",
+          "packaging": "json",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": "llm-metadata",
+          "packaging": "zip",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": "original-llm-metadata",
+          "packaging": "json",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        },
+        {
+          "classifier": null,
+          "packaging": "pom",
+          "externalLink": "https://exchange-files.example.invalid/presigned"
+        }
+      ]
+    }
+  }
+}
