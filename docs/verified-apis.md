@@ -1042,6 +1042,22 @@ refresh. These are offline checks against the local simulator and mock
 transports, not new live captures. The historical live evidence and the
 signature-only approval/middleware statuses above are unchanged.
 
+#### OpenAI release re-check (2026-11-04, #1583)
+
+The 17 contract and CI locks previously selecting `openai==3.42.1` now select
+`openai==3.45.0`; stacks requiring OpenAI 1.x or 2.x remain unchanged. On
+Python 3.12, `verify_frameworks.py --only openai_agents --require-installed
+--emit-verified` confirms construction and the expected native
+`OpenAIChatCompletionsModel` class. `nox -s 'adapter-contract(openai-agents)'`
+passes (5,185 passed, 690 skipped, 27 deselected), including the strict example
+smoke. `openai-agents-demo` passes on Python 3.11, including conformance 4/4 in
+both in-process and server modes. The LangGraph, Strands, MS Agent Framework,
+and Anthropic adapter-contract legs and their strict example smokes also pass,
+as do `agents-strands-last-call`, `agent-framework-middleware`, and
+`langgraph-demo` (conformance 4/4 in both modes). These are offline checks against the local
+simulator and mock transports, not a new live gateway round-trip. Historical
+live evidence and verification statuses remain unchanged.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
