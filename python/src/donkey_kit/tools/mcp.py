@@ -65,7 +65,11 @@ def _status(exc: BaseException) -> int | None:
 
 @asynccontextmanager
 async def open_session(
-    url: str, headers: Mapping[str, str], *, errors: list[Any] | None = None
+    url: str,
+    headers: Mapping[str, str],
+    *,
+    errors: list[Any] | None = None,
+    http_factory: Callable[..., Any] | None = None,
 ) -> AsyncIterator[Any]:
     """An initialized ``mcp.ClientSession`` to ``url``, sending ``headers`` on
     every request. Each HTTP error response the server answers with is appended
@@ -79,8 +83,12 @@ async def open_session(
             errors.append(response)
 
     http_lib = getattr(streamable, "httpx2", None) or streamable.httpx
+    http = (
+        http_factory(url, headers) if http_factory else http_lib.AsyncClient(headers=dict(headers))
+    )
+    http.event_hooks.setdefault("response", []).append(record)
     async with (
-        http_lib.AsyncClient(headers=dict(headers), event_hooks={"response": [record]}) as http,
+        http,
         streamable.streamable_http_client(url, http_client=http) as streams,
         ClientSession(streams[0], streams[1]) as session,
     ):
@@ -179,7 +187,11 @@ async def open_transport(url: str, headers: Mapping[str, str]) -> AsyncIterator[
 
 
 async def list_tools(
-    url: str, headers: Mapping[str, str], *, server: str
+    url: str,
+    headers: Mapping[str, str],
+    *,
+    server: str,
+    http_factory: Callable[..., Any] | None = None,
 ) -> tuple[dict[str, object], ...]:
     """Every tool ``url`` lists, as ``tools/list`` JSON (``name``, ``description``,
     ``inputSchema``), following ``nextCursor``.
@@ -196,7 +208,9 @@ async def list_tools(
     from mcp.types import PaginatedRequestParams
 
     try:
-        async with open_session(url, headers, errors=errors) as session:
+        async with open_session(
+            url, headers, errors=errors, **({"http_factory": http_factory} if http_factory else {})
+        ) as session:
             cursor: str | None = None
             while True:
                 params = PaginatedRequestParams(cursor=cursor) if cursor else None

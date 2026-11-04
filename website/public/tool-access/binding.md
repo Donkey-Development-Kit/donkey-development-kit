@@ -2,6 +2,11 @@
 
 Status: Live. Shipped, and verified against a real governed gateway.
 
+For offline failure tests of newly bound LangGraph, LlamaIndex and Anthropic
+tools, see [MCP tool fault injection](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection).
+It requires an explicit offline backend and does not intercept existing bindings
+or bypass governance checks.
+
   Every binding below was run through the governed gateway with the
   framework's current release: discovered from Exchange, then bound and called
   through an MCP instance behind JWT Validation and one behind Client ID
