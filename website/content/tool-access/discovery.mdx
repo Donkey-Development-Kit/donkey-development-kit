@@ -98,7 +98,8 @@ latest version:
   filters, 250 at a time, until it has `limit` matches.
 - `asset_types` and `tags` are applied by Exchange. `"api"` covers Exchange's
   REST, HTTP and SOAP API types. `"llm"` is an LLM proxy or a custom LLM
-  provider. A tag is an Exchange tag.
+  provider; read what one declares with
+  [`donkey.registry.llm_metadata()`](#reading-an-llm-assets-metadata). A tag is an Exchange tag.
 - `domain`, `environment`, `governed` and the `"a2a-agent"` type raise
   `NotImplementedError` for now. Exchange has no domain filter, and
   `environment` and `governed` need the governed-state join below.
@@ -154,6 +155,26 @@ handle is resolution-only. Use [`donkey.a2a.send()` or `stream()`](/tool-access/
 with the Exchange reference to call the agent; that provisional surface is
 offline-verified, not yet live-verified for successful gateway send/SSE.
 Framework-native `AgentHandle.as_tool()` remains planned.
+
+## Reading an LLM asset's metadata
+
+`donkey.registry.llm_metadata()` is <Badge tone="live" ledger="§7 Read back an `llm` asset's `llm-metadata` file">Live</Badge>. It reads the
+`llm-metadata` file of an `llm` asset version, an LLM proxy or a custom LLM
+provider, and returns what it declares:
+
+```python
+meta = await donkey.registry.llm_metadata("<group-id>/my-llm-provider/1.0.0")
+if meta is not None:
+    print(meta.platform, meta.input_format, meta.models)
+```
+
+`LlmMetadata` has `platform`, `name`, `input_format`, `models` (the model IDs)
+and `capabilities` (the file's object as published). The read is tolerant: it
+ignores fields it does not know, and a field the file leaves out or sets to the
+wrong type comes back as `None` or empty, never a guess. A DDK LLM proxy's file
+sets only `platform`. The read returns `None` for a version with no
+`llm-metadata` file, and raises `RegistryError` when Exchange has no such
+version. It needs `read:exchange`, and the file download carries no credential.
 
 ## "Governed" is a computed predicate
 

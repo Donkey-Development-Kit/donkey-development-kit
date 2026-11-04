@@ -27,7 +27,7 @@ from ..core.errors import AuthError, ConfigError, RegistryError
 from ..core.transport import DonkeyAsyncClient
 from . import _scopes
 from .criteria import Check, GovernanceCriteria, GovernanceReport, evaluate
-from .models import AgentHandle, AssetRef, AssetType, McpServerHandle
+from .models import AgentHandle, AssetRef, AssetType, LlmMetadata, McpServerHandle
 
 __all__ = ["ExchangeRegistry"]
 
@@ -390,6 +390,38 @@ class ExchangeRegistry:
         if card is None:
             raise RegistryError(f"Exchange has no asset version {asset.coordinates}.")
         return card
+
+    async def llm_metadata(self, ref: AssetRef | str) -> LlmMetadata | None:
+        """What an ``llm`` asset version's ``llm-metadata`` file declares: an
+        LLM proxy's, or a custom LLM provider's (docs/verified-apis.md §7,
+        #1533). Read-only and not cached.
+
+        Tolerant: fields the SDK does not read are ignored, and a field the
+        file leaves out or sets to the wrong type is ``None`` or empty, never
+        a guess.
+
+        Returns:
+            The metadata, or ``None`` when the version has no ``llm-metadata``
+            file.
+
+        Raises:
+            ConfigError: The control-plane settings are missing.
+            ValueError: ``ref`` is not ``group_id/asset_id/version``.
+            RegistryError: Exchange has no such version, or a read failed.
+            AuthError: Exchange refused the read (``401``/``403``).
+        """
+        from .exchange_publish import published_llm_metadata
+
+        cfg = self._cfg.validated(need="control_plane")
+        asset = AssetRef.parse(ref)
+        body = await published_llm_metadata(
+            self._http,
+            asset.group_id,
+            asset.asset_id,
+            asset.version,
+            base_url=cfg.control_plane_url,
+        )
+        return None if body is None else _llm_metadata(body)
 
     async def resolve_agent(self, ref: AssetRef | str) -> AgentHandle:
         """Resolve an A2A agent asset to its governed gateway endpoint (#1354).
@@ -757,3 +789,26 @@ def _globbed(ref: AssetRef, glob: str | None) -> bool:
         return True
     fields = (ref.asset_id, ref.name or "", ref.description or "")
     return any(fnmatchcase(value.lower(), glob) for value in fields)
+
+
+def _llm_metadata(body: dict[str, Any]) -> LlmMetadata:
+    """The fields of an ``llm-metadata`` file the SDK reads, typed or dropped."""
+
+    def text(key: str) -> str | None:
+        value = body.get(key)
+        return value if isinstance(value, str) else None
+
+    entries = body.get("models")
+    models: list[str] = []
+    for entry in entries if isinstance(entries, list) else ():
+        model = entry.get("id") if isinstance(entry, dict) else entry
+        if isinstance(model, str):
+            models.append(model)
+    capabilities = body.get("capabilities")
+    return LlmMetadata(
+        platform=text("platform"),
+        name=text("name"),
+        input_format=text("inputFormat"),
+        models=tuple(models),
+        capabilities=dict(capabilities) if isinstance(capabilities, dict) else {},
+    )

@@ -68,6 +68,7 @@ unless the row says **plus**.
 | `explain()`: `require_governance_pass` | API Governance conformance read | `read:exchange`, `view:ang_governance_profiles` or `admin:ang_governance_profiles` | Live |
 | `donkey.tools.discover()` | The `search()`, `explain()` and `resolve_mcp()` reads | Theirs | Live |
 | `Publication.verify()`, `donkey verify`: the published version | Exchange Graph API asset query, and the file download | `read:exchange` | Live |
+| `donkey.registry.llm_metadata()` | The same Exchange Graph API asset query and file download | `read:exchange` | Live |
 | `Publication.verify()`, `donkey verify`: find the instance | The `resolve_mcp()` or `resolve_agent()` and `explain()` reads | Theirs | Live |
 | A bound `ToolSet`, `Publication.verify()`: the live server or agent | MCP or A2A through its gateway instance | None: the consumer credential, not the connected app | Live |
 | `donkey publish` | Exchange publish, endpoint registration, asset name and description, page | `manage:exchange`. `create:exchange` and `edit:exchange` are not enough. | Live |
