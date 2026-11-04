@@ -23,7 +23,7 @@ cffi==2.1.1
 charset-normalizer==3.5.2
 chromadb==1.5.9
 click==8.5.0
-coverage==7.17.1
+coverage==7.17.2
 crewai==1.15.35
 crewai-cli==1.15.35
 crewai-core==1.15.35
@@ -35,7 +35,7 @@ distro==1.9.0
 docstring-parser==0.18.0
 durationpy==0.11
 et-xmlfile==2.0.0
-filelock==4.2.8
+filelock==4.2.9
 flatbuffers==25.12.19
 frozenlist==1.8.0
 fsspec==2026.9.0
@@ -105,7 +105,7 @@ pdfminer-six==20260107
 pdfplumber==0.11.10
 pendulum==3.3.0
 pillow==13.0.0
-platformdirs==4.14.4
+platformdirs==4.14.5
 pluggy==1.7.0
 portalocker==2.7.0
 propcache==0.5.4
@@ -144,7 +144,7 @@ ruff==0.17.3
 shellingham==1.5.4
 six==1.17.0
 sniffio==1.3.1
-soupsieve==4.0
+soupsieve==4.0.1
 sse-starlette==3.6.0
 starlette==1.10.0
 tenacity==9.2.1
@@ -157,7 +157,7 @@ tqdm==4.70.1
 truststore==0.10.5
 typer==0.27.3
 typing-extensions==4.16.0
-typing-inspection==0.4.4
+typing-inspection==0.4.5
 tzdata==2026.6
 urllib3==2.8.0
 uv==0.13.7
