@@ -45,10 +45,12 @@ class _Registry:
         self.searches += 1
         return [AssetRef("com.acme", asset_id, "1.0.0") for asset_id in _VERDICTS]
 
-    async def explain(self, ref: AssetRef, *, criteria: GovernanceCriteria) -> GovernanceReport:
+    async def explain(
+        self, ref: AssetRef, *, criteria: GovernanceCriteria, fresh: bool = False
+    ) -> GovernanceReport:
         return _VERDICTS[ref.asset_id]
 
-    async def resolve_mcp(self, ref: AssetRef) -> McpServerHandle:
+    async def resolve_mcp(self, ref: AssetRef, *, fresh: bool = False) -> McpServerHandle:
         return McpServerHandle(ref=ref, endpoint_url=f"https://gw.example.test/{ref.asset_id}/")
 
 

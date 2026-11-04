@@ -121,7 +121,9 @@ class Discovery:
             found = self._cache.get(key)
             hit = found is not None
             if found is None:
-                found = await self._fill(key, domain, tags, governed, criteria)
+                # Read past the registry's own lookups too: they were filled at other
+                # times, so they may outlive this entry by up to one more TTL (#1483).
+                found = await self._fill(key, domain, tags, governed, criteria, fresh=True)
             record(found, hit)
         return ToolSet(
             list(found.servers),
@@ -216,8 +218,10 @@ class Discovery:
         tags: Sequence[str] | None,
         governed: bool | GovernanceCriteria | None,
         criteria: GovernanceCriteria,
+        *,
+        fresh: bool = False,
     ) -> _Found:
-        found = await self._read(domain, tags, criteria, keep_ungoverned=not governed)
+        found = await self._read(domain, tags, criteria, keep_ungoverned=not governed, fresh=fresh)
         self._cache.set(key, found)
         return found
 
@@ -329,6 +333,7 @@ class Discovery:
         criteria: GovernanceCriteria,
         *,
         keep_ungoverned: bool,
+        fresh: bool = False,
     ) -> _Found:
         at, started = datetime.now(timezone.utc), time.monotonic()
         refs = await self._registry.search(
@@ -336,6 +341,7 @@ class Discovery:
             tags=list(tags) if tags else None,
             domain=domain,
             limit=DISCOVER_LIMIT,
+            fresh=fresh,
         )
         if len(refs) == DISCOVER_LIMIT:
             _log.warning(
@@ -347,7 +353,7 @@ class Discovery:
 
         async def one(ref: AssetRef) -> McpServerHandle:
             async with gate:
-                return await self._handle(ref, criteria)
+                return await self._handle(ref, criteria, fresh=fresh)
 
         handles = await asyncio.gather(*(one(ref) for ref in refs))
         kept: list[McpServerHandle] = []
@@ -373,13 +379,15 @@ class Discovery:
             )
         return _Found(tuple(kept), at, started, left_out=len(handles) - len(kept))
 
-    async def _handle(self, ref: AssetRef, criteria: GovernanceCriteria) -> McpServerHandle:
+    async def _handle(
+        self, ref: AssetRef, criteria: GovernanceCriteria, *, fresh: bool = False
+    ) -> McpServerHandle:
         """``ref``'s endpoint with its verdict. A server that does not resolve to
         exactly one deployed MCP instance is listed with an empty endpoint and a
         failed ``resolve_mcp`` check, so binding refuses it with that reason."""
-        report = await self._registry.explain(ref, criteria=criteria)
+        report = await self._registry.explain(ref, criteria=criteria, fresh=fresh)
         try:
-            handle = await self._registry.resolve_mcp(ref)
+            handle = await self._registry.resolve_mcp(ref, fresh=fresh)
         except RegistryError as exc:
             failed = Check("resolve_mcp", False, str(exc))
             report = GovernanceReport(governed=False, checks=[*report.checks, failed])

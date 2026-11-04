@@ -271,7 +271,9 @@ It reads the asset version's API Manager instances in the environment set by
 - **Cached, with a staleness check.** A discovery is cached for
   `registry_cache_ttl_s` seconds (default 300), per environment, tags and
   criteria. `ToolSet.discovered_at` says when the registry was read and
-  `ToolSet.is_stale` turns true once the TTL has passed.
+  `ToolSet.is_stale` turns true once the TTL has passed. When the entry
+  expires, the next `discover()` reads the registry again rather than the
+  registry's own cached lookups, so a verdict is never more than one TTL old.
   `donkey.tools.refresh()` drops the cached discoveries and the registry's
   cached `search()`, `explain()` and `resolve_mcp()` lookups, so the next
   `discover()` reads the governance verdicts from API Manager again.
