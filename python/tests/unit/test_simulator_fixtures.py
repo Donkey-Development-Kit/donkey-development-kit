@@ -48,6 +48,12 @@ _CONTRACT_STATUS = {
     "models-notfound": 404,
     "chat-success": 200,
     "chat-stream": 200,
+    "a2a-v1-azure-block-send": 403,
+    "a2a-v1-azure-block-stream": 403,
+    "a2a-v1-pii-send": 403,
+    "a2a-v1-pii-stream": 403,
+    "a2a-v1-rate-send": 429,
+    "a2a-v1-rate-stream": 429,
 }
 
 

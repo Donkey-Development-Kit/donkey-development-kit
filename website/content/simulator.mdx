@@ -279,6 +279,39 @@ The request surfaces as a typed [`PromptInjectionBlocked`](/errors) (via the
 `x-injection-protection: blocked` discriminator), so the refusal branch of a
 guardrailed bot is exercised before it faces a real attack.
 
+## A2A ingress replay
+
+[`donkey dev`](/a2a#simulated-ingress) wraps your served agent rather than the
+model routes above. It shares the fixture loader and scenario triggers, but
+replays captured **A2A v1** refusals for `SendMessage` and
+`SendStreamingMessage`, each from its matching capture:
+
+| Scenario | A2A ingress response | Existing classification |
+|---|---|---|
+| `injection` | Azure prompt-shield `403`, `ErrorInfo` and `x-flex-azure-guardrails-*` | `ContentSafetyBlocked` |
+| `pii_block` | `403` with synthetic findings in an ambiguous `ErrorInfo` envelope | `ToolInvocationError`, not `PIIDetected` |
+| `request_limit` | Bare `429` with captured `x-token-*`, no `retry-after` | `TokenBudgetExceeded` |
+
+On ingress, `request_limit` counts requests as a **replay trigger**, not a token
+policy implementation. The configured limit/window decides when the capture is
+returned; captured header values stay `1` limit, `1` remaining and `60000` ms to
+reset, even if your local counter or clock differs. Passing calls gain no rate
+headers because accepted-call A2A rate headers have not been captured. The
+`donkey mock` request counter and headers described above are unchanged.
+
+The response ID stays the captured string `"1393"`, not your incoming request ID.
+Bodies are not reserialized; only transport framing and the existing safe-header
+filter differ from the capture. Streaming refusals are HTTP JSON or empty
+responses, not SSE events. Other calls and passing streams retain the agent's
+own bytes, with the honesty header added. `budget` and `ciba` are not ingress
+scenarios. No outbound A2A or authorization-code simulation is provided.
+
+The tested stock v1 `a2a-sdk` 1.2.2 JSON-RPC transport generates UUID request IDs,
+then raises `A2AClientError` caused by `httpx.HTTPStatusError` for these send and
+stream refusals before RPC decoding or ID checks. This is HTTP refusal evidence,
+not a guarantee of successful correlation for other clients. The table lists
+DDK classifications; the stock SDK does not raise those DDK types.
+
 ## How the simulator works
 
 <Callout type="warning">
@@ -309,8 +342,8 @@ guardrailed bot is exercised before it faces a real attack.
 
 ## Related
 
-- [Simulated ingress](/a2a#simulated-ingress) — `donkey dev`, which replays these
-  rejections on inbound A2A calls to your agent.
+- [Simulated ingress](/a2a#simulated-ingress) — `donkey dev`, which replays
+  method-specific A2A captures on inbound calls to your agent.
 - [Testing & conformance](/testing) — `simulate()` for in-process unit tests,
   and the `gateway` pytest fixture that runs this simulator on an ephemeral port.
 - [Error taxonomy](/errors) — the typed exceptions each shape maps to.

@@ -61,13 +61,15 @@ def dev(
 
     Runs the app `donkey.serve()` runs, governed the same way, with a local
     fake ingress in front of it on one port. `--scenario` rules reject inbound
-    calls (`SendMessage`/`SendStreamingMessage`) with the captured rejections
-    `donkey mock` serves; every other request reaches the agent untouched.
+    calls (`SendMessage`/`SendStreamingMessage`) with captured A2A v1
+    rejections; every other request reaches the agent untouched.
     Every response carries `x-donkey-simulator: true`.
 
-    The ingress is simulated: it enforces no policy. No A2A agent instance's
-    rejections have been captured live yet, so the shapes are the LLM-proxy
-    ones. It answers a request body over 4 MiB with a 413, and a `--host` that
+    The ingress is simulated: no policy is enforced. request_limit is a replay
+    trigger, not token accounting; captured headers and captured response IDs
+    are not rewritten, and passing calls gain no rate headers. No outbound A2A
+    or authorization-code simulation. It answers a request body over 4 MiB
+    with a 413, and a `--host` that
     is not loopback prints a warning: nothing authenticates the caller.
 
     Needs the \\[a2a] and \\[local] extras; without one, it prints the install
@@ -127,7 +129,9 @@ def dev(
     typer.echo(
         f"Agent {target} over A2A on {url}, behind a SIMULATED gateway ingress. "
         "Every response carries 'x-donkey-simulator: true'. Rejections replay the "
-        "LLM-proxy fixtures, not shapes captured from an A2A instance. This is NOT a real "
-        "gateway: no policy is enforced."
+        "captured A2A v1 refusals. request_limit is a replay trigger, not token accounting; "
+        "captured headers and captured response IDs are not rewritten. "
+        "Passing calls gain no rate headers. No outbound A2A or authorization-code simulation. "
+        "This is NOT a real gateway: no policy is enforced."
     )
     uvicorn.run(build_ingress(agent, scenarios), host=host, port=port, log_level="info")
