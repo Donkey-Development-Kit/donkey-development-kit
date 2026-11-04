@@ -374,6 +374,16 @@ variable or another step's output shows in the log once.
 | `client-id`, `client-secret`, `org-id` | empty | `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, `ANYPOINT_ORG_ID`. |
 | `python-version` | `3.12` | The Python that runs donkey-kit (3.10 or later). |
 | `donkey-kit` | empty | A pip requirement to install instead, such as `donkey-kit[cli]==X.Y.Z`. |
+| `constraints` | empty | A pip constraints file in your repository, which pins the versions donkey-kit's dependencies install at (`pip install -c`). |
+
+By default the action installs the newest version of each dependency that
+donkey-kit allows, so a new release of one of them reaches your pipeline the
+day it ships. To keep publishing reproducible, pin `donkey-kit` to a release
+and commit a constraints file for the job's Python, then pass its path as
+`constraints`. One way to write it is to run
+`pip freeze --exclude donkey-kit > constraints/publish.txt` in a clean virtual
+environment where you installed `donkey-kit[cli]==X.Y.Z`, with the same
+Python as `python-version`. You refresh the file yourself, when you choose to.
 
 The job summary shows a table of the assets: each one's digest on a dry run,
 and each one's status and detail after a publish, including one that failed

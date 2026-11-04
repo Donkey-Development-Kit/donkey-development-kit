@@ -43,6 +43,9 @@ inputs:
   donkey-kit:
     description: A pip requirement to install instead of this checkout's donkey-kit, for example "donkey-kit[cli]==0.2.0".
     default: ""
+  constraints:
+    description: A pip constraints file, relative to the workspace, that pins the versions donkey-kit and its dependencies install at (#1516). Empty installs the newest each dependency allows.
+    default: ""
 
 outputs:
   published:
@@ -87,6 +90,7 @@ runs:
       env:
         PYTHON: ${{ steps.python.outputs.python-path }}
         REQUIREMENT: ${{ inputs.donkey-kit }}
+        CONSTRAINTS: ${{ inputs.constraints }}
         SOURCE: ${{ github.action_path }}/../python
       run: |
         "$PYTHON" -m venv "$RUNNER_TEMP/donkey-kit"
@@ -95,7 +99,11 @@ runs:
         else
           venv_python="$RUNNER_TEMP/donkey-kit/Scripts/python.exe"
         fi
-        "$venv_python" -m pip install --quiet --disable-pip-version-check "${REQUIREMENT:-$SOURCE[cli]}"
+        lock=()
+        if [ -n "$CONSTRAINTS" ]; then
+          lock=(-c "$CONSTRAINTS")
+        fi
+        "$venv_python" -m pip install --quiet --disable-pip-version-check "${lock[@]}" "${REQUIREMENT:-$SOURCE[cli]}"
         echo "python=$venv_python" >> "$GITHUB_OUTPUT"
     - id: publish
       name: donkey publish
