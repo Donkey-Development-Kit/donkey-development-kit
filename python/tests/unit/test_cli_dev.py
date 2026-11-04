@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from donkey_kit.cli import app
@@ -67,11 +68,12 @@ def test_dev_serves_the_target_behind_the_ingress(project: dict[str, Any]) -> No
     assert "LLM-proxy fixtures" not in result.stdout
 
 
-def test_dev_help_describes_captured_a2a_replay_boundaries() -> None:
-    result = runner.invoke(app, ["dev", "--help"])
+@pytest.mark.parametrize("force_color", ["0", "1"])
+def test_dev_help_describes_captured_a2a_replay_boundaries(force_color: str) -> None:
+    result = runner.invoke(app, ["dev", "--help"], env={"FORCE_COLOR": force_color})
     assert result.exit_code == 0, _combined(result)
     # Rich wraps the help with borders; normalize those independently of terminal width.
-    text = " ".join(result.stdout.replace("│", " ").split())
+    text = " ".join(unstyle(result.stdout).replace("│", " ").split())
     assert "captured A2A v1" in text
     assert "request_limit is a replay trigger" in text
     assert "captured response IDs" in text
