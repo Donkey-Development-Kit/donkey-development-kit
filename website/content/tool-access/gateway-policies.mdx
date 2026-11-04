@@ -20,6 +20,11 @@ reimplementing the policies in your agent.
   checks. A captured refusal does not establish every configuration of a policy.
 </Callout>
 
+To exercise response handling offline, use the
+[packaged MCP captures](/simulator#packaged-mcp-captures) with raw `httpx.MockTransport`.
+This is separate from model-route simulation and does not establish a live
+framework round-trip.
+
 ## MCP Support
 
 Start with [MCP Support](https://docs.mulesoft.com/gateway/latest/policies-included-mcp-support)

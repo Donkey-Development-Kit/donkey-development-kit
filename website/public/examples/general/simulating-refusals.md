@@ -196,6 +196,10 @@ Because the injection sits on the transport, it also reaches framework objects
 the SDK does not wrap — demo 04 drives `donkey.langgraph.chat_model("gpt-4o")`
 through `simulate(PIIDetected)` and gets the same taxonomy back.
 
+For MCP response handling, use the separate
+[packaged MCP capture replay example](https://docs.donkey-kit.dev/simulator.md#packaged-mcp-captures).
+It uses raw `httpx.MockTransport`, not `donkey.simulate()` injection into bound tools.
+
 **Learn more:** [Local simulator](https://docs.donkey-kit.dev/simulator.md) · [Testing & conformance](https://docs.donkey-kit.dev/testing.md)
 
 **Source:**

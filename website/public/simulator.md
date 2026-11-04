@@ -81,9 +81,78 @@ On the native routes:
 - `model-not-routable` and `model-not-found` are not sentinels there, because
   a native ingress serves an unresolvable model on its own vendor.
 
-Everything else on this page applies to all four routes: the `donkey-sim/`
+All four model routes share the `donkey-sim/`
 sentinel, the scenarios below, one shared budget window, and the
 `x-donkey-simulator` header. Any other route answers `404`.
+
+## Packaged MCP captures
+
+Separately, the package data contains **15 captured MCP responses**: 13 policy
+envelopes in `anypoint/mcp_policies` and two access-denial header/body pairs in
+`anypoint/mcp_access`. These captures are available on `develop`, not yet in a
+released package. Use `donkey_kit.simulator.fixtures.fixture_bytes()` to read
+them without depending on a repository checkout's test files.
+
+This is raw offline replay, not a `donkey mock` route or a `donkey-sim/` sentinel,
+and not bound-tool `simulate()` injection. There is no session negotiation or
+request-ID rewriting: captured JSON-RPC IDs and SSE framing stay unchanged.
+It tests handling of a selected response, not policy enforcement or end-to-end
+framework behavior.
+
+The example decodes the `pii-request.json` capture envelope, then encodes its
+`body` string as UTF-8; the response body is not JSON-reserialized. Replay only
+the safe headers from `replay_headers()`, restore `content-type`, and add
+`x-donkey-simulator: true` to the replay, never to the capture. The URL is a
+reserved example address, not a real endpoint; the explicit `MockTransport`
+handles the call entirely offline, with no server or credentials.
+
+```python
+import json
+
+import httpx
+
+from donkey_kit import PIIDetected, jsonrpc_refusal
+from donkey_kit.simulator.fixtures import Fixture, fixture_bytes, replay_headers
+
+capture = json.loads(fixture_bytes("anypoint/mcp_policies", "pii-request.json"))
+fixture = Fixture(
+    shape="mcp-capture:pii-request",
+    status=capture["status"],
+    headers=capture["headers"],
+    body=capture["body"].encode("utf-8"),
+    content_type=capture["headers"]["content-type"],
+)
+
+def respond(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(
+        fixture.status,
+        headers={
+            **replay_headers(fixture),
+            "content-type": fixture.content_type,
+            "x-donkey-simulator": "true",
+        },
+        content=fixture.body,
+    )
+
+with httpx.Client(transport=httpx.MockTransport(respond), trust_env=False) as client:
+    response = client.post("https://gateway.example/mcp/")
+
+assert response.content == fixture.body
+assert response.headers["x-donkey-simulator"] == "true"
+refusal = jsonrpc_refusal(response.json(), response=response)
+assert isinstance(refusal, PIIDetected)
+assert refusal.phase == "request"
+assert refusal.response is response
+```
+
+For access-denial pairs, read the header file with `fixture_bytes()` and use
+`parse_status()` and `parse_headers()` from the same module; read the body file
+as bytes. Schema and poisoning errors cannot safely identify a gateway policy
+from generic codes or diagnostic text, so `jsonrpc_refusal()` leaves those
+captures untyped. Despite its name, `pii-response-sse.json` is HTTP 403
+`application/json`, not an SSE error event. The matcher takes a parsed JSON-RPC
+envelope, not raw SSE bytes. See [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
+for the evidence boundaries and framework-specific refusal behavior.
 
 ## Choosing a port or host
 
