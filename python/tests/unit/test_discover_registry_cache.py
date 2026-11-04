@@ -128,3 +128,48 @@ async def test_warm_reads_through_the_registry_cache() -> None:
 
     assert after.servers == ()
     assert fake.paths.count(_GRAPHQL) == fake.paths.count(_POLICIES) == 2
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+async def test_an_expired_discovery_reads_past_the_registry_cache() -> None:
+    """A discovery entry that expires on its own re-reads the registry, not its cached
+    lookups, which another caller may have filled later (#1483)."""
+    fake = _Anypoint()
+    d, registry = _discovery(fake)
+    clock = _Clock()
+    d._cache._clock = registry._index_cache._clock = clock
+    assert len((await _governed(d)).servers) == 1  # discovery entry expires at 300
+
+    clock.now = 200.0
+    registry.refresh()  # another caller refills the registry's lookups at 200
+    (ref,) = await registry.search(asset_types=["mcp"], limit=200)
+    await registry.explain(ref, criteria=GovernanceCriteria())
+    fake.remove_the_policies()
+
+    clock.now = 301.0  # discovery expired; the registry's lookups live until 500
+    after = await _governed(d)
+
+    assert after.servers == ()
+    assert fake.paths.count(_POLICIES) == 3
+
+
+async def test_fresh_registry_lookups_refill_the_cache() -> None:
+    fake = _Anypoint()
+    _, registry = _discovery(fake)
+    (ref,) = await registry.search(asset_types=["mcp"], limit=200)
+    assert (await registry.explain(ref, criteria=GovernanceCriteria())).governed
+    fake.remove_the_policies()
+
+    assert not (await registry.explain(ref, criteria=GovernanceCriteria(), fresh=True)).governed
+    assert not (await registry.explain(ref, criteria=GovernanceCriteria())).governed  # refilled
+    await registry.search(asset_types=["mcp"], limit=200, fresh=True)
+    await registry.resolve_mcp(ref, fresh=True)
+    assert fake.paths.count(_GRAPHQL) == 2
+    assert fake.paths.count(_POLICIES) == 2

@@ -255,7 +255,9 @@ class _Governed(ExchangeRegistry):
     """The real ``resolve_mcp()`` with a passing ``explain()``: its reads are
     ``test_explain.py``'s."""
 
-    async def explain(self, ref: AssetRef | str, *, criteria: Any) -> GovernanceReport:
+    async def explain(
+        self, ref: AssetRef | str, *, criteria: Any, fresh: bool = False
+    ) -> GovernanceReport:
         return GovernanceReport(governed=True, checks=[Check("deployed", True, "ok")])
 
 

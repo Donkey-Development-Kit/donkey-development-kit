@@ -87,6 +87,9 @@ donkey = Donkey.from_env(registry_cache_ttl_s=60)
   call it after a platform team publishes a change you need to see immediately.
   `donkey.tools.refresh()` does the same and also drops the cached discoveries,
   and `donkey.tools.warm()` drops the registry cache before it reads.
+- Pass `fresh=True` to `search()`, `explain()` or `resolve_mcp()` to read past
+  the cache for that one lookup and refill its entry. A `discover()` whose
+  cached result expired does this for every lookup it makes.
 - Set `DONKEY_REGISTRY_CACHE_TTL_S` to change the TTL from the environment.
 - Set `DONKEY_NO_CACHE=1` to bypass the cache entirely, for debugging a
   discovery result that looks stale.
