@@ -95,6 +95,7 @@ class ExchangeRegistry:
         environment: str | None = None,
         governed: bool | GovernanceCriteria | None = None,
         limit: int = 50,
+        fresh: bool = False,
     ) -> list[AssetRef]:
         """Search Exchange for assets matching the given filters.
 
@@ -105,7 +106,8 @@ class ExchangeRegistry:
         Exchange filters; an asset matches when it has every tag, ignoring case.
         A tag is one set in Exchange or at publish, not one Exchange derives
         (those have a key). Each asset comes back at its latest version.
-        Results are cached for ``registry_cache_ttl_s`` seconds.
+        Results are cached for ``registry_cache_ttl_s`` seconds; ``fresh=True``
+        reads past the cache and refills it (#1483).
 
         A connected app without the ``read:exchange`` scope gets no assets, not
         an error: Exchange answers the search with an empty list (docs/scopes.md).
@@ -146,7 +148,7 @@ class ExchangeRegistry:
             search["tags"] = [{"value": tag} for tag in tags]
         wanted = {tag.lower() for tag in tags or ()}
         key = "search:" + json.dumps([search, glob, limit], sort_keys=True)
-        cached = self._index_cache.get(key)
+        cached = None if fresh else self._index_cache.get(key)
         if isinstance(cached, tuple):
             return list(cached)
 
@@ -254,14 +256,15 @@ class ExchangeRegistry:
         assets = (body.get("data") or {}).get("assets") or ()
         return [a for a in assets if isinstance(a, dict)]
 
-    async def resolve_mcp(self, ref: AssetRef | str) -> McpServerHandle:
+    async def resolve_mcp(self, ref: AssetRef | str, *, fresh: bool = False) -> McpServerHandle:
         """Resolve an MCP server asset to its governed gateway endpoint.
 
         Finds the asset version's API Manager instance in the configured
         ``environment`` that is deployed to a gateway, and joins the gateway's
         public URL with the instance's path. The handle does not open a
         connection, and ``governance`` is left for ``explain()`` to fill.
-        Results are cached for ``registry_cache_ttl_s`` seconds.
+        Results are cached for ``registry_cache_ttl_s`` seconds; ``fresh=True``
+        reads past the cache and refills it (#1483).
 
         Raises:
             ConfigError: The control-plane settings are missing.
@@ -277,7 +280,7 @@ class ExchangeRegistry:
         cfg = self._cfg.validated(need="control_plane")
         asset = AssetRef.parse(ref)
         key = f"resolve_mcp:{cfg.environment}:{asset.coordinates}"
-        cached = self._index_cache.get(key)
+        cached = None if fresh else self._index_cache.get(key)
         if isinstance(cached, McpServerHandle):
             return cached
         url = await self._endpoint(asset, "mcp", "MCP", "resolve_mcp()")
@@ -419,7 +422,7 @@ class ExchangeRegistry:
         return handle
 
     async def explain(
-        self, ref: AssetRef | str, *, criteria: GovernanceCriteria
+        self, ref: AssetRef | str, *, criteria: GovernanceCriteria, fresh: bool = False
     ) -> GovernanceReport:
         """Explain why an asset version is, or is not, governed in the configured ``environment``.
 
@@ -427,7 +430,8 @@ class ExchangeRegistry:
         gateway checks judge the asset version's deployed API Manager instances, every
         one of them: a deployed instance without a required policy is an ungoverned
         route. A check whose source refused the read is ``None`` (UNKNOWN), with the
-        refusal as its detail. Results are cached for ``registry_cache_ttl_s`` seconds.
+        refusal as its detail. Results are cached for ``registry_cache_ttl_s`` seconds;
+        ``fresh=True`` reads past the cache and refills it (#1483).
 
         Raises:
             ConfigError: The control-plane settings are missing.
@@ -442,7 +446,7 @@ class ExchangeRegistry:
         key = "explain:" + json.dumps(
             [cfg.environment, asset.coordinates, asdict(criteria)], sort_keys=True
         )
-        cached = self._index_cache.get(key)
+        cached = None if fresh else self._index_cache.get(key)
         if isinstance(cached, GovernanceReport):
             return cached
 

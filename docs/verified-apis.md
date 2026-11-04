@@ -1055,6 +1055,16 @@ the descriptor shape tests still run. These are offline checks, not a new live
 gateway round-trip or fixture capture. Historical evidence and verification
 statuses remain unchanged.
 
+#### LiteLLM release re-check (2026-11-04, #1581)
+
+The ADK contract lock now selects `litellm==1.108.0`. On Python 3.12,
+`verify_frameworks.py --only adk --require-installed --emit-verified` confirms
+both the LiteLLM and Gemini constructors and their expected native classes.
+`nox -s 'adapter-contract(adk)'` passes (5,299 passed, 546 skipped,
+28 deselected), including the strict example smoke. These are offline checks
+against the local simulator and mock transports, not a new live gateway
+round-trip. Historical live evidence and verification statuses remain unchanged.
+
 #### OpenAI release re-check (2026-11-04, #1583)
 
 The 17 contract and CI locks previously selecting `openai==3.42.1` now select
