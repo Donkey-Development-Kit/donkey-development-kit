@@ -31,6 +31,7 @@ _CONTRACT_STATUS = {
     "ciba-denied": 403,
     "model-not-found": 400,
     "model-not-routable": 400,
+    "model-missing": 400,
     "upstream-5xx": 503,
     "client-id-missing": 401,
     "success": 200,

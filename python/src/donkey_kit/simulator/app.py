@@ -72,7 +72,8 @@ SIM_MODEL_PREFIX = "donkey-sim/"
 #   "Token rate limit: {remaining} tokens remaining of {limit} limit. Reset in {ms}ms."
 
 # Shapes selectable via the model-id sentinel: the documented rejections
-# plus the consumer-auth 401 and the gateway's bare-model-name 400 (#891).
+# plus the consumer-auth 401 and the gateway's bare-model-name 400 (#891) and
+# missing-model 400 (#1547).
 _REJECTION_SHAPES = frozenset(
     {
         "token-rate-limit",
@@ -87,6 +88,7 @@ _REJECTION_SHAPES = frozenset(
         "ciba-denied",
         "model-not-found",
         "model-not-routable",
+        "model-missing",
         "upstream-5xx",
         "client-id-missing",
     }
@@ -110,7 +112,11 @@ _SENTINEL_SHAPES = _REJECTION_SHAPES | _HAPPY_SHAPES
 # own policy answers. The OpenAI upstream's model-not-found 400 and the
 # bare-model-name 400 are left out, because a native ingress serves an
 # unresolvable model on its own vendor instead (docs/verified-apis.md §2).
-_NATIVE_REJECTION_SHAPES = _REJECTION_SHAPES - {"model-not-found", "model-not-routable"}
+_NATIVE_REJECTION_SHAPES = _REJECTION_SHAPES - {
+    "model-not-found",
+    "model-not-routable",
+    "model-missing",
+}
 
 
 @dataclass(frozen=True)

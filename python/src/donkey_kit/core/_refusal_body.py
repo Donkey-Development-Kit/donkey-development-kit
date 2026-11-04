@@ -16,6 +16,7 @@ from . import _verify, _wire
 from ._response import ResponseLike
 
 __all__ = [
+    "MODEL_MISSING_REMEDIATION",
     "MODEL_NOT_ROUTABLE_RE",
     "PII_TYPES",
     "PiiSpan",
@@ -229,8 +230,23 @@ def parse_retry_after(raw: str | None) -> float | None:
 # The model-based-routing rejection for a bare model name on a multi-provider
 # proxy (docs/verified-apis.md §4, #825). Live text: "Failed to parse model from
 # request: Model 'gpt-5-mini' is not in the known unique model map and multiple
-# providers are configured. Use 'provider/model' format."
-MODEL_NOT_ROUTABLE_RE = re.compile(r"Model '(?P<model>[^']*)' is not in the known unique model map")
+# providers are configured. Use 'provider/model' format." The ``missing`` branch
+# is the same rejection when the router finds no model where the ingress expects
+# one (#1547): no ``model`` body field on OpenAI ingress, or an OpenAI body on a
+# native Gemini ingress, whose router reads the model from the URL path. Live
+# text, model-based-routing 1.0.5: "Failed to parse model from request: Missing
+# 'model' field in request".
+MODEL_NOT_ROUTABLE_RE = re.compile(
+    r"Model '(?P<model>[^']*)' is not in the known unique model map"
+    r"|(?P<missing>Missing 'model' field in request)"
+)
+# ModelNotRoutable's next step for the missing-model variant (#1547), kept here
+# with the sentence it answers.
+MODEL_MISSING_REMEDIATION = (
+    "The gateway found no model where this proxy's ingress format expects one: the "
+    "'model' body field for OpenAI ingress, or the URL path for native Gemini ingress. "
+    "Send the model, and use the client that matches the proxy's format."
+)
 
 # Content-safety / guardrails policies report their verdict in a pair of vendor
 # headers — an ``...-action`` (``allow``|``reject``) and a comma-separated

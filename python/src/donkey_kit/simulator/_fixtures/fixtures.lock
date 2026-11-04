@@ -28,6 +28,8 @@
   "anypoint/llm_proxy/models.notfound.headers.txt": "sha256:c74a31f6c9dd41ff96e24f5fb1b1ea671e37bdd3f7613bde46ca01fdc2c66111",
   "anypoint/llm_proxy/reject.client-id-missing.body.json": "sha256:941cbdfbf3ef3d0180c49724810ddbd41f858d32a7e0780dcb070dda855890e6",
   "anypoint/llm_proxy/reject.client-id-missing.headers.txt": "sha256:3d9bc878643e399c6800dca5708a58309a4ae6b2fd9b8ca26e802cafc74e73c2",
+  "anypoint/llm_proxy/reject.model-missing.body.json": "sha256:644d1893977cbaf7206cfa8f0d6477ef4343f360350c7bf56205ed0527e69294",
+  "anypoint/llm_proxy/reject.model-missing.headers.txt": "sha256:a2a792f627c3344ea461327f1a404f146b3d4a8a3a053967e8fa69ea034423d5",
   "anypoint/llm_proxy/reject.model-not-found.body.json": "sha256:4fee836984142e5c188df9070738a206918463707cd8e3c8db7c5c1988017928",
   "anypoint/llm_proxy/reject.model-not-routable.body.json": "sha256:1df968c6be8ddb79082326be12bfc5656d0c6cf5b44406ae78d3200f93ef89ee",
   "anypoint/llm_proxy/reject.model-not-routable.headers.txt": "sha256:a2a792f627c3344ea461327f1a404f146b3d4a8a3a053967e8fa69ea034423d5",

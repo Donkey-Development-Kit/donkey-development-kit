@@ -199,7 +199,9 @@ async def test_rejection_sentinel_applies_on_both_native_routes() -> None:
         assert isinstance(classify(resp), PIIDetected)
 
 
-@pytest.mark.parametrize("shape", ["model-not-routable", "model-not-found", "anthropic-fallback"])
+@pytest.mark.parametrize(
+    "shape", ["model-not-routable", "model-missing", "model-not-found", "anthropic-fallback"]
+)
 async def test_shapes_a_native_ingress_cannot_send_are_not_sentinels(shape: str) -> None:
     # A native ingress serves an unresolvable model on its own vendor, so the
     # OpenAI-route 400s fall through to the happy path there, and Gemini has no

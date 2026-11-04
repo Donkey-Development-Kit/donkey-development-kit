@@ -30,6 +30,7 @@ specific headers.
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
 | Upstream 5xx | `5xx` | status range (no competing discriminator) | `UpstreamModelError` (retryable) |
 | Bare model name on a multi-provider proxy | `400` | flat `{"error":"…"}` saying the model "is not in the known unique model map" | `ModelNotRoutable` (`.model`) |
+| No model where the ingress expects one | `400` | flat `{"error":"…"}` saying "Missing 'model' field in request" (no `model` body field, or an OpenAI body sent to a native Gemini ingress) | `ModelNotRoutable` (`.model` is `None`) |
 | OAuth2 OBO step-up (CIBA), waiting for the user | `401` | flat `{"error":"authorization_pending"}` + `retry-after`, **no** `www-authenticate` | `GatewayApprovalPending` (`retry_after`) |
 | OAuth2 OBO step-up (CIBA), user denied | `403` | flat `{"error":"access_denied"}`, **no** `www-authenticate` | `GatewayApprovalDenied` (`policy="oauth2-obo-ciba"`) |
 
@@ -64,7 +65,7 @@ flowchart TD
     Q -->|no| X8["TokenBudgetExceeded"]
     S -->|"other 4xx"| F{"Body"}
     F -->|"nested error object"| X9["UpstreamRequestError"]
-    F -->|"flat error: not in the<br/>known unique model map"| X10["ModelNotRoutable"]
+    F -->|"flat error: not in the<br/>known unique model map,<br/>or missing 'model' field"| X10["ModelNotRoutable"]
     F -->|anything else| X11["PolicyViolation<br/>unconfirmed shape"]
     S -->|5xx| X12["UpstreamModelError<br/>retryable"]
     S -->|"anything else"| X13["DonkeyError"]
@@ -222,7 +223,7 @@ DonkeyError                     # base of the whole tree
 ├─ GatewayApprovalPending       # 401, error=authorization_pending — waiting for the user's CIBA approval; .retry_after
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
-├─ ModelNotRoutable             # 400, bare model name on a multi-provider proxy; .model
+├─ ModelNotRoutable             # 400, bare model name on a multi-provider proxy, or no model; .model
 ├─ UpstreamModelError           # upstream 5xx — provider error, retryable
 ├─ BudgetReserveReached         # client-side, from budget.pace(); .fraction_used/.reserve/.reset_at/.window
 ├─ ModelSubstituted             # client-side, opt-in; .requested_model/.served_model/.served_provider
@@ -266,7 +267,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `ToolNotInProfile` | An MCP `tools/call` answered with HTTP `200` and the JSON-RPC error `-32008` `"Unable to access"` (the gateway's MCP Global Access or Attribute-Based Access Control policy). The LangGraph, LlamaIndex and Anthropic `ToolSet` bindings raise it; `tool_access_denial(exc)`, `jsonrpc_refusal(exc)` or an explicit `classify(response)` can convert it elsewhere. The transport does not automatically inspect successful 200 bodies. See [Tools outside your access profile](https://docs.donkey-kit.dev/tool-access/binding.md#tools-outside-your-access-profile). | **No** — a `PolicyViolation`, never retried; a configuration problem that no retry or rephrasing fixes. | Ask the server's owner to grant the tool (`.tool_name`) in the MCP access policy on its API instance in API Manager, or stop offering it to the agent. |
 | `PolicyViolation` (generic) | a `4xx` matching **no** known rejection shape | **No** — terminal. | Inspect `.response`; file an issue with the status/headers/body so the shape can be typed. |
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
-| `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider) | **No** — a client configuration mistake, terminal; the upstream was never called. | Use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. |
+| `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider), or "Missing 'model' field in request" | **No** — a client configuration mistake, terminal; the upstream was never called. | For a bare model name, use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. For a missing model, send the model where the proxy's format expects it (the `model` body field for OpenAI ingress, the URL path for native Gemini ingress), with the client that matches the proxy's format. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries a `503`, and a `502` / `504` too unless the request was a model call (set `retry_model_calls_on_gateway_errors` to include those); a persistent `5xx` is safe for you to retry once you accept a possible second charge. | Transient provider failure — retry, then escalate if it persists. |
 | `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://docs.donkey-kit.dev/cli.md). |
 | `ApprovalError` | client-side base of `ApprovalRejected` (a reviewer refused a [framework-paused](https://docs.donkey-kit.dev/hitl.md#the-framework-approval-helpers) tool) and `GatewayApprovalDenied` (the user refused the gateway's step-up). Catch it to handle both refusals at once. | **No** — the call was refused at its approval step. | Tell the user or the agent that the action was not authorized; don't retry it unchanged. |
@@ -633,4 +634,7 @@ and then answered with a `text/plain` `404`. Both come back as an unconfirmed
 One `400` that used to land here is now typed: a bare model name (`gpt-5-mini`)
 sent to a model-based proxy with more than one provider. The gateway rejects it
 before any upstream call, and `classify()` returns `ModelNotRoutable`. It keeps
-the gateway's text and is not a `PolicyViolation`.
+the gateway's text and is not a `PolicyViolation`. The same goes for the
+gateway's `400` saying "Missing 'model' field in request", which is what an
+OpenAI client pointed at a native Gemini proxy gets back: `ModelNotRoutable`
+with `.model` set to `None`.

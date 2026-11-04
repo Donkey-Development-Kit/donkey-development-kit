@@ -170,6 +170,7 @@ _CLASSIFY = [
     ("ciba-denied", GatewayApprovalDenied),
     ("model-not-found", UpstreamRequestError),
     ("model-not-routable", ModelNotRoutable),
+    ("model-missing", ModelNotRoutable),
     ("upstream-5xx", UpstreamModelError),
     ("client-id-missing", AuthError),
 ]
