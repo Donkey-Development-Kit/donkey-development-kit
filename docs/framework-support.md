@@ -40,7 +40,7 @@ install takes each framework's newest release.
 | OpenAI Agents SDK | **Conformance-tested** | `[openai-agents]` | `openai-agents` | 0.20 | 0.24.0 | None known |
 |  |  |  | `openai` | 2.45 | 3.42.1 |  |
 | Anthropic SDK | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 2.4.0 | None known |
-| CrewAI | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.34 | None known |
+| CrewAI | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.35 | None known |
 | LlamaIndex | `connection_kwargs()` | `[llamaindex]` | `llama-index-llms-openai-like` | 0.8 | 0.8.1 | None known |
 
 ## Where each column comes from
