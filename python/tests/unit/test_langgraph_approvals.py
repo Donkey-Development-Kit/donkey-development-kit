@@ -544,9 +544,12 @@ async def test_an_async_gated_tool_pauses_and_resumes_under_ainvoke() -> None:
 
 @pytest.mark.skipif(sys.version_info >= (3, 11), reason="the 3.10 fallback (#865)")
 async def test_on_3_10_an_async_graph_falls_back_to_approval_required() -> None:
+    ran: list[str] = []
+
     @Donkey.tool(approval="required")
     async def issue_refund(ticket_id: str) -> str:
         """Refund a support ticket."""
+        ran.append(ticket_id)
         return ticket_id
 
     async def refund(state: dict) -> dict:
@@ -558,8 +561,11 @@ async def test_on_3_10_an_async_graph_falls_back_to_approval_required() -> None:
     builder.add_edge("refund", END)
     graph = builder.compile(checkpointer=MemorySaver())
 
-    with pytest.raises(ApprovalRequired):
-        await graph.ainvoke({"ticket_id": "T-1"}, _thread("t-310"))
+    with Donkey(_cfg()) as donkey:
+        with donkey.run(), pytest.raises(ApprovalRequired) as info:
+            await graph.ainvoke({"ticket_id": "T-1"}, _thread("t-310"))
+        assert donkey.approvals.pending() == (info.value.approval,)
+    assert ran == []
 
 
 # --- a refusal and the pause compose ----------------------------------------
