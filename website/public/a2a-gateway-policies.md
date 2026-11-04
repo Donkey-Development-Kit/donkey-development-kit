@@ -53,7 +53,7 @@ exception types below are root exports.
 | Same Azure policy, fail-closed service failure | VERIFIED (LIVE) | Both methods: `503`, `UNAVAILABLE`, reason `service_unavailable`, induced with an invalid key | `UpstreamModelError`, **not** a content block |
 | v1 Bedrock Guardrails, `a2a-v1-bedrock-guardrails` 1.0.0 | VERIFIED (LIVE) | Both methods: fail-closed `503`, `UNAVAILABLE`, `x-flex-bedrock-guardrails-*`, nonexistent guardrail version | `UpstreamModelError`; no Bedrock content-block capture |
 | v0.3 In-Task Authorization Code, `intask-authorization-code-policy` 1.0.1 | VERIFIED (LIVE) | Both methods: `200` JSON task, `auth-required`, complete status-message `authChallenge`; no SSE | `GatewayAuthRequired` after SDK decoding, **not** a refusal or completed task |
-| v0.3 Quality Evaluation, `a2a-quality-evaluation-policy` 1.0.0 | VERIFIED (LIVE) | One `message/send` reply: `200`, selected quality headers | Non-blocking annotation; no quality span attributes yet |
+| v0.3 Quality Evaluation, `a2a-quality-evaluation-policy` 1.0.0 | VERIFIED (LIVE) | One `message/send` reply: `200`, selected quality headers | Non-blocking span annotation; explanation requires content opt-in |
 
 PII/schema envelopes lack reliable policy identifiers. Generic codes,
 `FORBIDDEN` / `INVALID_PARAMS` reasons and diagnostic text are not policy
@@ -97,13 +97,18 @@ Quality Evaluation's captured headers are `x-quality-evaluation: yes`,
 `x-quality-score: 3`, `x-quality-status: completed` and `x-quality-explanation`.
 They describe one response, not a score range or deterministic grading guarantee.
 Evaluator failures, v1 evaluation and streaming evaluation are **UNVERIFIED**.
-DDK does not yet record these headers on `donkey.a2a.call` spans; an explanation
-can describe request content and must not be exported indiscriminately.
+DDK records known evaluation/status values and finite numeric scores on
+`donkey.a2a.call` spans from successful delegation HTTP responses. Explanations
+require `telemetry_capture_content=True` and are limited to 4096 characters;
+they can repeat sensitive request content. This recording is **OFFLINE-VERIFIED**,
+available on `develop` but not published `0.2.0`. See the
+[quality span contract](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans).
 
 Agent Card, Prompt Decorator and v1-to-v0.3 transcoding are not covered by these
 policy-response captures. Do not infer a typed refusal or successful transcoding
 from an applied-policy list. Connection telemetry using `X-AGENT-ID` is also
-not established by these captures. The existing
+not established by these captures, so DDK does not inject that header on MCP
+or A2A calls. The existing
 [outbound span contract](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans) is separate from gateway
 annotations and the official SDK's own instrumentation.
 

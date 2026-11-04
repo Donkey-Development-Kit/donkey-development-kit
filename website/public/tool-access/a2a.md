@@ -209,8 +209,13 @@ Quality Evaluation can annotate a successful agent response with
 HTTP 200 with `x-quality-evaluation: yes`, `x-quality-score: 3` and
 `x-quality-status: completed`; its explanation described how the agent fulfilled
 the request. That single response does not establish a score range, evaluator
-failure behavior, v1 evaluation or streaming support. DDK does not yet record
-these annotations on its telemetry spans.
+failure behavior, v1 evaluation or streaming support. On `develop` (not
+published `0.2.0`), DDK records quality annotations from successful outbound
+POST responses on its [A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans). This recording
+is tested offline, including mock streaming; it is not live facade or streaming
+verification. Explanation text requires `telemetry_capture_content=True`, is
+not sanitized and is limited to 4096 characters. Agent Card GETs and failed
+HTTP responses do not contribute quality annotations.
 
 The outbound facade classifies non-success HTTP responses and buffered JSON-RPC
 errors before the SDK can render sensitive diagnostics. Protocol/parse failures

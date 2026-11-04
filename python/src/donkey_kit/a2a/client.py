@@ -251,7 +251,11 @@ class A2AFacade:
         endpoint = handle.endpoint_url
         credential = auth if auth is not None else self._auth
 
-        with outbound_call(telemetry=self._cfg.telemetry, cost=self._cfg.cost) as run:
+        with outbound_call(
+            telemetry=self._cfg.telemetry,
+            cost=self._cfg.cost,
+            capture_content=self._cfg.telemetry_capture_content,
+        ) as run:
 
             async def headers(_request: httpx.Request) -> Mapping[str, str]:
                 user = current_user()
@@ -289,6 +293,8 @@ class A2AFacade:
 
             async def remember(response: httpx.Response) -> None:
                 responses.append(response)
+                if response.request.method == "POST" and response.is_success:
+                    run.record_quality(response.headers)
 
             view.event_hooks["response"].append(remember)
             transport: ClientTransport | None = None

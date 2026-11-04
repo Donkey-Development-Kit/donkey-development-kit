@@ -23,6 +23,7 @@ from donkey_kit.core.correlation import current_correlation_id
 from donkey_kit.core.errors import (
     AuthError,
     ConfigError,
+    DonkeyError,
     PolicyViolation,
     RegistryError,
     ToolInvocationError,
@@ -791,6 +792,82 @@ async def test_stream_exhaustion_and_span_lifetime(
             assert streams[0].closed
             assert seen[0].headers["traceparent"] == seen[1].headers["traceparent"]
             assert all(r.headers["X-Correlation-Id"] == "parent-run" for r in seen)
+    finally:
+        provider.shutdown()
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("capture", [False, True])
+@pytest.mark.parametrize("source", ["send", "card", "failure"])
+async def test_quality_headers_record_only_delegation_response(
+    monkeypatch, request_message, streaming, capture, source
+):
+    """Captured v0.3 headers over mock SDK IO, not live SSE evidence (#1399)."""
+    pytest.importorskip("opentelemetry.sdk")
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from donkey_kit.core import telemetry
+
+    root = Path(__file__).resolve().parents[1] / "fixtures/anypoint/a2a_policies"
+    headers = dict(
+        line.split(": ", 1)
+        for line in (root / "v03-quality-send.headers.txt").read_text().splitlines()[1:]
+    )
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(telemetry, "_tracer", lambda: provider.get_tracer("donkey_kit"))
+
+    def handler(request):
+        assert "X-AGENT-ID" not in request.headers
+        if request.method == "GET":
+            return httpx.Response(
+                200, json=_card(True), headers=headers if source == "card" else {}
+            )
+        if source == "failure":
+            return httpx.Response(503, headers=headers)
+        payload = {
+            "jsonrpc": "2.0",
+            "id": json.loads(request.content)["id"],
+            "result": _result(True),
+        }
+        selected = headers if source == "send" else {}
+        if streaming:
+            return httpx.Response(
+                200,
+                headers={**selected, "content-type": "text/event-stream"},
+                content="data: " + json.dumps(payload) + "\n\n",
+            )
+        return httpx.Response(200, headers=selected, json=payload)
+
+    try:
+        async with Donkey(
+            replace(_cfg(), telemetry=True, telemetry_capture_content=capture)
+        ) as donkey:
+            _registry(monkeypatch, donkey)
+            swap_transport(donkey, httpx.MockTransport(handler))
+
+            async def delegate():
+                if streaming:
+                    async with donkey.a2a.stream(_REF, request_message) as events:
+                        async for _ in events:
+                            break
+                else:
+                    await donkey.a2a.send(_REF, request_message)
+
+            if source == "failure":
+                with pytest.raises(DonkeyError):
+                    await delegate()
+            else:
+                await delegate()
+        (span,) = exporter.get_finished_spans()
+        if source == "send":
+            assert span.attributes["donkey.a2a.quality.score"] == 3.0
+            assert ("donkey.a2a.quality.explanation" in span.attributes) is capture
+        else:
+            assert not any(key.startswith("donkey.a2a.quality.") for key in span.attributes)
     finally:
         provider.shutdown()
 

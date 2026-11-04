@@ -5531,7 +5531,7 @@ exception types below are root exports.
 | Same Azure policy, fail-closed service failure | VERIFIED (LIVE) | Both methods: `503`, `UNAVAILABLE`, reason `service_unavailable`, induced with an invalid key | `UpstreamModelError`, **not** a content block |
 | v1 Bedrock Guardrails, `a2a-v1-bedrock-guardrails` 1.0.0 | VERIFIED (LIVE) | Both methods: fail-closed `503`, `UNAVAILABLE`, `x-flex-bedrock-guardrails-*`, nonexistent guardrail version | `UpstreamModelError`; no Bedrock content-block capture |
 | v0.3 In-Task Authorization Code, `intask-authorization-code-policy` 1.0.1 | VERIFIED (LIVE) | Both methods: `200` JSON task, `auth-required`, complete status-message `authChallenge`; no SSE | `GatewayAuthRequired` after SDK decoding, **not** a refusal or completed task |
-| v0.3 Quality Evaluation, `a2a-quality-evaluation-policy` 1.0.0 | VERIFIED (LIVE) | One `message/send` reply: `200`, selected quality headers | Non-blocking annotation; no quality span attributes yet |
+| v0.3 Quality Evaluation, `a2a-quality-evaluation-policy` 1.0.0 | VERIFIED (LIVE) | One `message/send` reply: `200`, selected quality headers | Non-blocking span annotation; explanation requires content opt-in |
 
 PII/schema envelopes lack reliable policy identifiers. Generic codes,
 `FORBIDDEN` / `INVALID_PARAMS` reasons and diagnostic text are not policy
@@ -5575,13 +5575,18 @@ Quality Evaluation's captured headers are `x-quality-evaluation: yes`,
 `x-quality-score: 3`, `x-quality-status: completed` and `x-quality-explanation`.
 They describe one response, not a score range or deterministic grading guarantee.
 Evaluator failures, v1 evaluation and streaming evaluation are **UNVERIFIED**.
-DDK does not yet record these headers on `donkey.a2a.call` spans; an explanation
-can describe request content and must not be exported indiscriminately.
+DDK records known evaluation/status values and finite numeric scores on
+`donkey.a2a.call` spans from successful delegation HTTP responses. Explanations
+require `telemetry_capture_content=True` and are limited to 4096 characters;
+they can repeat sensitive request content. This recording is **OFFLINE-VERIFIED**,
+available on `develop` but not published `0.2.0`. See the
+[quality span contract](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans).
 
 Agent Card, Prompt Decorator and v1-to-v0.3 transcoding are not covered by these
 policy-response captures. Do not infer a typed refusal or successful transcoding
 from an applied-policy list. Connection telemetry using `X-AGENT-ID` is also
-not established by these captures. The existing
+not established by these captures, so DDK does not inject that header on MCP
+or A2A calls. The existing
 [outbound span contract](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans) is separate from gateway
 annotations and the official SDK's own instrumentation.
 
@@ -5745,8 +5750,8 @@ The span preserves the enclosing run's correlation ID/source or temporarily
 mints one for the operation. It injects W3C `traceparent` and, when present,
 `tracestate`, without baggage. A remote DDK inbound `donkey.a2a.task` span can
 adopt that parent. Team/project/environment cost tags may be recorded, with
-run overrides winning; end-user IDs, message content, diagnostics and quality
-evaluation annotations are not recorded on this span. No LLM cost headers are
+run overrides winning; end-user IDs and raw diagnostics are not recorded on
+this span. No LLM cost headers are
 sent on the scoped A2A plane.
 
 The stream span remains open until the `async with` context exits. Break,
@@ -5760,9 +5765,23 @@ NOT live verified by this implementation yet; refused streaming requests
 before SSE are not successful streaming evidence.
 
 The [A2A policy inventory](https://docs.donkey-kit.dev/a2a-gateway-policies.md#non-blocking-policies) records
-the captured quality headers separately. DDK does not yet export quality
-scores/explanations or establish `X-AGENT-ID` connection telemetry from those
-captures. Auth challenge fields, returned task/context IDs and raw refusal
+the captured quality headers separately. Successful delegation HTTP responses
+record `donkey.a2a.quality.evaluation="yes"`, a finite numeric
+`donkey.a2a.quality.score`, and `donkey.a2a.quality.status="completed"` when
+present. Missing, malformed or unknown evaluation/status values are omitted;
+no score range is inferred. Agent Card GETs and failed HTTP responses do not
+contribute quality annotations. An annotation never changes the call outcome.
+
+`donkey.a2a.quality.explanation` can repeat request content. It is omitted by
+default and recorded only with `telemetry_capture_content=True`, truncated to
+4096 characters. Opt-in permits sensitive content export; it does not sanitize
+the explanation. This recording is **OFFLINE-VERIFIED** against captured v0.3
+headers and mock send/stream IO, not a live facade or streaming evaluation.
+It is available on `develop`, not in published `0.2.0`.
+
+DDK does not send `X-AGENT-ID` on MCP or A2A calls: its effect on
+`mulesoft_agent_connection_count` attribution has not been verified live.
+No connection-graph or metric guarantee is made. Auth challenge fields, returned task/context IDs and raw refusal
 diagnostics are not recorded on the outbound span, even with content capture on.
 
 ### Zero-config export
@@ -6074,11 +6093,17 @@ donkey = Donkey.from_env(telemetry_capture_content=True)
 `telemetry_capture_content` resolves along the standard
 [precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence) (set in code → env → config
 files → default) and **defaults to `False`**. When
-enabled, content is emitted under the pinned semconv attribute names —
-`gen_ai.prompt` and `gen_ai.completion` — and no others. When off, those
-attributes never reach a span, and the allowlist that builds every span drops
-any content-shaped attribute a call site hands it, so there is no accidental
-path for message text to leak.
+enabled, LLM content is emitted under the pinned semconv attribute names
+`gen_ai.prompt` and `gen_ai.completion`. On `develop`, it also permits outbound
+A2A quality explanations under `donkey.a2a.quality.explanation`, limited to
+4096 characters. Gateway explanations may repeat request text and are exported
+without sanitization; truncation is not redaction. This A2A behavior is not in
+the published `0.2.0` package.
+
+When off, prompt/completion attributes are excluded by the LLM span allowlist
+and A2A quality explanation text is omitted by the outbound recorder. Numeric
+quality scores and the captured evaluation/status values do not require content
+opt-in. See [Outbound A2A spans](#outbound-a2a-spans).
 
 ## Routing & resilience
 
@@ -9286,8 +9311,13 @@ Quality Evaluation can annotate a successful agent response with
 HTTP 200 with `x-quality-evaluation: yes`, `x-quality-score: 3` and
 `x-quality-status: completed`; its explanation described how the agent fulfilled
 the request. That single response does not establish a score range, evaluator
-failure behavior, v1 evaluation or streaming support. DDK does not yet record
-these annotations on its telemetry spans.
+failure behavior, v1 evaluation or streaming support. On `develop` (not
+published `0.2.0`), DDK records quality annotations from successful outbound
+POST responses on its [A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans). This recording
+is tested offline, including mock streaming; it is not live facade or streaming
+verification. Explanation text requires `telemetry_capture_content=True`, is
+not sanitized and is limited to 4096 characters. Agent Card GETs and failed
+HTTP responses do not contribute quality annotations.
 
 The outbound facade classifies non-success HTTP responses and buffered JSON-RPC
 errors before the SDK can render sensitive diagnostics. Protocol/parse failures
@@ -15761,14 +15791,17 @@ In code, `Donkey.from_env(send_cost_headers=True)`.
 | Env var | `DonkeyConfig` field | Meaning |
 |---|---|---|
 | `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
-| `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans (default **`false`**). |
+| `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans; on `develop`, also permit outbound A2A quality explanations (default **`false`**). |
 | `DONKEY_TELEMETRY_INSTALL_GLOBAL` | `telemetry_install_global` | Install DDK's OTLP provider as the process-global OpenTelemetry provider (default **`false`**). See [DDK leaves the global provider to you](https://docs.donkey-kit.dev/telemetry.md#ddk-leaves-the-global-provider-to-you). |
 | `DONKEY_ALLOW_A2A_SDK_TELEMETRY` | `allow_a2a_sdk_telemetry` | Permit outbound A2A calls with enabled SDK tracing (default **`false`**), accepting that it may export sensitive diagnostics. Independent of DDK's `telemetry` setting. |
 
 `telemetry_capture_content` defaults to `false` on purpose: spans are emitted
 inside your process, **upstream of the gateway's PII masking**, so capturing
 content re-exports the very text the platform masks. Enable it only for a
-trusted collector. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md).
+trusted collector. On `develop` (not published `0.2.0`), the same opt-in also
+exports gateway quality explanations on outbound A2A spans. These may repeat
+request text and are not sanitized; they are truncated to 4096 characters,
+which is not redaction. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md).
 
 ## Behaviour
 
