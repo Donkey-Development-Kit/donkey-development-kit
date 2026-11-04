@@ -199,11 +199,34 @@ maintainer's request, unlike the temporary policies above; no other agent was
 opted in. SDK span recording remains #1399.
 Official reference: https://docs.mulesoft.com/gateway/latest/policies-included-a2a-quality-evaluation.
 
+## Accepted V0.3 Rate Headers
+
+`v03-rate-accepted-send` retains selected headers from the 2026-11-04
+21:00:04 GMT response on LangGraph instance `21206128`, shared gateway.
+Temporary `a-two-a-token-rate-limit` **1.0.1**, policy `9739904`, used
+`maximumTokens: 1000`, `timePeriodInMilliseconds: 60000` and
+`keySelector: #["ddk-1393-accepted-rate"]`. Existing quality policy `9714700`
+and outbound credential injection `9682382` were preserved.
+
+POST `message/send`, numeric request ID `1393`, message ID
+`ddk-1393-accepted-rate`, role `user`, text part `Reply with PONG.`;
+content/encoding headers as above, no `A2A-Version`. HTTP 200 returned an
+agent message, with `x-token-limit: 1000`, `x-token-remaining: 995` and
+`x-token-reset: 55454`. These are one observed window, not a deterministic
+token accounting guarantee. The body and unrelated headers (including signed
+reporting URLs) are deliberately omitted; this is not an empty-body claim.
+
+The temporary rate policy was removed, the complete original policy records
+compared equal to the baseline and the instance redeployed. No retained policy
+was changed. Raw evidence and restoration receipts remain in ignored
+provisioning capture storage; #1393 records the receipt. This does not verify
+accepted v1 rate headers, streaming or SDK budget updates on A2A calls.
+
 ## Remaining Verification
 
 These captures do not verify Bedrock content blocks, response-phase guardrails,
 v1 or streaming quality evaluation, evaluator failures, accepted-call
-rate headers, successful streaming, authorization-code authentication failures,
+v1 rate headers, successful streaming, authorization-code authentication failures,
 token forwarding/removal, caching or a completed OAuth flow. #1393
 remains open. Attaching `a2a-v1-pii-detector` 1.0.0 to the existing `a2a`
 instance returned HTTP 400 `PolicyValidationError`: the policy requires an

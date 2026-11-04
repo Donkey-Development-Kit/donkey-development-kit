@@ -92,6 +92,20 @@ def test_quality_evaluation_annotates_a_successful_response() -> None:
     assert not (_FIXTURES / "v03-quality-send.body.json").exists()
 
 
+def test_accepted_v03_call_carries_rate_window_headers() -> None:
+    """Section 4: selected rate headers also annotate an accepted v0.3 send."""
+    response = _response("v03-rate-accepted-send")
+    assert response.status_code == 200
+    assert dict(response.headers) == {
+        "content-type": "application/json",
+        "x-token-limit": "1000",
+        "x-token-remaining": "995",
+        "x-token-reset": "55454",
+    }
+    # The live agent message body is omitted, not empty on the wire.
+    assert not (_FIXTURES / "v03-rate-accepted-send.body.json").exists()
+
+
 def test_pii_refusal_embeds_synthetic_findings_in_string_data() -> None:
     """Section 4: v0.3 PII echoes findings in data, not a v1 ErrorInfo list."""
     response = _response("v03-pii-send")
