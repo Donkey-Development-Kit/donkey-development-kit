@@ -16,7 +16,7 @@ import pytest
 
 import donkey_kit
 import donkey_kit.experimental
-from donkey_kit import Approval, DonkeyError
+from donkey_kit import Approval, DonkeyError, GatewayAuthChallenge
 
 _APPROVAL = Approval(
     id="a-1",
@@ -30,6 +30,13 @@ _APPROVAL = Approval(
 # Keyword arguments a subclass cannot be built without. Every other subclass
 # takes only the message.
 _REQUIRED_KWARGS: dict[str, dict[str, Any]] = {
+    "GatewayAuthRequired": {
+        "challenge": GatewayAuthChallenge(
+            "provider", "authorize", "token", (), "audience", "redirect", "code", "S256", "form"
+        ),
+        "task_id": "task",
+        "context_id": "context",
+    },
     "ApprovalRejected": {"approval": _APPROVAL},
     "ApprovalRequired": {"approval": _APPROVAL},
     "ApprovalTimedOut": {"approval": _APPROVAL},

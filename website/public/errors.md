@@ -590,8 +590,12 @@ lives on a separate client: model calls never fetch, send or refresh it. See
 
 The scoped outbound A2A plane is different: **no automatic replay**, including
 401 refresh/re-send, every 5xx, refusal-handler actions and stream
-resubscription. Model retry settings do not override this. A task returned
-with `auth-required` stays an SDK task response, not a completed OAuth flow.
+resubscription. Model retry settings do not override this. The captured v0.3
+`auth-required` task with complete `authChallenge` metadata raises
+`GatewayAuthRequired`, carrying a frozen challenge and returned task/context
+IDs. It is not a refusal, CIBA polling outcome, or completed OAuth flow.
+Unknown layouts and v1 tasks stay SDK responses. See
+[Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
 Leaving a stream context cleans up locally, not by cancelling the remote task.
 The facade is OFFLINE-VERIFIED; successful gateway send and SSE are NOT live
 verified by this implementation yet. Refusal captures do not prove SSE success.
