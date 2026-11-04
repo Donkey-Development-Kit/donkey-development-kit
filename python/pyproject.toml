@@ -266,10 +266,12 @@ packages = ["src/donkey_kit"]
 # finds them. Their READMEs are capture provenance for reviewers, not runtime
 # data, and stay out of the published (immutable) wheel (#821).
 # #1391 explicitly preserves the two MCP provenance records with their captures.
+# #1397 likewise preserves the served A2A subset's original provenance record.
 exclude = [
     "src/donkey_kit/simulator/_fixtures/**/README.md",
     "!src/donkey_kit/simulator/_fixtures/anypoint/mcp_access/README.md",
     "!src/donkey_kit/simulator/_fixtures/anypoint/mcp_policies/README.md",
+    "!src/donkey_kit/simulator/_fixtures/anypoint/a2a_policies/README.md",
 ]
 
 # An explicit sdist file list, so local caches and scratch files never ship (#746).

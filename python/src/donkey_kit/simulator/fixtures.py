@@ -111,6 +111,9 @@ _KEEP_EXACT = frozenset(
         _wire.WWW_AUTHENTICATE_HEADER,
         _wire.RETRY_AFTER_HEADER,
         _wire.INJECTION_PROTECTION_HEADER,
+        _wire.A2A_AZURE_GUARDRAIL_ACTION_HEADER,
+        _wire.A2A_AZURE_GUARDRAIL_PHASE_HEADER,
+        _wire.A2A_AZURE_GUARDRAIL_REASON_HEADER,
         _wire.CORRELATION_ID_HEADER.lower(),
         _wire.REQUEST_ID_HEADER,
         _wire.ANTHROPIC_REQUEST_ID_HEADER,
@@ -367,6 +370,21 @@ SHAPES: dict[str, _Spec] = {
         200,
     ),
 }
+
+# Ingress-only A2A v1 evidence (#1397): not model-route sentinels or new scenarios.
+# Each method has its own #1393 capture, even where the bodies happen to match.
+SHAPES.update(
+    {
+        f"a2a-v1-{policy}-{method}": _Spec(
+            "anypoint/a2a_policies",
+            f"v1-{policy}-{method}.headers.txt",
+            f"v1-{policy}-{method}.body.json" if policy != "rate" else None,
+            status,
+        )
+        for policy, status in (("azure-block", 403), ("pii", 403), ("rate", 429))
+        for method in ("send", "stream")
+    }
+)
 
 # The package-data directory every row resolves to. Rows 3/4/6 live in
 # _fixtures/rejections/; the rest alias _fixtures/anypoint/llm_proxy/.

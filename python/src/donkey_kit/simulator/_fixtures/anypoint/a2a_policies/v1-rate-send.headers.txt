@@ -1,0 +1,11 @@
+HTTP/1.1 429 Too Many Requests
+x-token-limit: 1
+x-token-remaining: 1
+x-token-reset: 60000
+date: Mon, 02 Nov 2026 15:57:38 GMT
+server: Anypoint Flex Gateway
+content-length: 0
+x-correlation-id: 00000000-0000-4000-8000-e28822c98515
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Close
+

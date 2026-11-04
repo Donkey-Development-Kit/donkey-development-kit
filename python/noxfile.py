@@ -224,6 +224,15 @@ for path, digest in mcp_lock.items():
     directory, name = path.rsplit("/", 1)
     assert "sha256:" + hashlib.sha256(fixtures.fixture_bytes(directory, name)).hexdigest() == digest
 assert fixtures.fixture_bytes("anypoint", "README.mcp.md")
+
+# #1397: ingress refusals use the served lock and method-specific v1 captures.
+for policy in ("azure-block", "pii", "rate"):
+    for method in ("send", "stream"):
+        fixture = fixtures.load(f"a2a-v1-{policy}-{method}")
+        assert fixture.status == (429 if policy == "rate" else 403)
+        assert (fixture.body == b"") == (policy == "rate")
+assert fixtures.fixture_bytes("anypoint/a2a_policies", "README.md")
+assert fixtures.fixture_bytes("anypoint", "README.a2a.md")
 """
 
 _DEAD = "http://127.0.0.1:9"  # a closed port: any request through it fails

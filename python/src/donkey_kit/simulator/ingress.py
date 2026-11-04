@@ -1,22 +1,24 @@
 """``build_ingress`` — the simulated A2A ingress behind ``donkey dev`` (BG §2.9.3, #1284).
 
 Option B of BG §2.9.3: a local fake gateway in front of the app
-``donkey.serve()`` runs, replaying the simulator's **shared rejection
-fixtures** (the same files ``core.errors.classify()`` and ``donkey mock`` are
-tested against) on inbound A2A calls, so a plain A2A client sees the real
-rejection bytes and the agent's own bytes otherwise.
+``donkey.serve()`` runs, replaying **captured A2A v1 rejection fixtures**
+(docs/verified-apis.md section 4, #1393) on inbound A2A calls, so a plain A2A
+client sees the real rejection bytes and the agent's own bytes otherwise.
 
 A *call* is a JSON-RPC ``SendMessage`` or ``SendStreamingMessage`` POST. The
 ``--scenario`` rules run on its text parts, and a hit is answered with the
 fixture before the agent sees the call. Every other request (the agent card,
 ``GetTask``, ``CancelTask``, …) passes straight through, and so does a call no
-rule rejects; the ``request_limit`` trio rides on a passing call's response.
+rule rejects. ``request_limit`` counts calls only to trigger the captured token
+rate refusal; it synthesizes no headers, on passing calls or rejections.
 A POST body over :data:`MAX_BODY_BYTES` is answered with a ``413`` instead.
 
-What it is NOT: no A2A agent instance's rejections have been captured live yet
-(#226/#1278), so the shapes are the LLM-proxy ones (docs/verified-apis.md §4),
-answered at the HTTP level before the agent sees the call. It enforces no
-policy and forwards no traffic off the machine. Every response carries
+What it is NOT: policy evaluation, token counting, outbound A2A simulation or
+authorization-code simulation. Send and streaming calls use their matching
+request-phase HTTP captures, not SSE refusal events. Response IDs and diagnostic
+bytes stay captured evidence, not a promise of ID rewriting or policy identity
+(the PII envelope is ambiguous). It enforces no policy and forwards no traffic
+off the machine. Every response carries
 ``x-donkey-simulator: true`` (BG §1.4, non-negotiable).
 
 Framework isolation: a plain ASGI wrapper over the stdlib and the framework-free
@@ -37,7 +39,6 @@ from .scenarios import (
     FaultScenario,
     RequestLimitScenario,
     ScenarioError,
-    ScenarioHit,
 )
 
 __all__ = ["CALL_METHODS", "MAX_BODY_BYTES", "build_ingress", "call_text", "check_scenarios"]
@@ -62,6 +63,11 @@ def check_scenarios(scenarios: tuple[FaultScenario, ...]) -> None:
         if isinstance(scenario, BudgetScenario):
             raise ScenarioError(
                 "budget counts model tokens, which an inbound A2A call does not carry; "
+                "use request_limit, pii_block or injection"
+            )
+        if scenario.name not in {"injection", "pii_block", "request_limit"}:
+            raise ScenarioError(
+                f"{scenario.name} has no matching captured A2A v1 ingress refusal; "
                 "use request_limit, pii_block or injection"
             )
 
@@ -99,18 +105,14 @@ class _Ingress:
             key=lambda s: order.get(s.name, 99),
         )
 
-    def _decide(self, text: str) -> tuple[ScenarioHit | None, dict[str, str]]:
-        """The rejection for this call, if any, and the headers a passing call carries."""
+    def _decide(self, text: str) -> str | None:
+        """Select A2A evidence using the shared rules, not their LLM shape or overrides."""
         for scenario in self._reject:
-            hit = scenario.on_call(text)
-            if hit is not None:
-                return hit, {}
-        if self._request_limit is None:
-            return None, {}
-        hit = self._request_limit.on_call(text)
-        if hit is not None:
-            return hit, {}
-        return None, self._request_limit.happy_path_headers()
+            if scenario.on_call(text) is not None:
+                return {"injection": "azure-block", "pii_block": "pii"}[scenario.name]
+        if self._request_limit is not None and self._request_limit.on_call(text) is not None:
+            return "rate"
+        return None
 
     async def __call__(
         self, scope: MutableMapping[str, Any], receive: _Receive, send: _Send
@@ -127,13 +129,14 @@ class _Ingress:
         except ValueError:
             payload = None  # not JSON: the agent's own JSON-RPC parse error answers it
         text = call_text(payload)
-        extra: dict[str, str] = {}
         if text is not None:
-            hit, extra = self._decide(text)
-            if hit is not None:
-                await _send_fixture(send, load(hit.shape), hit.extra_headers)
+            policy = self._decide(text)
+            if policy is not None:
+                assert isinstance(payload, dict)  # call_text only accepts JSON-RPC call objects.
+                method = "stream" if payload["method"] == "SendStreamingMessage" else "send"
+                await _send_fixture(send, load(f"a2a-v1-{policy}-{method}"))
                 return
-        await self._agent(scope, _replay(body, receive), _with_headers(send, extra))
+        await self._agent(scope, _replay(body, receive), send)
 
 
 def _declared_length(scope: MutableMapping[str, Any]) -> int | None:
@@ -199,23 +202,9 @@ def _replay(body: bytes, receive: _Receive) -> _Receive:
     return _receive
 
 
-def _with_headers(send: _Send, extra: dict[str, str]) -> _Send:
-    if not extra:
-        return send
-    encoded = [(k.encode("latin-1"), v.encode("latin-1")) for k, v in extra.items()]
-
-    async def _send(message: MutableMapping[str, Any]) -> None:
-        if message.get("type") == "http.response.start":
-            message["headers"] = [*message.get("headers", []), *encoded]
-        await send(message)
-
-    return _send
-
-
-async def _send_fixture(send: _Send, fixture: Fixture, extra: dict[str, str]) -> None:
+async def _send_fixture(send: _Send, fixture: Fixture) -> None:
     """Answer with the fixture's status and bytes, as the simulator replays them."""
     headers = replay_headers(fixture)
-    headers.update(extra)
     if fixture.content_type is not None:
         headers["content-type"] = fixture.content_type
     headers["content-length"] = str(len(fixture.body))
@@ -240,7 +229,8 @@ def build_ingress(agent: ASGIApp, scenarios: tuple[FaultScenario, ...] = ()) -> 
     passes through and only the honesty header is added.
 
     Raises:
-        ScenarioError: A rule has no meaning on an inbound call (``budget``).
+        ScenarioError: A rule has no meaning on an inbound call (``budget``),
+            or no matching captured v1 refusal (``ciba``).
     """
     check_scenarios(scenarios)
     return _HonestyStamp(_Ingress(agent, scenarios))

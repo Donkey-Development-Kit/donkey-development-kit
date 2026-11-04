@@ -341,16 +341,19 @@ would advertise the gateway's.
   is a call. The `--scenario` rules run on its text parts, and a rule that
   fires answers with a rejection before the agent sees the call. The rules are
   the [simulator's](https://docs.donkey-kit.dev/simulator.md#scenario-scripting) `injection`, `pii_block` and
-  `request_limit`. A call that passes `request_limit` carries the
-  `x-ratelimit-*` headers. `budget` is refused, because it counts model tokens
-  and an inbound call carries none.
+  `request_limit`. Here `request_limit` counts calls only to trigger replay of
+  the captured token-rate refusal; it does not count tokens or add headers to
+  passing calls. `budget` is refused because it counts model tokens, and `ciba`
+  is refused because no matching v1 ingress refusal has been captured.
 - **Everything else passes through.** The agent card, `GetTask`, `CancelTask`
   and every call no rule rejects reach the agent. A plain A2A client gets the
   agent's own bytes.
-- **Rejections are the simulator's fixtures.** A rejection is the same status
-  and bytes `donkey mock` replays and the [error taxonomy](https://docs.donkey-kit.dev/errors.md) is tested
-  against, so a caller using `donkey-kit` gets the typed exception, a
-  `PromptInjectionBlocked` rather than a raw `400`.
+- **Rejections are captured A2A v1 responses, not LLM proxy responses.** Each
+  method uses its own captured variant. `injection` replays Azure's prompt-shield
+  `403` with `x-flex-azure-guardrails-{action,phase,reason}` headers, classified
+  as `ContentSafetyBlocked`. `pii_block` replays the captured `403` `ErrorInfo`
+  envelope, which remains an ambiguous `ToolInvocationError`, not `PIIDetected`.
+  Streaming refusals are request-phase HTTP responses, not SSE error events.
 - **Every response carries `x-donkey-simulator: true`.** That includes the
   responses the agent produced.
 - **Request bodies are capped at 4 MiB.** A larger `POST` gets a `413` from the
@@ -360,11 +363,24 @@ would advertise the gateway's.
   agent doesn't authenticate callers, so anyone who can reach the port can call
   the agent.
 
-  **The rejection shapes are the LLM proxy's, not captured from an A2A
-  instance.** The fixtures were captured from LLM proxies; how the gateway
-  answers a policy rejection on an A2A agent instance has not been captured
-  yet. Like `donkey mock`, `donkey dev` replays and enforces no policy: you
-  choose the rejection with a `--scenario` rule.
+  **Replay is not policy evaluation or protocol emulation.** You choose when a
+  capture is returned; the matching substring is not an Azure policy verdict.
+  Response bodies retain the captured string ID `"1393"` rather than rewriting
+  it to your request ID. PII bodies retain synthetic findings; avoid logging raw
+  responses. `request_limit` returns a bare `429` classified as
+  `TokenBudgetExceeded`, with the captured `x-token-limit: 1`,
+  `x-token-remaining: 1` and `x-token-reset: 60000` milliseconds, no `retry-after`.
+  These values do not describe your local request counter or reset clock.
+  Accepted-call rate headers have not been captured, so none are synthesized.
+  The ingress simulates neither outbound A2A calls nor authorization-code flows.
+
+The stock v1 `a2a-sdk` 1.2.2 JSON-RPC transport generates UUID request IDs. In the
+tested send and stream calls, it raises `A2AClientError` caused by
+`httpx.HTTPStatusError` on these `403`/`429` responses before decoding the RPC
+error or checking response IDs. This proves HTTP refusal handling only, not
+successful ID correlation or compatibility with clients that require matching
+IDs. The classifications above describe DDK's classifier, not the stock SDK's
+exception types.
 
 `donkey dev` doesn't run a real Omni Gateway locally. A self-managed gateway in
 Local Mode doesn't support the A2A policies, and it has to register with an

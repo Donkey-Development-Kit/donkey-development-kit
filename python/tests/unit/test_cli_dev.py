@@ -8,10 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
-
-pytest.importorskip("a2a", reason="needs the [a2a] extra")
-pytest.importorskip("uvicorn", reason="needs the [local] extra")
 
 from donkey_kit.cli import app
 
@@ -41,6 +39,8 @@ def _combined(result: object) -> str:
 
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    pytest.importorskip("a2a", reason="needs the [a2a] extra")
+    pytest.importorskip("uvicorn", reason="needs the [local] extra")
     (tmp_path / "dev_agent_1284.py").write_text(_AGENT, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "path", list(sys.path))
@@ -62,6 +62,24 @@ def test_dev_serves_the_target_behind_the_ingress(project: dict[str, Any]) -> No
     assert project["port"] == 9123
     assert "SIMULATED gateway ingress" in result.stdout
     assert "x-donkey-simulator: true" in result.stdout
+    assert "captured A2A v1" in result.stdout
+    assert "request_limit is a replay trigger" in result.stdout
+    assert "captured response IDs" in result.stdout
+    assert "LLM-proxy fixtures" not in result.stdout
+
+
+@pytest.mark.parametrize("force_color", ["0", "1"])
+def test_dev_help_describes_captured_a2a_replay_boundaries(force_color: str) -> None:
+    result = runner.invoke(app, ["dev", "--help"], env={"FORCE_COLOR": force_color})
+    assert result.exit_code == 0, _combined(result)
+    # Rich wraps the help with borders; normalize those independently of terminal width.
+    text = " ".join(unstyle(result.stdout).replace("│", " ").split())
+    assert "captured A2A v1" in text
+    assert "request_limit is a replay trigger" in text
+    assert "captured response IDs" in text
+    assert "no policy" in text
+    assert "LLM-proxy ones" not in text
+    assert "No A2A agent instance" not in text
 
 
 @pytest.mark.parametrize(

@@ -10,23 +10,68 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
 
-pytest.importorskip("a2a", reason="needs the [a2a] extra")
-
-from donkey_kit import A2ATask, Donkey, PIIDetected, PromptInjectionBlocked
+from donkey_kit import A2ATask, ContentSafetyBlocked, Donkey, TokenBudgetExceeded
 from donkey_kit.a2a import build_app
-from donkey_kit.core.errors import RequestRateLimitExceeded, classify
+from donkey_kit.core.errors import classify
+from donkey_kit.experimental import ToolInvocationError
 from donkey_kit.simulator import ingress
 from donkey_kit.simulator.app import SIMULATOR_HEADER
-from donkey_kit.simulator.fixtures import load
-from donkey_kit.simulator.ingress import build_ingress, call_text
+from donkey_kit.simulator.fixtures import Fixture, parse_headers, parse_status, replay_headers
+from donkey_kit.simulator.ingress import build_ingress, call_text, check_scenarios
 from donkey_kit.simulator.scenarios import ScenarioError, parse_scenarios
 
 _CARD = "/.well-known/agent-card.json"
+_CAPTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "a2a_policies"
+
+
+def _captured(name: str) -> Fixture:
+    raw = (_CAPTURES / f"{name}.headers.txt").read_text()
+    status = parse_status(raw)
+    assert status is not None
+    headers = parse_headers(raw)
+    body = _CAPTURES / f"{name}.body.json"
+    return Fixture(
+        name,
+        status,
+        headers,
+        body.read_bytes() if body.exists() else b"",
+        headers.get("content-type"),
+    )
+
+
+def _assert_replay(response: httpx.Response, fixture: Fixture) -> None:
+    assert response.status_code == fixture.status
+    assert response.content == fixture.body
+    expected = {
+        **replay_headers(fixture),
+        "content-length": str(len(fixture.body)),
+        SIMULATOR_HEADER: "true",
+    }
+    if fixture.content_type is not None:
+        expected["content-type"] = fixture.content_type
+    assert dict(response.headers) == expected
+    assert {
+        "authorization",
+        "proxy-authorization",
+        "client_id",
+        "client_secret",
+        "x-client-id",
+        "api-key",
+        "x-api-key",
+        "server",
+        "date",
+        "connection",
+        "transfer-encoding",
+        "strict-transport-security",
+        "set-cookie",
+    }.isdisjoint(response.headers)
 
 
 def _send(text: str, method: str = "SendMessage", msg_id: str = "m1") -> dict[str, Any]:
@@ -51,6 +96,7 @@ def _echo() -> Any:
 
 @asynccontextmanager
 async def _client(*specs: str, ingress: bool = True) -> AsyncIterator[httpx.AsyncClient]:
+    pytest.importorskip("a2a", reason="the served-agent tests need the [a2a] extra")
     agent: Any = build_app(_echo())
     app: Any = build_ingress(agent, parse_scenarios(list(specs))) if ingress else agent
     async with (
@@ -80,17 +126,29 @@ async def test_a_passing_call_reaches_the_agent() -> None:
     assert task["artifacts"][0]["parts"] == [{"text": "echo: hello"}]
 
 
-async def test_a_rejection_is_the_shared_fixture_byte_for_byte() -> None:
-    fixture = load("injection-protection")
+@pytest.mark.parametrize(
+    "method,suffix", [("SendMessage", "send"), ("SendStreamingMessage", "stream")]
+)
+async def test_injection_replays_the_matching_azure_capture(method: str, suffix: str) -> None:
+    """BG section 2.9.3 / #1393: prompt shield is a captured 403, not an LLM 400."""
+    fixture = _captured(f"v1-azure-block-{suffix}")
     async with _client("injection:on-pattern=drop table") as c:
-        response = await c.post("/", json=_send("please DROP TABLE users"), headers=_HEADERS)
-    assert response.status_code == fixture.status
-    assert response.content == fixture.body
-    assert response.headers[SIMULATOR_HEADER] == "true"
-    assert isinstance(classify(response), PromptInjectionBlocked)
+        response = await c.post(
+            "/", json=_send("please DROP TABLE users", method=method), headers=_HEADERS
+        )
+    _assert_replay(response, fixture)
+    assert response.headers["x-flex-azure-guardrails-action"] == "reject"
+    assert response.headers["x-flex-azure-guardrails-phase"] == "request"
+    assert response.headers["x-flex-azure-guardrails-reason"] == "prompt_shield"
+    # Captured evidence, not an invented ID-rewrite contract.
+    assert response.json()["id"] == "1393"
+    assert type(classify(response)) is ContentSafetyBlocked
 
 
-async def test_pii_block_counts_calls_only() -> None:
+@pytest.mark.parametrize(
+    "method,suffix", [("SendMessage", "send"), ("SendStreamingMessage", "stream")]
+)
+async def test_pii_block_counts_calls_only(method: str, suffix: str) -> None:
     async with _client("pii_block:every=2") as c:
         first = await c.post("/", json=_send("one", msg_id="a"), headers=_HEADERS)
         # A card read and a GetTask are not calls: they neither count nor get rejected.
@@ -98,22 +156,129 @@ async def test_pii_block_counts_calls_only() -> None:
         task_id = first.json()["result"]["task"]["id"]
         get = {"jsonrpc": "2.0", "id": 2, "method": "GetTask", "params": {"id": task_id}}
         assert (await c.post("/", json=get, headers=_HEADERS)).status_code == 200
-        second = await c.post("/", json=_send("two", msg_id="b"), headers=_HEADERS)
+        second = await c.post("/", json=_send("two", method=method, msg_id="b"), headers=_HEADERS)
     assert first.status_code == 200
-    assert second.content == load("pii-detected").body
-    assert isinstance(classify(second), PIIDetected)
+    _assert_replay(second, _captured(f"v1-pii-{suffix}"))
+    assert type(classify(second)) is ToolInvocationError
 
 
-async def test_request_limit_adds_the_trio_then_rejects() -> None:
+@pytest.mark.parametrize(
+    "method,suffix", [("SendMessage", "send"), ("SendStreamingMessage", "stream")]
+)
+async def test_request_limit_triggers_captured_rate_shape_without_accepted_headers(
+    method: str, suffix: str
+) -> None:
     async with _client("request_limit:limit=1,window=60s") as c:
         first = await c.post("/", json=_send("one", msg_id="a"), headers=_HEADERS)
-        second = await c.post("/", json=_send("two", msg_id="b"), headers=_HEADERS)
+        second = await c.post("/", json=_send("two", method=method, msg_id="b"), headers=_HEADERS)
     assert first.status_code == 200
-    assert first.headers["x-ratelimit-limit"] == "1"
-    assert first.headers["x-ratelimit-remaining"] == "0"
-    assert second.status_code == 429
-    assert second.content == load("request-rate-limit").body
-    assert isinstance(classify(second), RequestRateLimitExceeded)
+    assert not any(key.startswith(("x-ratelimit-", "x-token-")) for key in first.headers)
+    _assert_replay(second, _captured(f"v1-rate-{suffix}"))
+    assert second.headers["x-token-remaining"] == "1"
+    assert second.headers["x-token-reset"] == "60000"
+    assert "retry-after" not in second.headers
+    assert type(classify(second)) is TokenBudgetExceeded
+
+
+async def test_request_limit_rollover_and_rejection_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The request window triggers replay only; rejected calls do not spend it."""
+    now = 0.0
+    monkeypatch.setattr("donkey_kit.simulator.scenarios.time.monotonic", lambda: now)
+    async with _client(
+        "request_limit:limit=1,window=60s", "pii_block:every=2", "injection:on-pattern=block"
+    ) as c:
+        injection = await c.post("/", json=_send("BLOCK"), headers=_HEADERS)
+        first = await c.post("/", json=_send("hello"), headers=_HEADERS)
+        pii = await c.post("/", json=_send("hello"), headers=_HEADERS)
+        rate = await c.post("/", json=_send("hello"), headers=_HEADERS)
+        now = 60.0
+        await c.post("/", json=_send("hello"), headers=_HEADERS)  # PII takes precedence.
+        reset = await c.post("/", json=_send("hello"), headers=_HEADERS)
+    _assert_replay(injection, _captured("v1-azure-block-send"))
+    assert first.status_code == reset.status_code == 200
+    _assert_replay(pii, _captured("v1-pii-send"))
+    _assert_replay(rate, _captured("v1-rate-send"))
+
+
+async def test_passing_stream_is_forwarded_without_reframing() -> None:
+    """An arbitrary ASGI stream remains byte-identical, with only the honesty stamp."""
+    received = []
+
+    async def agent(scope: Any, receive: Any, send: Any) -> None:
+        received.append(await receive())
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"text/event-stream"), (b"x-agent", b"yes")],
+            }
+        )
+        await send({"type": "http.response.body", "body": b"data: one\n\n", "more_body": True})
+        await send({"type": "http.response.body", "body": b"data: two\n\n"})
+
+    app = build_ingress(agent, parse_scenarios(["request_limit:limit=1,window=60s"]))
+    body = json.dumps(_send("hello", method="SendStreamingMessage")).encode()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://agent"
+    ) as c:
+        response = await c.post("/", content=body, headers=_HEADERS)
+    assert received == [{"type": "http.request", "body": body, "more_body": False}]
+    assert response.content == b"data: one\n\ndata: two\n\n"
+    assert dict(response.headers) == {
+        "content-type": "text/event-stream",
+        "x-agent": "yes",
+        SIMULATOR_HEADER: "true",
+    }
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "scenario,policy,status",
+    [
+        ("injection:on-pattern=block", "azure-block", 403),
+        ("pii_block:every=1", "pii", 403),
+        ("request_limit:limit=1,window=60s", "rate", 429),
+    ],
+)
+async def test_official_sdk_generated_id_receives_http_refusal_without_id_rewrite(
+    stream: bool, scenario: str, policy: str, status: int
+) -> None:
+    """Stock v1 SDK raises at HTTP status, before RPC correlation or SSE decoding."""
+    sdk = pytest.importorskip("a2a.types")
+    from a2a.client.errors import A2AClientError
+    from a2a.client.transports.jsonrpc import JsonRpcTransport
+    from google.protobuf import json_format
+
+    async def agent(scope: Any, receive: Any, send: Any) -> None:
+        pytest.fail("A refusal must not reach the agent")
+
+    scenarios = parse_scenarios([scenario])
+    if policy == "rate":
+        assert scenarios[0].on_call("") is None  # Spend the permitted request before the SDK call.
+    app = build_ingress(agent, scenarios)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://agent", headers=_HEADERS
+    ) as client:
+        transport = JsonRpcTransport(client, sdk.AgentCard(), "http://agent/")
+        request = json_format.ParseDict(_send("block")["params"], sdk.SendMessageRequest())
+        with pytest.raises(A2AClientError, match=f"HTTP Error {status}") as caught:
+            if stream:
+                events = [event async for event in transport.send_message_streaming(request)]
+                pytest.fail(f"Expected an HTTP refusal, got {events}")
+            else:
+                await transport.send_message(request)
+    cause = caught.value.__cause__
+    assert type(caught.value) is A2AClientError
+    assert isinstance(cause, httpx.HTTPStatusError)
+    response = cause.response
+    payload = json.loads(cause.request.content)
+    assert str(UUID(payload["id"])) == payload["id"]
+    assert payload["method"] == ("SendStreamingMessage" if stream else "SendMessage")
+    _assert_replay(response, _captured(f"v1-{policy}-{'stream' if stream else 'send'}"))
+    if policy != "rate":
+        assert response.json()["id"] == "1393" != payload["id"]
 
 
 async def test_a_non_json_post_reaches_the_agent() -> None:
@@ -176,7 +341,12 @@ async def test_a_streamed_body_stops_being_read_at_the_cap(
 
 def test_budget_is_refused() -> None:
     with pytest.raises(ScenarioError, match="model tokens"):
-        build_ingress(build_app(_echo()), parse_scenarios(["budget:limit=10,window=60s"]))
+        check_scenarios(parse_scenarios(["budget:limit=10,window=60s"]))
+
+
+def test_ciba_has_no_matching_v1_ingress_capture() -> None:
+    with pytest.raises(ScenarioError, match="captured A2A v1"):
+        check_scenarios(parse_scenarios(["ciba:pending=1"]))
 
 
 @pytest.mark.parametrize(

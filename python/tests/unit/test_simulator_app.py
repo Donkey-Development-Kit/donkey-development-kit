@@ -216,6 +216,29 @@ async def test_unknown_sentinel_suffix_falls_through_to_happy_path() -> None:
     assert resp.content == fx.load("success").body
 
 
+@pytest.mark.parametrize(
+    "shape",
+    [
+        f"a2a-v1-{policy}-{method}"
+        for policy in ("azure-block", "pii", "rate")
+        for method in ("send", "stream")
+    ],
+)
+async def test_a2a_ingress_shapes_are_not_model_route_sentinels(shape: str) -> None:
+    """BG section 2.9.3: packaged A2A evidence must not leak into model-call protocols."""
+    async with _client() as client:
+        for route, success in (
+            ("/responses", "success"),
+            ("/chat/completions", "chat-success"),
+            ("/v1/messages", "anthropic-success"),
+            (f"/models/{SIM_MODEL_PREFIX}{shape}:generateContent", "gemini-success"),
+        ):
+            response = await client.post(route, json={"model": SIM_MODEL_PREFIX + shape})
+            assert response.status_code == 200
+            assert response.content == fx.load(success).body
+            assert response.headers[SIMULATOR_HEADER] == "true"
+
+
 async def test_semantic_success_sentinel_replays_the_semantic_routing_200() -> None:
     # The happy-path sentinel forces the Semantic-routing 200 (#601): a byte-faithful
     # replay of the live 'Finance' capture, honesty-stamped, carrying routing_type
