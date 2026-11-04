@@ -1052,6 +1052,19 @@ refresh. These are offline checks against the local simulator and mock
 transports, not new live captures. The historical live evidence and the
 signature-only approval/middleware statuses above are unchanged.
 
+#### CrewAI release re-check (2026-11-04, #1582)
+
+The CrewAI contract lock now selects `crewai==1.15.35` with `crewai-cli`,
+`crewai-core`, and `crewai-tools` at the same version. On Python 3.12,
+`verify_frameworks.py --only crewai --require-installed --emit-verified`
+confirms construction and the expected native `OpenAICompletion` class.
+`nox -s 'adapter-contract(crewai)'` passes (5,234 passed, 631 skipped,
+28 deselected), including the strict example smoke. The pinned-version
+descriptor fixture comparison is skipped because no capture exists at 1.15.35;
+the descriptor shape tests still run. These are offline checks, not a new live
+gateway round-trip or fixture capture. Historical evidence and verification
+statuses remain unchanged.
+
 #### LiteLLM release re-check (2026-11-04, #1581)
 
 The ADK contract lock now selects `litellm==1.108.0`. On Python 3.12,
