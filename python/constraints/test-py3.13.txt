@@ -12,10 +12,10 @@ certifi==2026.10.23
 cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.0
-coverage==7.17.0
+coverage==7.17.2
 cryptography==50.0.2
 google-api-core==2.43.2
-google-auth==2.62.0
+google-auth==2.62.1
 googleapis-common-protos==1.76.0
 grimp==3.18
 h11==0.16.0
@@ -32,7 +32,7 @@ librt==0.16.0
 markdown-it-py==4.2.0
 mdurl==0.1.2
 mypy==2.4.1
-mypy-extensions==1.1.0
+mypy-extensions==1.2.0
 openai==3.45.0
 opentelemetry-api==1.45.2
 opentelemetry-exporter-http-transport==0.66b2
@@ -70,7 +70,7 @@ starlette==1.10.0
 truststore==0.10.5
 typer==0.27.3
 typing-extensions==4.16.0
-typing-inspection==0.4.4
+typing-inspection==0.4.5
 urllib3==2.8.0
 uvicorn==0.54.0
 vulture==2.16
