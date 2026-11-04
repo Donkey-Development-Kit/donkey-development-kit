@@ -67,6 +67,8 @@ ROOT_ALL = [
     "ExchangeRegistry",
     "GatewayApprovalDenied",
     "GatewayApprovalPending",
+    "GatewayAuthChallenge",
+    "GatewayAuthRequired",
     "GatewayUnavailable",
     "GovernanceCriteria",
     "LLMClient",

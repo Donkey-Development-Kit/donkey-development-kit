@@ -160,6 +160,16 @@ _.require_approval  # unused method (src/donkey_kit/tools/session.py)
 # ToolSet.wait_for_gateway_approval (#214) is public API; only user code and
 # tests/unit/test_step_up_wait.py call it.
 _.wait_for_gateway_approval  # unused method (src/donkey_kit/tools/session.py)
+# GatewayAuthChallenge fields are inspected by caller-owned OAuth code (#1396)
+# and tests/conformance/test_a2a_outbound.py; the SDK never runs that flow.
+secondary_auth_provider
+authorization_endpoint
+token_endpoint
+audience
+redirect_uri
+response_type
+code_challenge_method
+body_encoding
 # ToolSet staleness after a cached discover() (#221) is public API; only user
 # code and tests/unit/test_discover.py read it.
 _.discovered_at  # unused property (src/donkey_kit/tools/session.py)

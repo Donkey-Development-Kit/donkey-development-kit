@@ -73,7 +73,12 @@ if TYPE_CHECKING:
     from .core.reactions import OnRefusal
     from .core.refusals import TypedRefusals
     from .core.runledger import RunLedger, RunRefusal
-    from .core.step_up import GatewayApprovalDenied, GatewayApprovalPending
+    from .core.step_up import (
+        GatewayApprovalDenied,
+        GatewayApprovalPending,
+        GatewayAuthChallenge,
+        GatewayAuthRequired,
+    )
     from .core.telemetry import RunScope
     from .core.tool_access import ToolNotInProfile
     from .core.toolspec import AgentSpec, ToolSpec, registered_agents, registered_tools
@@ -124,6 +129,8 @@ _LAZY = {
     "ExchangeRegistry": ".registry",
     "GatewayApprovalDenied": ".core.step_up",
     "GatewayApprovalPending": ".core.step_up",
+    "GatewayAuthChallenge": ".core.step_up",
+    "GatewayAuthRequired": ".core.step_up",
     "GatewayUnavailable": ".core.errors",
     "GovernanceCriteria": ".registry",
     "LLMClient": ".llm.client",
@@ -246,6 +253,8 @@ __all__ = [
     "ExchangeRegistry",
     "GatewayApprovalDenied",
     "GatewayApprovalPending",
+    "GatewayAuthChallenge",
+    "GatewayAuthRequired",
     "GatewayUnavailable",
     "GovernanceCriteria",
     "LLMClient",

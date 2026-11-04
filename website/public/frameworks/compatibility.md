@@ -33,7 +33,7 @@ install takes each framework's newest release.
 | [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `connection_kwargs()` | `[strands]` | `strands-agents` | 1.57.1 | 1.63.0 | None known |
 | [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `connection_kwargs()` | `[agent_framework]` | `agent-framework` | 1.13 | 1.24.0 | None known |
 | [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | Conformance-tested | `[openai-agents]` | `openai-agents` | 0.20 | 0.24.0 | None known |
-|  |  |  | `openai` | 2.45 | 3.42.1 |  |
+|  |  |  | `openai` | 2.45 | 3.45.0 |  |
 | [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 2.4.0 | None known |
 | [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.35 | None known |
 | [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `connection_kwargs()` | `[llamaindex]` | `llama-index-llms-openai-like` | 0.8 | 0.8.1 | None known |
