@@ -181,7 +181,7 @@ def _pick(
     declared.issue(
         "missing-service",
         "donkey expose",
-        f"expose takes one service per run; name one of: {ids}",
+        f"expose takes one service per run; pass --service with one of: {ids}",
     )
     return None
 

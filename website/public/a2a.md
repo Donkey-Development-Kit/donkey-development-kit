@@ -240,7 +240,7 @@ match `donkey.serve()`, which fills them from the client's configuration.
 ## `donkey expose` — the ingress, registered from code Live
 
 ```
-$ donkey expose support-triage
+$ donkey expose --service support-triage
   ✓ environment                          present  Sandbox (…)
   ✓ gateway                              present  shared-omni-gateway, ingress port 8081
   ✓ registry                             created  support-triage: published 1.4.0

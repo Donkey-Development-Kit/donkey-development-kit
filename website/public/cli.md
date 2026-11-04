@@ -191,8 +191,8 @@ Global options go before the command (`donkey --json init`):
 
 | Option | Default | Meaning |
 |---|---|---|
-| `service` | none | The service ID to expose; optional when the project has exactly one. |
-| `--path` | `.` | The repository (or one .py file) to scan. |
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--service` | none | The service ID to expose; optional when the project has exactly one. |
 | `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
 | `--target` | none | The gateway's name; overrides the declared target. |
 | `--dry-run` | off | Only read: print what would be created, and change nothing. |
@@ -216,8 +216,8 @@ Global options go before the command (`donkey --json init`):
 
 | Option | Default | Meaning |
 |---|---|---|
-| `service` | none | The service ID to expose; optional when the project has exactly one. |
-| `--path` | `.` | The repository (or one .py file) to scan. |
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--service` | none | The service ID to expose; optional when the project has exactly one. |
 | `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
 | `--target` | none | The gateway's name; overrides the declared target. |
 | `--json` | off | Emit the report as JSON. |
