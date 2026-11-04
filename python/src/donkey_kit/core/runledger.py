@@ -46,7 +46,6 @@ __all__ = [
     "record_call",
     "record_refusal",
     "record_usage",
-    "unbind_run_ledger",
 ]
 
 #: How many calls, and separately how many refusals, a ledger keeps by default.
@@ -281,17 +280,13 @@ def checked_max_entries(value: int) -> int:
 
 
 def bind_run_ledger(run_id: str, max_entries: int) -> tuple[_Ledger, Token[_Ledger | None]]:
-    """Bind a fresh ledger for a run's block; the caller resets the token on exit."""
+    """Bind a fresh ledger for a run's block; the caller resets the token on exit
+    (``RunScope`` keeps it with the entry's other tokens, #1484)."""
     # A scope that rebinds the run's own id (an approval gate resuming a tool,
     # #211) keeps the run's ledger, so the tool's calls land in the run.
     outer = _run_ledger.get()
     ledger = outer if outer is not None and outer.run_id == run_id else _Ledger(run_id, max_entries)
     return ledger, _run_ledger.set(ledger)
-
-
-def unbind_run_ledger(token: Token[_Ledger | None]) -> None:
-    """Restore the ledger bound before :func:`bind_run_ledger`."""
-    _run_ledger.reset(token)
 
 
 def record_call(record: LastCall) -> None:
