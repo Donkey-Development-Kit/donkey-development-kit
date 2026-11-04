@@ -249,8 +249,9 @@ Where a green local `nox` and a red CI run can still differ:
   `pip-audit` action that audits the session's pin list, and the whole
   `dependency-review` and `action-self-test` jobs stay in the workflow.
 - **Other workflows.** `secret-scan`, the nightly matrix and the publish
-  workflows are not sessions. To scan the history as `secret-scan` does, run
-  `gitleaks git .` from the repository root.
+  workflows are not sessions. `secret-scan` scans a PR's own commits and, on a
+  push, the pushed branch's history. To scan your branch as a PR would, run
+  `gitleaks git --log-opts="origin/develop..HEAD" .` from the repository root.
 
 The `test-3.11` session's coverage step fails below the floor (`fail_under` in
 `[tool.coverage.report]`, `python/pyproject.toml`, #751); in CI it also posts the
@@ -258,8 +259,9 @@ report to the job summary. The floor only goes up. Raise it in the PR whose
 tests lift the total past the next integer, and never lower it to make a PR
 pass.
 
-**Commit hooks.** `pre-commit install` runs the checks that are fast on staged
-files at each commit: gitleaks (secrets, configured in `.gitleaks.toml`),
+**Commit hooks.** Run `pre-commit install` once per clone; the hooks then
+apply in every worktree of that clone. They run the checks that are fast on
+staged files at each commit: gitleaks (secrets, configured in `.gitleaks.toml`),
 `ruff check`, `ruff format`, `lint-imports`, and the llms regeneration when a
 website page changes. When a hook rewrites a file (`ruff format`, the llms
 generator), the commit fails; stage the change and commit again. The byte-exact
