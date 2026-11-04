@@ -336,6 +336,9 @@ guardrailed bot is exercised before it faces a real attack.
 
 ## A2A ingress replay
 
+See [A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md) for the version-specific
+capture inventory. Local replay verifies handling, not gateway enforcement.
+
 [`donkey dev`](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) wraps your served agent rather than the
 model routes above. It shares the fixture loader and scenario triggers, but
 replays captured **A2A v1** refusals for `SendMessage` and

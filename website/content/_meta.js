@@ -22,6 +22,7 @@ export default {
   identity: 'Identity',
   hitl: 'Human-in-the-loop',
   policies: 'Policy handshake',
+  'a2a-gateway-policies': 'A2A gateway policies',
   '-- observability': {
     type: 'separator',
     title: 'Observability',
