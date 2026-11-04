@@ -17,7 +17,7 @@ registry (#210), so a registration one test makes never leaks into the next.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from typing import TYPE_CHECKING, Any, Protocol
 
 from .core import classifier
@@ -26,11 +26,13 @@ if TYPE_CHECKING:
     from .core.transport import DonkeyAsyncClient, DonkeyClient
     from .donkey import Donkey
     from .integrations._base import Adapter
+    from .tools.session import ToolSet
 
 __all__ = [
     "SwappableClient",
     "http_clients",
     "isolated_classify",
+    "mcp_factory_scope",
     "resolved_adapters",
     "swap_transport",
     "transport_of",
@@ -68,6 +70,21 @@ def http_clients(donkey: Donkey) -> tuple[DonkeyAsyncClient, DonkeyClient]:
 def resolved_adapters(donkey: Donkey) -> Mapping[str, Adapter]:
     """The adapters resolved on ``donkey`` so far, by attribute name."""
     return donkey._adapter_cache
+
+
+@contextlib.contextmanager
+def mcp_factory_scope(tools: ToolSet, factory: Callable[..., Any]) -> Iterator[None]:
+    """Attach an owner-local MCP factory, restoring the previous one on exit (#1391)."""
+    state = tools._mcp_transport
+    previous = state.get("factory")
+    state["factory"] = factory
+    try:
+        yield
+    finally:
+        if previous is None:
+            state.pop("factory", None)
+        else:
+            state["factory"] = previous
 
 
 @contextlib.contextmanager

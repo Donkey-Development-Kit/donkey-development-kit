@@ -91,6 +91,66 @@ All four model routes share the `donkey-sim/`
 sentinel, the scenarios below, one shared budget window, and the
 `x-donkey-simulator` header. Any other route answers `404`.
 
+## MCP tool fault injection
+
+On `develop` (not yet in a released package),
+`donkey_kit.simulator.mcp.simulate_mcp()` injects a named captured refusal into
+one `ToolSet`. This is separate from `donkey.simulate(PIIDetected)`, which still
+targets model calls. Bind and connect inside the context; bindings made before
+entry are not intercepted.
+
+```python
+import httpx
+from donkey_kit.simulator.mcp import simulate_mcp
+
+# tools is an already-resolved, governed ToolSet. offline_backend is your
+# httpx request handler for MCP initialization, catalog reads and normal calls.
+with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(offline_backend)):
+    bound = await tools.langgraph()
+    await bound[0].ainvoke(arguments)
+```
+
+The required `httpx.MockTransport` baseline handles all unmatched traffic. It
+must implement your test backend's normal responses; this feature does not
+provide a full MCP server or mock Exchange discovery. There is no network
+fallback, environment-proxy routing or cross-endpoint redirect. Existing
+governance, endpoint-provenance and requester checks are not bypassed.
+
+| Capture name | Matching method | Existing behavior |
+| --- | --- | --- |
+| `pii-request` | `tools/call` | HTTP 403 JSON, request-phase `PIIDetected` |
+| `pii-response-sse` | `tools/call` | HTTP 403 JSON, response-phase `PIIDetected`, **not an SSE error event** |
+| `abac-denied`, `global-access` | `tools/call` | HTTP 200 access-denial error, `ToolNotInProfile` |
+| `schema-invalid-args` | `tools/call` | Ordinary ambiguous JSON-RPC error; no schema-specific type |
+| `poisoning-block-list` | `tools/list` | Captured SSE catalog error; no poisoning-specific type |
+
+`times=1` counts matching RPC requests across this scope's clients, not
+initialization, notifications or unrelated methods. Calls after that count use
+the offline baseline. The selector is method-wide: it does not match tool names
+or arguments, and captured diagnostics can name a different tool than your test.
+Nesting restores the outer factory. Filtered and approval-derived sets share
+the scope; unrelated ToolSets and model calls are unaffected. Do not overlap
+independent simulation contexts on the same ToolSet owner.
+
+Every injected response has `x-donkey-simulator: true`. Status, semantic headers,
+content type and error payload come from the capture, but the response ID is
+adapted to the outgoing request so native MCP sessions can correlate it. JSON
+is reserialized, including the SSE data envelope: this is **not byte-verbatim
+replay**. Original packaged files remain unchanged.
+
+Initial native binding coverage is LangGraph, LlamaIndex and Anthropic; other
+bindings refuse before connecting. LlamaIndex URLs selecting its legacy SSE
+transport (`/sse`, `/sse/` or `transport=sse`) also refuse because that transport
+ignores the injected client. A captured HTTP failure can end Anthropic's
+persistent MCP session and be raised again during context teardown. Wrap the
+whole binding context in `typed_refusals()` and reconnect before a later call.
+Keep sessions inside the simulation context. Clients retained past exit fail
+closed instead of reconnecting to the gateway. Raw exception responses and
+native framework diagnostics remain sensitive.
+
+For byte-verbatim HTTP replay without native session correlation, use the
+packaged captures below. Neither form establishes new live gateway evidence.
+
 ## Packaged MCP captures
 
 Separately, the package data contains **15 captured MCP responses**: 13 policy

@@ -128,31 +128,63 @@ async def test_list_tools_follows_the_cursor_with_the_headers(server: _Server) -
     assert server.headers["client_id"] == "c"
 
 
+@pytest.mark.parametrize("injected", [False, True])
 @pytest.mark.parametrize(("status", "error"), [(403, AuthError), (502, ToolInvocationError)])
 async def test_list_tools_maps_the_recorded_status(
-    server: _Server, status: int, error: type[Exception]
+    server: _Server, status: int, error: type[Exception], injected: bool
 ) -> None:
     server.status = status
     with pytest.raises(error, match=f"HTTP {status}"):
-        await mcp_module.list_tools("https://gw.example.test/x/", {}, server="x")
+        await mcp_module.list_tools(
+            "https://gw.example.test/x/",
+            {},
+            server="x",
+            **(
+                {"http_factory": lambda url, headers: httpx.AsyncClient(headers=headers)}
+                if injected
+                else {}
+            ),
+        )
 
 
-async def test_list_tools_raises_a_ciba_pending_answer_typed(server: _Server) -> None:
+@pytest.mark.parametrize("injected", [False, True])
+async def test_list_tools_raises_a_ciba_pending_answer_typed(
+    server: _Server, injected: bool
+) -> None:
     # The OBO policy's CIBA 401 is not a credential failure (docs/verified-apis.md §4, #1320).
     server.status = 401
     server.reply_headers = {"content-type": "application/json", "retry-after": "5"}
     server.body = b'{"error":"authorization_pending","error_description":"in progress"}'
     with pytest.raises(GatewayApprovalPending) as info:
-        await mcp_module.list_tools("https://gw.example.test/x/", {}, server="x")
+        await mcp_module.list_tools(
+            "https://gw.example.test/x/",
+            {},
+            server="x",
+            **(
+                {"http_factory": lambda url, headers: httpx.AsyncClient(headers=headers)}
+                if injected
+                else {}
+            ),
+        )
     assert info.value.retry_after == 5.0
 
 
-async def test_list_tools_raises_a_ciba_denial_typed(server: _Server) -> None:
+@pytest.mark.parametrize("injected", [False, True])
+async def test_list_tools_raises_a_ciba_denial_typed(server: _Server, injected: bool) -> None:
     server.status = 403
     server.reply_headers = {"content-type": "application/json"}
     server.body = b'{"error":"access_denied","error_description":"denied"}'
     with pytest.raises(GatewayApprovalDenied):
-        await mcp_module.list_tools("https://gw.example.test/x/", {}, server="x")
+        await mcp_module.list_tools(
+            "https://gw.example.test/x/",
+            {},
+            server="x",
+            **(
+                {"http_factory": lambda url, headers: httpx.AsyncClient(headers=headers)}
+                if injected
+                else {}
+            ),
+        )
 
 
 async def test_without_mcp_listing_says_what_to_install(monkeypatch: pytest.MonkeyPatch) -> None:

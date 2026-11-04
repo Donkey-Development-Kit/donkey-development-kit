@@ -169,6 +169,7 @@ class ToolSet:
         _user_header: str | None = None,
         _endpoint_check: Callable[[bool, bool], None] | None = None,
         _step_up_wait: float = 0.0,
+        _mcp_transport: dict[str, Callable[..., Any]] | None = None,
     ) -> None:
         self._servers = list(servers)
         # Every filter() call so far: a tool is exposed only if all accept it,
@@ -197,6 +198,7 @@ class ToolSet:
         self._endpoint_check = _endpoint_check
         # How long listing waits for a gateway step-up (CIBA) approval; 0 raises at once (#214).
         self._step_up_wait = _step_up_wait
+        self._mcp_transport = _mcp_transport if _mcp_transport is not None else {}
 
     def _with(
         self,
@@ -205,6 +207,7 @@ class ToolSet:
         _filters: tuple[ToolFilter, ...] | None = None,
         _approvals: tuple[ApprovalRule, ...] | None = None,
         _step_up_wait: float | None = None,
+        _mcp_transport: dict[str, Callable[..., Any]] | None = None,
     ) -> ToolSet:
         return ToolSet(
             _servers if _servers is not None else self._servers,
@@ -218,6 +221,7 @@ class ToolSet:
             _user_header=self._user_header,
             _endpoint_check=self._endpoint_check,
             _step_up_wait=self._step_up_wait if _step_up_wait is None else _step_up_wait,
+            _mcp_transport=self._mcp_transport if _mcp_transport is None else _mcp_transport,
         )
 
     @property
@@ -533,6 +537,7 @@ class ToolSet:
         return self._with(_servers=servers) if missing else self
 
     async def _list(self, indexes: list[int]) -> list[tuple[dict[str, object], ...]]:
+        factory = self._mcp_transport.get("factory")
         user = current_user() is not None
         for attempt in (1, 2):
             headers = await self._headers()
@@ -545,6 +550,7 @@ class ToolSet:
                                 self._servers[i].endpoint_url,
                                 headers,
                                 server=self._servers[i].ref.coordinates,
+                                **({"http_factory": factory} if factory else {}),
                             ),
                             timeout=self._step_up_wait,
                         )
@@ -616,6 +622,11 @@ class ToolSet:
         Each tool records who it is bound for, read with the headers' user
         token, so a per-tool call under another user is refused (#1418).
         """
+        if self._mcp_transport and not per_tool:
+            raise ConfigError(
+                "Offline MCP transport injection supports only LangGraph, "
+                "LlamaIndex and Anthropic bindings."
+            )
         described = await self.describe()
         servers = described.servers
         indexed = _index(servers, self._filters)
@@ -694,6 +705,7 @@ class ToolSet:
             ImportError: ``langchain-mcp-adapters`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from langchain_mcp_adapters.client import MultiServerMCPClient
         except ImportError as exc:
@@ -705,7 +717,7 @@ class ToolSet:
                     "transport": "streamable_http",
                     "url": server.endpoint_url,
                     "headers": dict(headers),
-                    "httpx_client_factory": client_factory(server.endpoint_url, headers),
+                    "httpx_client_factory": self._client_factory(server.endpoint_url, headers),
                 }
                 for server, _ in plan
             }
@@ -733,16 +745,25 @@ class ToolSet:
             ImportError: ``llama-index-tools-mcp`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from llama_index.core.tools import FunctionTool
             from llama_index.tools.mcp import BasicMCPClient, McpToolSpec
         except ImportError as exc:
             raise ImportError(_install("llamaindex", "llama-index-tools-mcp")) from exc
+        if self._mcp_transport:
+            from llama_index.tools.mcp.client import enable_sse
+
+            if any(enable_sse(server.endpoint_url) for server in self.servers):
+                raise ConfigError(
+                    "Offline MCP injection requires LlamaIndex streamable-HTTP endpoints; "
+                    "its legacy SSE transport ignores the injected client."
+                )
         plan, headers = await self._plan("llamaindex()", per_tool=True)
         bound: list[Any] = []
         for server, names in plan:
             # BasicMCPClient sends through a passed client and ignores headers= then.
-            http = client_factory(server.endpoint_url, headers)(headers=headers)
+            http = self._client_factory(server.endpoint_url, headers)(headers=headers)
             client = BasicMCPClient(server.endpoint_url, http_client=http)
             spec = McpToolSpec(client, allowed_tools=sorted(names))
             for tool in await spec.to_tool_list_async():
@@ -774,6 +795,7 @@ class ToolSet:
             ImportError: ``anthropic`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from anthropic.lib.tools import BetaAsyncFunctionTool
             from anthropic.lib.tools.mcp import async_mcp_tool
@@ -784,7 +806,11 @@ class ToolSet:
             bound: list[Any] = []
             for server, names in plan:
                 session = await stack.enter_async_context(
-                    open_session(server.endpoint_url, headers)
+                    open_session(
+                        server.endpoint_url,
+                        headers,
+                        http_factory=self._mcp_transport.get("factory"),
+                    )
                 )
                 for mcp_tool in (await session.list_tools()).tools:
                     plan_tool = names.get(mcp_tool.name)
@@ -799,6 +825,17 @@ class ToolSet:
                     )
                     bound.append(tool)
             yield bound
+
+    def _binding_owner(self) -> ToolSet:
+        # A binding suspended during auth must retain its scope, even after exit.
+        if not self._mcp_transport:
+            return self
+        return self._with(_mcp_transport=dict(self._mcp_transport))
+
+    def _client_factory(self, url: str, headers: Mapping[str, str]) -> Callable[..., Any]:
+        if self._mcp_transport:
+            return functools.partial(self._mcp_transport["factory"], url, headers)
+        return client_factory(url, headers)
 
     async def adk(self) -> list[Any]:  # -> list[McpToolset]
         """Bind the tool set as Google ADK ``McpToolset`` objects, one per
