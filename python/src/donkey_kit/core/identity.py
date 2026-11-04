@@ -56,9 +56,10 @@ import hmac
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from . import _verify
+from ._scope_entry import pop_entry, push_entry
 from .config import TOKEN_AUTH_MODES
 from .correlation import (
     _approvals_client,
@@ -145,7 +146,7 @@ class UserScope:
     and restore like ``donkey.run(...)``.
     """
 
-    __slots__ = ("_binding", "_client", "_client_reset", "_reset")
+    __slots__ = ("_binding", "_client")
 
     def __init__(self, cfg: DonkeyConfig, token: str, *, client: object | None = None) -> None:
         """``client`` is the approvals registry of the ``Donkey`` opening the
@@ -185,22 +186,18 @@ class UserScope:
             )
         check_user_token_endpoint(cfg, need="llm")
         self._binding = _UserBinding(token)
-        self._reset: Token[_UserBinding | None] | None = None
         self._client = client
-        self._client_reset: Token[object | None] | None = None
 
     def _bind(self) -> None:
-        self._reset = _current_user.set(self._binding)
+        # The reset tokens are kept per entry, so one scope object entered by
+        # two tasks or threads at once restores each correctly (#1484).
+        tokens: list[Token[Any]] = [_current_user.set(self._binding)]
         if self._client is not None:
-            self._client_reset = _approvals_client.set(self._client)
+            tokens.append(_approvals_client.set(self._client))
+        push_entry(self, tokens)
 
     def _unbind(self) -> None:
-        if self._client_reset is not None:
-            _approvals_client.reset(self._client_reset)
-            self._client_reset = None
-        if self._reset is not None:
-            _current_user.reset(self._reset)
-            self._reset = None
+        pop_entry(self)
 
     def __enter__(self) -> None:
         self._bind()

@@ -20,16 +20,16 @@ from __future__ import annotations
 import uuid
 import warnings
 from contextlib import contextmanager
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING, Any, Literal
 
+from ._scope_entry import pop_entry, push_entry
 from .cost import CostTags, validate_tag_value
 from .runledger import (
     DEFAULT_MAX_ENTRIES,
     RunLedger,
     bind_run_ledger,
     checked_max_entries,
-    unbind_run_ledger,
 )
 
 if TYPE_CHECKING:
@@ -152,8 +152,9 @@ class RunScope:
 
     Nested scopes rebind and restore via the contextvar token, so an inner run
     id shadows an outer one for its block and the outer id is restored on exit.
-    Enter and exit happen in the same task/context for both protocols, so the
-    ``reset(token)`` is always valid.
+    The tokens are kept per entry, in the entering context, not on the object
+    (#1484): one scope object entered by two tasks or threads at once restores
+    each entry's own state on its exit, in either order.
 
     **Concurrency contract (#311).** A fan-out started inside the block
     (``asyncio.gather``, LangGraph parallel nodes, tool calls on child tasks)
@@ -194,17 +195,11 @@ class RunScope:
         "_source",
         "_cost",
         "_group",
-        "_token",
-        "_source_token",
-        "_cost_token",
-        "_group_token",
         "_refusals",
         "_max_entries",
         "_surface",
         "_ledger",
-        "_ledger_token",
         "_client",
-        "_client_token",
     )
 
     def __init__(
@@ -220,64 +215,44 @@ class RunScope:
     ) -> None:
         self._run_id = run_id
         self._client = client
-        self._client_token: Any = None
         self._source = source
         self._refusals = refusals
         self._max_entries = checked_max_entries(ledger_max_entries)
         self._surface = surface
         self._ledger: _Ledger | None = None
-        self._ledger_token: Any = None
         # Store only a non-empty override, so a plain ``donkey.run(id=...)`` binds
         # nothing on the cost contextvar and leaves any outer run's tags in place.
         self._cost = cost if (cost is not None and not cost.is_empty) else None
         self._group = _checked_group(business_group)
-        self._token: Any = None
-        self._source_token: Any = None
-        self._cost_token: Any = None
-        self._group_token: Any = None
 
     def _bind(self) -> str:
         rid = self._run_id or new_correlation_id()
-        self._token = _correlation_id.set(rid)
+        tokens: list[Token[Any]] = [_correlation_id.set(rid)]
         # Always rebound with the id, so a nested ``donkey.run(id=...)`` inside an
         # inbound run does not report the outer run's source for its own id.
-        self._source_token = _correlation_source.set(self._source)
+        tokens.append(_correlation_source.set(self._source))
         if self._cost is not None:
-            self._cost_token = _cost_tags.set(self._cost)
+            tokens.append(_cost_tags.set(self._cost))
         if self._group is not None:
-            self._group_token = _business_group.set(self._group)
-        self._ledger, self._ledger_token = bind_run_ledger(rid, self._max_entries)
+            tokens.append(_business_group.set(self._group))
+        self._ledger, ledger_token = bind_run_ledger(rid, self._max_entries)
+        tokens.append(ledger_token)
         if self._client is not None:
-            self._client_token = _approvals_client.set(self._client)
+            tokens.append(_approvals_client.set(self._client))
+        push_entry(self, tokens)
         return rid
 
     @property
     def ledger(self) -> RunLedger | None:
         """A snapshot of this run's ledger (#613), or ``None`` before the block
-        is entered. Still readable after the block exits, for what the run cost."""
+        is entered. Still readable after the block exits, for what the run cost.
+        When one object is entered more than once, this is the latest entry's."""
         if self._ledger is None:
             return None
         return self._ledger.snapshot(self._surface() if self._surface is not None else None)
 
     def _unbind(self) -> None:
-        if self._client_token is not None:
-            _approvals_client.reset(self._client_token)
-            self._client_token = None
-        if self._ledger_token is not None:
-            unbind_run_ledger(self._ledger_token)
-            self._ledger_token = None
-        if self._group_token is not None:
-            _business_group.reset(self._group_token)
-            self._group_token = None
-        if self._cost_token is not None:
-            _cost_tags.reset(self._cost_token)
-            self._cost_token = None
-        if self._source_token is not None:
-            _correlation_source.reset(self._source_token)
-            self._source_token = None
-        if self._token is not None:
-            _correlation_id.reset(self._token)
-            self._token = None
+        pop_entry(self)
 
     def __enter__(self) -> str:
         return self._bind()
@@ -320,29 +295,25 @@ class AttributionScope:
     exit. An empty scope binds nothing.
     """
 
-    __slots__ = ("_cost", "_group", "_cost_token", "_group_token")
+    __slots__ = ("_cost", "_group")
 
     def __init__(self, cost: CostTags | None = None, business_group: str | None = None) -> None:
         self._cost = cost if (cost is not None and not cost.is_empty) else None
         self._group = _checked_group(business_group)
-        self._cost_token: Any = None
-        self._group_token: Any = None
 
     def _bind(self) -> None:
+        # Per-entry tokens, so one object entered concurrently restores each (#1484).
+        tokens: list[Token[Any]] = []
         if self._cost is not None:
             outer = _cost_tags.get()
             merged = outer.merge(self._cost) if outer is not None else self._cost
-            self._cost_token = _cost_tags.set(merged)
+            tokens.append(_cost_tags.set(merged))
         if self._group is not None:
-            self._group_token = _business_group.set(self._group)
+            tokens.append(_business_group.set(self._group))
+        push_entry(self, tokens)
 
     def _unbind(self) -> None:
-        if self._group_token is not None:
-            _business_group.reset(self._group_token)
-            self._group_token = None
-        if self._cost_token is not None:
-            _cost_tags.reset(self._cost_token)
-            self._cost_token = None
+        pop_entry(self)
 
     def __enter__(self) -> None:
         self._bind()
