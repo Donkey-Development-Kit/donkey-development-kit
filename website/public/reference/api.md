@@ -639,6 +639,7 @@ is raised.
 | `DonkeyError` | `Exception` | Base for all SDK errors. Carries correlation/call/request IDs and the raw response so callers can inspect what actually happened. |
 | `GatewayApprovalDenied` | `PolicyViolation` | The user denied the out-of-band (CIBA) approval the gateway requested. |
 | `GatewayApprovalPending` | `DonkeyError` | The gateway is waiting for the user to approve this call out of band (CIBA). |
+| `GatewayAuthRequired` | `DonkeyError` | An A2A task needs authorization, not CIBA polling or a local approval. |
 | `GatewayUnavailable` | `DonkeyError` | The gateway could not be reached at all — a transport-level failure (DNS, refused connection, TLS error, timeout) with NO HTTP response behind it. |
 | `ModelNotRoutable` | `DonkeyError` | The gateway could not pick a provider for the requested model, so it rejected the request before any upstream call. |
 | `ModelSubstituted` | `DonkeyError` | The gateway served a *different* model than the one requested — a routing fallback substituted the model, and `on_model_substitution="raise"` opted the caller into treating that as an error. |
@@ -674,6 +675,7 @@ is raised.
 | `DonkeyClientView` | class | The blocking twin of `DonkeyAsyncClientView`, over a shared `DonkeyClient`. Get one from `DonkeyClient.view`. |
 | `DonkeyConfig` | class | Everything the SDK needs to reach Agent Fabric, resolved once and immutable. |
 | `ExchangeRegistry` | class | The Exchange client behind `donkey.registry`: search, resolve and explain assets. |
+| `GatewayAuthChallenge` | class | OAuth metadata from the captured A2A v0.3 authorization-code challenge. |
 | `GovernanceCriteria` | class | Definition of 'governed'. Every field is a separate, independently checkable condition. Defaults are deliberately moderate; orgs override. |
 | `LLMClient` | class | The framework-free proxy client factory. |
 | `LastCall` | class | What the gateway said about the most recent governed model call. |

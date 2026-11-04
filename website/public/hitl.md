@@ -752,6 +752,22 @@ a refused credential. Handle it where your framework lets you.
 `donkey mock --scenario ciba:pending=2,then=approve` plays the pending and
 approved sequence offline (see [Local simulator](https://docs.donkey-kit.dev/simulator.md)).
 
+## A2A Authorization-Code Challenges
+
+The outbound A2A facade raises `GatewayAuthRequired` for the captured v0.3
+In-Task Authorization Code challenge. Its frozen `.challenge` contains the
+provider, authorization/token endpoints, scopes, audience, redirect URI,
+response type, PKCE method and body encoding. `.task_id` and `.context_id`
+are the IDs returned by the gateway, not assumed to be those sent.
+
+This is separate from local tool approval and CIBA: do not resolve it through
+`donkey.approvals` or poll it with `wait_for_approval()`. Your application owns
+OAuth and must validate the untrusted challenge URLs before using them.
+DDK runs no OAuth flow, hosts no redirect and performs no automatic resend.
+Typing is tested against both captured JSON send/stream responses, not a live
+OAuth completion; v1 challenge semantics and successful token resubmission
+remain unverified. See [Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
+
 ## Mapped onto what your framework already has
 
 DDK does not introduce a new pause mechanism. The raise-and-resume form above

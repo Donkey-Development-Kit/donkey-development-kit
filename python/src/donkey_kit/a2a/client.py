@@ -22,6 +22,7 @@ from ..core import _verify
 from ..core.errors import ConfigError, DonkeyError, RegistryError, ToolInvocationError, classify
 from ..core.identity import current_user, user_token_header
 from ..core.inbound import outbound_call
+from ..core.step_up import GatewayAuthChallenge, GatewayAuthRequired
 from ..registry.criteria import GovernanceCriteria
 from ..registry.models import AssetRef
 from ..tools.auth import McpAuth, check_gateway_endpoint, gateway_auth
@@ -59,6 +60,74 @@ def _check_sdk_telemetry() -> None:
             "export sensitive diagnostics. DDK's telemetry setting is independent."
         ),
     )
+
+
+def _auth_challenge(
+    result: SendMessageResponse | StreamResponse,
+    transport: ClientTransport,
+    responses: list[httpx.Response],
+) -> None:
+    from a2a.compat.v0_3.jsonrpc_transport import CompatJsonRpcTransport
+    from a2a.types import TaskState
+
+    # #1393 captured this policy only on v0.3. SDK conversion is not v1 wire evidence.
+    if not isinstance(transport, CompatJsonRpcTransport) or result.WhichOneof("payload") != "task":
+        return
+    task = result.task
+    if task.status.state != TaskState.TASK_STATE_AUTH_REQUIRED:
+        return
+    for part in task.status.message.parts:
+        if part.WhichOneof("content") != "data":
+            continue
+        data = part.data.struct_value
+        if "authChallenge" not in data.fields:
+            continue
+        value = data.fields["authChallenge"]
+        if value.WhichOneof("kind") != "struct_value":
+            continue
+        fields = value.struct_value.fields
+        keys = (
+            "secondaryAuthProvider",
+            "authorizationEndpoint",
+            "tokenEndpoint",
+            "audience",
+            "redirectUri",
+            "responseType",
+            "codeChallengeMethod",
+            "bodyEncoding",
+        )
+        if any(
+            key not in fields or fields[key].WhichOneof("kind") != "string_value" for key in keys
+        ):
+            continue
+        if "scopes" not in fields or fields["scopes"].WhichOneof("kind") != "list_value":
+            continue
+        scopes = fields["scopes"].list_value.values
+        if any(scope.WhichOneof("kind") != "string_value" for scope in scopes):
+            continue
+        challenge = GatewayAuthChallenge(
+            secondary_auth_provider=fields["secondaryAuthProvider"].string_value,
+            authorization_endpoint=fields["authorizationEndpoint"].string_value,
+            token_endpoint=fields["tokenEndpoint"].string_value,
+            scopes=tuple(scope.string_value for scope in scopes),
+            audience=fields["audience"].string_value,
+            redirect_uri=fields["redirectUri"].string_value,
+            response_type=fields["responseType"].string_value,
+            code_challenge_method=fields["codeChallengeMethod"].string_value,
+            body_encoding=fields["bodyEncoding"].string_value,
+        )
+        response = responses[-1] if responses else None
+        context = classify(response) if response is not None else None
+        raise GatewayAuthRequired(
+            "The A2A task requires additional authorization.",
+            challenge=challenge,
+            task_id=task.id,
+            context_id=task.context_id,
+            response=response,
+            correlation_id=context.correlation_id if context is not None else None,
+            call_id=context.call_id if context is not None else None,
+            request_id=context.request_id if context is not None else None,
+        ) from None
 
 
 async def _cleanup(closers: Sequence[Callable[[], Awaitable[None]]]) -> None:
@@ -288,6 +357,7 @@ class A2AFacade:
             ConfigError: SDK tracing lacks permission, or credential provenance
                 or user-token headers are unsafe.
             DonkeyError: The gateway refuses the call.
+            GatewayAuthRequired: A captured v0.3 task challenge needs caller-owned OAuth.
             ToolInvocationError: SDK protocol parsing or invocation fails.
 
         Docs: https://docs.donkey-kit.dev/tool-access/a2a
@@ -297,6 +367,7 @@ class A2AFacade:
                 response = await transport.send_message(message)
                 if response.WhichOneof("payload") is None:
                     raise ValueError("Missing A2A response payload")
+                _auth_challenge(response, transport, responses)
                 return response
 
     @asynccontextmanager
@@ -332,6 +403,7 @@ class A2AFacade:
                             return
                         if event.WhichOneof("payload") is None:
                             raise ValueError("Missing A2A stream payload")
+                        _auth_challenge(event, transport, responses)
                         received = True
                     yield event
 

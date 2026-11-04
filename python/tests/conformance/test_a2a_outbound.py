@@ -820,25 +820,164 @@ async def test_captured_pii_refusal_passes_through(monkeypatch, request_message,
         assert "capture@example.com" not in str(caught.value)
 
 
-async def test_auth_required_is_returned_without_oauth_completion(
-    monkeypatch, sdk, request_message
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_captured_auth_required_is_typed_without_oauth_completion(
+    monkeypatch, request_message, streaming
 ):
+    """Both exact v0.3 captures (§4, #1393) expose the challenge, never run OAuth."""
+    from dataclasses import asdict
+
+    from donkey_kit import GatewayAuthRequired
+    from donkey_kit.core.step_up import GatewayApprovalPending
+
     root = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "a2a_policies"
-    body = (root / "v03-auth-challenge-send.body.json").read_bytes()
+    method = "stream" if streaming else "send"
+    body = (root / f"v03-auth-challenge-{method}.body.json").read_bytes()
+    task = json.loads(body)["result"]
     seen = []
+    responses = []
 
     def handler(request):
         seen.append(request)
         if request.method == "GET":
             return httpx.Response(200, json=_card(legacy=True))
-        return httpx.Response(200, headers={"content-type": "application/json"}, content=body)
+        response = httpx.Response(200, headers={"content-type": "application/json"}, content=body)
+        responses.append(response)
+        return response
 
     async with Donkey(_cfg()) as donkey:
         _registry(monkeypatch, donkey)
         swap_transport(donkey, httpx.MockTransport(handler))
-        response = await donkey.a2a.send(_REF, request_message)
-        assert isinstance(response, sdk.SendMessageResponse)
-        assert response.task.status.state == sdk.TaskState.TASK_STATE_AUTH_REQUIRED
+        with pytest.raises(GatewayAuthRequired) as caught:
+            if streaming:
+                async with donkey.a2a.stream(_REF, request_message) as events:
+                    await anext(events)
+            else:
+                await donkey.a2a.send(_REF, request_message)
+        error = caught.value
+        assert asdict(error.challenge) == {
+            "secondary_auth_provider": "okta",
+            "authorization_endpoint": "https://dev-12345.okta.com/oauth2/v1/authorize",
+            "token_endpoint": "https://dev-12345.okta.com/oauth2/v1/token",
+            "scopes": ("openid", "profile", "email"),
+            "audience": "https://my-agent.example.com/api",
+            "redirect_uri": "https://myapp.example.com/oauth/callback",
+            "response_type": "code",
+            "code_challenge_method": "S256",
+            "body_encoding": "form",
+        }
+        assert error.task_id == task["id"]
+        assert error.context_id == task["contextId"]
+        assert error.response is responses[-1]
+        assert error.response.content == body
+        assert error.response.is_closed
+        assert error.correlation_id == seen[-1].headers["X-Correlation-Id"]
+        assert error.call_id == seen[-1].headers["X-Donkey-Request-Id"]
+        assert not isinstance(error, (AuthError, PolicyViolation, GatewayApprovalPending))
+        assert "dev-12345" not in str(error) + repr(error) + repr(error.challenge)
+        assert error.remediation
+        assert current_correlation_id() is None
+        assert not donkey.http_client().is_closed
+    assert len(seen) == 2
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_auth_challenge_diagnostics_do_not_reach_spans(
+    monkeypatch, request_message, streaming
+):
+    """Caller-owned auth metadata must not become DDK telemetry (#1396)."""
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from donkey_kit import GatewayAuthRequired
+    from donkey_kit.core import telemetry
+
+    root = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "a2a_policies"
+    payload = json.loads((root / "v03-auth-challenge-send.body.json").read_bytes())
+    secret = "private-oauth-diagnostic"
+    payload["result"]["status"]["message"]["parts"][1]["data"]["authChallenge"][
+        "authorizationEndpoint"
+    ] = "https://idp.example/authorize?private=" + secret
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(telemetry, "_tracer", lambda: provider.get_tracer("donkey_kit"))
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=_card(legacy=True))
+        return httpx.Response(200, json=payload)
+
+    try:
+        async with Donkey(replace(_cfg(), telemetry=True)) as donkey:
+            _registry(monkeypatch, donkey)
+            swap_transport(donkey, httpx.MockTransport(handler))
+            with pytest.raises(GatewayAuthRequired) as caught:
+                if streaming:
+                    async with donkey.a2a.stream(_REF, request_message) as events:
+                        await anext(events)
+                else:
+                    await donkey.a2a.send(_REF, request_message)
+            assert secret in caught.value.challenge.authorization_endpoint
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert spans[0].attributes["error.type"] == "GatewayAuthRequired"
+        assert not spans[0].events
+        assert secret not in str(spans[0].attributes) + str(spans[0].status.description)
+    finally:
+        provider.shutdown()
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("variant", ["state", "missing", "malformed", "v1"])
+async def test_unrecognized_auth_challenges_remain_sdk_tasks(
+    monkeypatch, sdk, request_message, streaming, variant
+):
+    """Mutated/synthetic negatives do not establish a new gateway contract (#1396)."""
+    from a2a.compat.v0_3 import conversions, types
+    from google.protobuf.json_format import MessageToDict
+
+    root = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "a2a_policies"
+    task = json.loads((root / "v03-auth-challenge-send.body.json").read_bytes())["result"]
+    challenge = task["status"]["message"]["parts"][1]["data"]["authChallenge"]
+    if variant == "state":
+        task["status"]["state"] = "input-required"
+    elif variant == "missing":
+        del challenge["tokenEndpoint"]
+    elif variant == "malformed":
+        challenge["scopes"] = [123]
+    legacy = variant != "v1"
+    result = (
+        task
+        if legacy
+        else {"task": MessageToDict(conversions.to_core_task(types.Task.model_validate(task)))}
+    )
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json=_card(legacy))
+        return httpx.Response(
+            200,
+            json={"jsonrpc": "2.0", "id": json.loads(request.content)["id"], "result": result},
+        )
+
+    async with Donkey(_cfg()) as donkey:
+        _registry(monkeypatch, donkey)
+        swap_transport(donkey, httpx.MockTransport(handler))
+        if streaming:
+            async with donkey.a2a.stream(_REF, request_message) as events:
+                response = await anext(events)
+        else:
+            response = await donkey.a2a.send(_REF, request_message)
+        assert response.WhichOneof("payload") == "task"
+        assert response.task.status.state == (
+            sdk.TaskState.TASK_STATE_INPUT_REQUIRED
+            if variant == "state"
+            else sdk.TaskState.TASK_STATE_AUTH_REQUIRED
+        )
     assert len(seen) == 2
 
 

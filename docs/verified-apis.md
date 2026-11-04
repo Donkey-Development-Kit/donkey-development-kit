@@ -1052,6 +1052,22 @@ both the LiteLLM and Gemini constructors and their expected native classes.
 against the local simulator and mock transports, not a new live gateway
 round-trip. Historical live evidence and verification statuses remain unchanged.
 
+#### OpenAI release re-check (2026-11-04, #1583)
+
+The 17 contract and CI locks previously selecting `openai==3.42.1` now select
+`openai==3.45.0`; stacks requiring OpenAI 1.x or 2.x remain unchanged. On
+Python 3.12, `verify_frameworks.py --only openai_agents --require-installed
+--emit-verified` confirms construction and the expected native
+`OpenAIChatCompletionsModel` class. `nox -s 'adapter-contract(openai-agents)'`
+passes (5,185 passed, 690 skipped, 27 deselected), including the strict example
+smoke. `openai-agents-demo` passes on Python 3.11, including conformance 4/4 in
+both in-process and server modes. The LangGraph, Strands, MS Agent Framework,
+and Anthropic adapter-contract legs and their strict example smokes also pass,
+as do `agents-strands-last-call`, `agent-framework-middleware`, and
+`langgraph-demo` (conformance 4/4 in both modes). These are offline checks against the local
+simulator and mock transports, not a new live gateway round-trip. Historical
+live evidence and verification statuses remain unchanged.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
@@ -1228,7 +1244,8 @@ facade successfully sends or streams through a gateway.
 | `a2a.types.SendMessageRequest`, `Message`, `Part`, `Role.ROLE_USER`; `SendMessageResponse`, `StreamResponse` | `await donkey.a2a.send(ref, message, *, auth=None, criteria=None)` returns `SendMessageResponse`; `async with donkey.a2a.stream(...) as events` yields an async iterator of `StreamResponse`. Responses/events must have a protobuf `WhichOneof("payload")` value | OFFLINE-VERIFIED | `tests/conformance/test_a2a_outbound.py`: `test_send_official_response_pinned_gateway`, `test_stream_official_events_early_exit_and_reuse`, `test_empty_payload_is_not_success`, v1 and v0.3 mock HTTP |
 | `a2a.client.card_resolver.parse_agent_card(agent_card_data: dict[str, Any]) -> AgentCard`; `a2a.utils.constants.AGENT_CARD_WELL_KNOWN_PATH == "/.well-known/agent-card.json"`, `TransportProtocol.JSONRPC` | Read the card at the pinned gateway URL; select JSON-RPC, never its advertised destination | OFFLINE-VERIFIED | Same send test supplies a hostile card URL; `test_unsupported_transport_has_no_send` rejects `GRPC` and `HTTP+JSON` |
 | `a2a.client.transports.jsonrpc.JsonRpcTransport(httpx_client, agent_card, url, is_shared_httpx=False)` | v1 `SendMessage` / `SendStreamingMessage`; `url` is the registry endpoint | OFFLINE-VERIFIED | v1 branches of the official-response/send and stream tests |
-| `a2a.compat.v0_3.jsonrpc_transport.CompatJsonRpcTransport(httpx_client, agent_card, url, *, is_shared_httpx=False)`; `a2a.compat.v0_3.versions.is_legacy_version(version: str \| None) -> bool` | v0.3 `message/send` / `message/stream`, converted to the same current SDK response types | OFFLINE-VERIFIED | v0.3 branches of the same tests; `test_auth_required_is_returned_without_oauth_completion` replays the captured challenge |
+| `a2a.compat.v0_3.jsonrpc_transport.CompatJsonRpcTransport(httpx_client, agent_card, url, *, is_shared_httpx=False)`; `a2a.compat.v0_3.versions.is_legacy_version(version: str \| None) -> bool` | v0.3 `message/send` / `message/stream`, converted to the same current SDK response types | OFFLINE-VERIFIED | v0.3 branches of the same tests; `test_captured_auth_required_is_typed_without_oauth_completion` replays both exact challenge captures |
+| `TaskState.TASK_STATE_AUTH_REQUIRED`, `Task.status.message.parts`, `Part.WhichOneof("content")`, `Part.data.struct_value` and protobuf `Value.WhichOneof("kind")` | #1396 types the complete captured v0.3 task/challenge as `GatewayAuthRequired` with frozen `GatewayAuthChallenge` and returned task/context IDs; not CIBA polling or a refusal | OFFLINE-VERIFIED | a2a-sdk 1.3.0 source and both exact #1393 send/stream JSON captures, 2026-11-04; `test_captured_auth_required_is_typed_without_oauth_completion`, `test_unrecognized_auth_challenges_remain_sdk_tasks`. Unknown/incomplete layouts and v1 tasks pass through; conversion is not a v1 gateway capture |
 | `ClientTransport.send_message(request, *, context=None) -> SendMessageResponse`, `send_message_streaming(request, *, context=None) -> AsyncGenerator[StreamResponse]`, `close()` (async methods, implemented by both transports) | Official send, stream iteration and local transport close | OFFLINE-VERIFIED | `test_stream_cancellation_closes_response_without_remote_cancel`, `test_stream_exhaustion_and_span_lifetime`, `test_sse_protocol_error_is_safe` |
 | `a2a.utils.errors.A2AError`; `google.protobuf.json_format.Error`; `pydantic.ValidationError` | Safe conversion of SDK protocol/parser failures to `ToolInvocationError` without rendered diagnostics | OFFLINE-VERIFIED | `test_malformed_protocol_is_safely_rendered`, `test_sse_protocol_error_is_safe` |
 

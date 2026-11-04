@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from . import errors
@@ -36,7 +37,13 @@ from ._refusal_body import retry_after, str_or_none
 from .approval_types import ApprovalError
 from .errors import DonkeyError, PolicyViolation
 
-__all__ = ["GatewayApprovalDenied", "GatewayApprovalPending", "wait_for_approval"]
+__all__ = [
+    "GatewayApprovalDenied",
+    "GatewayApprovalPending",
+    "GatewayAuthChallenge",
+    "GatewayAuthRequired",
+    "wait_for_approval",
+]
 
 _T = TypeVar("_T")
 
@@ -44,6 +51,57 @@ _T = TypeVar("_T")
 #: The gateway's own ``Retry-After`` was 5s to 8s live; a missing one waits the short end.
 _MIN_WAIT = 1.0
 _MAX_WAIT = 30.0
+
+
+@dataclass(frozen=True, repr=False)
+class GatewayAuthChallenge:
+    """OAuth metadata from the captured A2A v0.3 authorization-code challenge.
+
+    Values are untrusted gateway data for explicit caller inspection, not URLs
+    the SDK follows. The repr omits them because endpoints can contain secrets.
+    No OAuth flow, redirect handling, or successful token replay is implied.
+    """
+
+    secondary_auth_provider: str
+    authorization_endpoint: str
+    token_endpoint: str
+    scopes: tuple[str, ...]
+    audience: str
+    redirect_uri: str
+    response_type: str
+    code_challenge_method: str
+    body_encoding: str
+
+
+class GatewayAuthRequired(DonkeyError):
+    """An A2A task needs authorization, not CIBA polling or a local approval.
+
+    ``challenge`` carries the captured policy metadata; ``task_id`` and
+    ``context_id`` are the returned IDs, not assumed to match the sent request.
+    The raw HTTP result remains available on ``response``. Sensitive values
+    are never interpolated into the exception's rendered diagnostics.
+    """
+
+    remediation: str = (
+        "Inspect .challenge and arrange authorization in caller-owned OAuth code. "
+        "Validate its untrusted endpoints and redirect before using them. The SDK "
+        "does not run OAuth, host redirects, poll, or resend this task; successful "
+        "token resubmission has not been verified."
+    )
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        challenge: GatewayAuthChallenge,
+        task_id: str,
+        context_id: str,
+        **kw: Any,
+    ) -> None:
+        super().__init__(message, **kw)
+        self.challenge = challenge
+        self.task_id = task_id
+        self.context_id = context_id
 
 
 class GatewayApprovalPending(DonkeyError):
