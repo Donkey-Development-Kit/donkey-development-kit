@@ -757,8 +757,12 @@ diagnostics are not used to infer PII/schema types. No verification status or
 guard is changed by this classification. PII/schema captures remain safe
 `ToolInvocationError`s through HTTP `classify` and return `None` from the explicit
 RPC helper; structured identity is an upstream gap (#1401). Bedrock content-block
-typing remains gated on its missing capture. Outbound framework binding (#1395)
-and simulator support (#1397) remain separate.
+typing remains gated on its missing capture. `A2AFacade.send` / `stream` (#1395)
+apply this classification offline; framework `AgentHandle.as_tool()` binding
+remains planned. `donkey dev` (#1397) replays selected method-specific v1
+Azure block, PII and token-rate refusals, not all rows below. #1398 keeps raw
+RPC diagnostics out of rendered exceptions and DDK spans; original responses
+remain sensitive. The developer inventory is `a2a-gateway-policies.mdx` (#1400).
 
 The table records response-shape facts, not a claim that every policy is typed
 or simulated. Classification contracts are pinned in
@@ -771,7 +775,7 @@ Quality Evaluation was later intentionally retained on the existing instance.
 
 | Policy | Status | Verified response shape | Date | Source |
 |---|---|---|---|---|
-| A2A v0.3 PII Detector, `a-two-a-pii-detector` 1.0.2 | VERIFIED (LIVE) | `message/send`, synthetic email, `Reject`: HTTP 403, JSON-RPC `-32602`, `Invalid params`; `error.data` is a string prefixed `Request contains PII data: ` carrying a JSON findings list (`pii_type`, **raw synthetic `value`**, `start`, `end`), not v1 `ErrorInfo`. No `www-authenticate`. Redaction remains #1398 | 2026-11-02 | instance 21206128, gateway 1.14.4; `a2a_policies/v03-pii-send.*` |
+| A2A v0.3 PII Detector, `a-two-a-pii-detector` 1.0.2 | VERIFIED (LIVE) | `message/send`, synthetic email, `Reject`: HTTP 403, JSON-RPC `-32602`, `Invalid params`; `error.data` is a string prefixed `Request contains PII data: ` carrying a JSON findings list (`pii_type`, **raw synthetic `value`**, `start`, `end`), not v1 `ErrorInfo`. No `www-authenticate`. Safe generic classification with diagnostics withheld (#1394/#1398), not PII-specific typing | 2026-11-02 | instance 21206128, gateway 1.14.4; `a2a_policies/v03-pii-send.*` |
 | A2A v0.3 Schema Validation, `a-two-a-schema-validation` 1.0.2 | VERIFIED (LIVE) | Missing `parts`: HTTP 400 / `-32602`; unknown method: HTTP **400** / `-32601`; malformed JSON: HTTP 400 / `-32700` with response ID **1**. `error.data` is a string describing the schema error, not an `ErrorInfo` list | 2026-11-02 | same instance/gateway; `a2a_policies/v03-schema-{params,method,parse}.*` |
 | A2A v0.3 Token Based Rate Limit, `a-two-a-token-rate-limit` 1.0.1 | VERIFIED (LIVE) | Request exceeds a one-token window: bare HTTP 429, empty body, `x-token-limit: 1`, `x-token-remaining: 1`, `x-token-reset: 60000` (ms), no `retry-after`. Positive remaining does not imply the request fits the window. Accepted-call headers are not captured | 2026-11-02 | same instance/gateway; `a2a_policies/v03-rate-send.headers.txt` |
 | A2A v1 PII Detector, `a2a-v1-pii-detector` 1.0.0 | VERIFIED (LIVE) | `SendMessage` and `SendStreamingMessage`, synthetic email, `Reject`: HTTP 403 / `-32600`, response ID string `"1393"` for numeric request ID 1393. `error.data` is an `ErrorInfo` list with `domain: a2a-protocol.org`, `reason: FORBIDDEN`. Both `error.message` and `metadata.detail` echo raw synthetic findings; neither is safe to log. No `www-authenticate` | 2026-11-02 | temporary v1 instance 21269788, gateway 1.14.4; `a2a_policies/v1-pii-{send,stream}.*` |
@@ -807,6 +811,12 @@ deleted in #730 (ADR 0008 in `docs/adr/`); the findings below stay as the record
 | `mulesoft/anypoint` Terraform provider coverage | UNVERIFIED | not needed if CLI/Maven path adopted | — | — |
 
 ## 6. Governance / local-mode (the Verification milestone)
+
+A2A policy-response captures and their bounded SDK classification are recorded
+in §4 above; outbound facade verification is in §8.5. `donkey dev` ingress replay
+is offline handling evidence, not execution of real gateway policies in Local
+Mode. Quality-header span recording and `X-AGENT-ID` connection telemetry remain
+#1399, with no new verification claim here (#1400).
 
 | Item | Gates | Status | Finding | Source |
 |---|---|---|---|---|

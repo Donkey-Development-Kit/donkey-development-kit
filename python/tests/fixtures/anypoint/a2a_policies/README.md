@@ -3,7 +3,9 @@
 Captured 2026-11-02 on `ddk-langgraph-agent` (instance `21206128`), Sandbox,
 through the managed `shared-omni-gateway`, Omni Gateway **1.14.4**. These are
 actual JSON-RPC HTTP responses, not examples copied from policy documentation.
-The captures are test-only; `donkey dev` does not replay them yet (#1397).
+These are the test provenance copies. `donkey dev` replays packaged copies of
+selected method-specific v1 Azure block, PII and token-rate refusals (#1397),
+not the v0.3 authorization challenge or quality evaluation headers.
 Response bodies retain their bytes except the UUID pseudonymization noted
 for authorization challenges below. The quality capture retains selected headers
 only, as documented below; other headers were scrubbed with

@@ -32,7 +32,7 @@
   "anypoint/a2a_instance/policy-inbound.400.json": "sha256:1ee72d641cbe9bc9f9ef2f1286ab80be55721d910952bc0eb75f75549bc67a69",
   "anypoint/a2a_instance/policy-inbound.request.json": "sha256:c247b965c17b3c4b60ae8c17111eacf07450174ea09b034b1a6a5be4980be801",
   "anypoint/a2a_instance/upstreams.200.json": "sha256:bb3e8013ff14e2527382b0647c0a92e50c552681176d117446fd50ca77f2b96f",
-  "anypoint/a2a_policies/README.md": "sha256:bb10bffb7cb489f712968ebeb985d011e5c44cb2a1e2d334d02789f6a5de51b4",
+  "anypoint/a2a_policies/README.md": "sha256:dcde4345c42f0a4f333809f73d4e13756748e33b70b1c91920c93fe2196e4a73",
   "anypoint/a2a_policies/v03-auth-challenge-send.body.json": "sha256:e70e18ccce227340c836f61798e7087c72126df0c6aa1fc6b7adf75e5740ef5c",
   "anypoint/a2a_policies/v03-auth-challenge-send.headers.txt": "sha256:329afe718fa0d6ad4090f8dad3ab28586a263a4e15d1a4eafab6f84fd513167f",
   "anypoint/a2a_policies/v03-auth-challenge-stream.body.json": "sha256:c5069a448023c4628dcb5fd8f88668cde0b717d9ad181cf1cb66fea69d9dcb8b",

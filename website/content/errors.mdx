@@ -164,6 +164,8 @@ A2A PII and schema-policy responses still lack a reliable policy identifier:
 guardrail headers identifies PII. Fail-closed Azure and Bedrock HTTP `503`
 responses remain `UpstreamModelError`, not `ContentSafetyBlocked` or
 `GatewayUnavailable`. A Bedrock A2A content-block shape remains unverified.
+See [A2A gateway policies](/a2a-gateway-policies) for the version-specific
+capture inventory and the difference between refusals and auth-required tasks.
 
 When you explicitly call `classify(response)` on a `jsonrpc: "2.0"` error
 envelope, genuine HTTP 401/auth challenges and 429 win. Other ordinary/ambiguous
@@ -226,6 +228,7 @@ DonkeyError                     # base of the whole tree
 │  ├─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR (policy source) 403 reject header; .provider, .categories
 │  └─ ToolNotInProfile          # MCP tools/call refused: JSON-RPC -32008 "Unable to access"; .tool_name, .server
 ├─ GatewayApprovalPending       # 401, error=authorization_pending — waiting for the user's CIBA approval; .retry_after
+├─ GatewayAuthRequired          # captured v0.3 auth-required task; .challenge and returned .task_id/.context_id
 ├─ GatewayUnavailable           # transport failure — gateway unreachable, NO response; .base_url/.cause (ungoverned)
 ├─ UpstreamRequestError         # upstream 4xx; .code/.error_type/.param
 ├─ ModelNotRoutable             # 400, bare model name on a multi-provider proxy, or no model; .model
@@ -265,6 +268,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `AgentKilled` | `403`, nested `code: "agent_killed"`, **no** `type` | **No** — a `PolicyViolation`, never retried; the agent stays blocked until an administrator restores it. It also stops [`donkey.budget.pace()`](/budget) loops, and spans are flushed before it reaches you. | Ask an administrator to restore this agent's model access in Governance > Security. |
 | `GatewayApprovalPending` | `401`, flat `error: "authorization_pending"`, **no** `www-authenticate` | **Yes, after `.retry_after`** — never auto-retried; the same request succeeds once the user approves. | Re-send after `.retry_after` seconds; don't change or refresh the credentials, they were accepted. |
 | `GatewayApprovalDenied` | `403`, flat `error: "access_denied"` | **No** — a `PolicyViolation`, never retried; the gateway keeps answering with the denial until its cached decision expires. | Tell the user the action was not authorized. |
+| `GatewayAuthRequired` | Complete captured v0.3 `auth-required` task with status-message `authChallenge`, decoded by the outbound facade | **No automatic replay**; not a policy refusal or CIBA polling outcome. | Validate the challenge metadata and hand it to your application's OAuth flow. DDK does not acquire tokens or resend the task; completed OAuth is unverified. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `RequestRateLimitExceeded` | `429` with `x-ratelimit-limit` and `x-ratelimit-remaining` and **no** `x-token-limit` | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |

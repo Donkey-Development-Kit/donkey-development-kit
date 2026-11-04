@@ -133,6 +133,9 @@ HTTP pool remains usable for later calls.
 
 ## Gateway Refusals
 
+The [A2A gateway policy inventory](/a2a-gateway-policies) separates v0.3/v1
+captures, typed outcomes, non-blocking annotations and unverified behavior.
+
 Gateway policies can reject a remote A2A call before it reaches the agent.
 For A2A v0.3, PII detection returns HTTP 403 with a JSON-RPC error whose
 `data` string can contain the detected value. Schema validation returns HTTP

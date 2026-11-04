@@ -142,6 +142,12 @@ This behavior is **OFFLINE-VERIFIED**. Successful gateway send and SSE are
 NOT live verified by this implementation yet; refused streaming requests
 before SSE are not successful streaming evidence.
 
+The [A2A policy inventory](https://docs.donkey-kit.dev/a2a-gateway-policies.md#non-blocking-policies) records
+the captured quality headers separately. DDK does not yet export quality
+scores/explanations or establish `X-AGENT-ID` connection telemetry from those
+captures. Auth challenge fields, returned task/context IDs and raw refusal
+diagnostics are not recorded on the outbound span, even with content capture on.
+
 ### Zero-config export
 
 Set the standard OpenTelemetry endpoint env var and spans flow — there is **no
