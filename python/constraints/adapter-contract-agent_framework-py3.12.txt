@@ -141,7 +141,7 @@ mypy-extensions==1.1.0
 numpy==2.5.4
 oauthlib==4.0.1
 ollama==0.5.3
-openai==3.42.1
+openai==3.45.0
 openai-agents==0.24.0
 openai-chatkit==1.6.5
 opentelemetry-api==1.45.2
