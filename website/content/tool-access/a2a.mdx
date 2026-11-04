@@ -172,6 +172,35 @@ including authorization/token endpoints, scopes, audience and redirect URI.
 A `message/stream` challenge can also be ordinary JSON rather than SSE.
 HTTP success alone therefore does not mean the delegated task completed.
 
+For this complete v0.3 challenge, both outbound facade methods raise
+`GatewayAuthRequired` rather than return an apparently successful task.
+Catch it around `send()` or stream iteration:
+
+```python
+from donkey_kit import GatewayAuthRequired
+
+try:
+    response = await donkey.a2a.send(ref, request)
+except GatewayAuthRequired as pending:
+    challenge = pending.challenge
+    # Hand challenge to your application's OAuth flow after validating its URLs.
+```
+
+`challenge` is a frozen `GatewayAuthChallenge` with `secondary_auth_provider`,
+`authorization_endpoint`, `token_endpoint`, `scopes` (a tuple), `audience`,
+`redirect_uri`, `response_type`, `code_challenge_method` and `body_encoding`.
+The exception also keeps the **returned** `task_id` and `context_id`, the raw
+HTTP `response`, and the usual correlation/call/request IDs. Challenge values
+are omitted from repr and error text, but explicit field access and the raw
+response can expose sensitive data. Treat the metadata as untrusted.
+
+This is not `GatewayApprovalPending`: `wait_for_approval()` does not poll it.
+It is neither a refusal nor a local `ApprovalRequired`. A normal HTTP 401 still
+raises `AuthError` with no automatic replay. DDK does not acquire a token,
+follow the challenge URLs, host a redirect, or resend the task. Successful token
+resubmission is not verified. Incomplete or unknown challenge layouts and v1
+tasks remain native SDK responses; there is no captured v1 challenge contract.
+
 The captured missing-token responses generated new task and context IDs,
 despite IDs supplied in the request params, and returned the numeric JSON-RPC
 request ID as a string. These observations do not verify token forwarding,
@@ -195,8 +224,8 @@ core transport and are decoded by the official SDK, not the GenAI SSE scanner.
 Raw responses on exceptions remain potentially sensitive. This does not add
 A2A PII/schema-specific typing or framework refusal translation.
 
-`as_tool()` remains planned, and [`donkey dev`](/a2a) does not yet replay these
-A2A-specific policy responses.
+`as_tool()` remains planned. [`donkey dev`](/a2a) replays selected v1 ingress
+refusals, not this outbound authorization-code challenge.
 
 ## Next steps
 

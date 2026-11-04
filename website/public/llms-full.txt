@@ -3411,8 +3411,12 @@ lives on a separate client: model calls never fetch, send or refresh it. See
 
 The scoped outbound A2A plane is different: **no automatic replay**, including
 401 refresh/re-send, every 5xx, refusal-handler actions and stream
-resubscription. Model retry settings do not override this. A task returned
-with `auth-required` stays an SDK task response, not a completed OAuth flow.
+resubscription. Model retry settings do not override this. The captured v0.3
+`auth-required` task with complete `authChallenge` metadata raises
+`GatewayAuthRequired`, carrying a frozen challenge and returned task/context
+IDs. It is not a refusal, CIBA polling outcome, or completed OAuth flow.
+Unknown layouts and v1 tasks stay SDK responses. See
+[Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
 Leaving a stream context cleans up locally, not by cancelling the remote task.
 The facade is OFFLINE-VERIFIED; successful gateway send and SSE are NOT live
 verified by this implementation yet. Refusal captures do not prove SSE success.
@@ -5337,6 +5341,22 @@ a refused credential. Handle it where your framework lets you.
 
 `donkey mock --scenario ciba:pending=2,then=approve` plays the pending and
 approved sequence offline (see [Local simulator](https://docs.donkey-kit.dev/simulator.md)).
+
+## A2A Authorization-Code Challenges
+
+The outbound A2A facade raises `GatewayAuthRequired` for the captured v0.3
+In-Task Authorization Code challenge. Its frozen `.challenge` contains the
+provider, authorization/token endpoints, scopes, audience, redirect URI,
+response type, PKCE method and body encoding. `.task_id` and `.context_id`
+are the IDs returned by the gateway, not assumed to be those sent.
+
+This is separate from local tool approval and CIBA: do not resolve it through
+`donkey.approvals` or poll it with `wait_for_approval()`. Your application owns
+OAuth and must validate the untrusted challenge URLs before using them.
+DDK runs no OAuth flow, hosts no redirect and performs no automatic resend.
+Typing is tested against both captured JSON send/stream responses, not a live
+OAuth completion; v1 challenge semantics and successful token resubmission
+remain unverified. See [Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
 
 ## Mapped onto what your framework already has
 
@@ -9064,6 +9084,35 @@ including authorization/token endpoints, scopes, audience and redirect URI.
 A `message/stream` challenge can also be ordinary JSON rather than SSE.
 HTTP success alone therefore does not mean the delegated task completed.
 
+For this complete v0.3 challenge, both outbound facade methods raise
+`GatewayAuthRequired` rather than return an apparently successful task.
+Catch it around `send()` or stream iteration:
+
+```python
+from donkey_kit import GatewayAuthRequired
+
+try:
+    response = await donkey.a2a.send(ref, request)
+except GatewayAuthRequired as pending:
+    challenge = pending.challenge
+    # Hand challenge to your application's OAuth flow after validating its URLs.
+```
+
+`challenge` is a frozen `GatewayAuthChallenge` with `secondary_auth_provider`,
+`authorization_endpoint`, `token_endpoint`, `scopes` (a tuple), `audience`,
+`redirect_uri`, `response_type`, `code_challenge_method` and `body_encoding`.
+The exception also keeps the **returned** `task_id` and `context_id`, the raw
+HTTP `response`, and the usual correlation/call/request IDs. Challenge values
+are omitted from repr and error text, but explicit field access and the raw
+response can expose sensitive data. Treat the metadata as untrusted.
+
+This is not `GatewayApprovalPending`: `wait_for_approval()` does not poll it.
+It is neither a refusal nor a local `ApprovalRequired`. A normal HTTP 401 still
+raises `AuthError` with no automatic replay. DDK does not acquire a token,
+follow the challenge URLs, host a redirect, or resend the task. Successful token
+resubmission is not verified. Incomplete or unknown challenge layouts and v1
+tasks remain native SDK responses; there is no captured v1 challenge contract.
+
 The captured missing-token responses generated new task and context IDs,
 despite IDs supplied in the request params, and returned the numeric JSON-RPC
 request ID as a string. These observations do not verify token forwarding,
@@ -9087,8 +9136,8 @@ core transport and are decoded by the official SDK, not the GenAI SSE scanner.
 Raw responses on exceptions remain potentially sensitive. This does not add
 A2A PII/schema-specific typing or framework refusal translation.
 
-`as_tool()` remains planned, and [`donkey dev`](https://docs.donkey-kit.dev/a2a.md) does not yet replay these
-A2A-specific policy responses.
+`as_tool()` remains planned. [`donkey dev`](https://docs.donkey-kit.dev/a2a.md) replays selected v1 ingress
+refusals, not this outbound authorization-code challenge.
 
 ## Next steps
 
@@ -16793,6 +16842,7 @@ is raised.
 | `DonkeyError` | `Exception` | Base for all SDK errors. Carries correlation/call/request IDs and the raw response so callers can inspect what actually happened. |
 | `GatewayApprovalDenied` | `PolicyViolation` | The user denied the out-of-band (CIBA) approval the gateway requested. |
 | `GatewayApprovalPending` | `DonkeyError` | The gateway is waiting for the user to approve this call out of band (CIBA). |
+| `GatewayAuthRequired` | `DonkeyError` | An A2A task needs authorization, not CIBA polling or a local approval. |
 | `GatewayUnavailable` | `DonkeyError` | The gateway could not be reached at all — a transport-level failure (DNS, refused connection, TLS error, timeout) with NO HTTP response behind it. |
 | `ModelNotRoutable` | `DonkeyError` | The gateway could not pick a provider for the requested model, so it rejected the request before any upstream call. |
 | `ModelSubstituted` | `DonkeyError` | The gateway served a *different* model than the one requested — a routing fallback substituted the model, and `on_model_substitution="raise"` opted the caller into treating that as an error. |
@@ -16828,6 +16878,7 @@ is raised.
 | `DonkeyClientView` | class | The blocking twin of `DonkeyAsyncClientView`, over a shared `DonkeyClient`. Get one from `DonkeyClient.view`. |
 | `DonkeyConfig` | class | Everything the SDK needs to reach Agent Fabric, resolved once and immutable. |
 | `ExchangeRegistry` | class | The Exchange client behind `donkey.registry`: search, resolve and explain assets. |
+| `GatewayAuthChallenge` | class | OAuth metadata from the captured A2A v0.3 authorization-code challenge. |
 | `GovernanceCriteria` | class | Definition of 'governed'. Every field is a separate, independently checkable condition. Defaults are deliberately moderate; orgs override. |
 | `LLMClient` | class | The framework-free proxy client factory. |
 | `LastCall` | class | What the gateway said about the most recent governed model call. |
