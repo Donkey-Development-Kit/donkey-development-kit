@@ -454,6 +454,15 @@ headers.
    gateway text kept in the message). VERIFIED (LIVE) 2026-10-01 on
    `ddk-multi-route-fallback` and `ddk-azure-openai-model-routing`, byte-identical
    on both (#825); fixture `reject.model-not-routable.{headers.txt,body.json}`.
+   The same envelope with `Missing 'model' field in request` after the colon is
+   returned when the router finds no model where the ingress format expects one:
+   no `model` body field on OpenAI ingress, or an OpenAI `/chat/completions` body
+   sent to a native Gemini ingress (that router reads the model from the URL
+   path). `classify()` returns `ModelNotRoutable` with `.model` `None` and a
+   missing-model remediation. VERIFIED (LIVE) 2026-11-02 on model-based-routing
+   1.0.5 / impl 1.0.9, byte-identical on a native Gemini ingress, a
+   single-provider and a multi-provider OpenAI ingress (#1547); fixture
+   `reject.model-missing.{headers.txt,body.json}`.
 7. **Request rate limit** — `429` from the stock `rate-limiting` policy (it
    counts requests, not tokens): body `{"error":"Too Many Requests"}`
    (`content-type: application/json; charset=UTF-8`), the unsuffixed
@@ -515,7 +524,8 @@ in either an OpenAI-style object envelope or a Gemini-style **list** envelope
 (`[{"error":{…}}]`, #548) — → `UpstreamRequestError` (carries provider
 `code`/`type`/`param`, with Gemini's `status` standing in for `type`); a non-auth
 4xx whose flat-string `error` says the model "is not in the known unique model
-map" → `ModelNotRoutable` (item 6, #825); `5xx` →
+map", or "Missing 'model' field in request", → `ModelNotRoutable` (item 6,
+#825, #1547); `5xx` →
 `UpstreamModelError`. Auth is then the verified client-id-enforcement shape: a
 `401`, **or** a `403` carrying a `www-authenticate` header → `AuthError`. A `403`
 **without** `www-authenticate` that matched none of the discriminators above is
@@ -707,6 +717,7 @@ driving `ddk-model-wallet` (2000 tokens/day on `openai:gpt-5-mini`) on instance
 | client-id-enforcement | `client-id-enforcement` `1.3.3` | VERIFIED (LIVE) | `401` + `www-authenticate: Client-ID-Enforcement`, `{"error":"Client ID is not present"}` | 2026-08-28 | live probe |
 | model-based-routing / upstream | `model-based-routing` `1.0.3` | VERIFIED (LIVE) | passthrough of provider error (OpenAI `400 model_not_found` object) | 2026-08-28 | live probe |
 | model-based-routing, bare model name, more than one provider | applied to `ddk-multi-route-fallback`, `ddk-azure-openai-model-routing` | VERIFIED (LIVE) | gateway's own `400`, flat-string `{"error":"Failed to parse model from request: Model '…' is not in the known unique model map and multiple providers are configured. Use 'provider/model' format."}`, no `x-llm-proxy-*` headers, upstream not called → `ModelNotRoutable` (item 6 above) | 2026-10-01 | live probe (#825) |
+| model-based-routing, no model where the ingress expects one | native Gemini ingress sent an OpenAI body; OpenAI ingress (single- and multi-provider) sent no `model` | VERIFIED (LIVE) | gateway's own `400`, flat-string `{"error":"Failed to parse model from request: Missing 'model' field in request"}`, no `x-llm-proxy-*` headers, upstream not called → `ModelNotRoutable` with `.model` `None` (item 6 above) | 2026-11-02 | live probe on model-based-routing 1.0.5 / impl 1.0.9 (#1547) |
 | LLM proxy core | `llm-proxy-core` `1.0.5` | applied VERIFIED (LIVE) | on `openai-sdk`; rejection body not yet triggered | 2026-08-28 | `policy:list` |
 | Request rate limiting | `rate-limiting` `1.5.1` (impl `rate-limiting-flex` `1.2.2`), `exposeHeaders: true` | VERIFIED (LIVE) | `429`, body `{"error":"Too Many Requests"}`, the unsuffixed `x-ratelimit-limit`/`-remaining`/`-reset`(ms) trio, no `retry-after`, no `x-token-*`; the same trio on every `200` → `RequestRateLimitExceeded` (item 7 above). See "Request window emission" above. | 2026-10-07 | live probe, `ddk-request-rate-limit` instance 21188400 (#974) |
 | Token rate limiting | interface `llm-token-rate-limit` `1.0.2` (impl `-policy-flex` `1.0.4`) | VERIFIED (LIVE) | Two emission forms: `429` limit-exceeded → **empty body**, numeric trio `x-token-limit`/`x-token-remaining`/`x-token-reset`(ms), no `retry-after`; `200`/`403` under the same policy → the window as prose in a single `x-llm-proxy-ratelimit` header (ms reset). See "Budget window emission" above. | 2026-08-28; re-confirmed 2026-10-07 | applied + live probe; re-probe on `ddk-token-rate-limit` (instance 21188394, #253) |

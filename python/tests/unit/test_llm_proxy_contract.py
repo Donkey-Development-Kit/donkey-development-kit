@@ -179,6 +179,27 @@ def test_bare_model_name_400_classifies_as_model_not_routable() -> None:
     assert policy_type_slug(err) is None  # telemetry does not record a refusal
 
 
+def test_missing_model_400_classifies_as_model_not_routable() -> None:
+    """docs/verified-apis.md §4 live capture (#1547): model-based-routing 1.0.5
+    finds no model where the ingress expects one (no ``model`` body field, or an
+    OpenAI body on a native Gemini ingress) and answers its own 400. Same family as
+    the bare-model-name 400: ModelNotRoutable with no model to echo, and a
+    remediation naming the missing model, not "file an issue"."""
+    h = _headers("reject.model-missing.headers.txt")
+    body = _load("reject.model-missing.body.json")
+    assert isinstance(body, dict)
+    assert isinstance(body["error"], str)
+
+    err = classify(httpx.Response(400, headers=h, json=body))
+    assert isinstance(err, ModelNotRoutable)
+    assert not isinstance(err, PolicyViolation)
+    assert err.model is None
+    assert body["error"] in str(err)
+    assert err.remediation == ModelNotRoutable.missing_model_remediation
+    assert "file an issue" not in err.remediation.lower()
+    assert policy_type_slug(err) is None
+
+
 def test_anypoint_flat_error_4xx_stays_policy_violation() -> None:
     """A non-auth 4xx whose `error` is a flat STRING is an Anypoint gateway
     policy rejection, still surfaced as PolicyViolation (terminal, not retried)."""

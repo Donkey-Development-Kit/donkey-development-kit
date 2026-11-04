@@ -253,6 +253,14 @@ SHAPES: dict[str, _Spec] = {
         "reject.model-not-routable.body.json",
         400,
     ),
+    # The same 400 with no model where the ingress expects one (#1547): also
+    # ModelNotRoutable, .model None.
+    "model-missing": _Spec(
+        "anypoint/llm_proxy",
+        "reject.model-missing.headers.txt",
+        "reject.model-missing.body.json",
+        400,
+    ),
     # --- consumer-auth 401 (NOT one of the eight; classify() → AuthError) ---
     "client-id-missing": _Spec(
         "anypoint/llm_proxy",

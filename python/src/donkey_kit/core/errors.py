@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from . import _wire
 from ._refusal_body import (
+    MODEL_MISSING_REMEDIATION,
     MODEL_NOT_ROUTABLE_RE,
     code_str,
     content_safety_reject,
@@ -529,15 +530,13 @@ class ModelNotRoutable(DonkeyError):
 
     Seen on a model-based-routing proxy with more than one provider configured:
     a bare model name (``gpt-5-mini``) is ambiguous unless the gateway knows it
-    from exactly one provider, so it answers ``400`` with a flat-string
-    ``error`` asking for ``provider/model`` (docs/verified-apis.md §4). This is a
-    client configuration mistake, NOT a gateway policy refusal (so it is not a
-    :class:`PolicyViolation`) and NOT an upstream rejection (the provider was
-    never called, so it is not an :class:`UpstreamRequestError`). Terminal,
-    never retried.
+    from exactly one provider, so it answers ``400`` with a flat-string ``error`` asking for
+    ``provider/model`` (docs/verified-apis.md §4), or saying the model is missing where the
+    ingress expects one (#1547). A client configuration mistake, NOT a gateway policy refusal
+    (not a :class:`PolicyViolation`) and NOT an upstream rejection (the provider was never
+    called, not an :class:`UpstreamRequestError`). Terminal, never retried.
 
-    ``model`` is the name the gateway echoed back, or ``None`` when it could not
-    be read from the message."""
+    ``model`` is the name the gateway echoed back, else ``None`` (always for #1547)."""
 
     #: Single source of next-step wording for the bare-model-name rejection.
     remediation: str = (
@@ -545,6 +544,7 @@ class ModelNotRoutable(DonkeyError):
         "model name. Use the 'provider/model' form for the model, e.g. "
         "openai/gpt-5-mini instead of gpt-5-mini."
     )
+    missing_model_remediation: str = MODEL_MISSING_REMEDIATION  #: the #1547 variant's wording
 
     def __init__(self, message: str, *, model: str | None = None, **kw: Any) -> None:
         super().__init__(message, **kw)
@@ -692,7 +692,7 @@ def classify(
     * **Bare model name on a multi-provider proxy** rejects with **400** and a
       *flat-string* ``error`` saying the model "is not in the known unique model
       map" → :class:`ModelNotRoutable` (a client mistake, not a policy refusal;
-      #825). Keyed on that gateway sentence.
+      #825). Keyed on that gateway sentence, or its missing-model twin (#1547).
     * **Injection protection** rejects with the ``x-injection-protection:
       blocked`` header (the header, not the status, is the discriminator; #181)
       → :class:`PromptInjectionBlocked`.
@@ -932,9 +932,8 @@ def _match_upstream_request(s: _Shape) -> DonkeyError | None:
 
 
 def _match_model_not_routable(s: _Shape) -> DonkeyError | None:
-    """A bare model name on a multi-provider proxy: a 4xx flat-string ``error`` naming the model
-    and asking for ``provider/model`` (docs/verified-apis.md §4, #825). Keyed on the gateway's
-    own sentence, since the status and envelope match the unconfirmed fall-through."""
+    """A bare model name on a multi-provider proxy (#825) or a missing model (#1547): a 4xx flat
+    ``error`` keyed on the gateway's own sentences, as the envelope matches the fall-through."""
     if not 400 <= s.status < 500:
         return None
     flat_error = str_or_none(s.body.get("error")) if s.body is not None else None
@@ -944,6 +943,7 @@ def _match_model_not_routable(s: _Shape) -> DonkeyError | None:
     return ModelNotRoutable(
         f"The gateway could not route the requested model ({s.status}): {flat_error}",
         model=unroutable.group("model"),
+        remediation=ModelNotRoutable.missing_model_remediation if unroutable["missing"] else None,
         **s.kw,
     )
 
