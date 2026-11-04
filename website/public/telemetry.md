@@ -128,8 +128,8 @@ The span preserves the enclosing run's correlation ID/source or temporarily
 mints one for the operation. It injects W3C `traceparent` and, when present,
 `tracestate`, without baggage. A remote DDK inbound `donkey.a2a.task` span can
 adopt that parent. Team/project/environment cost tags may be recorded, with
-run overrides winning; end-user IDs, message content, diagnostics and quality
-evaluation annotations are not recorded on this span. No LLM cost headers are
+run overrides winning; end-user IDs and raw diagnostics are not recorded on
+this span. No LLM cost headers are
 sent on the scoped A2A plane.
 
 The stream span remains open until the `async with` context exits. Break,
@@ -143,9 +143,23 @@ NOT live verified by this implementation yet; refused streaming requests
 before SSE are not successful streaming evidence.
 
 The [A2A policy inventory](https://docs.donkey-kit.dev/a2a-gateway-policies.md#non-blocking-policies) records
-the captured quality headers separately. DDK does not yet export quality
-scores/explanations or establish `X-AGENT-ID` connection telemetry from those
-captures. Auth challenge fields, returned task/context IDs and raw refusal
+the captured quality headers separately. Successful delegation HTTP responses
+record `donkey.a2a.quality.evaluation="yes"`, a finite numeric
+`donkey.a2a.quality.score`, and `donkey.a2a.quality.status="completed"` when
+present. Missing, malformed or unknown evaluation/status values are omitted;
+no score range is inferred. Agent Card GETs and failed HTTP responses do not
+contribute quality annotations. An annotation never changes the call outcome.
+
+`donkey.a2a.quality.explanation` can repeat request content. It is omitted by
+default and recorded only with `telemetry_capture_content=True`, truncated to
+4096 characters. Opt-in permits sensitive content export; it does not sanitize
+the explanation. This recording is **OFFLINE-VERIFIED** against captured v0.3
+headers and mock send/stream IO, not a live facade or streaming evaluation.
+It is available on `develop`, not in published `0.2.0`.
+
+DDK does not send `X-AGENT-ID` on MCP or A2A calls: its effect on
+`mulesoft_agent_connection_count` attribution has not been verified live.
+No connection-graph or metric guarantee is made. Auth challenge fields, returned task/context IDs and raw refusal
 diagnostics are not recorded on the outbound span, even with content capture on.
 
 ### Zero-config export
@@ -457,11 +471,17 @@ donkey = Donkey.from_env(telemetry_capture_content=True)
 `telemetry_capture_content` resolves along the standard
 [precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence) (set in code → env → config
 files → default) and **defaults to `False`**. When
-enabled, content is emitted under the pinned semconv attribute names —
-`gen_ai.prompt` and `gen_ai.completion` — and no others. When off, those
-attributes never reach a span, and the allowlist that builds every span drops
-any content-shaped attribute a call site hands it, so there is no accidental
-path for message text to leak.
+enabled, LLM content is emitted under the pinned semconv attribute names
+`gen_ai.prompt` and `gen_ai.completion`. On `develop`, it also permits outbound
+A2A quality explanations under `donkey.a2a.quality.explanation`, limited to
+4096 characters. Gateway explanations may repeat request text and are exported
+without sanitization; truncation is not redaction. This A2A behavior is not in
+the published `0.2.0` package.
+
+When off, prompt/completion attributes are excluded by the LLM span allowlist
+and A2A quality explanation text is omitted by the outbound recorder. Numeric
+quality scores and the captured evaluation/status values do not require content
+opt-in. See [Outbound A2A spans](#outbound-a2a-spans).
 
 ## Routing & resilience
 

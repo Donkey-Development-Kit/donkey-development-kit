@@ -7,6 +7,7 @@ import builtins
 import re
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -250,9 +251,11 @@ async def test_concurrent_calls_keep_independent_runs(spans: Any) -> None:
     async def send() -> None:
         with outbound_call(telemetry=True) as run:
             ids.append(run.correlation_id)
+            score = len(ids)
             if len(ids) == 2:
                 ready.set()
             await ready.wait()
+            run.record_quality({"x-quality-score": str(score)})
             assert current_correlation_id() == run.correlation_id
         assert current_correlation_id() is None
 
@@ -261,6 +264,10 @@ async def test_concurrent_calls_keep_independent_runs(spans: Any) -> None:
     assert {span.attributes["donkey.correlation_id"] for span in spans.get_finished_spans()} == set(
         ids
     )
+    assert {
+        span.attributes["donkey.correlation_id"]: span.attributes["donkey.a2a.quality.score"]
+        for span in spans.get_finished_spans()
+    } == dict(zip(ids, (1.0, 2.0), strict=True))
 
 
 def test_noop_tracer_yields_no_trace_headers(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -271,3 +278,67 @@ def test_noop_tracer_yields_no_trace_headers(monkeypatch: pytest.MonkeyPatch) ->
     with outbound_call(telemetry=True) as run:
         assert run.trace_headers == {}
         assert current_correlation_id() == run.correlation_id
+
+
+@pytest.mark.parametrize("capture", [False, True])
+def test_captured_quality_headers_record_without_default_content(spans: Any, capture: bool) -> None:
+    """Replay the live header-only capture, not a live SDK round-trip (BG §2.9)."""
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "fixtures/anypoint/a2a_policies/v03-quality-send.headers.txt"
+    )
+    headers = dict(line.split(": ", 1) for line in path.read_text().splitlines()[1:])
+    with outbound_call(telemetry=True, capture_content=capture) as run:
+        run.record_quality(headers)
+    (call,) = spans.get_finished_spans()
+    assert call.attributes["donkey.a2a.quality.evaluation"] == "yes"
+    assert call.attributes["donkey.a2a.quality.score"] == 3.0
+    assert call.attributes["donkey.a2a.quality.status"] == "completed"
+    if capture:
+        assert call.attributes["donkey.a2a.quality.explanation"] == headers["x-quality-explanation"]
+    else:
+        assert "donkey.a2a.quality.explanation" not in call.attributes
+    assert not call.events
+    assert call.status.status_code.name == "UNSET"
+
+
+@pytest.mark.parametrize("capture", [False, True])
+def test_quality_explanation_is_opt_in_and_bounded(spans: Any, capture: bool) -> None:
+    explanation = "private request text " * 300
+    with outbound_call(telemetry=True, capture_content=capture) as run:
+        run.record_quality(
+            {
+                "X-QUALITY-EVALUATION": "yes",
+                "X-QUALITY-STATUS": "completed",
+                "X-QUALITY-EXPLANATION": explanation,
+            }
+        )
+    (call,) = spans.get_finished_spans()
+    assert call.attributes["donkey.a2a.quality.evaluation"] == "yes"
+    assert call.attributes["donkey.a2a.quality.status"] == "completed"
+    if capture:
+        assert call.attributes["donkey.a2a.quality.explanation"] == explanation[:4096]
+    else:
+        assert "donkey.a2a.quality.explanation" not in call.attributes
+
+
+@pytest.mark.parametrize("score", ["NaN", "inf", "-inf", "private data", "9" * 100])
+def test_quality_invalid_fields_are_ignored_without_rendering(spans: Any, score: str) -> None:
+    with outbound_call(telemetry=True) as run:
+        run.record_quality(
+            {
+                "X-QUALITY-EVALUATION": "private evaluation",
+                "X-QUALITY-STATUS": "private status",
+                "X-QUALITY-SCORE": score,
+                "X-QUALITY-EXPLANATION": "private explanation",
+            }
+        )
+    (call,) = spans.get_finished_spans()
+    assert not any(key.startswith("donkey.a2a.quality.") for key in call.attributes)
+
+
+def test_quality_headers_are_optional_and_telemetry_off_is_inert() -> None:
+    with outbound_call(telemetry=False, capture_content=True) as run:
+        run.record_quality({"x-quality-score": "3", "x-quality-explanation": "private"})
+        run.record_quality({})
+        assert "private" not in repr(run)

@@ -113,6 +113,12 @@ SEMANTIC_ROUTING_SUCCESS_HEADER = "x-llm-proxy-semantic-routing-success"
 SEMANTIC_CACHE_STATUS_HEADER = "x-semantic-cache-status"
 SEMANTIC_CACHE_SCORE_HEADER = "x-semantic-cache-score"
 
+# A2A quality response capture (docs/verified-apis.md section 6, #1393).
+A2A_QUALITY_EVALUATION_HEADER = "x-quality-evaluation"
+A2A_QUALITY_SCORE_HEADER = "x-quality-score"
+A2A_QUALITY_STATUS_HEADER = "x-quality-status"
+A2A_QUALITY_EXPLANATION_HEADER = "x-quality-explanation"
+
 # Content-safety verdicts, an ``-action`` and a ``-reason`` per vendor
 # (docs/verified-apis.md §4).
 AZURE_CONTENT_SAFETY_ACTION_HEADER = "x-llm-proxy-azure-content-safety-action"

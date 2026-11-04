@@ -26,13 +26,14 @@ an inbound MCP or HTTP surface can be another.
 from __future__ import annotations
 
 import contextlib
+import math
 import re
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from . import _verify
+from . import _verify, _wire
 from .correlation import (
     CorrelationSource,
     current_correlation_id,
@@ -54,6 +55,10 @@ if TYPE_CHECKING:
     from .refusals import TypedRefusals
 
 __all__ = [
+    "DONKEY_A2A_QUALITY_EVALUATION",
+    "DONKEY_A2A_QUALITY_EXPLANATION",
+    "DONKEY_A2A_QUALITY_SCORE",
+    "DONKEY_A2A_QUALITY_STATUS",
     "DONKEY_CORRELATION_SOURCE",
     "SPAN_A2A_CALL",
     "SPAN_A2A_TASK",
@@ -67,6 +72,12 @@ __all__ = [
 
 #: The span one outbound A2A call opens around card discovery and sending.
 SPAN_A2A_CALL = "donkey.a2a.call"
+
+# Stable DDK annotation keys; these describe the gateway verdict, not an eval framework.
+DONKEY_A2A_QUALITY_EVALUATION = "donkey.a2a.quality.evaluation"
+DONKEY_A2A_QUALITY_SCORE = "donkey.a2a.quality.score"
+DONKEY_A2A_QUALITY_STATUS = "donkey.a2a.quality.status"
+DONKEY_A2A_QUALITY_EXPLANATION = "donkey.a2a.quality.explanation"
 
 #: The span one inbound A2A task opens around its handler.
 SPAN_A2A_TASK = "donkey.a2a.task"
@@ -101,13 +112,46 @@ class OutboundRun:
 
     correlation_id: str
     trace_headers: Mapping[str, str]
+    _span: Any = field(default=None, repr=False, compare=False)
+    _capture_content: bool = field(default=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "trace_headers", MappingProxyType(dict(self.trace_headers)))
 
+    def record_quality(self, headers: Mapping[str, str]) -> None:
+        """Record captured quality annotations; explanation text requires opt-in (#1399).
+
+        Missing or malformed values are omitted, never treated as call failures.
+        Only captured evaluation/status values are exported without content opt-in.
+        No score range is inferred from the single captured verdict.
+        """
+        if self._span is None:
+            return
+        values = {key.lower(): value for key, value in headers.items()}
+        for header, attribute, expected in (
+            (_wire.A2A_QUALITY_EVALUATION_HEADER, DONKEY_A2A_QUALITY_EVALUATION, "yes"),
+            (_wire.A2A_QUALITY_STATUS_HEADER, DONKEY_A2A_QUALITY_STATUS, "completed"),
+        ):
+            if values.get(header) == expected:
+                self._span.set_attribute(attribute, expected)
+        score = values.get(_wire.A2A_QUALITY_SCORE_HEADER, "")
+        if score and len(score) <= 64:
+            try:
+                number = float(score)
+            except ValueError:
+                pass
+            else:
+                if math.isfinite(number):
+                    self._span.set_attribute(DONKEY_A2A_QUALITY_SCORE, number)
+        explanation = values.get(_wire.A2A_QUALITY_EXPLANATION_HEADER)
+        if self._capture_content and explanation:
+            self._span.set_attribute(DONKEY_A2A_QUALITY_EXPLANATION, explanation[:4096])
+
 
 @contextlib.contextmanager
-def outbound_call(*, telemetry: bool, cost: CostTags | None = None) -> Iterator[OutboundRun]:
+def outbound_call(
+    *, telemetry: bool, cost: CostTags | None = None, capture_content: bool = False
+) -> Iterator[OutboundRun]:
     """Bind one outbound A2A call and open a DDK CLIENT span (#1395).
 
     Keep card discovery and sending inside this block to share a correlation id.
@@ -124,6 +168,7 @@ def outbound_call(*, telemetry: bool, cost: CostTags | None = None) -> Iterator[
 
     Args:
         telemetry: Whether to open the span and inject W3C trace context.
+        capture_content: Opt in to quality explanation text, limited to 4096 characters.
         cost: Configured cost tags; current run overrides win per dimension.
             Only team, project and environment are recorded, never end-user ids.
             This does not change the cost state bound by the enclosing run.
@@ -168,7 +213,7 @@ def outbound_call(*, telemetry: bool, cost: CostTags | None = None) -> Iterator[
             try:
                 headers: dict[str, str] = {}
                 TraceContextTextMapPropagator().inject(headers)
-                yield OutboundRun(run_id, headers)
+                yield OutboundRun(run_id, headers, span, capture_content)
             except GeneratorExit:
                 raise
             except BaseException as exc:
