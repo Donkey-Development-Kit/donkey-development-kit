@@ -646,7 +646,7 @@ Without the plugin, nothing pauses. The gate raises `ApprovalRequired` inside
 the tool, which leaves the runner, and the call waits in `donkey.approvals`
 like any other.
 
-## Discovered tools <Badge tone="neutral">Local round-trip</Badge>
+## Discovered tools <Badge tone="neutral" ledger="§9 MCP Python SDK (baseline)">Local round-trip</Badge>
 
 `@donkey.tool` decorates a local function. A governed MCP tool from
 [`donkey.tools.discover()`](/tool-access/discovery) is not one, so you declare
@@ -807,13 +807,13 @@ mapped onto a pause:
 | Framework / protocol | Native primitive | Status |
 |---|---|---|
 | Any Python code | `ApprovalRequired` + `donkey.approvals.resolve(...)` | <Badge tone="live">Live</Badge> |
-| LangGraph | `interrupt()` / `Command(resume=…)` | <Badge tone="neutral">Offline-verified</Badge> |
-| OpenAI Agents SDK | `needs_approval` / `RunState.approve(…)` | <Badge tone="neutral">Offline-verified</Badge> |
-| Google ADK | tool confirmation, via `approval_plugin()` | <Badge tone="neutral">Offline-verified</Badge> |
-| Strands | `BeforeToolCallEvent` interrupt, via `ApprovalHook` | <Badge tone="neutral">Offline-verified</Badge> |
+| LangGraph | `interrupt()` / `Command(resume=…)` | <Badge tone="neutral" ledger="§8 LangGraph (tool approval, #212)">Offline-verified</Badge> |
+| OpenAI Agents SDK | `needs_approval` / `RunState.approve(…)` | <Badge tone="neutral" ledger="§8 OpenAI Agents SDK (tool approval, #213)">Offline-verified</Badge> |
+| Google ADK | tool confirmation, via `approval_plugin()` | <Badge tone="neutral" ledger="§8 Google ADK (HITL, #1235)">Offline-verified</Badge> |
+| Strands | `BeforeToolCallEvent` interrupt, via `ApprovalHook` | <Badge tone="neutral" ledger="§8 Strands (HITL, #1234)">Offline-verified</Badge> |
 | MCP | elicitation | <Badge tone="neutral">Not supported</Badge> |
-| Omni Gateway | OAuth2 OBO CIBA step-up, typed as `GatewayApprovalPending` / `GatewayApprovalDenied` | <Badge tone="live">Live</Badge> |
-| Omni Gateway, MCP `tools/list` | `ToolSet.wait_for_gateway_approval()` | <Badge tone="neutral">Offline-verified</Badge> |
+| Omni Gateway | OAuth2 OBO CIBA step-up, typed as `GatewayApprovalPending` / `GatewayApprovalDenied` | <Badge tone="live" ledger="§4 OAuth2 OBO Credential Injection, CIBA pending; §4 OAuth2 OBO Credential Injection, CIBA denied">Live</Badge> |
+| Omni Gateway, MCP `tools/list` | `ToolSet.wait_for_gateway_approval()` | <Badge tone="neutral" ledger="§4 OAuth2 OBO Credential Injection, CIBA pending">Offline-verified</Badge> |
 | Omni Gateway, MCP `tools/call` | none: the framework's own error | <Badge tone="neutral">Not supported</Badge> |
 
 The badges use the terms of the

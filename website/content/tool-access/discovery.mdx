@@ -70,7 +70,7 @@ For access-scoped lists, refusal handling and result transformations, see
 
 ## Registry search
 
-`donkey.registry.search()` is <Badge tone="live">Live</Badge>. `discover(...)`
+`donkey.registry.search()` is <Badge tone="live" ledger="§7 Exchange asset search endpoint">Live</Badge>. `discover(...)`
 is the high-level facade over the registry. When you need name search, asset
 types or a result limit, call `donkey.registry.search()` directly. It returns
 `AssetRef` handles rather than a bindable `ToolSet`:
@@ -105,7 +105,7 @@ latest version:
 
 ## Resolving an MCP server
 
-`donkey.registry.resolve_mcp()` is <Badge tone="live">Live</Badge>. It turns an
+`donkey.registry.resolve_mcp()` is <Badge tone="live" ledger="§6 How does an Exchange MCP asset resolve">Live</Badge>. It turns an
 MCP server asset into the gateway URL an agent connects to:
 
 ```python
@@ -138,7 +138,7 @@ routes the path only with the trailing slash.
 
 ## Resolving an A2A agent
 
-`donkey.registry.resolve_agent()` is <Badge tone="live">Live</Badge>. It does
+`donkey.registry.resolve_agent()` is <Badge tone="live" ledger="§6 Does an A2A agent resolve">Live</Badge>. It does
 for an A2A agent asset what `resolve_mcp()` does for an MCP server, with the
 same reads, and finds the version's deployed A2A instance:
 
@@ -204,7 +204,7 @@ tools = await donkey.tools.discover(governed=STRICT)
 
 ## `explain()` — why a tool was included or excluded
 
-`donkey.registry.explain()` is <Badge tone="live">Live</Badge>. Without it,
+`donkey.registry.explain()` is <Badge tone="live" ledger="§6 Are applied policies readable">Live</Badge>. Without it,
 `governed=True` returning an empty list is indistinguishable from a broken
 credential. `explain()` reports every check the criteria turn on:
 
