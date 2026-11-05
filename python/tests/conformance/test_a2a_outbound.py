@@ -144,6 +144,7 @@ async def test_send_official_response_pinned_gateway(monkeypatch, sdk, request_m
             return httpx.Response(200, json=_card(legacy))
         body = json.loads(request.content)
         assert body["method"] == ("message/send" if legacy else "SendMessage")
+        assert request.headers["A2A-Version"] == ("0.3.0" if legacy else "1.0")
         return httpx.Response(
             200, json={"jsonrpc": "2.0", "id": body["id"], "result": _result(legacy)}
         )
@@ -165,6 +166,61 @@ async def test_send_official_response_pinned_gateway(monkeypatch, sdk, request_m
 
 
 @pytest.mark.parametrize("legacy", [False, True])
+async def test_negotiated_version_against_official_server(
+    monkeypatch, sdk, request_message, legacy
+):
+    from a2a.helpers.proto_helpers import new_text_message
+    from a2a.server.agent_execution import AgentExecutor
+    from a2a.server.request_handlers import DefaultRequestHandler
+    from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+    from a2a.server.tasks import InMemoryTaskStore
+    from starlette.applications import Starlette
+
+    class Executor(AgentExecutor):
+        async def execute(self, context, event_queue):
+            await event_queue.enqueue_event(new_text_message("hello", role=sdk.Role.ROLE_AGENT))
+
+        async def cancel(self, context, event_queue):
+            raise NotImplementedError
+
+    card = sdk.AgentCard(
+        name="agent",
+        description="offline",
+        version="1",
+        capabilities=sdk.AgentCapabilities(),
+        default_input_modes=["text"],
+        default_output_modes=["text"],
+        supported_interfaces=[
+            sdk.AgentInterface(
+                url=_URL,
+                protocol_binding="JSONRPC",
+                protocol_version="0.3.0" if legacy else "1.0",
+            )
+        ],
+    )
+    handler = DefaultRequestHandler(
+        agent_executor=Executor(),
+        task_store=InMemoryTaskStore(),
+        agent_card=card,
+    )
+    app = Starlette(
+        routes=[
+            *create_agent_card_routes(card, card_url="/agent/.well-known/agent-card.json"),
+            *create_jsonrpc_routes(handler, rpc_url="/agent/", enable_v0_3_compat=True),
+        ]
+    )
+    try:
+        async with Donkey(_cfg()) as donkey:
+            _registry(monkeypatch, donkey)
+            swap_transport(donkey, httpx.ASGITransport(app=app))
+            response = await donkey.a2a.send(_REF, request_message)
+            assert response.WhichOneof("payload") == "message"
+            assert response.message.parts[0].text == "hello"
+    finally:
+        await handler.aclose()
+
+
+@pytest.mark.parametrize("legacy", [False, True])
 async def test_stream_official_events_early_exit_and_reuse(
     monkeypatch, sdk, request_message, legacy
 ):
@@ -175,6 +231,7 @@ async def test_stream_official_events_early_exit_and_reuse(
         if request.method == "GET":
             return httpx.Response(200, json=_card(legacy))
         body = json.loads(request.content)
+        assert request.headers["A2A-Version"] == ("0.3.0" if legacy else "1.0")
         methods.append(body["method"])
         result = {"jsonrpc": "2.0", "id": body["id"], "result": _result(legacy)}
         if body["method"] in {"SendMessage", "message/send"}:
@@ -255,12 +312,15 @@ async def test_unsupported_transport_has_no_send(monkeypatch, request_message, b
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("version", ["2.0", "0.2.0", "not-version"])
+@pytest.mark.parametrize("version", [None, "2.0", "0.2.0", "not-version"])
 @pytest.mark.parametrize("compatible", [None, "0.3.0", "1.0"])
 async def test_protocol_version_selection(monkeypatch, request_message, version, compatible):
     calls = []
     card = _card()
-    card["supportedInterfaces"][0]["protocolVersion"] = version
+    if version is None:
+        del card["supportedInterfaces"][0]["protocolVersion"]
+    else:
+        card["supportedInterfaces"][0]["protocolVersion"] = version
     if compatible is not None:
         card["supportedInterfaces"].append(
             {**card["supportedInterfaces"][0], "protocolVersion": compatible}
@@ -273,6 +333,7 @@ async def test_protocol_version_selection(monkeypatch, request_message, version,
         body = json.loads(request.content)
         legacy = compatible == "0.3.0"
         assert body["method"] == ("message/send" if legacy else "SendMessage")
+        assert request.headers["A2A-Version"] == compatible
         return httpx.Response(
             200, json={"jsonrpc": "2.0", "id": body["id"], "result": _result(legacy)}
         )
@@ -286,6 +347,30 @@ async def test_protocol_version_selection(monkeypatch, request_message, version,
         else:
             assert (await donkey.a2a.send(_REF, request_message)).message.message_id == "reply"
     assert len(calls) == (1 if compatible is None else 2)
+
+
+async def test_legacy_card_version_default(monkeypatch, request_message):
+    card = _card(legacy=True)
+    del card["protocolVersion"]
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if request.method == "GET":
+            assert "A2A-Version" not in request.headers
+            return httpx.Response(200, json=card)
+        body = json.loads(request.content)
+        assert body["method"] == "message/send"
+        assert request.headers["A2A-Version"] == "0.3.0"
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": body["id"], "result": _result(legacy=True)}
+        )
+
+    async with Donkey(_cfg()) as donkey:
+        _registry(monkeypatch, donkey)
+        swap_transport(donkey, httpx.MockTransport(handler))
+        assert (await donkey.a2a.send(_REF, request_message)).message.message_id == "reply"
+    assert len(calls) == 2
 
 
 async def test_user_auth_is_read_per_http_request(monkeypatch, request_message):

@@ -223,6 +223,7 @@ class A2AFacade:
                 AGENT_CARD_WELL_KNOWN_PATH,
                 PROTOCOL_VERSION_0_3,
                 PROTOCOL_VERSION_1_0,
+                VERSION_HEADER,
                 TransportProtocol,
             )
         except ImportError:
@@ -326,6 +327,13 @@ class A2AFacade:
                             "The A2A agent does not advertise a supported JSON-RPC transport.",
                             remediation="Expose a JSON-RPC A2A interface through the gateway.",
                         )
+                    version = interface.protocol_version
+
+                    async def negotiated_version(request: httpx.Request) -> None:
+                        if request.method == "POST":
+                            request.headers[VERSION_HEADER] = version
+
+                    view.event_hooks["request"].append(negotiated_version)
                     cls = (
                         CompatJsonRpcTransport
                         if interface.protocol_version
