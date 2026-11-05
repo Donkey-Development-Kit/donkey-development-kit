@@ -625,11 +625,11 @@ class ToolSet:
         if (
             self._mcp_transport
             and not per_tool
-            and binding not in {"agent_framework()", "openai_agents()"}
+            and binding not in {"agent_framework()", "openai_agents()", "strands()"}
         ):
             raise ConfigError(
                 "Offline MCP transport injection supports only LangGraph, "
-                "LlamaIndex, Anthropic, Agent Framework and OpenAI Agents SDK bindings."
+                "LlamaIndex, Anthropic, Agent Framework, OpenAI Agents SDK and Strands bindings."
             )
         described = await self.describe()
         servers = described.servers
@@ -884,16 +884,22 @@ class ToolSet:
             ImportError: ``strands-agents`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from strands.tools.mcp import MCPClient
         except ImportError as exc:
             raise ImportError(_install("strands", None)) from exc
+        if self._mcp_transport:
+            _require_replay_versions("Strands", {"strands-agents": (1, 64, 0), "mcp": (2, 3, 0)})
         plan, headers = await self._plan("strands()", per_tool=False)
         return [
             MCPClient(
                 # The url= form builds its own client; the transport form takes ours.
                 transport_callable=functools.partial(
-                    open_transport, server.endpoint_url, dict(headers)
+                    open_transport,
+                    server.endpoint_url,
+                    dict(headers),
+                    http_factory=self._client_factory(server.endpoint_url, headers),
                 ),
                 tool_filters={"allowed": sorted(names)},
             )

@@ -8,13 +8,22 @@ import { Callout } from 'nextra/components'
 # Framework binding
 
 For offline failure tests of newly bound LangGraph, LlamaIndex, Anthropic,
-Microsoft Agent Framework and OpenAI Agents SDK
+Microsoft Agent Framework, OpenAI Agents SDK and Strands
 tools, see [MCP tool fault injection](/simulator#mcp-tool-fault-injection).
 It requires an explicit offline backend and does not intercept existing bindings
 or bypass governance checks. Agent Framework simulation requires stable
 `agent-framework-core>=1.24.0` and `mcp>=2.3.0`; OpenAI Agents SDK simulation
-requires stable `openai-agents>=0.20.0` and `mcp>=2.3.0`. These do not change normal
+requires stable `openai-agents>=0.20.0` and `mcp>=2.3.0`; Strands simulation requires
+stable `strands-agents>=1.64.0` and `mcp>=2.3.0`. These do not change normal
 production binding requirements.
+
+Strands replay preserves its native generic error tool results, not typed PII
+or access refusals; `typed_refusals()` cannot recover structured fields from
+those results. Its native catalog errors still raise `MCPError`. Keep the native
+client context inside the simulation scope. Failed, cancelled or expired Strands
+sessions can emit an upstream unawaited-coroutine warning during `stop()` even
+though their HTTP clients close. See the simulator page for ownership, restart
+and bounded-test guidance.
 
 <Callout type="info">
   Every binding below was run through the governed gateway with the
