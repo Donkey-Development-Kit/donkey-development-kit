@@ -13,8 +13,8 @@ anyio==4.16.0
 ast-serialize==0.13.1
 attrs==26.1.0
 authlib==1.9.4
-boto3==1.43.123
-botocore==1.43.123
+boto3==1.43.124
+botocore==1.43.124
 certifi==2026.10.23
 cffi==2.1.1
 charset-normalizer==3.5.2
@@ -62,7 +62,7 @@ mdurl==0.1.2
 multidict==7.2.1
 mypy==2.4.1
 mypy-extensions==1.2.0
-openai==3.45.0
+openai==3.46.0
 opentelemetry-api==1.44.0
 opentelemetry-sdk==1.44.0
 opentelemetry-semantic-conventions==0.65b0
@@ -73,8 +73,8 @@ propcache==0.5.4
 pyasn1==0.6.5
 pyasn1-modules==0.4.2
 pycparser==3.12
-pydantic==2.14.2
-pydantic-core==2.50.2
+pydantic==2.14.3
+pydantic-core==2.50.4
 pydantic-settings==2.16.2
 pygments==2.21.0
 pyjwt==2.15.1

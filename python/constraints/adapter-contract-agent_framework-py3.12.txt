@@ -63,8 +63,8 @@ azure-monitor-opentelemetry-exporter==1.0.0b58
 azure-search-documents==12.0.0
 azure-storage-blob==12.31.1
 backoff==2.2.1
-boto3==1.43.123
-botocore==1.43.123
+boto3==1.43.124
+botocore==1.43.124
 certifi==2026.10.23
 cffi==2.0.0
 charset-normalizer==3.5.2
@@ -140,7 +140,7 @@ mypy-extensions==1.2.0
 numpy==2.5.4
 oauthlib==4.0.1
 ollama==0.5.3
-openai==3.45.0
+openai==3.46.0
 openai-agents==0.24.0
 openai-chatkit==1.6.5
 opentelemetry-api==1.45.2
@@ -174,7 +174,7 @@ packaging==26.3
 pathspec==1.1.1
 pluggy==1.7.0
 portalocker==4.4.2
-posthog==7.83.2
+posthog==7.84.0
 powerfx==0.0.34
 priority==2.0.0
 propcache==0.5.4
@@ -184,8 +184,8 @@ psutil==7.2.2
 pyasn1==0.6.5
 pyasn1-modules==0.4.2
 pycparser==3.12
-pydantic==2.14.2
-pydantic-core==2.50.2
+pydantic==2.14.3
+pydantic-core==2.50.4
 pydantic-monty==0.0.23
 pydantic-monty-client==0.0.23
 pydantic-monty-runtime==0.0.23
