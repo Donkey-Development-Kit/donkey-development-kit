@@ -48,6 +48,9 @@ def dev(
     agent_version: str = typer.Option(
         "0.0.0", "--agent-version", help="The agent version the card advertises"
     ),
+    protocol_version: str = typer.Option(
+        "1.0", "--protocol-version", help="A2A protocol to serve: 0.3.0 or 1.0 (default)"
+    ),
     scenario: list[str] = typer.Option(
         [],
         "--scenario",
@@ -61,8 +64,10 @@ def dev(
 
     Runs the app `donkey.serve()` runs, governed the same way, with a local
     fake ingress in front of it on one port. `--scenario` rules reject inbound
-    calls (`SendMessage`/`SendStreamingMessage`) with captured A2A v1
-    rejections; every other request reaches the agent untouched.
+    calls with captured A2A v1 rejections by default. `--protocol-version 0.3.0`
+    selects captured PII/rate `message/send` refusals only: injection and
+    streaming with scenarios are unsupported. Wrong-version calls fail clearly;
+    every non-call request reaches the agent untouched.
     Every response carries `x-donkey-simulator: true`.
 
     The ingress is simulated: no policy is enforced. request_limit is a replay
@@ -79,8 +84,13 @@ def dev(
     from ..simulator.scenarios import ScenarioError, parse_scenarios
 
     try:
+        check_scenarios((), protocol_version=protocol_version)
+    except ScenarioError as exc:
+        typer.secho(f"Invalid --protocol-version: {exc}", fg="red", err=True)
+        raise typer.Exit(2) from exc
+    try:
         scenarios = parse_scenarios(scenario)
-        check_scenarios(scenarios)
+        check_scenarios(scenarios, protocol_version=protocol_version)
     except ScenarioError as exc:
         typer.secho(f"Invalid --scenario: {exc}", fg="red", err=True)
         raise typer.Exit(2) from exc
@@ -104,6 +114,7 @@ def dev(
             handler,
             url=url,
             version=agent_version,
+            protocol_version=protocol_version,
             telemetry=donkey.config.telemetry,
             correlation_header=donkey.config.correlation_header,
             refusals=typed_refusals(),
@@ -129,9 +140,15 @@ def dev(
     typer.echo(
         f"Agent {target} over A2A on {url}, behind a SIMULATED gateway ingress. "
         "Every response carries 'x-donkey-simulator: true'. Rejections replay the "
-        "captured A2A v1 refusals. request_limit is a replay trigger, not token accounting; "
+        f"captured A2A {'v1' if protocol_version == '1.0' else 'v03'} refusals "
+        f"(protocol {protocol_version}). request_limit is a replay trigger, not token accounting; "
         "captured headers and captured response IDs are not rewritten. "
         "Passing calls gain no rate headers. No outbound A2A or authorization-code simulation. "
         "This is NOT a real gateway: no policy is enforced."
     )
-    uvicorn.run(build_ingress(agent, scenarios), host=host, port=port, log_level="info")
+    uvicorn.run(
+        build_ingress(agent, scenarios, protocol_version=protocol_version),
+        host=host,
+        port=port,
+        log_level="info",
+    )

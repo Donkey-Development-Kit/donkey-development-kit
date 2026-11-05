@@ -401,29 +401,58 @@ capture inventory. Local replay verifies handling, not gateway enforcement.
 
 [`donkey dev`](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) wraps your served agent rather than the
 model routes above. It shares the fixture loader and scenario triggers, but
-replays captured **A2A v1** refusals for `SendMessage` and
-`SendStreamingMessage`, each from its matching capture:
+selects captured A2A refusals with `--protocol-version`: `1.0` by default,
+or `0.3.0`. This is separate from `--agent-version`, the card's application
+release version. The supported scenario/version/method matrix is:
+
+| Protocol | Call method | `pii_block` | `request_limit` | `injection` |
+|---|---|---|---|---|
+| `1.0` (default) | `SendMessage` | Captured send refusal | Captured send refusal | Captured Azure send block |
+| `1.0` | `SendStreamingMessage` | Captured stream refusal | Captured stream refusal | Captured Azure stream block |
+| `0.3.0` | `message/send` | Captured legacy send refusal | Captured legacy send refusal | Unsupported at construction/startup |
+| `0.3.0` | `message/stream` | Local HTTP `400` with any scenarios | Local HTTP `400` with any scenarios | Unsupported at construction/startup |
+
+v0.3 streaming with configured scenarios fails before any rule advances, even
+if the stream would not trigger a rejection. Without scenarios,
+`message/stream` passes through with the agent's own bytes; this is not a
+promise that the wrapped agent supports streaming. `build_app()` advertises
+`streaming: false`.
+
+Known call methods from the wrong version and explicit mismatched
+`A2A-Version` headers on calls also return local plain-text HTTP `400`, even
+without scenarios. Configuration accepts exactly `1.0` or `0.3.0`, but header
+matching follows the official SDK's version normalization and compares only
+the major version: `1.0.0` matches selected `1.0`, and `0.3.1` matches selected
+`0.3.0`. Other parseable versions with the same major also match; malformed
+versions or a different major do not. An absent header retains replay behavior;
+the SDK validates passing calls. These local errors carry `x-donkey-simulator: true`, not a fabricated
+gateway refusal or JSON-RPC policy error. Unknown methods, malformed JSON,
+card reads and task reads/cancels pass to the agent's SDK routes.
+
+Each supported cell uses its matching capture, with these DDK outcomes:
 
 | Scenario | A2A ingress response | Existing classification |
 |---|---|---|
-| `injection` | Azure prompt-shield `403`, `ErrorInfo` and `x-flex-azure-guardrails-*` | `ContentSafetyBlocked` |
-| `pii_block` | `403` with synthetic findings in an ambiguous `ErrorInfo` envelope | `ToolInvocationError`, not `PIIDetected` |
+| `injection` (v1 only) | Azure prompt-shield `403`, `ErrorInfo` and `x-flex-azure-guardrails-*` | `ContentSafetyBlocked` |
+| `pii_block` | `403` with synthetic findings: v1 ambiguous `ErrorInfo`, v0.3 string `error.data` | `ToolInvocationError`, not `PIIDetected` |
 | `request_limit` | Bare `429` with captured `x-token-*`, no `retry-after` | `TokenBudgetExceeded` |
 
 On ingress, `request_limit` counts requests as a **replay trigger**, not a token
 policy implementation. The configured limit/window decides when the capture is
 returned; captured header values stay `1` limit, `1` remaining and `60000` ms to
 reset, even if your local counter or clock differs. Passing calls gain no rate
-headers because accepted v1 rate headers have not been captured. A test-only
-accepted v0.3 send capture does not establish v1 replay behavior. The
+headers; the existing accepted v0.3 send capture is not synthesized by ingress,
+and accepted v1 rate headers have not been captured. The
 `donkey mock` request counter and headers described above are unchanged.
 
-The response ID stays the captured string `"1393"`, not your incoming request ID.
+The response ID stays captured (v1 string `"1393"`, v0.3 PII numeric `1393`),
+not your incoming request ID.
 Bodies are not reserialized; only transport framing and the existing safe-header
 filter differ from the capture. Streaming refusals are HTTP JSON or empty
 responses, not SSE events. Other calls and passing streams retain the agent's
-own bytes, with the honesty header added. `budget` and `ciba` are not ingress
-scenarios. No outbound A2A or authorization-code simulation is provided.
+own bytes when supported, with the honesty header added. `budget` and `ciba`
+are not ingress scenarios. No outbound A2A or authorization-code simulation is
+provided.
 
 The tested stock v1 `a2a-sdk` 1.2.2 JSON-RPC transport generates UUID request IDs,
 then raises `A2AClientError` caused by `httpx.HTTPStatusError` for these send and

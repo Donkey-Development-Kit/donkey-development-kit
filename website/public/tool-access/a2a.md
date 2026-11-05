@@ -224,8 +224,14 @@ core transport and are decoded by the official SDK, not the GenAI SSE scanner.
 Raw responses on exceptions remain potentially sensitive. This does not add
 A2A PII/schema-specific typing or framework refusal translation.
 
-`as_tool()` remains planned. [`donkey dev`](https://docs.donkey-kit.dev/a2a.md) replays selected v1 ingress
-refusals, not this outbound authorization-code challenge.
+`as_tool()` remains planned. [`donkey dev`](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) defaults to
+v1 ingress replay; `--protocol-version 0.3.0` selects legacy PII/rate
+`message/send` captures, not this outbound authorization-code challenge.
+Its local unsupported-call HTTP `400` is not a gateway policy refusal.
+With scenarios configured, legacy streaming fails locally; without them it
+passes through to the agent. See the [replay matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
+The CLI flag selects the local listener/ingress, not this outbound facade,
+which still selects the official compatibility transport from the remote card.
 
 ## Next steps
 

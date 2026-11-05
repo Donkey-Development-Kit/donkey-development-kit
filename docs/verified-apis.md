@@ -759,8 +759,10 @@ guard is changed by this classification. PII/schema captures remain safe
 RPC helper; structured identity is an upstream gap (#1401). Bedrock content-block
 typing remains gated on its missing capture. `A2AFacade.send` / `stream` (#1395)
 apply this classification offline; framework `AgentHandle.as_tool()` binding
-remains planned. `donkey dev` (#1397) replays selected method-specific v1
-Azure block, PII and token-rate refusals, not all rows below. #1398 keeps raw
+remains planned. `donkey dev` (#1397, #1601) defaults to protocol `1.0` and
+replays selected method-specific v1 Azure block, PII and token-rate refusals.
+Protocol `0.3.0` replays existing v0.3 PII/rate `message/send` captures only,
+not all rows below. This adds no new captures or live verification. #1398 keeps raw
 RPC diagnostics out of rendered exceptions and DDK spans; original responses
 remain sensitive. The developer inventory is `a2a-gateway-policies.mdx` (#1400).
 
@@ -1249,17 +1251,64 @@ local; no gateway fronted the agent.
 
 Fronting an agent with an Omni Gateway A2A instance is `donkey expose` (#226);
 the control-plane calls it makes are recorded in §12.5 (#254, and #1278 for an
-MCP instance). `donkey dev`'s
-simulated ingress (#1284) answers inbound rejections with the LLM-proxy fixtures
-of §4. The v0.3 and v1 PII, schema-validation and token-rate-limit rejections on an
-A2A instance are now captured in `tests/fixtures/anypoint/a2a_policies/` (#1393,
-§4). They do not change the simulator. The outbound implementation below
-replays selected captures locally; those captures are not proof of a successful
-SDK gateway send or SSE stream.
+MCP instance). `donkey dev`'s simulated ingress originally used LLM-proxy
+fixtures (#1284); #1397 replaced them with selected method-specific A2A v1
+captures from §4. #1601 adds explicit local protocol selection and reuses
+the existing v0.3 PII/rate send captures. These are offline replay changes,
+not proof of a successful SDK gateway send or SSE stream.
 `client-id-enforcement`'s rejection with no client id was also seen (`401`
 `{"error":"Client ID is not present"}`, #226). V1 policy captures still need a
 compatible API Manager asset/instance; the old `a2a` registration rejects the
 v1 PII policy before attachment.
+
+#### Local protocol selection and ingress replay (#1601)
+
+**OFFLINE-VERIFIED scope only.** `build_app(..., protocol_version="1.0")`
+and `build_ingress(..., protocol_version="1.0")` accept `1.0` (default) or
+`0.3.0`. `donkey dev --protocol-version` selects both; `--agent-version`
+(default `0.0.0`) remains the independent application version. `Donkey.serve()`
+still uses v1 and gains no protocol-selection kwarg. Unknown protocol values
+raise `ValueError` in `build_app`, `ScenarioError` in the ingress helpers,
+or CLI exit `2` before target loading.
+
+`build_app` uses the official SDK's `create_agent_card_routes` and
+`create_jsonrpc_routes(..., enable_v0_3_compat=True, context_builder=...)`
+for legacy routing/card conversion, not a DDK protocol implementation. The
+legacy card at `/.well-known/agent-card.json` has `protocolVersion: "0.3.0"`,
+`url` and a legacy `supportedInterfaces` entry; JSON-RPC remains at `/`.
+`message/send` yields a legacy task (`kind: "task"`, state `completed`,
+text parts with `kind: "text"`); task reads use `tasks/get`. The context
+builder rejects an explicit v1 header rather than opting into another
+interface. Both cards advertise `streaming: false`. Local evidence:
+`test_legacy_card_and_handler_use_official_sdk_compatibility` in
+`tests/unit/test_a2a_serve.py` and the version-specific tests in
+`tests/unit/test_simulator_ingress.py` / `test_cli_dev.py`.
+
+| Protocol | Method | Supported replay scenarios | Boundary |
+|---|---|---|---|
+| `1.0` (default) | `SendMessage`, `SendStreamingMessage` | `injection`, `pii_block`, `request_limit` | Matching v1 send/stream captures |
+| `0.3.0` | `message/send` | `pii_block`, `request_limit` | Existing `v03-pii-send.*` / `v03-rate-send.headers.txt` bytes, not converted v1 envelopes |
+| `0.3.0` | `message/stream` | None | Any configured scenarios cause local HTTP `400` before dispatch/state advance, even if no rule would reject; no scenarios passes through |
+
+Legacy `injection`, and either version's `budget` / `ciba`, fail at
+construction/startup. Known wrong-version call methods or explicit mismatched
+`A2A-Version` headers on calls return **local plain-text HTTP 400**, not
+fabricated gateway refusals or JSON-RPC schema-policy envelopes, including
+when no scenarios are configured. Config values remain exactly `1.0` or
+`0.3.0`; explicit headers instead use `a2a.protocol.matches_protocol_version`
+to match the SDK's PEP 440 normalization and **major-only** comparison.
+For example, header `1.0.0` matches selected `1.0`, and `0.3.1` matches
+selected `0.3.0`; other parseable same-major values also match. Malformed
+versions and different majors do not. Missing headers preserve replay behavior; the SDK validates
+passing calls. Unknown methods, malformed JSON and non-call requests pass
+through for SDK handling. All responses carry `x-donkey-simulator: true`.
+
+Captured IDs stay unchanged (v1 string `"1393"`, v0.3 PII numeric `1393`),
+and captured PII findings remain sensitive. `request_limit` is a request-count
+replay trigger, not token accounting: captured `x-token-*` values are unchanged
+and passing calls receive no synthesized rate headers. No new capture,
+outbound injection, OAuth simulation, live facade send/SSE verification,
+publication/expose verification or accepted-call rate behavior is established.
 
 #### Scoped outbound client (#1395)
 

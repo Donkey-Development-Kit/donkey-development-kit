@@ -1,4 +1,7 @@
 {
+  "anypoint/a2a_policies/v03-pii-send.body.json": "sha256:a2d47cff8f9c0233e2f5c5f058c794e531d38403cb862ef1391e60a9610c8272",
+  "anypoint/a2a_policies/v03-pii-send.headers.txt": "sha256:e815e8aa4dfa3e11f5f30f35fb7828cba005c2b26909f9e4bec9690f59f06adc",
+  "anypoint/a2a_policies/v03-rate-send.headers.txt": "sha256:2df1102b8c6f72d1a221102005f3ac3e3af47c320ab6c0062e674ad0ebe49cbb",
   "anypoint/a2a_policies/v1-azure-block-send.body.json": "sha256:81425b23aeeff15be266f645700b194aa265cbb33810a2424664fe7d5cc9bb4d",
   "anypoint/a2a_policies/v1-azure-block-send.headers.txt": "sha256:ff60debda53eddb098efbbdc6cd268d964b09231a7e0a3815cbb63b7b6b90562",
   "anypoint/a2a_policies/v1-azure-block-stream.body.json": "sha256:81425b23aeeff15be266f645700b194aa265cbb33810a2424664fe7d5cc9bb4d",

@@ -50,4 +50,19 @@ command rather than a separate capture manifest. The wheel takes nothing from
 
 For an intentional future re-capture, update and review the original evidence,
 copy the exact bytes here and run `--relock`. Other #1393 evidence (schema,
-service-unavailable, v0.3, quality and authorization-code) remains test-only.
+service-unavailable, quality and authorization-code) remains test-only.
+
+## V0.3 Send Subset (#1601)
+
+Three additional immutable files are packaged: `v03-pii-send.headers.txt`,
+`v03-pii-send.body.json` and `v03-rate-send.headers.txt`. They are byte-identical
+copies of the #1393 test-tree captures, with provenance in the unchanged
+`a2a_policies/README.md` (2026-11-02, instance `21206128`, gateway 1.14.4,
+PII policy 1.0.2 and token-rate policy 1.0.1). The PII body retains numeric
+response ID `1393` and string diagnostics; the rate response has an empty body.
+No response is translated between protocol versions. The original README's
+v1-only replay inventory describes the pre-#1601 packaging state.
+
+Only `message/send` has these captures. There are no v0.3 PII/rate streaming
+or injection counterparts. No accepted rate headers are synthesized, including
+for v0.3. The served integrity lock and tests pin both copies to the originals.

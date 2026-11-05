@@ -161,3 +161,53 @@ def test_a_missing_extra_is_an_install_prompt(
     result = runner.invoke(app, ["dev", "dev_agent_1284:handle"])
     assert result.exit_code == 1
     assert 'pip install "donkey-kit[a2a,local]"' in _combined(result)
+
+
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["--protocol-version", "2.0"], "Invalid --protocol-version"),
+        (["--protocol-version", "0.3"], "Invalid --protocol-version"),
+        (
+            ["--protocol-version", "0.3.0", "--scenario", "injection:on-pattern=block"],
+            "no matching captured A2A v03",
+        ),
+    ],
+)
+def test_protocol_validation_precedes_target_import(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str], expected: str
+) -> None:
+    def unexpected_import(*args: object) -> None:
+        pytest.fail("invalid protocol/scenario must not import the target")
+
+    monkeypatch.setattr("donkey_kit.cli.dev._load", unexpected_import)
+    result = runner.invoke(app, ["dev", "unimportable:handler", *argv])
+    assert result.exit_code == 2
+    assert expected in _combined(result)
+
+
+@pytest.mark.parametrize("protocol", ["0.3.0", "1.0"])
+def test_protocol_is_wired_to_server_and_ingress(
+    project: dict[str, Any], monkeypatch: pytest.MonkeyPatch, protocol: str
+) -> None:
+    import donkey_kit.a2a
+    import donkey_kit.simulator.ingress
+
+    seen: list[str] = []
+    build = donkey_kit.a2a.build_app
+    wrap = donkey_kit.simulator.ingress.build_ingress
+
+    def build_agent(handler: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs["protocol_version"])
+        return build(handler, **kwargs)
+
+    def wrap_agent(agent: Any, scenarios: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs["protocol_version"])
+        return wrap(agent, scenarios, **kwargs)
+
+    monkeypatch.setattr("donkey_kit.a2a.build_app", build_agent)
+    monkeypatch.setattr("donkey_kit.simulator.ingress.build_ingress", wrap_agent)
+    result = runner.invoke(app, ["dev", "dev_agent_1284:handle", "--protocol-version", protocol])
+    assert result.exit_code == 0, _combined(result)
+    assert seen == [protocol, protocol]
+    assert f"protocol {protocol}" in result.stdout
