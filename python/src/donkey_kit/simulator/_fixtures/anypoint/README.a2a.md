@@ -30,9 +30,9 @@ command rather than a separate capture manifest. The wheel takes nothing from
   the gateway's token accounting. Its configured limit/window determine *when*
   the bare 429 is replayed, not the captured header values. The rejection keeps
   `x-token-limit: 1`, `x-token-remaining: 1`, `x-token-reset: 60000` and no
-  `retry-after`; classification returns `TokenBudgetExceeded`. Passing calls get
-   no synthesized rate headers: accepted v1 headers have not been captured.
-   The test-only accepted v0.3 send capture does not establish v1 replay behavior.
+   `retry-after`; classification returns `TokenBudgetExceeded`. Passing calls get
+   no synthesized rate headers. The test-only accepted v0.3 and v1 send captures
+   record individual windows, not a local accounting or passing-call replay contract.
 - Streaming refusals are request-phase HTTP JSON or empty responses, not SSE
   error events. Passing responses, including streams, retain the agent's bytes.
 - Response JSON-RPC IDs remain the captured string `"1393"`, even for a different

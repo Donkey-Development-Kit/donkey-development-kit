@@ -528,8 +528,8 @@ On ingress, `request_limit` counts requests as a **replay trigger**, not a token
 policy implementation. The configured limit/window decides when the capture is
 returned; captured header values stay `1` limit, `1` remaining and `60000` ms to
 reset, even if your local counter or clock differs. Passing calls gain no rate
-headers; the existing accepted v0.3 send capture is not synthesized by ingress,
-and accepted v1 rate headers have not been captured. The
+headers. Test-only accepted v0.3 and v1 send captures record individual windows,
+not a local accounting or passing-call replay contract. The
 `donkey mock` request counter and headers described above are unchanged.
 
 The response ID stays captured (v1 string `"1393"`, v0.3 PII numeric `1393`),
