@@ -15,7 +15,7 @@ delegation, and [`donkey.serve()`](/a2a) to make your own agent callable.
 
 <Callout type="info">
   **Live captures are not live SDK verification.** The response shapes below
-  were captured on Omni Gateway 1.14.4 on 2026-11-02. DDK classification,
+  include the 2026-11-02 Omni Gateway 1.14.4 captures and later bounded send-header captures. DDK classification,
   outbound delegation and selected ingress replay are **OFFLINE-VERIFIED**.
   Successful gateway send and SSE through the facade are not live verified.
   A refusal to a streaming method before SSE starts does not prove streaming success.
@@ -60,7 +60,7 @@ exception types below are root exports.
 | Same Azure policy, fail-closed service failure | VERIFIED (LIVE) | Both methods: `503`, `UNAVAILABLE`, reason `service_unavailable`, induced with an invalid key | `UpstreamModelError`, **not** a content block |
 | v1 Bedrock Guardrails, `a2a-v1-bedrock-guardrails` 1.0.0 | VERIFIED (LIVE) | Both methods: fail-closed `503`, `UNAVAILABLE`, `x-flex-bedrock-guardrails-*`, nonexistent guardrail version | `UpstreamModelError`; no Bedrock content-block capture |
 | v0.3 In-Task Authorization Code, `intask-authorization-code-policy` 1.0.1 | VERIFIED (LIVE) | Both methods: `200` JSON task, `auth-required`, complete status-message `authChallenge`; no SSE | `GatewayAuthRequired` after SDK decoding, **not** a refusal or completed task |
-| v0.3 Quality Evaluation, `a2a-quality-evaluation-policy` 1.0.0 | VERIFIED (LIVE) | One `message/send` reply: `200`, selected quality headers | Non-blocking span annotation; explanation requires content opt-in |
+| v0.3 Quality Evaluation, `a2a-quality-evaluation-policy` 1.0.0 | VERIFIED (LIVE) | `message/send`: one `200` completed-evaluation capture; a separate invalid-evaluator-key configuration returned `200` with only `x-quality-status: pending` | Completed-evaluation span annotation is offline-tested; pending capture adds no runtime or replay behavior |
 
 PII/schema envelopes lack reliable policy identifiers. Generic codes,
 `FORBIDDEN` / `INVALID_PARAMS` reasons and diagnostic text are not policy
@@ -108,7 +108,13 @@ Decide whether a new action is safe in your application.
 Quality Evaluation's captured headers are `x-quality-evaluation: yes`,
 `x-quality-score: 3`, `x-quality-status: completed` and `x-quality-explanation`.
 They describe one response, not a score range or deterministic grading guarantee.
-Evaluator failures, v1 evaluation and streaming evaluation are **UNVERIFIED**.
+A separate bounded v0.3 send on 2026-11-05, configured with a deliberately invalid
+synthetic evaluator key, returned HTTP 200 JSON with an agent `PONG` message and
+only `x-quality-status: pending`. No score, evaluation or explanation header was
+observed. `pending` does not prove evaluator failure or an internal cause.
+Evaluator failure semantics, v1 evaluation and streaming evaluation remain
+**UNVERIFIED**. This header-only observation adds no runtime or simulator replay
+behavior and does not verify live SDK facade success or SSE.
 DDK records known evaluation/status values and finite numeric scores on
 `donkey.a2a.call` spans from successful delegation HTTP responses. Explanations
 require `telemetry_capture_content=True` and are limited to 4096 characters;

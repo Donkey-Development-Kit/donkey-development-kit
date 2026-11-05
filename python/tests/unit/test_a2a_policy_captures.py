@@ -92,6 +92,21 @@ def test_quality_evaluation_annotates_a_successful_response() -> None:
     assert not (_FIXTURES / "v03-quality-send.body.json").exists()
 
 
+def test_quality_pending_headers_under_invalid_evaluator_key_configuration() -> None:
+    """Section 4: pending is observed on HTTP success, not a proven evaluator failure."""
+    response = _response("v03-quality-pending-send")
+    assert response.status_code == 200
+    assert dict(response.headers) == {
+        "content-type": "application/json",
+        "x-quality-status": "pending",
+    }
+    assert "x-quality-score" not in response.headers
+    assert "x-quality-evaluation" not in response.headers
+    assert "x-quality-explanation" not in response.headers
+    # The live agent message body is omitted, not empty on the wire.
+    assert not (_FIXTURES / "v03-quality-pending-send.body.json").exists()
+
+
 def test_accepted_v03_call_carries_rate_window_headers() -> None:
     """Section 4: selected rate headers also annotate an accepted v0.3 send."""
     response = _response("v03-rate-accepted-send")

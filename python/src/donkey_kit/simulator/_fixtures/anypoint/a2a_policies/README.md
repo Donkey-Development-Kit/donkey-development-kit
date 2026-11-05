@@ -199,6 +199,36 @@ maintainer's request, unlike the temporary policies above; no other agent was
 opted in. SDK span recording remains #1399.
 Official reference: https://docs.mulesoft.com/gateway/latest/policies-included-a2a-quality-evaluation.
 
+## V0.3 Quality Pending Headers
+
+`v03-quality-pending-send` retains only status, content type and quality headers
+from one bounded 2026-11-05 capture on isolated `a2a` instance `21277325`, asset
+`ddk-capture1393v03-quality-failure-agent` `1.0.0`, shared gateway in the same
+Sandbox. Inbound `a2a-quality-evaluation-policy` **1.0.0**, policy `9748586`,
+used `qualityLlmUrl: https://api.openai.com`, `qualityLlmModel: gpt-4o-mini`,
+`timeout: 10000` and a deliberately invalid synthetic evaluator key, not a real
+provider credential. Outbound Credential Injection - API Key **1.0.1**, policy
+`9748587`, supplied upstream access; no credential value is retained here.
+
+One POST `message/send`, numeric request ID `1393`, role `user`, one text part
+`Reply with PONG.`; content/encoding headers as above, no `A2A-Version`.
+After a 90-second propagation wait, curl used a 90-second request deadline,
+with no retries. HTTP 200 `application/json` returned an agent message containing
+`PONG`, not a completed task. The only quality header observed was
+`x-quality-status: pending`: no `x-quality-score`, `x-quality-evaluation` or
+`x-quality-explanation`. This is an observation under the invalid-key
+configuration, not proof of an internal evaluator failure or its cause;
+`pending` does not establish failure semantics.
+
+The body, nested model metadata and unrelated headers (including signed
+reporting URLs) are deliberately omitted, not empty on the wire. Raw evidence
+and the sanitized receipt remain in ignored provisioning capture storage.
+The instance was deleted and asset version hard-deleted; independent GETs
+returned 404 for both. The baseline LangGraph instance `21206128`, its upstreams
+and complete policy records `9682382` / `9714700` compared unchanged.
+This capture is test-only, not packaged or replayed; it verifies neither v1
+evaluation, streaming, a score range nor live SDK facade success. #1393 stays open.
+
 ## Accepted V0.3 Rate Headers
 
 `v03-rate-accepted-send` retains selected headers from the 2026-11-04
@@ -256,7 +286,8 @@ does not verify SDK facade success, streaming or SDK A2A budget updates.
 ## Remaining Verification
 
 These captures do not verify Bedrock content blocks, response-phase guardrails,
-v1 or streaming quality evaluation, evaluator failures,
+v1 or streaming quality evaluation, evaluator failure semantics or internal causes
+(the invalid-key v0.3 observation above establishes only pending headers),
 successful streaming, authorization-code authentication failures,
 token forwarding/removal, caching or a completed OAuth flow. #1393
 remains open. Attaching `a2a-v1-pii-detector` 1.0.0 to the existing `a2a`

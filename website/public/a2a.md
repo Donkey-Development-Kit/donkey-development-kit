@@ -440,6 +440,10 @@ only; `injection` with `0.3.0` fails at startup.
   These values do not describe your local request counter or reset clock.
   Accepted v0.3 and v1 send captures record individual rate windows, not a local
   accounting or passing-call replay contract; no rate headers are synthesized.
+  Quality captures are also not replayed: a separate bounded v0.3 send under an
+  invalid synthetic evaluator-key configuration returned HTTP 200 JSON with
+  only `x-quality-status: pending`. That observation does not establish evaluator
+  failure semantics, an internal cause, v1 evaluation or successful SSE.
   The ingress simulates neither outbound A2A calls nor authorization-code flows.
 
 The stock v1 `a2a-sdk` 1.2.2 JSON-RPC transport generates UUID request IDs. In the

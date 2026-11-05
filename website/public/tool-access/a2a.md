@@ -209,7 +209,14 @@ Quality Evaluation can annotate a successful agent response with
 HTTP 200 with `x-quality-evaluation: yes`, `x-quality-score: 3` and
 `x-quality-status: completed`; its explanation described how the agent fulfilled
 the request. That single response does not establish a score range, evaluator
-failure behavior, v1 evaluation or streaming support. On `develop` (not
+failure behavior, v1 evaluation or streaming support. A separate bounded v0.3
+send configured with a deliberately invalid synthetic evaluator key returned
+HTTP 200 JSON with an agent `PONG` message and only `x-quality-status: pending`,
+without score, evaluation or explanation headers. This observation does not
+establish an internal evaluator cause or mean that `pending` is failure; those
+failure semantics, v1 evaluation and streaming remain unverified. The selected
+headers are test-only evidence, not a runtime or replay change or live SDK
+facade success. On `develop` (not
 published `0.2.0`), DDK records quality annotations from successful outbound
 POST responses on its [A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans). This recording
 is tested offline, including mock streaming; it is not live facade or streaming
