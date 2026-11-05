@@ -11,9 +11,10 @@ from test_tool_binding import BINDINGS, _require
 
 from donkey_kit import typed_refusals
 from donkey_kit.core.errors import ConfigError, PIIDetected
+from donkey_kit.core.tool_access import ToolNotInProfile
 from donkey_kit.registry.criteria import Check, GovernanceReport
 from donkey_kit.registry.models import AssetRef, McpServerHandle
-from donkey_kit.simulator.mcp import simulate_mcp
+from donkey_kit.simulator.mcp import mcp_baseline, simulate_mcp
 from donkey_kit.tools.auth import ClientIdAuth
 from donkey_kit.tools.mcp import open_session
 from donkey_kit.tools.session import ToolSet
@@ -37,31 +38,49 @@ def _tools(url: str = _URL) -> ToolSet:
     )
 
 
+_BASELINE = mcp_baseline(
+    _URL,
+    tools=[
+        {
+            "name": "calculate",
+            "description": "Offline tool",
+            "inputSchema": {"type": "object", "properties": {}},
+        }
+    ],
+    call_tool=lambda name, arguments: {"content": [{"type": "text", "text": "success"}]},
+)
+
+
 def _protocol(request: httpx.Request) -> httpx.Response:
-    if request.method != "POST":
-        return httpx.Response(405)
-    rpc = json.loads(request.content)
-    if "id" not in rpc:
-        return httpx.Response(202)
-    if rpc["method"] == "initialize":
-        result = {
-            "protocolVersion": "2025-06-18",
-            "capabilities": {},
-            "serverInfo": {"name": "offline", "version": "1"},
-        }
-    elif rpc["method"] == "tools/list":
-        result = {
-            "tools": [
-                {
-                    "name": "calculate",
-                    "description": "Offline tool",
-                    "inputSchema": {"type": "object", "properties": {}},
-                }
-            ]
-        }
+    return _BASELINE.handle_request(request)
+
+
+@pytest.mark.parametrize("version", ["2024-11-05", "2025-06-18", "unsupported-test-version"])
+async def test_baseline_protocol_version_is_accepted_or_rejected_by_native_client(
+    version: str,
+) -> None:
+    pytest.importorskip("mcp")
+    baseline = mcp_baseline(
+        _URL, tools=[], call_tool=lambda name, arguments: {}, server_protocol_version=version
+    )
+
+    async def initialize():
+        with simulate_mcp(_tools(), "pii-request", baseline=baseline) as replay:
+            async with open_session(_URL, {}, http_factory=replay.client) as session:
+                assert (await session.list_tools()).tools == []
+
+    if version == "unsupported-test-version":
+        with pytest.raises(Exception) as caught:
+            await initialize()
+        pending = [caught.value]
+        messages = []
+        while pending:
+            error = pending.pop()
+            messages.append(str(error))
+            pending.extend(getattr(error, "exceptions", ()))
+        assert any("Unsupported protocol version" in message for message in messages)
     else:
-        result = {"content": [{"type": "text", "text": "success"}]}
-    return httpx.Response(200, json={"jsonrpc": "2.0", "id": rpc["id"], "result": result})
+        await initialize()
 
 
 async def test_official_session_correlates_refusal() -> None:
@@ -155,7 +174,9 @@ async def test_retained_native_binding_expires(binding: str) -> None:
     assert any("MCP replay scope is closed" in message for message in messages)
 
 
-@pytest.mark.parametrize("binding", ["langgraph", "llamaindex", "anthropic", "describe"])
+@pytest.mark.parametrize(
+    "binding", ["langgraph", "llamaindex", "anthropic", "agent_framework", "describe"]
+)
 async def test_suspended_binding_never_falls_back_to_live_transport(binding: str) -> None:
     _require(BINDINGS["langgraph" if binding == "describe" else binding])
     entered, release = asyncio.Event(), asyncio.Event()
@@ -194,3 +215,165 @@ async def test_suspended_binding_never_falls_back_to_live_transport(binding: str
         if error.__cause__ is not None:
             pending.append(error.__cause__)
     assert any("MCP replay scope is closed" in message for message in messages)
+
+
+@pytest.mark.parametrize("capture", ["pii-request", "pii-response-sse"])
+async def test_agent_framework_native_pii_and_reconnect(capture: str) -> None:
+    _require(BINDINGS["agent_framework"])
+    tools = _tools()
+    with simulate_mcp(tools, capture, baseline=httpx.MockTransport(_protocol)):
+        tool = (await tools.agent_framework())[0]
+        with pytest.raises(PIIDetected) as caught:
+            with typed_refusals():
+                async with tool:
+                    await tool.functions[0].invoke(arguments={})
+        assert caught.value.policy == "mcp-pii-detector"
+        async with tool:
+            result = await tool.functions[0].invoke(arguments={})
+            assert any(content.text == "success" for content in result)
+
+
+@pytest.mark.parametrize("failure", ["none", "initialize", "cancel", "cancel-success"])
+async def test_agent_framework_owns_each_connection_client(
+    failure: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _require(BINDINGS["agent_framework"])
+    from donkey_kit.simulator.mcp import McpReplay
+
+    clients = []
+    original = McpReplay.client
+
+    def track(self, *args, **kwargs):
+        client = original(self, *args, **kwargs)
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(McpReplay, "client", track)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    fail = False
+
+    async def backend(request):
+        if fail and request.method == "POST":
+            if json.loads(request.content).get("method") == "initialize":
+                entered.set()
+                if failure.startswith("cancel"):
+                    await release.wait()
+                if failure != "cancel-success":
+                    return httpx.Response(500)
+        return _protocol(request)
+
+    class Baseline(httpx.MockTransport):
+        closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    baseline = Baseline(backend)
+    tools = _tools()
+    with simulate_mcp(tools, "pii-request", baseline=baseline):
+        tool = (await tools.agent_framework())[0]
+        assert all(client.is_closed for client in clients)  # descriptor discovery
+        fail = failure != "none"
+        if failure.startswith("cancel"):
+            task = asyncio.create_task(tool.connect())
+            await entered.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            release.set()
+            if failure == "cancel-success":
+
+                async def wait_for_cleanup():
+                    while not all(client.is_closed for client in clients):
+                        await asyncio.sleep(0)
+
+                await asyncio.wait_for(wait_for_cleanup(), timeout=5)
+                assert not tool.is_connected
+            else:
+                await tool.close()
+        elif failure == "initialize":
+            with pytest.raises(Exception, match="initialize|session"):
+                await tool.connect()
+        else:
+            async with tool:
+                assert not clients[-1].is_closed
+            assert clients[-1].is_closed
+            async with tool:
+                assert not clients[-1].is_closed
+        assert all(client.is_closed for client in clients)
+    assert not baseline.closed
+
+
+async def test_agent_framework_retained_function_and_binding_expire() -> None:
+    _require(BINDINGS["agent_framework"])
+    tools = _tools()
+    with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(_protocol)):
+        tool = (await tools.agent_framework())[0]
+        await tool.connect()
+        function = tool.functions[0]
+    try:
+        with pytest.raises(Exception, match="closed"):
+            await function.invoke(arguments={})
+    finally:
+        await tool.close()
+    with pytest.raises(Exception, match="closed"):
+        await tool.connect()
+
+
+@pytest.mark.parametrize(
+    "package, installed",
+    [("agent-framework-core", "1.13.0"), ("mcp", "1.24.0"), ("mcp", "2.3.0rc1")],
+)
+async def test_agent_framework_old_stacks_refuse_before_auth(
+    package: str, installed: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _require(BINDINGS["agent_framework"])
+    import importlib.metadata
+
+    actual = importlib.metadata.version
+    monkeypatch.setattr(
+        importlib.metadata, "version", lambda name: installed if name == package else actual(name)
+    )
+    tools = _tools()
+    tools._auth = None
+    with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(_protocol)):
+        with pytest.raises(ConfigError, match="requires stable"):
+            await tools.agent_framework()
+
+
+@pytest.mark.parametrize("capture", ["abac-denied", "global-access", "schema-invalid-args"])
+async def test_agent_framework_rpc_refusals_keep_existing_typing(capture: str) -> None:
+    _require(BINDINGS["agent_framework"])
+    from agent_framework.exceptions import ToolExecutionException
+
+    tools = _tools()
+    with simulate_mcp(tools, capture, baseline=httpx.MockTransport(_protocol)):
+        tool = (await tools.agent_framework())[0]
+        async with tool:
+            expected = (
+                ToolExecutionException if capture == "schema-invalid-args" else ToolNotInProfile
+            )
+            with pytest.raises(expected):
+                with typed_refusals():
+                    await tool.functions[0].invoke(arguments={})
+            result = await tool.functions[0].invoke(arguments={})
+            assert any(content.text == "success" for content in result)
+
+
+async def test_agent_framework_catalog_poisoning_remains_ambiguous() -> None:
+    _require(BINDINGS["agent_framework"])
+    from donkey_kit.core.errors import ToolInvocationError
+
+    tools = _tools()
+    with simulate_mcp(tools, "poisoning-block-list", baseline=httpx.MockTransport(_protocol)):
+        with pytest.raises(ToolInvocationError):
+            await tools.agent_framework()
+
+
+async def test_agent_framework_scope_keeps_whole_server_approval_guard() -> None:
+    _require(BINDINGS["agent_framework"])
+    tools = _tools().require_approval(tools=["calculate"])
+    with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(_protocol)):
+        with pytest.raises(ConfigError, match="cannot gate"):
+            await tools.agent_framework()

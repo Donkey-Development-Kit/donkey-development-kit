@@ -622,10 +622,10 @@ class ToolSet:
         Each tool records who it is bound for, read with the headers' user
         token, so a per-tool call under another user is refused (#1418).
         """
-        if self._mcp_transport and not per_tool:
+        if self._mcp_transport and not per_tool and binding != "agent_framework()":
             raise ConfigError(
                 "Offline MCP transport injection supports only LangGraph, "
-                "LlamaIndex and Anthropic bindings."
+                "LlamaIndex, Anthropic and Agent Framework bindings."
             )
         described = await self.describe()
         servers = described.servers
@@ -942,20 +942,52 @@ class ToolSet:
             ImportError: ``agent-framework`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from agent_framework import MCPStreamableHTTPTool
         except ImportError as exc:
             raise ImportError(_install("agent_framework", None)) from exc
+        if self._mcp_transport:
+            import re
+            from importlib.metadata import version
+
+            for package, minimum in (("agent-framework-core", (1, 24, 0)), ("mcp", (2, 3, 0))):
+                installed = version(package)
+                release = (
+                    tuple(int(part) for part in installed.split("."))
+                    if re.fullmatch(r"\d+(?:\.\d+)+", installed)
+                    else ()
+                )
+                if (*release, 0, 0)[:3] < minimum:
+                    raise ConfigError(
+                        "Offline Agent Framework MCP injection requires stable "
+                        "agent-framework-core>=1.24.0 and mcp>=2.3.0; "
+                        f"found {package}=={installed}.",
+                        remediation=(
+                            "Upgrade the test environment; production binding requirements "
+                            "are unchanged."
+                        ),
+                    )
         plan, headers = await self._plan("agent_framework()", per_tool=False)
-        return [
-            MCPStreamableHTTPTool(
+        bound = []
+        for server, names in plan:
+            tool = MCPStreamableHTTPTool(
                 server.ref.asset_id,
                 server.endpoint_url,
                 static_headers=dict(headers),
                 allowed_tools=sorted(names),
             )
-            for server, names in plan
-        ]
+            if self._mcp_transport:
+                # The public transport context owns a fresh client per connection;
+                # http_client= alone is borrowed and would never be closed by MAF.
+                tool.get_mcp_client = functools.partial(
+                    open_transport,
+                    server.endpoint_url,
+                    headers,
+                    http_factory=self._client_factory(server.endpoint_url, headers),
+                )
+            bound.append(tool)
+        return bound
 
     @asynccontextmanager
     async def crewai(self) -> AsyncIterator[list[Any]]:  # -> list[crewai BaseTool]
