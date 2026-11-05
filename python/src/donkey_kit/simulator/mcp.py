@@ -264,9 +264,10 @@ def simulate_mcp(
 ) -> Iterator[McpReplay]:
     """Inject a named MCP capture while binding and calling this ToolSet offline.
 
-    Bind/connect inside the context. LangGraph, LlamaIndex, Anthropic and Agent
-    Framework bindings are supported; Agent Framework requires stable
-    agent-framework-core>=1.24.0 and mcp>=2.3.0. Others fail before connecting.
+    Bind/connect inside the context. LangGraph, LlamaIndex, Anthropic, Agent
+    Framework and OpenAI Agents SDK bindings are supported. The latter two need
+    stable mcp>=2.3.0 plus agent-framework-core>=1.24.0 or openai-agents>=0.20.0,
+    respectively. Others fail before connecting.
     Unmatched traffic uses the required offline baseline. No registry or LLM
     transport is changed. Captured schema/poisoning errors stay ambiguous.
     """

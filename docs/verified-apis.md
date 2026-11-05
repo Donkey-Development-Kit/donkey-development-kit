@@ -1700,6 +1700,21 @@ MCP1.24.0 and fail initialize (`protocolVersion` missing) with MCP2.3.0; no
 compatibility workaround is claimed. Replay adapts RPC IDs, leaves packaged
 captures immutable, and establishes no new live gateway evidence.
 
+**OpenAI Agents SDK scoped offline replay: VERIFIED (local round-trip), 2026-11-05,
+#1391.** The public `MCPServerStreamableHttp` `httpx_client_factory` parameter
+owns and closes each replay client. Native probes on `openai-agents==0.20.0`
+and `0.24.0`, both with `mcp==2.3.0`, reproduce all six capture selectors,
+existing PII/access typing through `typed_refusals`, ambiguous schema/catalog
+errors, subsequent success, reconnect, client closure and expired reconnect.
+Floor probes also verify failed initialize and cancelled-connect cleanup.
+Socket-disabled `tests/conformance/test_mcp_simulation.py` pins native binding,
+scope expiry (active call and suspended auth), cleanup, filtering, unrelated-owner
+isolation and whole-server approval/collision guards. Simulation alone requires
+stable `openai-agents>=0.20.0` and `mcp>=2.3.0`, before authentication:
+the 0.20.0 / MCP1.24.0 probe cancels the parent task on captured HTTP403.
+Production package floors, factory, zero retries and refusal classification
+remain unchanged. No global patches or new live gateway evidence.
+
 **Reusable offline MCP baseline: VERIFIED (local round-trip), 2026-11-05, #1391.**
 `simulator.mcp.mcp_baseline` returns an endpoint-scoped, stateless
 `httpx.MockTransport` with supplied descriptors and a synchronous call handler.
