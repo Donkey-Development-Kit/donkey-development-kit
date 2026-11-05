@@ -72,9 +72,11 @@ For the Azure block it requires HTTP status and headers. Use
 Positive `x-token-remaining` does not mean a request fits the window. Reset
 values are milliseconds on the wire and seconds on the exception; accepted-call
 v0.3 send rate headers are also captured on HTTP 200 (`x-token-limit: 1000`,
-`x-token-remaining: 995`, `x-token-reset: 55454`). This is one observed window,
-not deterministic token accounting or SDK budget updates on A2A calls; accepted
-v1 rate headers remain uncaptured. A fail-closed `503` means the service could not
+`x-token-remaining: 995`, `x-token-reset: 55454`). A separate accepted v1
+`SendMessage` capture returned HTTP 200 with limit `1000`, remaining `995` and
+reset `56893` ms. These are individual observed windows, not deterministic token
+accounting, successful streaming or SDK budget updates on A2A calls.
+A fail-closed `503` means the service could not
 complete its check, not that it judged content unsafe. `GatewayUnavailable`
 instead requires **no HTTP response**.
 
@@ -153,7 +155,7 @@ opt-in makes auth metadata safe.
 
 The [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)
 records capture scope and provenance. Bedrock content blocks, response-phase
-guardrails, accepted v1 rate headers and successful gateway SSE remain
+guardrails and successful gateway SSE remain
 **UNVERIFIED**; offline tests do not promote those claims.
 
 ## Next steps

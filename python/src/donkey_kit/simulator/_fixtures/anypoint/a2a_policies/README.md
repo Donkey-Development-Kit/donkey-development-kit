@@ -222,11 +222,42 @@ was changed. Raw evidence and restoration receipts remain in ignored
 provisioning capture storage; #1393 records the receipt. This does not verify
 accepted v1 rate headers, streaming or SDK budget updates on A2A calls.
 
+## Accepted V1 Rate Headers
+
+`v1-rate-accepted-send` retains selected headers from the 2026-11-05
+07:20:57 GMT response on isolated `a2a_v1` instance `21276773`, asset
+`ddk-capture1393v1-rate-agent` `1.0.0`, shared gateway. Registration used the
+v1 card classifier and metadata described above. Temporary
+`a-two-a-v1-token-rate-limit` **1.0.1**, policy `9746203`, used
+`maximumTokens: 1000`, `timePeriodInMilliseconds: 60000` and
+`keySelector: #["ddk-1393-v1-accepted-rate"]`. Outbound Credential Injection -
+API Key **1.0.1**, policy `9746204`, supplied the existing upstream access key;
+no key is retained here. No quality policy was attached to this instance.
+
+POST `SendMessage`, `A2A-Version: 1.0`, numeric request ID `1393`, message ID
+`ddk-1393-v1-accepted-rate`, role `ROLE_USER`, one `{text: "Reply with PONG."}`
+part; content/encoding headers as above. HTTP 200 returned a v1
+`result.message`, role `ROLE_AGENT`, text `PONG`, with `x-token-limit: 1000`,
+`x-token-remaining: 995` and `x-token-reset: 56893` milliseconds. These are
+one observed window, not deterministic accounting. The body and unrelated
+headers (including signed reporting URLs) are deliberately omitted, not empty
+on the wire. The capture remains test-only, not a passing-call replay contract.
+
+The temporary instance was deleted and asset version hard-deleted; independent
+GETs returned 404 and the original LangGraph policy records (`9682382`,
+`9714700`) compared equal. A prior isolated attempt (`21276757`, rate `9746156`,
+credential `9746157`) disconnected before any HTTP response and was also fully
+removed; it establishes no header contract. The successful attempt used curl
+with a 90-second deadline after a 90-second propagation wait. No root cause
+for the first disconnect is established. Raw evidence and cleanup receipts
+remain in ignored provisioning storage; #1393 records both attempts. This
+does not verify SDK facade success, streaming or SDK A2A budget updates.
+
 ## Remaining Verification
 
 These captures do not verify Bedrock content blocks, response-phase guardrails,
-v1 or streaming quality evaluation, evaluator failures, accepted-call
-v1 rate headers, successful streaming, authorization-code authentication failures,
+v1 or streaming quality evaluation, evaluator failures,
+successful streaming, authorization-code authentication failures,
 token forwarding/removal, caching or a completed OAuth flow. #1393
 remains open. Attaching `a2a-v1-pii-detector` 1.0.0 to the existing `a2a`
 instance returned HTTP 400 `PolicyValidationError`: the policy requires an
