@@ -9,8 +9,8 @@ anyio==4.16.0
 ast-serialize==0.13.1
 attrs==26.1.0
 aws-bedrock-token-generator==1.1.0
-boto3==1.43.123
-botocore==1.43.123
+boto3==1.43.124
+botocore==1.43.124
 certifi==2026.10.23
 cffi==2.1.1
 click==8.5.0
@@ -37,7 +37,7 @@ mcp-types==2.3.0
 mdurl==0.1.2
 mypy==2.4.1
 mypy-extensions==1.2.0
-openai==3.45.0
+openai==3.46.0
 opentelemetry-api==1.45.2
 opentelemetry-instrumentation==0.66b2
 opentelemetry-instrumentation-threading==0.66b2
@@ -47,8 +47,8 @@ packaging==26.3
 pathspec==1.1.1
 pluggy==1.7.0
 pycparser==3.12
-pydantic==2.14.2
-pydantic-core==2.50.2
+pydantic==2.14.3
+pydantic-core==2.50.4
 pygments==2.21.0
 pyjwt==2.15.1
 pytest==9.2.0

@@ -25,12 +25,12 @@ markdown-it-py==4.2.0
 mdurl==0.1.2
 mypy==2.4.1
 mypy-extensions==1.2.0
-openai==3.45.0
+openai==3.46.0
 packaging==26.3
 pathspec==1.1.1
 pluggy==1.7.0
-pydantic==2.14.2
-pydantic-core==2.50.2
+pydantic==2.14.3
+pydantic-core==2.50.4
 pygments==2.21.0
 pytest==9.2.0
 pytest-asyncio==1.4.1.post1
