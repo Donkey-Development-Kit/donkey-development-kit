@@ -19,6 +19,7 @@ import pytest
 
 from donkey_kit import A2ATask, ContentSafetyBlocked, Donkey, TokenBudgetExceeded
 from donkey_kit.a2a import build_app
+from donkey_kit.a2a.protocol import matches_protocol_version
 from donkey_kit.core.errors import classify
 from donkey_kit.experimental import ToolInvocationError
 from donkey_kit.simulator import ingress
@@ -95,10 +96,16 @@ def _echo() -> Any:
 
 
 @asynccontextmanager
-async def _client(*specs: str, ingress: bool = True) -> AsyncIterator[httpx.AsyncClient]:
+async def _client(
+    *specs: str, ingress: bool = True, protocol_version: str = "1.0"
+) -> AsyncIterator[httpx.AsyncClient]:
     pytest.importorskip("a2a", reason="the served-agent tests need the [a2a] extra")
-    agent: Any = build_app(_echo())
-    app: Any = build_ingress(agent, parse_scenarios(list(specs))) if ingress else agent
+    agent: Any = build_app(_echo(), protocol_version=protocol_version)
+    app: Any = (
+        build_ingress(agent, parse_scenarios(list(specs)), protocol_version=protocol_version)
+        if ingress
+        else agent
+    )
     async with (
         agent.router.lifespan_context(agent),
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://agent") as c,
@@ -368,3 +375,193 @@ def test_ciba_has_no_matching_v1_ingress_capture() -> None:
 )
 def test_call_text(payload: object, expected: str | None) -> None:
     assert call_text(json.loads(json.dumps(payload))) == expected
+
+
+def _send_v03(text: str, method: str = "message/send") -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": method,
+        "params": {
+            "message": {
+                "messageId": "m03",
+                "role": "user",
+                "parts": [{"kind": "text", "text": text}],
+            }
+        },
+    }
+
+
+@pytest.mark.parametrize("protocol", ["2.0", "0.3", "", "1.0.0"])
+def test_invalid_protocol_is_rejected_without_optional_dependencies(protocol: str) -> None:
+    with pytest.raises(ScenarioError, match="unsupported A2A protocol version"):
+        build_ingress(None, protocol_version=protocol)
+    with pytest.raises(ScenarioError, match="unsupported A2A protocol version"):
+        call_text({}, protocol_version=protocol)
+
+
+def test_public_call_helpers_keep_v1_defaults_and_allow_explicit_legacy() -> None:
+    assert ingress.CALL_METHODS == frozenset({"SendMessage", "SendStreamingMessage"})
+    assert call_text(_send_v03("legacy")) is None
+    assert call_text(_send_v03("legacy"), protocol_version="0.3.0") == "legacy"
+    assert call_text(_send("v1"), protocol_version="0.3.0") is None
+    check_scenarios(parse_scenarios(["injection:on-pattern=block"]))
+    with pytest.raises(ScenarioError, match="no matching captured A2A v03"):
+        check_scenarios(parse_scenarios(["injection:on-pattern=block"]), protocol_version="0.3.0")
+
+
+async def test_default_v1_replay_keeps_headerless_compatibility() -> None:
+    """#1601 preserves the ingress's existing default, even for a minimal caller."""
+    async with _client("pii_block:every=1") as c:
+        response = await c.post("/", json=_send("hello"))
+    _assert_replay(response, _captured("v1-pii-send"))
+
+
+@pytest.mark.parametrize("protocol,header", [("1.0", "1.0.0"), ("0.3.0", "0.3.1")])
+async def test_compatible_patch_header_passes_then_replays(protocol: str, header: str) -> None:
+    payload = _send("hello") if protocol == "1.0" else _send_v03("hello")
+    capture = "v1-pii-send" if protocol == "1.0" else "v03-pii-send"
+    async with _client("pii_block:every=2", protocol_version=protocol) as c:
+        first = await c.post("/", json=payload, headers={"A2A-Version": header})
+        second = await c.post("/", json=payload, headers={"A2A-Version": header})
+    assert first.status_code == 200
+    assert "error" not in first.json()
+    _assert_replay(second, _captured(capture))
+
+
+@pytest.mark.parametrize("protocol", ["1.0", "0.3.0"])
+@pytest.mark.parametrize(
+    "header",
+    [
+        "1",
+        "1.0.0",
+        "v1.0",
+        "01.9",
+        "1.0rc1",
+        "1.0.post2",
+        "1.0-dev3",
+        "1.0+local",
+        "2!1.0",
+        "0.3",
+        "0.3.1",
+        "0.9",
+        "",
+        "bogus",
+        "1..0",
+        "1.0.0garbage",
+        "1.0+",
+        "1.0,0.3",
+    ],
+)
+def test_header_matching_agrees_with_sdk_version_normalization(protocol: str, header: str) -> None:
+    from packaging.version import InvalidVersion, Version
+
+    try:
+        expected = Version(header).major == Version(protocol).major
+    except InvalidVersion:
+        expected = False
+    assert matches_protocol_version(header, protocol) is expected
+
+
+@pytest.mark.parametrize(
+    "scenario,capture",
+    [("pii_block:every=2", "v03-pii-send"), ("request_limit:limit=1,window=60s", "v03-rate-send")],
+)
+async def test_legacy_send_replays_actual_capture_after_passing_call(
+    scenario: str, capture: str
+) -> None:
+    """BG section 2.9.3 / #1393: replay v0.3 bytes, never a converted v1 envelope."""
+    async with _client(scenario, protocol_version="0.3.0") as c:
+        first = await c.post("/", json=_send_v03("one"))
+        card = await c.get(_CARD)
+        get = await c.post(
+            "/",
+            json={
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "tasks/get",
+                "params": {"id": first.json()["result"]["id"]},
+            },
+        )
+        second = await c.post("/", json=_send_v03("two"))
+    assert first.status_code == get.status_code == card.status_code == 200
+    assert first.json()["result"]["artifacts"][0]["parts"] == [
+        {"kind": "text", "text": "echo: one"}
+    ]
+    assert all(r.headers[SIMULATOR_HEADER] == "true" for r in (first, get, card))
+    assert not any(key.startswith(("x-ratelimit-", "x-token-")) for key in first.headers)
+    _assert_replay(second, _captured(capture))
+    if capture == "v03-pii-send":
+        assert second.json()["id"] == 1393
+        assert isinstance(second.json()["error"]["data"], str)
+
+
+@pytest.mark.parametrize(
+    "protocol,payload,headers,scenario,detail",
+    [
+        ("1.0", _send_v03("x"), {}, "", "not an A2A 1.0 call method"),
+        ("0.3.0", _send("x"), _HEADERS, "", "not an A2A 0.3.0 call method"),
+        ("0.3.0", _send_v03("x"), _HEADERS, "", "A2A-Version"),
+        ("1.0", _send("x"), {"A2A-Version": "0.3.0"}, "", "A2A-Version"),
+        ("1.0", _send("x"), {"A2A-Version": "2.0"}, "", "A2A-Version"),
+        ("1.0", _send("x"), {"A2A-Version": "1..0"}, "pii_block:every=2", "A2A-Version"),
+        ("1.0", _send("x"), {"A2A-Version": "0.3.1"}, "pii_block:every=2", "A2A-Version"),
+        ("0.3.0", _send_v03("x"), {"A2A-Version": "garbage"}, "pii_block:every=2", "A2A-Version"),
+        ("0.3.0", _send_v03("x"), {"A2A-Version": "1.0.0"}, "pii_block:every=2", "A2A-Version"),
+        (
+            "0.3.0",
+            _send_v03("x", "message/stream"),
+            {},
+            "pii_block:every=2",
+            "no matching captured",
+        ),
+        (
+            "0.3.0",
+            _send_v03("x", "message/stream"),
+            {},
+            "request_limit:limit=2,window=60s",
+            "no matching captured",
+        ),
+    ],
+)
+async def test_unsupported_calls_fail_before_agent_or_scenario_state(
+    protocol: str, payload: Any, headers: dict[str, str], scenario: str, detail: str
+) -> None:
+    async def agent(scope: Any, receive: Any, send: Any) -> None:
+        pytest.fail("unsupported call reached agent")
+
+    scenarios = parse_scenarios([scenario] if scenario else [])
+    wrapped = build_ingress(agent, scenarios, protocol_version=protocol)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=wrapped), base_url="http://agent"
+    ) as c:
+        response = await c.post("/", json=payload, headers=headers)
+    assert response.status_code == 400
+    assert detail in response.text
+    assert response.headers[SIMULATOR_HEADER] == "true"
+    if scenarios:
+        assert scenarios[0].on_call("x") is None
+
+
+async def test_legacy_stream_without_scenarios_and_noncalls_preserve_bytes() -> None:
+    bodies: list[bytes] = []
+
+    async def agent(scope: Any, receive: Any, send: Any) -> None:
+        bodies.append((await receive())["body"])
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"agent bytes"})
+
+    wrapped = build_ingress(agent, protocol_version="0.3.0")
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=wrapped), base_url="http://agent"
+    ) as c:
+        for body in (
+            json.dumps(_send_v03("x", "message/stream")).encode(),
+            b'{"method":"tasks/cancel","params":{"id":"t"}}',
+            b'{"method":"unknown/method"}',
+            b"not json",
+        ):
+            response = await c.post("/", content=body)
+            assert bodies[-1] == body
+            assert response.content == b"agent bytes"
+            assert response.headers[SIMULATOR_HEADER] == "true"

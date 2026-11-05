@@ -124,12 +124,27 @@ annotations and the official SDK's own instrumentation.
 
 ## Offline testing and privacy
 
-[`donkey dev`](/a2a#simulated-ingress) replays selected **v1 ingress** Azure
-Prompt Shield, PII and token-rate refusals from method-specific captures.
+[`donkey dev`](/a2a#simulated-ingress) defaults to `--protocol-version 1.0`,
+replaying selected v1 ingress Azure Prompt Shield, PII and token-rate refusals
+for both send methods. `--protocol-version 0.3.0` uses the existing legacy PII
+and token-rate captures for `message/send` only. See the
+[scenario/version/method matrix](/simulator#a2a-ingress-replay).
+
+Legacy `injection` is rejected at startup. Legacy `message/stream` with any
+configured scenarios returns local plain-text HTTP `400` before advancing a
+rule, even if no rule would reject; without scenarios it passes through.
+Known wrong-version call methods and explicit mismatched version headers on
+calls also return local `400`, not a captured or fabricated gateway refusal.
+Unknown methods still reach the agent's official SDK routes, so these simulator
+checks do not reproduce the captured schema-policy unknown-method errors above.
+
 It does not enforce policies, rewrite captured request IDs, simulate OAuth or
 provide outbound A2A `simulate()` injection. [`donkey mock`](/simulator) serves
 model routes, not an A2A gateway. Real A2A policies are unsupported in Omni
 Gateway Local Mode; DDK's pure-Python ingress simulator is not that mode.
+Protocol selection, SDK legacy card conversion/routes and this replay matrix
+are local/offline behavior only. They add no captures or live gateway evidence,
+and do not verify successful gateway send/SSE, publication or exposure.
 
 PII messages/details can echo raw findings. DDK exception text and spans withhold
 those diagnostics, but `.response`, explicit challenge field access and host/SDK

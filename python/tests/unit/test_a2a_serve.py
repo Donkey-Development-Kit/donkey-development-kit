@@ -290,3 +290,67 @@ def test_importing_donkey_kit_does_not_load_the_a2a_sdk() -> None:
         "assert not any(m == 'a2a' or m.startswith('a2a.') for m in sys.modules), 'a2a loaded'\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+@pytest.mark.parametrize("header", [None, "0.3", "0.3.0", "0.3.1"])
+async def test_legacy_card_and_handler_use_official_sdk_compatibility(header: str | None) -> None:
+    from a2a.compat.v0_3.types import AgentCard
+
+    app: Any = build_app(_echo(), protocol_version="0.3.0", version="2.4.0")
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://agent") as c,
+    ):
+        card = (await c.get(_CARD)).json()
+        parsed = AgentCard.model_validate(card)
+        assert parsed.protocol_version == "0.3.0"
+        assert parsed.version == "2.4.0"
+        assert parsed.url == "http://127.0.0.1:8000/"
+        assert card["supportedInterfaces"] == [
+            {"url": parsed.url, "protocolBinding": "JSONRPC", "protocolVersion": "0.3.0"}
+        ]
+        response = await c.post(
+            "/",
+            headers={"A2A-Version": header} if header is not None else {},
+            json={
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "message/send",
+                "params": {
+                    "message": {
+                        "messageId": "legacy",
+                        "role": "user",
+                        "parts": [{"kind": "text", "text": "hello"}],
+                    }
+                },
+            },
+        )
+        assert response.status_code == 200
+        task = response.json()["result"]
+        assert task["kind"] == "task"
+        assert task["status"]["state"] == "completed"
+        assert task["artifacts"][0]["parts"] == [{"kind": "text", "text": "echo: hello"}]
+        wrong = await c.post("/", json=_send("wrong"), headers={"A2A-Version": "1.0"})
+        assert "error" in wrong.json()
+        assert "0.3.0 only" in wrong.json()["error"]["message"]
+
+
+@pytest.mark.parametrize("header", ["1.0.0", "v1.0", "malformed", "1..0"])
+async def test_legacy_server_rejects_wrong_or_malformed_header_before_handler(header: str) -> None:
+    @Donkey.agent(name="must-not-run")
+    async def agent(task: A2ATask) -> str:
+        """Fails if version validation lets an invalid request through."""
+        pytest.fail("invalid version reached handler")
+
+    app: Any = build_app(agent, protocol_version="0.3.0")
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://agent") as c,
+    ):
+        response = await c.post("/", json=_send("wrong"), headers={"A2A-Version": header})
+    assert "error" in response.json()
+
+
+def test_build_app_rejects_unknown_protocol_before_loading_handler() -> None:
+    with pytest.raises(ValueError, match="unsupported A2A protocol version"):
+        build_app(lambda: None, protocol_version="2.0")

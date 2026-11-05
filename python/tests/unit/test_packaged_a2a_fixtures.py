@@ -15,7 +15,7 @@ _NAMES = [
     f"v1-{policy}-{method}"
     for policy in ("azure-block", "pii", "rate")
     for method in ("send", "stream")
-]
+] + ["v03-pii-send", "v03-rate-send"]
 
 
 @pytest.mark.parametrize("name", _NAMES)

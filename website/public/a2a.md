@@ -144,6 +144,45 @@ ASGI server, or to test it in process, build the same app with
 `donkey_kit.a2a.build_app(handle)` and run it inside its ASGI lifespan, as
 uvicorn does, so shutdown drains in-flight tasks.
 
+### Selecting a protocol version
+
+`donkey.serve()` serves A2A `1.0`. For a legacy listener, use
+`donkey_kit.a2a.build_app(handle, protocol_version="0.3.0", version="2.4.0")`
+in your ASGI server. `build_app()` accepts only `"1.0"` (the default) and
+`"0.3.0"`; another value raises `ValueError`. `version=` is your agent's
+release version, not the A2A protocol version.
+
+Both versions use the official SDK's card routes at
+`/.well-known/agent-card.json` and JSON-RPC routes at `/`. For `0.3.0`, the
+SDK converts the card to its legacy shape (`protocolVersion`, `url` and a
+`supportedInterfaces` entry for `0.3.0`) and dispatches legacy methods such as
+`message/send` and `tasks/get`. Legacy message parts use `kind: "text"` and
+`role: "user"`, rather than the v1 example above. DDK does not implement a
+second wire protocol. The legacy listener rejects an explicit v1 version
+header rather than enabling a second advertised interface. The card advertises
+`streaming: false` in both versions; protocol selection adds no streaming
+capability to this handler.
+
+For local simulated ingress, select the same version on both apps:
+
+```python
+from donkey_kit.a2a import build_app
+from donkey_kit.simulator.ingress import build_ingress
+from donkey_kit.simulator.scenarios import parse_scenarios
+
+agent = build_app(handle, protocol_version="0.3.0", version="2.4.0")
+app = build_ingress(
+    agent,
+    parse_scenarios(["pii_block:every=5"]),
+    protocol_version="0.3.0",
+)
+```
+
+Run the wrapped app inside the agent's ASGI lifespan. `build_ingress()` also
+defaults to `"1.0"`; an unsupported version or scenario raises `ScenarioError`.
+This selection is local behavior, not live gateway verification or a change
+to `donkey publish` / `donkey expose` registration.
+
   **What "Offline-verified" means here.** `donkey.serve()` has been run end to
   end on a real port: a plain `curl` fetched the generated card and got a
   completed task back. It has not yet been run behind a governed gateway, which
@@ -337,23 +376,51 @@ the same [governed inbound](#governed-inbound), and puts a local fake gateway
 in front of it on the same port. The card advertises the ingress URL, as it
 would advertise the gateway's.
 
-- **Calls can be rejected.** A JSON-RPC `SendMessage` or `SendStreamingMessage`
-  is a call. The `--scenario` rules run on its text parts, and a rule that
+`--protocol-version` selects `1.0` by default, or `0.3.0` for a legacy card
+and routes. It is independent of `--agent-version`, which sets the card's
+application release version (default `0.0.0`):
+
+```bash
+donkey dev my_agent:handle --protocol-version 0.3.0 --agent-version 2.4.0 \
+  --scenario pii_block:every=5 \
+  --scenario request_limit:limit=3,window=60s
+```
+
+The [scenario/version/method matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay) lists which
+captures can be replayed. v0.3 supports PII and rate refusals on `message/send`
+only; `injection` with `0.3.0` fails at startup.
+
+- **Calls can be rejected.** For `1.0`, a JSON-RPC `SendMessage` or
+  `SendStreamingMessage` is a call; for `0.3.0`, `message/send` or
+  `message/stream`. The supported `--scenario` rules run on text parts, and a rule that
   fires answers with a rejection before the agent sees the call. The rules are
   the [simulator's](https://docs.donkey-kit.dev/simulator.md#scenario-scripting) `injection`, `pii_block` and
   `request_limit`. Here `request_limit` counts calls only to trigger replay of
   the captured token-rate refusal; it does not count tokens or add headers to
   passing calls. `budget` is refused because it counts model tokens, and `ciba`
-  is refused because no matching v1 ingress refusal has been captured.
-- **Everything else passes through.** The agent card, `GetTask`, `CancelTask`
-  and every call no rule rejects reach the agent. A plain A2A client gets the
-  agent's own bytes.
-- **Rejections are captured A2A v1 responses, not LLM proxy responses.** Each
-  method uses its own captured variant. `injection` replays Azure's prompt-shield
+  is refused because no matching ingress replay is provided.
+- **Unsupported calls fail locally.** A known call method from the other
+  version, or an explicit mismatched `A2A-Version` header on a call, returns
+  plain-text HTTP `400`. Configuration accepts exactly `1.0` or `0.3.0`, but
+  headers follow the SDK's version normalization and major-only comparison:
+  `1.0.0` matches selected `1.0`, and `0.3.1` matches selected `0.3.0`.
+  Other parseable same-major versions also match; malformed or different-major
+  headers do not. Missing headers retain replay behavior; passing calls are validated
+  by the official SDK. With any scenarios configured, v0.3 `message/stream`
+  returns local `400` before dispatch or advancing a rule, even when no rule
+  would reject. Without scenarios it passes through unchanged. These errors
+  are not fabricated gateway refusals or JSON-RPC policy envelopes.
+- **Everything else passes through.** The agent card, task reads/cancels
+  (`GetTask` / `CancelTask`, or legacy `tasks/get` / `tasks/cancel`), unknown
+  methods and malformed JSON reach the agent for SDK handling. Supported calls
+  no rule rejects also reach it. A plain A2A client gets the agent's own bytes.
+- **Rejections are captured A2A responses, not LLM proxy responses.** Each
+  supported version/method uses its own capture. v1 `injection` replays Azure's prompt-shield
   `403` with `x-flex-azure-guardrails-{action,phase,reason}` headers, classified
-  as `ContentSafetyBlocked`. `pii_block` replays the captured `403` `ErrorInfo`
+  as `ContentSafetyBlocked`. v1 `pii_block` replays the captured `403` `ErrorInfo`
   envelope, which remains an ambiguous `ToolInvocationError`, not `PIIDetected`.
-  Streaming refusals are request-phase HTTP responses, not SSE error events.
+  v0.3 PII retains its string `error.data`, not a converted v1 envelope.
+  v1 streaming refusals are request-phase HTTP responses, not SSE error events.
 - **Every response carries `x-donkey-simulator: true`.** That includes the
   responses the agent produced.
 - **Request bodies are capped at 4 MiB.** A larger `POST` gets a `413` from the
@@ -365,8 +432,8 @@ would advertise the gateway's.
 
   **Replay is not policy evaluation or protocol emulation.** You choose when a
   capture is returned; the matching substring is not an Azure policy verdict.
-  Response bodies retain the captured string ID `"1393"` rather than rewriting
-  it to your request ID. PII bodies retain synthetic findings; avoid logging raw
+  Response bodies retain the captured ID (v1 string `"1393"`, v0.3 PII numeric
+  `1393`) rather than rewriting it to your request ID. PII bodies retain synthetic findings; avoid logging raw
   responses. `request_limit` returns a bare `429` classified as
   `TokenBudgetExceeded`, with the captured `x-token-limit: 1`,
   `x-token-remaining: 1` and `x-token-reset: 60000` milliseconds, no `retry-after`.

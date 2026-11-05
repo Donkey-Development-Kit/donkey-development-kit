@@ -393,6 +393,17 @@ SHAPES.update(
         for method in ("send", "stream")
     }
 )
+SHAPES.update(
+    {
+        f"a2a-v03-{policy}-send": _Spec(
+            "anypoint/a2a_policies",
+            f"v03-{policy}-send.headers.txt",
+            "v03-pii-send.body.json" if policy == "pii" else None,
+            status,
+        )
+        for policy, status in (("pii", 403), ("rate", 429))
+    }
+)
 
 # The package-data directory every row resolves to. Rows 3/4/6 live in
 # _fixtures/rejections/; the rest alias _fixtures/anypoint/llm_proxy/.

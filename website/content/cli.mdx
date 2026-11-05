@@ -185,6 +185,7 @@ Global options go before the command (`donkey --json init`):
 | `--port` | `8000` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
 | `--agent-version` | `0.0.0` | The agent version the card advertises. |
+| `--protocol-version` | `1.0` | A2A protocol to serve: 0.3.0 or 1.0 (default). |
 | `--scenario` | none | Inbound rejection rule, repeatable. e.g. 'pii_block:every=5', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
 
 `donkey doctor`: Diagnose governed access: config, credentials, gateway, model, budget.
@@ -401,6 +402,25 @@ ingress, the rules it takes and where its rejection shapes come from are in
 [Simulated ingress](/a2a#simulated-ingress). A target that can't be loaded or
 isn't marked with `@donkey.agent`, and an invalid `--scenario` (including
 `budget`), exit with code `2`.
+
+`--protocol-version` accepts `1.0` (default) or `0.3.0`; an unsupported value
+also exits `2` before loading the target. `--agent-version` sets the card's
+application release version (default `0.0.0`), not the protocol:
+
+```bash
+donkey dev my_agent:handle --protocol-version 0.3.0 --agent-version 2.4.0 \
+  --scenario pii_block:every=5
+```
+
+v1 supports `injection`, `pii_block` and `request_limit` on `SendMessage` and
+`SendStreamingMessage`. v0.3 supports only PII/rate replay on `message/send`;
+`injection` exits `2` at startup. With scenarios configured, `message/stream`
+gets local plain-text HTTP `400` before a rule advances, even if none would
+reject. With no scenarios it passes through. Known wrong-version call methods
+and explicit mismatched version headers on calls get the same local `400`,
+not an invented gateway refusal. Every response carries
+`x-donkey-simulator: true`. See the
+[scenario/version/method matrix](/simulator#a2a-ingress-replay).
 
 `--host` defaults to `127.0.0.1`. A host that isn't loopback, such as
 `0.0.0.0`, still binds, but `donkey dev` prints a warning on stderr. Nothing
