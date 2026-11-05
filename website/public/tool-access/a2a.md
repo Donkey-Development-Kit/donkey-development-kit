@@ -119,6 +119,10 @@ HTTP pool remains usable for later calls.
   endpoint and GET of its agent-card URL can use the scoped transport.
 - Only JSON-RPC v1 and v0.3 are in scope. The official SDK selects the v0.3
   compatibility transport for a legacy card; REST and gRPC are rejected.
+  Each send or stream POST carries `A2A-Version` from the selected card
+  interface. Explicit interfaces without a supported version are rejected;
+  older cards without `supportedInterfaces` use the official SDK's legacy
+  version default when `protocolVersion` is omitted.
 - Framework-native `as_tool()` binding remains planned, following
   [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md). No binding method is added to the handle.
 - To make *your* agent callable by others over A2A, see [A2A agents](https://docs.donkey-kit.dev/a2a.md).

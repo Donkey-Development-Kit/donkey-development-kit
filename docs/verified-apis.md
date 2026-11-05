@@ -1333,6 +1333,14 @@ facade successfully sends or streams through a gateway.
 | `ClientTransport.send_message(request, *, context=None) -> SendMessageResponse`, `send_message_streaming(request, *, context=None) -> AsyncGenerator[StreamResponse]`, `close()` (async methods, implemented by both transports) | Official send, stream iteration and local transport close | OFFLINE-VERIFIED | `test_stream_cancellation_closes_response_without_remote_cancel`, `test_stream_exhaustion_and_span_lifetime`, `test_sse_protocol_error_is_safe` |
 | `a2a.utils.errors.A2AError`; `google.protobuf.json_format.Error`; `pydantic.ValidationError` | Safe conversion of SDK protocol/parser failures to `ToolInvocationError` without rendered diagnostics | OFFLINE-VERIFIED | `test_malformed_protocol_is_safely_rendered`, `test_sse_protocol_error_is_safe` |
 
+`A2AFacade` stamps the selected interface's version on each POST using the
+official SDK's `a2a.utils.constants.VERSION_HEADER` (`A2A-Version`, #1611).
+This is **OFFLINE-VERIFIED** by v1/v0.3 sends against the official server routes
+and send/stream wire assertions in `test_a2a_outbound.py`. Without the header,
+the official v1 server interprets the request as v0.3 and returns HTTP 200 with
+`-32009`; the versioned local call succeeds. This does not establish the cause
+of the earlier live failure or promote live facade/SSE verification.
+
 The local suite also includes `tests/unit/test_a2a_facade.py` (base-only and
 curated missing-extra failure), `test_a2a_transport.py` (exact URL confinement,
 auth per request, no redirects, retries, refresh or refusal replay, captured
