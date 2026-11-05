@@ -1716,6 +1716,50 @@ the 0.20.0 / MCP1.24.0 probe cancels the parent task on captured HTTP403.
 Production package floors, factory, zero retries and refusal classification
 remain unchanged. No global patches or new live gateway evidence.
 
+**Strands scoped offline replay: VERIFIED (local round-trip), 2026-11-05,
+#1391.** `ToolSet.strands` snapshots its replay owner before authentication and
+passes its scoped HTTP factory to `tools.mcp.open_transport` through the native
+`MCPClient(transport_callable=..., tool_filters=...)`. Only simulation requires
+stable `strands-agents>=1.64.0` and `mcp>=2.3.0`; older and prerelease packages
+raise `ConfigError` before auth or discovery. Production dependency floors,
+captures, classifier and conformance exemptions are unchanged.
+
+The supplied pre-implementation `strands-locked-evidence.jsonl` probe used
+Strands 1.64.0, MCP 2.3.0, OpenAI 3.45.0, httpx 0.28.1, httpx2 2.16.0 and
+Python 3.12.16. It ran all six selectors, success/restart, expiry, failed
+initialize, cancelled connect and the then-present binding guard in 11 bounded
+subprocesses, all exit 0. The supplied `strands-floor-evidence.jsonl` contains
+the same 11 cases at Strands **1.57.1**, MCP 2.3.0 and OpenAI 2.54.0, but that
+combination is outside Strands 1.57.1's declared `mcp<2.2,>=1.23.0` range and
+is **not a supported simulation floor**. Strands 1.64.0 declares
+`mcp<2.4,>=1.23.0`; the approved stable simulation floor is 1.64.0 / 2.3.0.
+
+`tests/conformance/test_strands_mcp_simulation.py` exercises the implemented
+binding in socket-disabled, 25-second-bounded subprocesses: captured error
+payload/status/content-type and request-ID adaptation, cached and uncached
+discovery, sync/async success, native restart, retained-tool/session expiry,
+suspended auth with and without cached descriptors, owned client closure,
+caller-owned baseline reuse, owner isolation and native thread termination.
+In-process tests pin version rejection before auth, production version-check
+exemption, filtering exclusion and whole-server approval/collision guards.
+
+Native tool calls return generic `status: error` with `Tool execution failed:`
+text for HTTP403 PII and HTTP200 access/schema failures. The structured
+exception is gone, including under `typed_refusals()`; no text classification
+or typed-recovery claim is made. Catalog poisoning raises native `MCPError`
+(`-32603`) from `list_tools_sync`, and remains ambiguous. Subsequent success
+and in-scope restart work. Expired calls fail without reaching the baseline;
+cached descriptors are not revoked. A scope disables traffic, not the native
+session's lifecycle: callers still stop it.
+
+**Upstream cleanup warning:** on failed initialize, cancelled connect and
+expired-session stop, Strands `MCPClient.stop` can emit
+`RuntimeWarning: coroutine 'MCPClient.stop.<locals>._set_close_event' was never awaited`.
+The observed HTTP clients close and background threads terminate nonetheless.
+No runtime patch or warning suppression is added. This is offline handling
+evidence only, not a new live gateway round-trip, capture or policy-enforcement
+claim.
+
 **Reusable offline MCP baseline: VERIFIED (local round-trip), 2026-11-05, #1391.**
 `simulator.mcp.mcp_baseline` returns an endpoint-scoped, stateless
 `httpx.MockTransport` with supplied descriptors and a synchronous call handler.

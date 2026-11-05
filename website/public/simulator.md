@@ -134,10 +134,11 @@ is reserialized, including the SSE data envelope: this is **not byte-verbatim
 replay**. Original packaged files remain unchanged.
 
 Native binding coverage is LangGraph, LlamaIndex, Anthropic, Microsoft Agent
-Framework and the OpenAI Agents SDK; other bindings refuse before connecting.
+Framework, the OpenAI Agents SDK and Strands; other bindings refuse before connecting.
 Offline Agent Framework injection requires stable `agent-framework-core>=1.24.0`
 and `mcp>=2.3.0`.
 OpenAI Agents SDK injection requires stable `openai-agents>=0.20.0` and `mcp>=2.3.0`.
+Strands injection requires stable `strands-agents>=1.64.0` and `mcp>=2.3.0`.
 Older or prerelease stacks raise `ConfigError` before authentication or connection.
 This restriction applies only to simulation, not normal production bindings.
 LlamaIndex URLs selecting its legacy SSE
@@ -185,6 +186,38 @@ with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(offline_bac
         async with bound[0] as server:
             await server.call_tool("calculate", arguments)
 ```
+
+For Strands, bind inside the scope and enter each native `MCPClient` as a
+synchronous context manager. Its background thread uses a fresh scoped HTTP
+client on every connection, including an in-scope restart. The transport closes
+that client; the offline baseline remains yours. A synchronous baseline handler
+can run on the native thread, so make shared test state thread-safe.
+
+```python
+with simulate_mcp(tools, "pii-request", baseline=baseline):
+    bound = await tools.strands()
+    with bound[0] as client:
+        result = client.call_tool_sync("test-call", "calculate", {})
+        assert result["status"] == "error"
+        assert client.call_tool_sync("next-call", "calculate", {})["status"] == "success"
+```
+
+Strands returns generic `status: error` tool results for the captured PII,
+access-denial and schema failures. Structured policy fields and typed exceptions
+are lost, so `typed_refusals()` cannot recover them and DDK never infers a policy
+from the text. The poisoning capture instead raises the native `MCPError` from
+`list_tools_sync()`; it remains ambiguous. Filtering and whole-server
+approval/collision restrictions are unchanged.
+
+Keep the native context inside the simulation scope. Retained tool calls fail
+after scope exit and cannot reach the baseline or gateway; cached descriptors
+can still be inspected. Close the native session even after a failure. On the
+tested Strands 1.64.0 / MCP 2.3.0 stack, stopping failed, cancelled or expired
+sessions can emit an upstream `RuntimeWarning` that
+`MCPClient.stop.<locals>._set_close_event` was never awaited, although the HTTP
+clients close and background threads exit. DDK does not patch or suppress this
+warning. Bound native-thread tests with a subprocess deadline so an upstream
+cleanup regression cannot hang your test suite.
 
 ### Reusable offline baseline
 
