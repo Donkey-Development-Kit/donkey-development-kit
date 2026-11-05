@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import json
 import threading
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any
 
 import httpx
@@ -14,7 +15,7 @@ from .._testing import mcp_factory_scope
 from ..tools.session import ToolSet
 from .fixtures import Fixture, fixture_bytes, parse_headers, parse_status, replay_headers
 
-__all__ = ["McpReplay", "simulate_mcp"]
+__all__ = ["McpReplay", "mcp_baseline", "simulate_mcp"]
 
 _METHODS = {
     "pii-request": "tools/call",
@@ -24,6 +25,108 @@ _METHODS = {
     "abac-denied": "tools/call",
     "global-access": "tools/call",
 }
+
+
+def mcp_baseline(
+    url: str,
+    *,
+    tools: Sequence[Mapping[str, Any]],
+    call_tool: Callable[[str, Mapping[str, Any]], Mapping[str, Any]],
+    server_protocol_version: str = "2025-06-18",
+) -> httpx.MockTransport:
+    """Build a stateless offline MCP baseline for :func:`simulate_mcp`.
+
+    ``tools`` supplies JSON-serializable MCP descriptors; ``call_tool`` returns
+    a JSON-serializable CallToolResult for a known name and its arguments. The
+    synchronous handler runs in the caller's thread; exceptions propagate.
+    Descriptors are copied when constructing the baseline.
+
+    ``server_protocol_version`` is the initialize response's version, not an
+    override of the client's request. The native MCP SDK accepts or rejects it;
+    even unsupported strings are allowed for negative tests. Captures are not
+    translated. No schema validation, policy enforcement, session state, SSE,
+    resources, prompts or network fallback is provided.
+
+    The transport accepts only the exact ``url`` and remains caller-owned.
+    See https://donkeydevelopmentkit.com/simulator for an example.
+    """
+    if not isinstance(server_protocol_version, str) or not server_protocol_version.strip():
+        raise ValueError("server_protocol_version must be a non-empty version string")
+    endpoint = httpx.URL(url)
+    descriptors = copy.deepcopy([dict(tool) for tool in tools])
+    names = set()
+    for tool in descriptors:
+        name = tool.get("name")
+        if not isinstance(name, str) or not name or name in names:
+            raise ValueError("Baseline tools require unique non-empty names")
+        if not isinstance(tool.get("inputSchema"), dict):
+            raise ValueError("Baseline tools require an inputSchema object")
+        names.add(name)
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url != endpoint:
+            raise ValueError("MCP baseline request escaped its endpoint")
+        headers = {"x-donkey-simulator": "true"}
+        if request.method != "POST":
+            return httpx.Response(405, headers={**headers, "allow": "POST"})
+        request_id = None
+
+        def error(code: int, message: str) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": code, "message": message},
+                },
+            )
+
+        try:
+            rpc = json.loads(request.content)
+        except (ValueError, UnicodeDecodeError):
+            return error(-32700, "Parse error")
+        if not isinstance(rpc, dict) or rpc.get("jsonrpc") != "2.0":
+            return error(-32600, "Invalid Request")
+        method = rpc.get("method")
+        if not isinstance(method, str):
+            return error(-32600, "Invalid Request")
+        if "id" not in rpc and method.startswith("notifications/"):
+            return httpx.Response(202, headers=headers)
+        if type(rpc.get("id")) not in (str, int):
+            return error(-32600, "Invalid Request")
+        request_id = rpc["id"]
+        if "params" in rpc and not isinstance(rpc["params"], dict):
+            return error(-32602, "Invalid params")
+        result: Mapping[str, Any]
+        if method == "initialize":
+            result = {
+                "protocolVersion": server_protocol_version,
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "offline", "version": "1"},
+            }
+        elif method == "tools/list":
+            result = {"tools": descriptors}
+        elif method == "tools/call":
+            params = rpc.get("params")
+            if not isinstance(params, dict):
+                return error(-32602, "Invalid params")
+            name, arguments = params.get("name"), params.get("arguments", {})
+            if not isinstance(name, str) or name not in names or not isinstance(arguments, dict):
+                return error(-32602, "Invalid params")
+            result = call_tool(name, arguments)
+        elif method == "ping":
+            result = {}
+        elif method == "discover":
+            # MCP 2.3 falls back to initialize on this HTTP response.
+            return httpx.Response(404, headers=headers)
+        else:
+            return error(-32601, "Method not found")
+        return httpx.Response(
+            200, headers=headers, json={"jsonrpc": "2.0", "id": request_id, "result": result}
+        )
+
+    return httpx.MockTransport(respond)
 
 
 class McpReplay:
@@ -161,8 +264,9 @@ def simulate_mcp(
 ) -> Iterator[McpReplay]:
     """Inject a named MCP capture while binding and calling this ToolSet offline.
 
-    Bind/connect inside the context. Only LangGraph, LlamaIndex and Anthropic
-    bindings are initially supported; other bindings fail before connecting.
+    Bind/connect inside the context. LangGraph, LlamaIndex, Anthropic and Agent
+    Framework bindings are supported; Agent Framework requires stable
+    agent-framework-core>=1.24.0 and mcp>=2.3.0. Others fail before connecting.
     Unmatched traffic uses the required offline baseline. No registry or LLM
     transport is changed. Captured schema/poisoning errors stay ambiguous.
     """

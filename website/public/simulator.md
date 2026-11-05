@@ -133,8 +133,12 @@ adapted to the outgoing request so native MCP sessions can correlate it. JSON
 is reserialized, including the SSE data envelope: this is **not byte-verbatim
 replay**. Original packaged files remain unchanged.
 
-Initial native binding coverage is LangGraph, LlamaIndex and Anthropic; other
-bindings refuse before connecting. LlamaIndex URLs selecting its legacy SSE
+Native binding coverage is LangGraph, LlamaIndex, Anthropic and Microsoft Agent
+Framework; other bindings refuse before connecting. Offline Agent Framework
+injection requires stable `agent-framework-core>=1.24.0` and `mcp>=2.3.0`;
+older or prerelease stacks raise `ConfigError` before authentication or connection.
+This restriction applies only to simulation, not normal production bindings.
+LlamaIndex URLs selecting its legacy SSE
 transport (`/sse`, `/sse/` or `transport=sse`) also refuse because that transport
 ignores the injected client. A captured HTTP failure can end Anthropic's
 persistent MCP session and be raised again during context teardown. Wrap the
@@ -143,8 +147,74 @@ Keep sessions inside the simulation context. Clients retained past exit fail
 closed instead of reconnecting to the gateway. Raw exception responses and
 native framework diagnostics remain sensitive.
 
+For Agent Framework, wrap native invocation in `typed_refusals()` and use each
+server object as an async context manager. Simulation owns a fresh HTTP client
+for each connection and closes it when that connection ends; the offline baseline
+remains yours. If you cancel `connect()`, its framework-owned connection attempt
+can continue until the offline backend finishes. The framework then cleans up a
+new connection whose caller was cancelled; await `tool.close()` to wait for cleanup
+deterministically before leaving the simulation context. Cancellation does not
+guarantee immediate cleanup. Whole-server approval and collision-renaming
+limitations still apply.
+
+```python
+from donkey_kit import typed_refusals
+
+with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(offline_backend)):
+    bound = await tools.agent_framework()
+    with typed_refusals():
+        async with bound[0] as server:
+            await server.functions[0].invoke(arguments=arguments)
+```
+
 For byte-verbatim HTTP replay without native session correlation, use the
 packaged captures below. Neither form establishes new live gateway evidence.
+
+### Reusable offline baseline
+
+Use `mcp_baseline()` when you need initialization, tool discovery and ordinary
+tool results without writing an HTTP handler. It returns a caller-owned
+`httpx.MockTransport` for one exact endpoint. Supply MCP tool descriptors and a
+synchronous `call_tool(name, arguments)` handler returning an MCP `CallToolResult`
+object as a dictionary:
+
+```python
+from donkey_kit.simulator.mcp import mcp_baseline, simulate_mcp
+
+endpoint = tools.servers[0].endpoint_url
+baseline = mcp_baseline(
+    endpoint,
+    server_protocol_version="2025-06-18",
+    tools=[{
+        "name": "calculate",
+        "description": "Return an offline result",
+        "inputSchema": {"type": "object", "properties": {}},
+    }],
+    call_tool=lambda name, arguments: {
+        "content": [{"type": "text", "text": "success"}],
+    },
+)
+
+with simulate_mcp(tools, "pii-request", baseline=baseline):
+    bound = await tools.agent_framework()
+    with typed_refusals():
+        async with bound[0] as server:
+            await server.functions[0].invoke(arguments={})
+```
+
+`server_protocol_version` controls the server's `initialize` response; it defaults
+to `2025-06-18`. It does not change the client's requested version. The native MCP
+SDK accepts or rejects that response, so an unsupported string is useful for
+negative negotiation tests. This does not change package-version requirements,
+translate captures, or establish conformance of a complete server to that version.
+
+The helper is a stateless JSON-response baseline, not a full MCP server simulator.
+It supports initialization, tool listing/calls, initialized notifications and ping.
+Unknown tools/invalid arguments envelopes return JSON-RPC `-32602`; unknown methods
+return `-32601`. It does not validate arguments against `inputSchema`, implement
+policies, SSE streams, resources, prompts or session IDs. Handler exceptions
+propagate to your test; handlers must not perform network calls. For richer behavior
+or multiple endpoints, continue supplying your own `httpx.MockTransport`.
 
 ## Packaged MCP captures
 

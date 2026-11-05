@@ -174,13 +174,20 @@ def client_factory(url: str, credentials: Mapping[str, str]) -> Callable[..., An
 
 
 @asynccontextmanager
-async def open_transport(url: str, headers: Mapping[str, str]) -> AsyncIterator[Any]:
+async def open_transport(
+    url: str,
+    headers: Mapping[str, str],
+    *,
+    http_factory: Callable[..., Any] | None = None,
+) -> AsyncIterator[Any]:
     """The streamable-HTTP streams to ``url`` over a :func:`client_factory`
     client sending ``headers``, closed with the transport, for a framework that
-    takes a transport rather than a client (Strands)."""
+    takes a transport rather than a client (Strands). An injected factory's
+    client is also owned here, including failed entry and cancellation."""
     streamable = _streamable()
+    factory = http_factory or client_factory(url, headers)
     async with (
-        client_factory(url, headers)(headers=headers) as http,
+        factory(headers=headers) as http,
         streamable.streamable_http_client(url, http_client=http) as streams,
     ):
         yield streams

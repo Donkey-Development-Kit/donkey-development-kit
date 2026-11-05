@@ -1632,6 +1632,36 @@ tool results. The legacy `tool_access_denial` API remains.
 Schema/poisoning captures lack policy markers and remain ambiguous (#1401,
 #1387); discovery typing is outside this slice. This does not close #1388.
 
+**Agent Framework scoped offline replay: VERIFIED (local round-trip), 2026-11-05,
+#1391.** `simulate_mcp` uses the native instance's public `get_mcp_client`
+transport context, with one owned HTTP client per connection, on
+`agent-framework-core==1.24.0` / `mcp==2.3.0`. Socket-disabled tests in
+`tests/conformance/test_mcp_simulation.py` exercise both HTTP403 PII phases,
+HTTP200 access denial, ambiguous schema/catalog-poisoning errors, reconnection,
+retained-function/suspended-auth expiry, and normal/failed/cancelled-caller cleanup.
+Cancellation of `connect()` does not cancel the framework-owned attempt. Once
+the offline response completes, the framework cleans up a successful connection
+whose caller was cancelled; `tool.close()` can await cleanup deterministically
+before exiting the scope. Immediate cleanup is not guaranteed. The
+caller-owned baseline is never closed. Only simulation requires stable
+`agent-framework-core>=1.24.0` and `mcp>=2.3.0`; older/prerelease stacks fail
+before credentials are read. The production `static_headers` path and package
+floors are unchanged. Floor probes at core 1.13.0 hang on captured HTTP403 with
+MCP1.24.0 and fail initialize (`protocolVersion` missing) with MCP2.3.0; no
+compatibility workaround is claimed. Replay adapts RPC IDs, leaves packaged
+captures immutable, and establishes no new live gateway evidence.
+
+**Reusable offline MCP baseline: VERIFIED (local round-trip), 2026-11-05, #1391.**
+`simulator.mcp.mcp_baseline` returns an endpoint-scoped, stateless
+`httpx.MockTransport` with supplied descriptors and a synchronous call handler.
+Its `server_protocol_version` sets only the initialize response. Socket-disabled
+`tests/conformance/test_mcp_simulation.py` proves MCP2.3.0 accepts `2024-11-05`
+and `2025-06-18` and rejects an unsupported version; this is native negotiation
+evidence, not full-server protocol conformance. Framework-free
+`tests/unit/test_mcp_baseline.py` pins endpoint isolation, descriptor snapshots,
+request IDs, dispatch and malformed/unknown request errors. No schema/policy
+enforcement, SSE, session state, capture translation or live evidence is added.
+
 Collision renaming and the approval gate run in the SDK before any call. They
 were not repeated through the gateway.
 
