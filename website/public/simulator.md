@@ -133,10 +133,12 @@ adapted to the outgoing request so native MCP sessions can correlate it. JSON
 is reserialized, including the SSE data envelope: this is **not byte-verbatim
 replay**. Original packaged files remain unchanged.
 
-Native binding coverage is LangGraph, LlamaIndex, Anthropic and Microsoft Agent
-Framework; other bindings refuse before connecting. Offline Agent Framework
-injection requires stable `agent-framework-core>=1.24.0` and `mcp>=2.3.0`;
-older or prerelease stacks raise `ConfigError` before authentication or connection.
+Native binding coverage is LangGraph, LlamaIndex, Anthropic, Microsoft Agent
+Framework and the OpenAI Agents SDK; other bindings refuse before connecting.
+Offline Agent Framework injection requires stable `agent-framework-core>=1.24.0`
+and `mcp>=2.3.0`.
+OpenAI Agents SDK injection requires stable `openai-agents>=0.20.0` and `mcp>=2.3.0`.
+Older or prerelease stacks raise `ConfigError` before authentication or connection.
 This restriction applies only to simulation, not normal production bindings.
 LlamaIndex URLs selecting its legacy SSE
 transport (`/sse`, `/sse/` or `transport=sse`) also refuse because that transport
@@ -169,6 +171,20 @@ with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(offline_bac
 
 For byte-verbatim HTTP replay without native session correlation, use the
 packaged captures below. Neither form establishes new live gateway evidence.
+
+For the OpenAI Agents SDK, connect each server inside the simulation scope and
+wrap native calls in `typed_refusals()`. The framework owns and closes a fresh
+HTTP client per connection, including failed initialization and cancelled
+connection attempts; the offline baseline remains yours. Its default zero
+retries, filtering and whole-server approval/collision limitations are unchanged.
+
+```python
+with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(offline_backend)):
+    bound = await tools.openai_agents()
+    with typed_refusals():
+        async with bound[0] as server:
+            await server.call_tool("calculate", arguments)
+```
 
 ### Reusable offline baseline
 

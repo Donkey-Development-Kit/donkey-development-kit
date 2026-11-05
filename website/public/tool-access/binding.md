@@ -2,12 +2,13 @@
 
 Status: Live. Shipped, and verified against a real governed gateway.
 
-For offline failure tests of newly bound LangGraph, LlamaIndex, Anthropic and
-Microsoft Agent Framework
+For offline failure tests of newly bound LangGraph, LlamaIndex, Anthropic,
+Microsoft Agent Framework and OpenAI Agents SDK
 tools, see [MCP tool fault injection](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection).
 It requires an explicit offline backend and does not intercept existing bindings
 or bypass governance checks. Agent Framework simulation requires stable
-`agent-framework-core>=1.24.0` and `mcp>=2.3.0`; this does not change normal
+`agent-framework-core>=1.24.0` and `mcp>=2.3.0`; OpenAI Agents SDK simulation
+requires stable `openai-agents>=0.20.0` and `mcp>=2.3.0`. These do not change normal
 production binding requirements.
 
   Every binding below was run through the governed gateway with the

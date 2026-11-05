@@ -622,10 +622,14 @@ class ToolSet:
         Each tool records who it is bound for, read with the headers' user
         token, so a per-tool call under another user is refused (#1418).
         """
-        if self._mcp_transport and not per_tool and binding != "agent_framework()":
+        if (
+            self._mcp_transport
+            and not per_tool
+            and binding not in {"agent_framework()", "openai_agents()"}
+        ):
             raise ConfigError(
                 "Offline MCP transport injection supports only LangGraph, "
-                "LlamaIndex, Anthropic and Agent Framework bindings."
+                "LlamaIndex, Anthropic, Agent Framework and OpenAI Agents SDK bindings."
             )
         described = await self.describe()
         servers = described.servers
@@ -909,17 +913,22 @@ class ToolSet:
             ImportError: ``openai-agents`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from agents.mcp import MCPServerStreamableHttp, create_static_tool_filter
         except ImportError as exc:
             raise ImportError(_install("openai-agents", None)) from exc
+        if self._mcp_transport:
+            _require_replay_versions(
+                "OpenAI Agents SDK", {"openai-agents": (0, 20, 0), "mcp": (2, 3, 0)}
+            )
         plan, headers = await self._plan("openai_agents()", per_tool=False)
         return [
             MCPServerStreamableHttp(
                 params={
                     "url": server.endpoint_url,
                     "headers": dict(headers),
-                    "httpx_client_factory": client_factory(server.endpoint_url, headers),
+                    "httpx_client_factory": self._client_factory(server.endpoint_url, headers),
                 },
                 name=server.ref.asset_id,
                 tool_filter=create_static_tool_filter(allowed_tool_names=sorted(names)),
@@ -948,26 +957,9 @@ class ToolSet:
         except ImportError as exc:
             raise ImportError(_install("agent_framework", None)) from exc
         if self._mcp_transport:
-            import re
-            from importlib.metadata import version
-
-            for package, minimum in (("agent-framework-core", (1, 24, 0)), ("mcp", (2, 3, 0))):
-                installed = version(package)
-                release = (
-                    tuple(int(part) for part in installed.split("."))
-                    if re.fullmatch(r"\d+(?:\.\d+)+", installed)
-                    else ()
-                )
-                if (*release, 0, 0)[:3] < minimum:
-                    raise ConfigError(
-                        "Offline Agent Framework MCP injection requires stable "
-                        "agent-framework-core>=1.24.0 and mcp>=2.3.0; "
-                        f"found {package}=={installed}.",
-                        remediation=(
-                            "Upgrade the test environment; production binding requirements "
-                            "are unchanged."
-                        ),
-                    )
+            _require_replay_versions(
+                "Agent Framework", {"agent-framework-core": (1, 24, 0), "mcp": (2, 3, 0)}
+            )
         plan, headers = await self._plan("agent_framework()", per_tool=False)
         bound = []
         for server, names in plan:
@@ -1031,6 +1023,30 @@ class ToolSet:
         finally:
             for adapter in reversed(adapters):
                 await asyncio.to_thread(adapter.stop)
+
+
+def _require_replay_versions(binding: str, packages: Mapping[str, tuple[int, int, int]]) -> None:
+    import re
+    from importlib.metadata import version
+
+    requirements = " and ".join(
+        f"{package}>={'.'.join(map(str, minimum))}" for package, minimum in packages.items()
+    )
+    for package, minimum in packages.items():
+        installed = version(package)
+        release = (
+            tuple(int(part) for part in installed.split("."))
+            if re.fullmatch(r"\d+(?:\.\d+)+", installed)
+            else ()
+        )
+        if (*release, 0, 0)[:3] < minimum:
+            raise ConfigError(
+                f"Offline {binding} MCP injection requires stable {requirements}; "
+                f"found {package}=={installed}.",
+                remediation=(
+                    "Upgrade the test environment; production binding requirements are unchanged."
+                ),
+            )
 
 
 def _refusing(

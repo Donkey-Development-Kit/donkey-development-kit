@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 
 import httpx
@@ -175,7 +176,8 @@ async def test_retained_native_binding_expires(binding: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "binding", ["langgraph", "llamaindex", "anthropic", "agent_framework", "describe"]
+    "binding",
+    ["langgraph", "llamaindex", "anthropic", "agent_framework", "openai_agents", "describe"],
 )
 async def test_suspended_binding_never_falls_back_to_live_transport(binding: str) -> None:
     _require(BINDINGS["langgraph" if binding == "describe" else binding])
@@ -377,3 +379,223 @@ async def test_agent_framework_scope_keeps_whole_server_approval_guard() -> None
     with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(_protocol)):
         with pytest.raises(ConfigError, match="cannot gate"):
             await tools.agent_framework()
+
+
+@pytest.mark.parametrize(
+    "capture",
+    ["pii-request", "pii-response-sse", "abac-denied", "global-access", "schema-invalid-args"],
+)
+async def test_openai_agents_native_refusal_and_reconnect(capture: str) -> None:
+    _require(BINDINGS["openai_agents"])
+    from mcp.shared.exceptions import MCPError
+
+    tools = _tools()
+    expected = (
+        PIIDetected
+        if capture.startswith("pii-")
+        else MCPError
+        if capture == "schema-invalid-args"
+        else ToolNotInProfile
+    )
+    with simulate_mcp(tools, capture, baseline=httpx.MockTransport(_protocol)):
+        server = (await tools.openai_agents())[0]
+        assert server.max_retry_attempts == 0
+        async with server:
+            assert [tool.name for tool in await server.list_tools()] == ["calculate"]
+            with pytest.raises(expected), typed_refusals():
+                await server.call_tool("calculate", {})
+            assert (await server.call_tool("calculate", {})).content[0].text == "success"
+        async with server:
+            assert (await server.call_tool("calculate", {})).content[0].text == "success"
+
+
+async def test_openai_agents_active_call_and_reconnect_expire() -> None:
+    _require(BINDINGS["openai_agents"])
+    tools = _tools()
+    with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(_protocol)):
+        server = (await tools.openai_agents())[0]
+        await server.connect()
+    try:
+        with pytest.raises(Exception, match="closed"):
+            await server.call_tool("calculate", {})
+    finally:
+        await server.cleanup()
+    with pytest.raises(Exception) as caught:
+        await server.connect()
+    pending = [caught.value]
+    messages = []
+    while pending:
+        error = pending.pop()
+        messages.append(str(error))
+        pending.extend(getattr(error, "exceptions", ()))
+    assert any("MCP replay scope is closed" in message for message in messages)
+
+
+@pytest.mark.parametrize("failure", ["none", "initialize", "cancel"])
+async def test_openai_agents_owns_connection_clients(
+    failure: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _require(BINDINGS["openai_agents"])
+    from donkey_kit.simulator.mcp import McpReplay
+
+    entered = asyncio.Event()
+    clients = []
+    original = McpReplay.client
+
+    def tracked(self, *args, **kwargs):
+        client = original(self, *args, **kwargs)
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(McpReplay, "client", tracked)
+
+    async def respond(request):
+        if json.loads(request.content).get("method") == "initialize":
+            if failure == "initialize":
+                return httpx.Response(500, json={"error": "offline failure"})
+            if failure == "cancel":
+                entered.set()
+                await asyncio.Event().wait()
+        return _protocol(request)
+
+    class Baseline(httpx.MockTransport):
+        closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    baseline = Baseline(respond)
+    # Cached descriptors keep failure injection on the native connection.
+    tools = _tools()
+    tools = tools._with(
+        _servers=[
+            dataclasses.replace(
+                tools.servers[0],
+                tool_descriptors=({"name": "calculate", "inputSchema": {"type": "object"}},),
+            )
+        ]
+    )
+    with simulate_mcp(tools, "pii-request", baseline=baseline):
+        server = (await tools.openai_agents())[0]
+        if failure == "initialize":
+            from agents.exceptions import UserError
+
+            with pytest.raises(UserError, match="500"):
+                await server.connect()
+        elif failure == "cancel":
+            task = asyncio.current_task()
+
+            async def cancel():
+                await entered.wait()
+                task.cancel()
+
+            canceller = asyncio.create_task(cancel())
+            with pytest.raises(asyncio.CancelledError):
+                await server.connect()
+            await canceller
+        else:
+            async with server:
+                assert not clients[-1].is_closed
+            async with server:
+                assert not clients[-1].is_closed
+        assert clients and all(client.is_closed for client in clients)
+    assert not baseline.closed
+
+
+@pytest.mark.parametrize(
+    "package, installed",
+    [("openai-agents", "0.19.0"), ("mcp", "1.24.0"), ("mcp", "2.3.0rc1")],
+)
+async def test_openai_agents_old_stacks_refuse_before_auth(
+    package: str, installed: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _require(BINDINGS["openai_agents"])
+    import importlib.metadata
+
+    actual = importlib.metadata.version
+    monkeypatch.setattr(
+        importlib.metadata, "version", lambda name: installed if name == package else actual(name)
+    )
+    tools = _tools()
+    tools._auth = None
+    with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(_protocol)):
+        with pytest.raises(ConfigError, match="requires stable"):
+            await tools.openai_agents()
+
+
+async def test_openai_agents_catalog_poisoning_remains_ambiguous() -> None:
+    _require(BINDINGS["openai_agents"])
+    from donkey_kit.core.errors import ToolInvocationError
+
+    tools = _tools()
+    with simulate_mcp(tools, "poisoning-block-list", baseline=httpx.MockTransport(_protocol)):
+        with pytest.raises(ToolInvocationError):
+            await tools.openai_agents()
+
+
+async def test_openai_agents_scope_keeps_whole_server_approval_guard() -> None:
+    _require(BINDINGS["openai_agents"])
+    tools = _tools().require_approval(tools=["calculate"])
+    with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(_protocol)):
+        with pytest.raises(ConfigError, match="cannot gate"):
+            await tools.openai_agents()
+
+
+async def test_openai_agents_filtered_owner_and_unrelated_binding() -> None:
+    _require(BINDINGS["openai_agents"])
+    from donkey_kit.core.errors import ToolInvocationError
+
+    tools, unrelated = _tools(), _tools()
+    with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(_protocol)):
+        server = (await tools.filter(allow=["calculate"]).openai_agents())[0]
+        async with server:
+            assert [tool.name for tool in await server.list_tools()] == ["calculate"]
+            with pytest.raises(PIIDetected), typed_refusals():
+                await server.call_tool("calculate", {})
+        assert unrelated._mcp_transport == {}
+        # Socket-disabled production discovery proves the other owner did not replay.
+        with pytest.raises(ToolInvocationError):
+            await unrelated.openai_agents()
+
+
+async def test_openai_agents_scope_keeps_collision_guard() -> None:
+    _require(BINDINGS["openai_agents"])
+    tools = _tools()
+    descriptor = ({"name": "calculate", "inputSchema": {"type": "object"}},)
+    first = dataclasses.replace(tools.servers[0], tool_descriptors=descriptor)
+    second = dataclasses.replace(first, ref=AssetRef("example", "other", "1.0.0"))
+    tools = tools._with(_servers=[first, second])
+    with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(_protocol)):
+        with pytest.raises(ConfigError, match="cannot rename"):
+            await tools.openai_agents()
+
+
+async def test_openai_agents_cached_catalog_suspended_auth_expires() -> None:
+    _require(BINDINGS["openai_agents"])
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class PausedAuth:
+        async def headers(self):
+            entered.set()
+            await release.wait()
+            return {}
+
+    tools = _tools()
+    tools = tools._with(
+        _servers=[dataclasses.replace(tools.servers[0], tool_descriptors=({"name": "calculate"},))]
+    )
+    tools._auth = PausedAuth()
+    with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(_protocol)):
+        task = asyncio.create_task(tools.openai_agents())
+        await entered.wait()
+    release.set()
+    server = (await task)[0]
+    with pytest.raises(Exception) as caught:
+        await server.connect()
+    pending = [caught.value]
+    messages = []
+    while pending:
+        error = pending.pop()
+        messages.append(str(error))
+        pending.extend(getattr(error, "exceptions", ()))
+    assert any("MCP replay scope is closed" in message for message in messages)
