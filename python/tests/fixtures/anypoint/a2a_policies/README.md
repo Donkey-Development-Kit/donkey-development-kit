@@ -323,3 +323,17 @@ The PII response's string `data` is more structured than the epic's shorthand
 `PII type: value`: it embeds the findings JSON. These v0.3 responses do not
 carry v1 `google.rpc.ErrorInfo` details. Schema method-not-found is HTTP 400
 here, not the v1 policy's documented HTTP 404.
+
+## v1 Prompt Decorator
+
+- `v1-decorator-send.selected`: `a2a-v1-prompt-decorator` **1.0.0** (catalog ids: 1.0.0, 0.1.0),
+  attached 2026-11-06 to the existing `ddk-adk-agent` `a2a_v1` instance on `shared-omni-gateway`
+  (Omni Gateway 1.14.4) with one `textDecorators` entry `#['DDK-1393 decorator marker']`. One
+  `SendMessage` (`Reply with PONG.`, `A2A-Version: 1.0`) returned HTTP 200 and `PONG`. The
+  hosted agent echoes its LLM request in the reply metadata, and the user message there was
+  `DDK-1393 decorator marker\nReply with PONG.`: the decorator text is prepended, newline
+  separated. The fixture keeps only the sent request, the status/text and that observed
+  message; the raw reply is not stored (gateway headers, upstream internals). Not exercised:
+  `fileDecorators`, `condition`, `SendStreamingMessage`, HTTP+JSON, gRPC. Message Logging 2.1.0
+  was attached beside it and accepted on an `a2a_v1` instance; its log output was not read.
+  Both policies were removed and the instance redeployed to its recorded baseline.

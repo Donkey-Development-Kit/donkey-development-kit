@@ -135,7 +135,10 @@ The v1-to-v0.3 Transcoder (`a-two-a-v1-to-v03-transcoder` 1.0.0) is **VERIFIED (
 only for its unsupported-method refusals: `ListTasks` returned HTTP `400` / `-32004`
 and a push-notification method `400` / `-32003`, both `google.rpc.ErrorInfo`. The
 documented `-32601` for `ListTasks` was not observed. Successful transcoding is not
-captured. Prompt Decorator remains uncaptured. Do not infer a typed refusal or
+captured. The v1 Prompt Decorator (`a2a-v1-prompt-decorator` 1.0.0) is **VERIFIED (LIVE)** for
+one text decorator on a JSON-RPC `SendMessage`: the upstream received the decorator text
+prepended, newline separated, to the original prompt. File decorators, conditions and
+streaming are not captured. Do not infer a typed refusal or
 successful transcoding from an applied-policy list. Connection telemetry using `X-AGENT-ID` is also
 not established by these captures, so DDK does not inject that header on MCP
 or A2A calls. The existing
