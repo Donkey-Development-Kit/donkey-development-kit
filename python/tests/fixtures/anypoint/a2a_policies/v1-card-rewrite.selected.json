@@ -1,0 +1,19 @@
+{
+  "consumerUrl": "https://gateway.example.com/ddk-capture1393v1-card/",
+  "upstream": {
+    "status": 200,
+    "contentType": "application/json",
+    "supportedInterfaces": [
+      {"url": "https://agent.example.com/a2a/langgraph", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"},
+      {"url": "https://agent.example.com/a2a/langgraph", "protocolBinding": "JSONRPC", "protocolVersion": "0.3.0"}
+    ]
+  },
+  "gateway": {
+    "status": 200,
+    "contentType": "application/json",
+    "supportedInterfaces": [
+      {"url": "https://gateway.example.com/ddk-capture1393v1-card/", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"},
+      {"url": "https://gateway.example.com/ddk-capture1393v1-card/", "protocolBinding": "JSONRPC", "protocolVersion": "0.3.0"}
+    ]
+  }
+}

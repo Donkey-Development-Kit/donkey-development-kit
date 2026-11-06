@@ -5593,8 +5593,17 @@ they can repeat sensitive request content. This recording is **OFFLINE-VERIFIED*
 available on `develop` but not published `0.2.0`. See the
 [quality span contract](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans).
 
-Agent Card, Prompt Decorator and v1-to-v0.3 transcoding are not covered by these
-policy-response captures. Do not infer a typed refusal or successful transcoding
+Agent Card URL rewriting is **VERIFIED (LIVE)** for one JSONRPC card GET with
+definition `a-two-a-v1-agent-card` 1.0.1 and implementation 1.0.2 on gateway
+1.14.4. An explicit `consumerUrl` rewrote both advertised interface URLs to the
+public gateway base, preserving versions `1.0` and `0.3.0` and all non-URL
+interface fields. With that setting omitted, the observed URLs used `localhost`,
+not the public host: check the returned card before giving its URLs to callers.
+Other card fields changed; this does not verify whole-card preservation, other
+bindings, extended-card responses, SSE or gateway call metrics.
+
+Prompt Decorator and v1-to-v0.3 transcoding remain uncaptured.
+Do not infer a typed refusal or successful transcoding
 from an applied-policy list. Connection telemetry using `X-AGENT-ID` is also
 not established by these captures, so DDK does not inject that header on MCP
 or A2A calls. The existing

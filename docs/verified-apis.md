@@ -793,6 +793,22 @@ Quality Evaluation was later intentionally retained on the existing instance.
 | A2A v0.3 Quality Evaluation pending headers, `a2a-quality-evaluation-policy` 1.0.0 | VERIFIED (LIVE) | One `message/send`, numeric request ID 1393, synthetic `Reply with PONG.` under deliberately invalid synthetic evaluator-key configuration: HTTP 200 JSON agent message containing `PONG`, not a completed task. Only `x-quality-status: pending`; no score, evaluation or explanation headers. Selected-header fixture omits body and unrelated headers, including signed reporting URLs. No internal evaluator cause or failure semantics inferred from `pending`; no v1, SSE or live SDK facade success claim | 2026-11-05 | Isolated `a2a` instance 21277325, `ddk-capture1393v03-quality-failure-agent` 1.0.0, shared gateway; quality policy 9748586 (OpenAI base URL, gpt-4o-mini, 10000ms), outbound credential 9748587; `a2a_policies/v03-quality-pending-send.headers.txt`. One attempt, no retries, 90-second propagation wait/deadline. Instance deleted, asset hard-deleted, independent GETs 404; baseline LangGraph 21206128, upstreams and full records 9682382/9714700 unchanged |
 | A2A v1 Bedrock content blocks / response-phase guardrails, v1 or streaming Quality Evaluation / evaluator failure semantics and internal causes, In-Task Authorization Code authentication failure / token handling | UNVERIFIED | Missing existing Bedrock guardrail. Invalid-key v0.3 capture above establishes pending headers only, not evaluator failure semantics or cause. OAuth completion, forwarding/removal, caching and 401 responses remain uncaptured. No response-shape claim for remaining cases | — | #1393 remains open |
 
+Agent Card rewrite (#1393), **VERIFIED (LIVE), 2026-11-05**: isolated `a2a_v1`
+instance `21278723`, shared gateway 1.14.4, definition `a-two-a-v1-agent-card`
+1.0.1 / implementation `a-two-a-v1-agent-card-flex` 1.0.2, policy `9756361`.
+Explicit `consumerUrl` rewrites both hosted JSONRPC `supportedInterfaces[].url`
+values to the public gateway base, preserving versions `1.0` / `0.3.0` and all
+non-URL interface fields. Both upstream/gateway card GETs returned 200 JSON.
+Default configuration previously rewrote to `https://localhost/<base-path>/`.
+Other top-level fields changed; no whole-card preservation, other transport,
+extended-card, SSE or metric claim. Definition 1.0.0 attachments were rejected;
+target assignment alone is not established as the cause. Selected-field fixture:
+`a2a_policies/v1-card-rewrite.selected.json`, pinned by
+`test_captured_card_rewrites_urls_and_preserves_interface_fields`.
+The shared instance/policies/upstreams baseline stayed unchanged. Isolated
+resources remain intentionally retained for inspection; cleanup is outstanding.
+Source: [live receipt](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1393#issuecomment-6670434829).
+
 ## 5. MCP Bridge / Agent Network provisioning — **gates whether §5 is viable at all**
 
 FINDING (CLI, 2026-08-28): provisioning is delivered as a **Maven-project + CLI**
