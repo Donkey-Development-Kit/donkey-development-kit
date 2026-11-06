@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"1393","error":{"code":-32004,"message":"Operation not supported","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"UNSUPPORTED_OPERATION","domain":"a2a-protocol.org","metadata":{"detail":"Operation not supported"}}]}}
