@@ -89,7 +89,7 @@ from `AuthError`, `GatewayApprovalPending` and local `ApprovalRequired`.
 Unknown/incomplete layouts and all v1 tasks stay native SDK responses; the
 documentation limits the In-Task Authorization Code policy to v0.3.0, so DDK does
 not convert a v1 challenge. OAuth completion, token forwarding/removal, caching
-and authorization-policy `401` responses remain **UNVERIFIED**. See
+and authorization-policy `401` responses remain **UNVERIFIED**: a bounded probe with a synthetic invalid token and unvalidatable OAuth metadata got no policy-generated `401` (the request passed through to the agent), so DDK treats that `401` as an accepted boundary. See
 [Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
 
 The outbound plane never automatically replays a delegated action, even for
