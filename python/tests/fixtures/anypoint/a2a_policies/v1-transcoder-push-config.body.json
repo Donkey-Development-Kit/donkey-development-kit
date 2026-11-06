@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"1393","error":{"code":-32003,"message":"Push notifications not supported","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"PUSH_NOTIFICATION_NOT_SUPPORTED","domain":"a2a-protocol.org","metadata":{"detail":"Push notifications not supported"}}]}}

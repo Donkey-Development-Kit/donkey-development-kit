@@ -278,3 +278,25 @@ def test_v1_guardrail_refusals_use_error_info_and_observability_headers(
             "metadata": {"detail": detail},
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("name", "code", "reason"),
+    [
+        ("v1-transcoder-list-tasks", -32004, "UNSUPPORTED_OPERATION"),
+        ("v1-transcoder-push-config", -32003, "PUSH_NOTIFICATION_NOT_SUPPORTED"),
+    ],
+)
+def test_v1_transcoder_unsupported_methods_use_source_codes(
+    name: str, code: int, reason: str
+) -> None:
+    """The documented ListTasks code (-32601) was not observed; the policy source's -32004 was."""
+    response = _response(name)
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["id"] == "1393"
+    assert payload["error"]["code"] == code
+    info = payload["error"]["data"][0]
+    assert info["@type"] == "type.googleapis.com/google.rpc.ErrorInfo"
+    assert info["domain"] == "a2a-protocol.org"
+    assert info["reason"] == reason
