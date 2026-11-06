@@ -86,9 +86,10 @@ do not substitute the IDs you sent.
 Validate challenge metadata before using it. DDK does not follow its URLs,
 acquire tokens, host a redirect, poll CIBA or resend the task. This is distinct
 from `AuthError`, `GatewayApprovalPending` and local `ApprovalRequired`.
-Unknown/incomplete layouts and all v1 tasks stay native SDK responses.
-OAuth completion, token forwarding/removal, caching and authorization-policy
-`401` responses remain **UNVERIFIED**. See
+Unknown/incomplete layouts and all v1 tasks stay native SDK responses; the
+documentation limits the In-Task Authorization Code policy to v0.3.0, so DDK does
+not convert a v1 challenge. OAuth completion, token forwarding/removal, caching
+and authorization-policy `401` responses remain **UNVERIFIED**. See
 [Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
 
 The outbound plane never automatically replays a delegated action, even for
@@ -105,8 +106,11 @@ A separate bounded v0.3 send on 2026-11-05, configured with a deliberately inval
 synthetic evaluator key, returned HTTP 200 JSON with an agent `PONG` message and
 only `x-quality-status: pending`. No score, evaluation or explanation header was
 observed. `pending` does not prove evaluator failure or an internal cause.
-Evaluator failure semantics, v1 evaluation and streaming evaluation remain
-**UNVERIFIED**. This header-only observation adds no runtime or simulator replay
+Evaluator failure semantics and streaming evaluation remain **UNVERIFIED**.
+v1 evaluation is an **accepted boundary**: the Omni Gateway 1.14 documentation
+limits Quality Evaluation to A2A v0.3.0, and a v1 `SendMessage` through the policy
+returned HTTP 200 with no `x-quality-*` headers, so DDK does not expect them on v1.
+This header-only observation adds no runtime or simulator replay
 behavior and does not verify live SDK facade success or SSE.
 DDK records known evaluation/status values and finite numeric scores on
 `donkey.a2a.call` spans from successful delegation HTTP responses. Explanations
@@ -162,9 +166,11 @@ instrumentation can expose them. Never log raw bodies or assume content-capture
 opt-in makes auth metadata safe.
 
 The [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)
-records capture scope and provenance. Bedrock content blocks, response-phase
-guardrails and successful gateway SSE remain
-**UNVERIFIED**; offline tests do not promote those claims.
+records capture scope and provenance. Bedrock content blocks and response-phase
+guardrails remain **UNVERIFIED**. Successful gateway SSE is an **accepted
+boundary**: the hosted agent card advertises `streaming: false`, refusals before
+the stream are captured, and success is verified offline only. Offline tests do
+not promote any of these claims.
 
 ## Next steps
 
