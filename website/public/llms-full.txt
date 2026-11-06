@@ -5532,7 +5532,7 @@ exception types below are root exports.
 | v0.3/v1 Token Based Rate Limit, `a-two-a-token-rate-limit` / `a-two-a-v1-token-rate-limit` 1.0.1 | VERIFIED (LIVE) | Oversized send request; v1 also streaming: empty `429`, `x-token-limit: 1`, `x-token-remaining: 1`, `x-token-reset: 60000`, no `retry-after` | `TokenBudgetExceeded`, `.retry_after` is 60 seconds |
 | v1 Azure Content Guardrails, `a2a-v1-azure-guardrails` 0.1.0 | VERIFIED (LIVE) | Both methods: request-phase Prompt Shield `403`, `x-flex-azure-guardrails-action: reject`, reason `prompt_shield` | `ContentSafetyBlocked(provider="azure-content-safety")`, header-derived categories |
 | Same Azure policy, fail-closed service failure | VERIFIED (LIVE) | Both methods: `503`, `UNAVAILABLE`, reason `service_unavailable`, induced with an invalid key | `UpstreamModelError`, **not** a content block |
-| v1 Bedrock Guardrails, `a2a-v1-bedrock-guardrails` 1.0.0 | VERIFIED (LIVE) | Both methods: fail-closed `503`, `UNAVAILABLE`, `x-flex-bedrock-guardrails-*`, nonexistent guardrail version | `UpstreamModelError`; no Bedrock content-block capture |
+| v1 Bedrock Guardrails, `a2a-v1-bedrock-guardrails` 1.0.0 | VERIFIED (LIVE) | Fail-closed `503` / `UNAVAILABLE` (nonexistent guardrail version), and a content block: `403` / `-32600` / `FORBIDDEN` with `x-flex-bedrock-guardrails-reason: content_filter,denied_topic`, both methods | Fail-closed: `UpstreamModelError`. Content block: not yet typed (`ToolInvocationError`); only the Azure A2A header is recognized |
 | v0.3 In-Task Authorization Code, `intask-authorization-code-policy` 1.0.1 | VERIFIED (LIVE) | Both methods: `200` JSON task, `auth-required`, complete status-message `authChallenge`; no SSE | `GatewayAuthRequired` after SDK decoding, **not** a refusal or completed task |
 | v0.3 Quality Evaluation, `a2a-quality-evaluation-policy` 1.0.0 | VERIFIED (LIVE) | `message/send`: one `200` completed-evaluation capture; a separate invalid-evaluator-key configuration returned `200` with only `x-quality-status: pending` | Completed-evaluation span annotation is offline-tested; pending capture adds no runtime or replay behavior |
 
@@ -5653,7 +5653,7 @@ instrumentation can expose them. Never log raw bodies or assume content-capture
 opt-in makes auth metadata safe.
 
 The [verification ledger](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md)
-records capture scope and provenance. Bedrock content blocks and response-phase
+records capture scope and provenance. Bedrock request-phase content blocks are captured live; Bedrock response-phase
 guardrails remain **UNVERIFIED**. Successful gateway SSE is an **accepted
 boundary**: the hosted agent card advertises `streaming: false`, refusals before
 the stream are captured, and success is verified offline only. Offline tests do

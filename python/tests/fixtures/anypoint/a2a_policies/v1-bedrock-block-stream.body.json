@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"1393","error":{"code":-32600,"message":"Request blocked by Amazon Bedrock Guardrails: content_filter,denied_topic","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"FORBIDDEN","domain":"a2a-protocol.org","metadata":{"detail":"Request blocked by Amazon Bedrock Guardrails: content_filter,denied_topic"}}]}}
