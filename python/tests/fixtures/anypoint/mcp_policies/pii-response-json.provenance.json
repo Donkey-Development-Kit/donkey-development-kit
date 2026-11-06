@@ -1,0 +1,16 @@
+{
+  "captured_on": "2026-11-05",
+  "environment": "Anypoint sandbox",
+  "source": "pii-response.wire.json",
+  "gateway_version": "1.14.4",
+  "mcp_support": {"definition_version": "1.1.3", "implementation_version": "1.1.1"},
+  "upstream": {"type": "Mule application", "version": "1.0.2", "runtime": "4.13.0", "content_type": "application/json", "synthetic_response_text": "Synthetic contact: capture@example.com"},
+  "definition": {"assetId": "mcp-pii-detector", "version": "1.0.1"},
+  "implementation": {"assetId": "mcp-pii-detector-policy-flex", "version": "1.0.2", "technology": "flexGateway", "minRuntimeVersion": "1.9.3"},
+  "configuration": {"entities": ["Email"], "action": "Reject"},
+  "request": {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "capture_contact", "arguments": {"sample": "synthetic"}}, "id": 3},
+  "phase": "response",
+  "response_id_scrubbed": false,
+  "wire_body_modified": false,
+  "verification": {"response_phase_proven": true, "exact_original_chain_restored": true, "final_instance_status": "active", "final_deployment_status": "APPLIED/RUNNING", "temporary_policies_remaining": 0, "final_direct_gateway_verified": true}
+}
