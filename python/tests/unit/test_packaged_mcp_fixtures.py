@@ -76,11 +76,16 @@ def _rpc(response: httpx.Response) -> dict:
 
 @pytest.mark.parametrize("path", sorted(_LOCK))
 def test_packaged_bytes_and_provenance_match_originals_and_hashes(path: str) -> None:
-    """Every copied file is immutable evidence, including both provenance READMEs."""
+    """Copied captures are immutable; #1384 adds test-only provenance after packaging."""
     directory, name = path.rsplit("/", 1)
     packaged = fixtures.fixture_bytes(directory, name)
-    assert packaged == (_ORIGINALS / path).read_bytes()
     assert "sha256:" + hashlib.sha256(packaged).hexdigest() == _LOCK[path]
+    if path == "anypoint/mcp_policies/README.md":
+        # The packaged README describes only the historical 2026-11-02 capture set.
+        assert b"Captured 2026-11-02" in packaged
+        assert b"pii-response-json" not in packaged
+        return
+    assert packaged == (_ORIGINALS / path).read_bytes()
     original_lock = json.loads((_ORIGINALS / "fixtures.lock").read_bytes())
     assert _LOCK[path] == original_lock[path]
 
@@ -108,6 +113,8 @@ def test_manifest_covers_exactly_the_copied_tree_without_served_shapes() -> None
         for spec in fixtures.SHAPES.values()
     )
     assert fixtures.fixture_bytes("anypoint", "README.mcp.md")
+    assert not (root / "mcp_policies" / "pii-response-json.json").is_file()
+    assert not (root / "mcp_policies" / "pii-response-json.provenance.json").is_file()
 
 
 @pytest.mark.parametrize("path", sorted(_LOCK))

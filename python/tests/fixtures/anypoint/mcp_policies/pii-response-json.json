@@ -1,0 +1,5 @@
+{
+  "status": 403,
+  "headers": {"content-type": "application/json", "server": "Anypoint Flex Gateway"},
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-32603,\"message\":\"Internal error\",\"data\":{\"findings\":[{\"masked_value\":\"*******@example.com\",\"pii_type\":\"Email\"}],\"phase\":\"response\",\"policy\":\"mcp-pii-detector\",\"reason\":\"policy_pii_detected\"}}}"
+}

@@ -58,10 +58,13 @@ See [Tools outside your access profile](https://docs.donkey-kit.dev/tool-access/
 
 ## MCP PII Detector
 
-Both captured Reject responses are **HTTP 403 JSON**. Request rejection has
+Captured Reject responses are **HTTP 403 JSON**. Request rejection has
 code `-32602` and `phase="request"`; response rejection has code `-32603` and
-`phase="response"`. The latter was captured with an SSE upstream, but it is
-not an SSE error event. DDK types these as `PIIDetected` only when both exact
+`phase="response"`. Response rejection was captured with both SSE and JSON-only
+upstreams; each rejection is JSON, not an SSE error event. The JSON-only capture used Email Reject
+on a fixed synthetic upstream response with no PII input; it adds wire evidence,
+not a live SDK/framework round-trip or a packaged replay fixture.
+DDK types these as `PIIDetected` only when both exact
 markers `data.policy="mcp-pii-detector"` and
 `data.reason="policy_pii_detected"` accompany the matching phase/code pair.
 
@@ -97,8 +100,8 @@ exception context as raw, sensitive diagnostics, not safe logging fields.
 See [MCP PII metadata](https://docs.donkey-kit.dev/errors.md#mcp-pii-metadata).
 
 Log-and-mask was observed changing SSE text using a synthetic pattern; it is a
-transformed result, not `PIIDetected`. JSON-only response coverage and elicitation
-decline are not established. DDK does not implement MCP elicitation recovery.
+transformed result, not `PIIDetected`. Elicitation decline remains unverified.
+DDK does not implement MCP elicitation recovery.
 
 ## MCP Schema Validation and Tool Poisoning
 

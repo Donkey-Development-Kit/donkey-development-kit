@@ -54,16 +54,54 @@ the catalog. Do not describe this capture as prompt-injection detection.
 
 ## Restoration And Remaining Coverage
 
+### JSON-Only Response Follow-Up (2026-11-05)
+
+`pii-response-json.json` is a separate live capture from an Anypoint sandbox,
+with a deployed JSON-only Mule application `1.0.2` on Mule runtime `4.13.0`,
+Omni Gateway `1.14.4`, and MCP Support definition `1.1.3` / implementation
+`1.1.1`. Its sanitized provenance is `pii-response-json.provenance.json`.
+No tenant UUIDs, deployment hosts, internal IDs, credentials or signed URLs
+are included in this follow-up's provenance.
+
+The request was `tools/call capture_contact` with arguments
+`{"sample":"synthetic"}` and numeric id `3`: no PII was sent in the input.
+Before attachment, both direct upstream and gateway returned HTTP 200
+`application/json`, text `Synthetic contact: capture@example.com`, with
+`isError: false`. The email is fixed synthetic response data, not user input.
+MCP PII Detector definition `1.0.1` / implementation
+`mcp-pii-detector-policy-flex` `1.0.2`, configured as
+`{"entities":["Email"],"action":"Reject"}`, returned HTTP 403
+`application/json`, JSON-RPC `-32603`, `data.phase="response"`, and
+`masked_value="*******@example.com"`. This is not an SSE error event.
+
+The fixture retains exactly the wire capture's status, selected `content-type`
+and `server` headers, and UTF-8 response body string, including key order and
+numeric response id `3`. No response-id scrub or body replacement was needed;
+outer JSON formatting is not wire evidence. The private fixture-ready response
+agrees with the original wire response on all three fields.
+
+The collection report ended with an assertion failure after recording the
+403 and restoring the chain. A subsequent read-only verification validated
+that original capture without a second policy attachment: the exact original
+chain was restored, no temporary policies remained, the instance was active,
+deployment was `APPLIED/RUNNING`, and direct/gateway JSON calls succeeded.
+Private reports and deployment receipts are not copied into this test tree.
+This fixture is test-only, not packaged or simulator-served; it adds no SDK
+classification, framework round-trip or elicitation evidence. The packaged
+README remains the historical 2026-11-02 snapshot of its own capture set.
+
+### Original SSE Capture Restoration
+
 After every scenario the original policy IDs were present again:
 `9667638` (MCP Support), `9667744` (JWT Validation), `9667745` (OAuth2 OBO),
 `9667746` (API Key). After the final redeploy, discovery returned the original
 four tools and `calculate("6*7")` returned HTTP 200 SSE text `42`.
 
-**Not yet captured:** PII on a JSON-only upstream response, the elicitation
-`decline` rewrite, base64/null/TOON payload transforms, and LLM trimming.
+**Not yet captured:** the elicitation `decline` rewrite, base64/null/TOON
+payload transforms, and LLM trimming.
 The JSON-response attempt on Mule-hosted instance `21263396` hit HTTP 401
 `Authentication Attempt Failed` with the available consumer credentials; those
 responses are not fixtures or verification evidence. Its temporary PII policies
 were removed and its original policy IDs restored and redeployed. Issue #1384
-stays open for the missing cases; #1390 owns detailed payload-transform coverage.
+stays open for elicitation; #1390 owns detailed payload-transform coverage.
 No SDK matcher, guard, or framework-support claim changes in this capture slice.

@@ -1402,7 +1402,8 @@ error event is captured. SSE errors and elicitation remain #1384/#1236.
 | MCP PII Detector `1.0.1`, request Reject | VERIFIED (LIVE) | HTTP 403 JSON, `-32602`, `data.reason=policy_pii_detected`, `data.policy=mcp-pii-detector`, `phase=request`, masked findings | 2026-11-02 | `pii-request.json` |
 | MCP PII Detector `1.0.1`, response Reject on SSE upstream | VERIFIED (LIVE) | **HTTP 403 application/json**, `-32603`, `phase=response`, masked findings; not an error event in HTTP 200 | 2026-11-02 | `pii-response-sse.json`; baseline upstream returned HTTP 200 SSE text `42` |
 | MCP PII Detector `1.0.1`, Log and mask on SSE | VERIFIED (LIVE) | HTTP 200 SSE, text `42` replaced by `**` using a synthetic custom pattern | 2026-11-02 | `pii-mask-sse.json` |
-| MCP PII Detector, JSON-only response / elicitation decline | UNVERIFIED | — | — | — |
+| MCP PII Detector definition `1.0.1` / implementation `1.0.2`, response Reject on JSON-only upstream | VERIFIED (LIVE) | **HTTP 403 application/json**, JSON-RPC `-32603`, `data.policy=mcp-pii-detector`, `data.reason=policy_pii_detected`, `phase=response`, masked Email finding; `capture_contact(sample="synthetic")` has no PII input | 2026-11-05 | `pii-response-json.json`, `pii-response-json.provenance.json`; Anypoint sandbox, JSON-only Mule app `1.0.2` (runtime `4.13.0`), Omni Gateway `1.14.4`, MCP Support definition `1.1.3` / implementation `1.1.1`; capture-only, no live SDK/framework round-trip |
+| MCP PII Detector, elicitation decline | UNVERIFIED | — | — | — |
 | MCP Schema Validation `1.3.0`, invalid tool arguments | VERIFIED (LIVE) | **HTTP 200**, `-32602`; string `data` names the tool and echoes rejected values, with no structured policy discriminator | 2026-11-02 | `schema-invalid-args.json` |
 | MCP Schema Validation `1.3.0`, missing request id | VERIFIED (LIVE) | **HTTP 200**, `-32600`, `Invalid JSON-RPC Request`; response id `1` | 2026-11-02 | `schema-missing-id.json` |
 | MCP Schema Validation `1.3.0`, poisoning BlockResponse | VERIFIED (LIVE) | HTTP 200 SSE, `-32603`, `tools/list response blocked by tool poisoning detection`, `data.findings` with four `inputSchema` drift findings | 2026-11-02 | `poisoning-block-list.json`; descriptor drift, not a malicious-server claim |
@@ -1417,8 +1418,14 @@ error event is captured. SSE errors and elicitation remain #1384/#1236.
 Policies were attached one at a time and the instance redeployed individually;
 API Manager attachment alone did not activate the policy. Every temporary
 policy was removed and the original chain redeployed. Final discovery returned
-four tools and `calculate("6*7")` returned `42`. #1384 remains open for the
-JSON-only response and elicitation captures; #1390 tracks detailed optimization.
+four tools and `calculate("6*7")` returned `42`. The 2026-11-05 JSON-only
+follow-up used a separate Mule upstream returning a fixed synthetic email;
+its selected headers and body are unchanged from the raw wire capture, including
+numeric response id `3`. Read-only verification confirmed the exact original
+chain restored, no temporary policies, active instance, `APPLIED/RUNNING`
+deployment and successful direct/gateway JSON calls. The fixture remains
+test-only; packaged MCP captures and all SDK behavior are unchanged.
+#1384 remains open for elicitation; #1390 tracks detailed optimization.
 No verification guard is lifted by these rows.
 
 For #1389, `tests/unit/test_gateway_catalogs.py` replays the captured mapped and

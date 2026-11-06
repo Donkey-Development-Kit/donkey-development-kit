@@ -29,6 +29,7 @@ def _capture(name: str) -> tuple[dict[str, Any], dict[str, Any]]:
     [
         ("pii-request", 403, -32602),
         ("pii-response-sse", 403, -32603),
+        ("pii-response-json", 403, -32603),
         ("schema-invalid-args", 200, -32602),
         ("schema-missing-id", 200, -32600),
         ("poisoning-block-list", 200, -32603),
@@ -64,6 +65,58 @@ def test_schema_data_is_not_a_safe_policy_discriminator() -> None:
     assert "value 42" in body["error"]["data"]
     _, missing = _capture("schema-missing-id")
     assert missing["id"] == 1
+
+
+def test_json_only_response_pii_capture_and_provenance() -> None:
+    """Ledger §9: response-only Email Reject evidence, not SDK classification (BG §2.2)."""
+    capture, body = _capture("pii-response-json")
+    provenance = json.loads((_FIXTURES / "pii-response-json.provenance.json").read_text("utf-8"))
+    assert capture["headers"] == {
+        "content-type": "application/json",
+        "server": "Anypoint Flex Gateway",
+    }
+    assert body == {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "error": {
+            "code": -32603,
+            "message": "Internal error",
+            "data": {
+                "findings": [{"masked_value": "*******@example.com", "pii_type": "Email"}],
+                "phase": "response",
+                "policy": "mcp-pii-detector",
+                "reason": "policy_pii_detected",
+            },
+        },
+    }
+    assert provenance["request"] == {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {"name": "capture_contact", "arguments": {"sample": "synthetic"}},
+        "id": body["id"],
+    }
+    assert provenance["captured_on"] == "2026-11-05"
+    assert provenance["definition"] == {"assetId": "mcp-pii-detector", "version": "1.0.1"}
+    assert provenance["implementation"]["assetId"] == "mcp-pii-detector-policy-flex"
+    assert provenance["implementation"]["version"] == "1.0.2"
+    assert provenance["configuration"] == {"entities": ["Email"], "action": "Reject"}
+    assert provenance["upstream"]["content_type"] == "application/json"
+    assert provenance["upstream"]["version"] == "1.0.2"
+    assert provenance["upstream"]["synthetic_response_text"] == (
+        "Synthetic contact: capture@example.com"
+    )
+    assert "capture@example.com" not in capture["body"]
+    assert provenance["phase"] == body["error"]["data"]["phase"]
+    assert provenance["response_id_scrubbed"] is False
+    assert provenance["wire_body_modified"] is False
+    assert provenance["verification"] == {
+        "response_phase_proven": True,
+        "exact_original_chain_restored": True,
+        "final_instance_status": "active",
+        "final_deployment_status": "APPLIED/RUNNING",
+        "temporary_policies_remaining": 0,
+        "final_direct_gateway_verified": True,
+    }
 
 
 def test_poisoning_is_schema_drift_and_remove_tool_empties_catalog() -> None:
