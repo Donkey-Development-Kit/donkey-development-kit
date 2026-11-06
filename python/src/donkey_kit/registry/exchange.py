@@ -283,13 +283,16 @@ class ExchangeRegistry:
         cached = None if fresh else self._index_cache.get(key)
         if isinstance(cached, McpServerHandle):
             return cached
-        url = await self._endpoint(asset, "mcp", "MCP", "resolve_mcp()")
+        url = await self._endpoint(asset, ("mcp",), "MCP", "resolve_mcp()")
         handle = McpServerHandle(ref=asset, endpoint_url=url)
         self._index_cache.set(key, handle)
         return handle
 
-    async def _endpoint(self, asset: AssetRef, endpoint_type: str, kind: str, verb: str) -> str:
-        """The gateway URL of ``asset``'s one deployed ``endpoint_type`` instance in
+    async def _endpoint(
+        self, asset: AssetRef, endpoint_types: tuple[str, ...], kind: str, verb: str
+    ) -> str:
+        """The gateway URL of ``asset``'s one deployed instance of the first of
+        ``endpoint_types`` (in preference order) that has any, in
         the configured environment: the gateway's public URL joined with the
         instance's path, with a trailing slash (docs/verified-apis.md §6). The
         gateway credential is sent to it, so it must pass the https rule of the
@@ -297,11 +300,15 @@ class ExchangeRegistry:
         cfg = self._cfg
         env_id = await self._environment_id()
         base = f"/apimanager/api/v1/organizations/{cfg.org_id}/environments/{env_id}"
-        instances = [
-            api
-            for api in await self._instances(base, asset)
-            if api.get("endpointType") == endpoint_type and _deployed(api)
-        ]
+        deployed = [api for api in await self._instances(base, asset) if _deployed(api)]
+        instances = next(
+            (
+                found
+                for endpoint_type in endpoint_types
+                if (found := [a for a in deployed if a.get("endpointType") == endpoint_type])
+            ),
+            [],
+        )
         where = f"environment {cfg.environment!r}"
         if not instances:
             raise RegistryError(
@@ -427,7 +434,7 @@ class ExchangeRegistry:
         """Resolve an A2A agent asset to its governed gateway endpoint (#1354).
 
         The reads ``resolve_mcp()`` makes, for the asset version's deployed
-        ``a2a`` instance: the agent card is at
+        ``a2a_v1`` instance (A2A 1.0), else its ``a2a`` one (A2A 0.3): the agent card is at
         ``endpoint_url + ".well-known/agent-card.json"``. The handle opens no
         connection and has no ``skills``: those are on the card. Results are
         cached for ``registry_cache_ttl_s`` seconds.
@@ -448,7 +455,7 @@ class ExchangeRegistry:
         cached = self._index_cache.get(key)
         if isinstance(cached, AgentHandle):
             return cached
-        url = await self._endpoint(asset, "a2a", "A2A", "resolve_agent()")
+        url = await self._endpoint(asset, ("a2a_v1", "a2a"), "A2A", "resolve_agent()")
         handle = AgentHandle(ref=asset, endpoint_url=url)
         self._index_cache.set(key, handle)
         return handle
