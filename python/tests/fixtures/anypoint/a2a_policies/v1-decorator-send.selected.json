@@ -1,0 +1,11 @@
+{
+  "policy": {"assetId": "a2a-v1-prompt-decorator", "version": "1.0.0",
+             "configurationData": {"textDecorators": [{"text": "#['DDK-1393 decorator marker']"}]}},
+  "request": {"method": "SendMessage", "headers": {"A2A-Version": "1.0"},
+              "params": {"message": {"role": "ROLE_USER", "parts": [{"text": "Reply with PONG."}]}}},
+  "response": {"status": 200, "result": {"message": {"role": "ROLE_AGENT", "parts": [{"text": "PONG"}]}}},
+  "upstreamObservation": {
+    "source": "the hosted ADK agent's own LLM request, echoed in result.message.metadata.raw[0].request.body",
+    "userMessageContent": "DDK-1393 decorator marker\nReply with PONG."
+  }
+}
