@@ -124,8 +124,20 @@ request headers use the v1 shape above, including numeric request ID 1393.
   a direct AWS ApplyGuardrail check returned 400 `ValidationException`:
   the guardrail identifier or version does not exist. No Bedrock content block
   was observed; do not treat this service failure as a moderation verdict.
+- `v1-bedrock-block-{send,stream}`: `a2a-v1-bedrock-guardrails` **1.0.0**, temporary `a2a_v1`
+  instance `21279653` on `shared-omni-gateway` (Omni Gateway 1.14.4), captured 2026-11-06.
+  Runtime endpoint and region `us-west-2`, the dedicated ApplyGuardrail IAM credentials,
+  guardrail `6q7y92mbhqzj` version `1` (`amazon-bedrock-guardrail`), `moderateRequest: true`,
+  `moderateResponse: false`, `failOpen: false`. Request text was synthetic investment-advice
+  prompt. Both `SendMessage` and `SendStreamingMessage` returned HTTP 403 / `-32600`,
+  `FORBIDDEN`, detail `Request blocked by Amazon Bedrock Guardrails: content_filter,denied_topic`;
+  headers `x-flex-bedrock-guardrails-{action,phase,reason}` are `reject`, `request`,
+  `content_filter,denied_topic`. Unlike the unavailable case above this is a moderation
+  verdict, and a streaming request is refused before any stream starts. Response moderation
+  (`moderateResponse`) and benign pass-through were not exercised. The instance and asset were
+  deleted, and the original policy chain was verified unchanged.
 
-All six responses carry `google.rpc.ErrorInfo` with domain `a2a-protocol.org`;
+All eight responses carry `google.rpc.ErrorInfo` with domain `a2a-protocol.org`;
 neither provider emits `www-authenticate`. Official references:
 https://docs.mulesoft.com/gateway/latest/policies-included-a2a-v1-azure-guardrails
 and https://docs.mulesoft.com/gateway/latest/policies-included-a2a-v1-bedrock-guardrails.

@@ -300,3 +300,29 @@ def test_v1_transcoder_unsupported_methods_use_source_codes(
     assert info["@type"] == "type.googleapis.com/google.rpc.ErrorInfo"
     assert info["domain"] == "a2a-protocol.org"
     assert info["reason"] == reason
+
+
+_BEDROCK_BLOCK_DETAIL = "Request blocked by Amazon Bedrock Guardrails: content_filter,denied_topic"
+
+
+@pytest.mark.parametrize("method", ["send", "stream"])
+def test_v1_bedrock_content_block_is_403_with_reasons(method: str) -> None:
+    """A real moderation verdict (403 / -32600), distinct from the 503 fail-closed outage."""
+    response = _response(f"v1-bedrock-block-{method}")
+    assert response.status_code == 403
+    assert response.headers["content-type"] == "application/json"
+    assert "www-authenticate" not in response.headers
+    assert response.headers["x-flex-bedrock-guardrails-action"] == "reject"
+    assert response.headers["x-flex-bedrock-guardrails-phase"] == "request"
+    assert response.headers["x-flex-bedrock-guardrails-reason"] == "content_filter,denied_topic"
+    payload = response.json()
+    assert payload["id"] == "1393"
+    assert payload["error"]["code"] == -32600
+    assert payload["error"]["data"] == [
+        {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            "domain": "a2a-protocol.org",
+            "reason": "FORBIDDEN",
+            "metadata": {"detail": _BEDROCK_BLOCK_DETAIL},
+        }
+    ]
