@@ -283,6 +283,23 @@ for the first disconnect is established. Raw evidence and cleanup receipts
 remain in ignored provisioning storage; #1393 records both attempts. This
 does not verify SDK facade success, streaming or SDK A2A budget updates.
 
+## v1 to v0.3 Transcoder unsupported methods
+
+- `v1-transcoder-{list-tasks,push-config}`: `a-two-a-v1-to-v03-transcoder` **1.0.0**
+  (no configuration parameters), temporary `a2a_v1` instance in front of the hosted
+  LangGraph interface with the access-key credential injection attached, captured
+  2026-11-06 on `shared-omni-gateway` (Omni Gateway 1.14.4), one request each, no
+  retries, `A2A-Version: 1.0`. `ListTasks` returned HTTP 400, code `-32004`,
+  `UNSUPPORTED_OPERATION`, message `Operation not supported`; the push-notification
+  method `CreateTaskPushNotificationConfig` returned HTTP 400, code `-32003`,
+  `PUSH_NOTIFICATION_NOT_SUPPORTED`. Both carry `google.rpc.ErrorInfo` (domain
+  `a2a-protocol.org`) and the request ID as the string `"1393"`. The published
+  documentation says `-32601 UNSUPPORTED_METHOD_FOR_V03` for `ListTasks`; the
+  observed `-32004` matches the policy source instead, and `-32003` matches the
+  documented push-notification code. The transcoder attaches only to an `a2a_v1`
+  asset (an `a2a` instance rejects it with `PolicyValidationError`). Supported-method
+  transcoding was not exercised.
+
 ## Remaining Verification
 
 These captures do not verify Bedrock content blocks, response-phase guardrails,
