@@ -12,9 +12,9 @@ annotated-types==0.8.0
 anyio==4.16.0
 ast-serialize==0.13.1
 attrs==26.1.0
-authlib==1.9.4
-boto3==1.43.124
-botocore==1.43.124
+authlib==1.9.5
+boto3==1.43.125
+botocore==1.43.125
 certifi==2026.10.23
 cffi==2.1.1
 charset-normalizer==3.5.2
@@ -31,7 +31,7 @@ google-adk==2.13.0
 google-auth==2.62.1
 google-genai==2.34.0
 graphviz==0.21
-grimp==3.18
+grimp==3.19
 h11==0.16.0
 h2==4.4.1
 hf-xet==1.8.0
@@ -43,7 +43,7 @@ httpx2==2.16.0
 huggingface-hub==1.33.0
 hyperframe==6.1.0
 idna==3.20
-import-linter==2.15
+import-linter==2.16
 importlib-metadata==8.9.0
 iniconfig==2.3.1
 jinja2==3.1.6
@@ -53,7 +53,7 @@ joserfc==1.8.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 librt==0.16.0
-litellm==1.108.0
+litellm==1.108.1
 markdown-it-py==4.2.0
 markupsafe==3.0.4
 mcp==2.3.0
@@ -93,7 +93,7 @@ requests==2.34.2
 respx==0.23.1
 rich==15.0.0
 rpds-py==2026.9.1
-ruff==0.17.3
+ruff==0.17.4
 s3transfer==0.19.3
 shellingham==1.5.4
 six==1.17.0
@@ -105,7 +105,7 @@ tiktoken==0.14.0
 tokenizers==0.23.3
 tqdm==4.70.1
 truststore==0.10.5
-typer==0.27.3
+typer==0.28.0
 typing-extensions==4.16.0
 typing-inspection==0.4.5
 urllib3==2.8.0
