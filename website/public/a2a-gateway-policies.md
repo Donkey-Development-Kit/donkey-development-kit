@@ -11,7 +11,10 @@ delegation, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) to make y
   **Live captures are not live SDK verification.** The response shapes below
   include the 2026-11-02 Omni Gateway 1.14.4 captures and later bounded send-header captures. DDK classification,
   outbound delegation and selected ingress replay are **OFFLINE-VERIFIED**.
-  Successful gateway send and SSE through the facade are not live verified.
+  Successful gateway send and SSE through the facade are not live verified. One v1
+  facade send was captured; the facade's v0.3 transport is an **accepted boundary**,
+  because the live gateway card advertises only a v1 interface, so the facade selects
+  the v1 transport there.
   A refusal to a streaming method before SSE starts does not prove streaming success.
 
 The outbound facade and auth-challenge types are available on `develop`, not
