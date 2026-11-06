@@ -269,6 +269,12 @@ _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str, str], ...] = (
         "Azure Content Safety",
     ),
     (
+        _wire.A2A_BEDROCK_GUARDRAIL_ACTION_HEADER,
+        _wire.A2A_BEDROCK_GUARDRAIL_REASON_HEADER,
+        "bedrock-guardrails",
+        "Amazon Bedrock Guardrails",
+    ),
+    (
         _wire.BEDROCK_GUARDRAIL_ACTION_HEADER,
         _wire.BEDROCK_GUARDRAIL_REASON_HEADER,
         "bedrock-guardrails",
@@ -305,7 +311,7 @@ def content_safety_headers(
     """Read captured vendor verdicts with HTTP context, never from RPC diagnostic text.
 
     Header names must be lowercase (as in RpcShape and HTTP response headers).
-    The A2A Azure family is captured live; Bedrock's A2A block is not (#1393).
+    The A2A Azure and Bedrock families are captured live (#1393, #1630).
     """
     if status != 403:
         return None
