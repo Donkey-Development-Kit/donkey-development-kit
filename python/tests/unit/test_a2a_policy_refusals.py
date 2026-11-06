@@ -143,9 +143,40 @@ def test_auth_challenge_precedes_azure_marker() -> None:
     assert jsonrpc_refusal(response.json(), status=403, headers=response.headers) is None
 
 
-def test_bedrock_content_block_remains_uncaptured() -> None:
-    """Only Bedrock outages were observed; do not claim a captured block shape."""
+def test_bedrock_outage_is_not_a_content_block() -> None:
     response = _response("v1-bedrock-unavailable-send")
+    assert response.status_code == 503
+    assert type(classify(response)) is UpstreamModelError
+    assert jsonrpc_refusal(response.json(), status=503, headers=response.headers) is None
+
+
+@pytest.mark.parametrize("name", ["v1-bedrock-block-send", "v1-bedrock-block-stream"])
+def test_captured_bedrock_block_is_typed_content_safety(name: str) -> None:
+    response = _response(name)
+    error = classify(response)
+    assert type(error) is ContentSafetyBlocked
+    assert error.provider == "bedrock-guardrails"
+    assert error.categories == ["content_filter", "denied_topic"]
+    assert error.response is response
+    typed = jsonrpc_refusal(response.json(), status=403, headers=response.headers)
+    assert type(typed) is ContentSafetyBlocked
+    assert typed.provider == "bedrock-guardrails"
+
+
+@pytest.mark.parametrize("status", [200, 400, 401, 429, 503])
+def test_bedrock_header_alone_cannot_turn_other_statuses_into_content_blocks(
+    status: int,
+) -> None:
+    response = _response("v1-bedrock-block-send")
+    assert jsonrpc_refusal(response.json(), status=status, headers=response.headers) is None
+    changed = httpx.Response(status, headers=response.headers, content=response.content)
+    assert not isinstance(classify(changed), ContentSafetyBlocked)
+
+
+def test_bedrock_marker_must_be_an_exact_reject() -> None:
+    response = _response("v1-bedrock-block-send")
+    response.headers["x-flex-bedrock-guardrails-action"] = "allow"
+    assert type(classify(response)) is ToolInvocationError
     assert jsonrpc_refusal(response.json(), status=403, headers=response.headers) is None
 
 
