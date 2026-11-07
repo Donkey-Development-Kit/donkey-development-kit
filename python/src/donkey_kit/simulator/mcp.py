@@ -272,7 +272,8 @@ def simulate_mcp(
     These floors apply only to simulation. Strands returns generic error tool
     results, not typed refusals; catalog errors raise MCPError. Its stop after
     failed/cancelled/expired sessions can warn about an unawaited coroutine,
-    even though connection clients close. Others fail before connecting.
+    even though connection clients close. ADK and CrewAI are unsupported and
+    fail before connecting (docs/verified-apis.md §9, #1643).
     Unmatched traffic uses the required offline baseline. No registry or LLM
     transport is changed. Captured schema/poisoning errors stay ambiguous.
     """
