@@ -163,6 +163,7 @@ MEMBERS = [
 
 PROVISIONAL_MEMBERS = [
     "Donkey.a2a [property]",
+    "Donkey.simulate_a2a(capture, *, agents, version='1.0', times=1, reply=None)",
     "ToolsFacade.live_card(ref) [async]",
     "ToolsFacade.live_tools(ref) [async]",
 ]

@@ -95,3 +95,4 @@ is not rewritten.
 | [0021](0021-jsonrpc-refusal-matching.md) | JSON-RPC refusals share the custom-policy registry through an explicit opt-in | Accepted | #1385 |
 | [0022](0022-scoped-a2a-outbound-plane.md) | Outbound A2A uses a scoped credential plane and a provisional facade over the official SDK | Proposed (implementation and API tier enforcement present; user acceptance pending) | #1395 |
 | [0023](0023-simulate-mcp-declared-discovery.md) | `Donkey.simulate_mcp()` answers discovery from declared servers and lazily imports the simulator | Proposed | #1391 |
+| [0024](0024-simulate-a2a-declared-agents.md) | `Donkey.simulate_a2a()` resolves declared agents offline and lazily imports the simulator | Proposed | #1652 |

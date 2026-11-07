@@ -59,6 +59,7 @@ _.discover  # unused method (src/donkey_kit/donkey.py)
 _.attribution  # unused method (src/donkey_kit/donkey.py): public API, #310
 _.as_user  # unused method (src/donkey_kit/donkey.py): public API, #215
 _.a2a  # unused property (src/donkey_kit/donkey.py): outbound public facade, #1395
+_.simulate_a2a  # unused method (src/donkey_kit/donkey.py): public test API, #1652
 _.run_from_headers  # unused method (src/donkey_kit/donkey.py): public API, #308
 _.correlation_headers  # unused method (src/donkey_kit/donkey.py): public API, #308
 _.flush_telemetry  # unused method (src/donkey_kit/donkey.py): public API, #954

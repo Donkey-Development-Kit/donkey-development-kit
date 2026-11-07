@@ -378,6 +378,23 @@ Inject a captured gateway refusal into MCP tool calls, no gateway.
 
 Guide: [`/simulator`](/simulator)
 
+### `donkey.simulate_a2a()`
+
+```python nocheck
+donkey.simulate_a2a(
+    capture: str,
+    *,
+    agents: Sequence[str],
+    version: str = '1.0',
+    times: int = 1,
+    reply: Callable[[str], str] | None = None,
+) -> AbstractContextManager[None]
+```
+
+Inject a captured gateway refusal into outbound A2A calls, no gateway.
+
+Guide: [`/simulator`](/simulator)
+
 ### `donkey.flush_telemetry()`
 
 ```python nocheck
