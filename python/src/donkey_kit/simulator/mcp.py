@@ -7,15 +7,26 @@ import copy
 import json
 import threading
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from .._testing import mcp_factory_scope
+from .._testing import mcp_discovery_scope, mcp_factory_scope
+from ..registry.criteria import Check, GovernanceReport
+from ..registry.models import AssetRef, McpServerHandle
+from ..tools.auth import ClientIdAuth
 from ..tools.session import ToolSet
 from .fixtures import Fixture, fixture_bytes, parse_headers, parse_status, replay_headers
 
-__all__ = ["McpReplay", "mcp_baseline", "simulate_mcp"]
+if TYPE_CHECKING:
+    from ..donkey import Donkey
+
+__all__ = ["McpReplay", "mcp_baseline", "simulate_declared", "simulate_mcp"]
+
+#: Where a declared server "lives": the reserved ``.invalid`` TLD never resolves,
+#: so a request that escaped the replay could not reach a host (RFC 2606).
+_DECLARED_HOST = "https://simulated.donkey-kit.invalid"
+_EMPTY_SCHEMA: dict[str, object] = {"type": "object", "properties": {}}
 
 _METHODS = {
     "pii-request": "tools/call",
@@ -287,5 +298,89 @@ def simulate_mcp(
     try:
         with mcp_factory_scope(tools, replay.client):
             yield replay
+    finally:
+        replay.close()
+
+
+def _default_result(name: str, _arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+    return {"content": [{"type": "text", "text": f"simulated result of {name}"}]}
+
+
+def _declared(
+    servers: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> list[tuple[McpServerHandle, list[dict[str, Any]]]]:
+    if not isinstance(servers, Mapping) or not servers:
+        raise ValueError(
+            "servers must map at least one 'group_id/asset_id/version' ref to its tools"
+        )
+    declared = []
+    for ref, tools in servers.items():
+        asset = AssetRef.parse(ref)
+        if isinstance(tools, (str, bytes)) or not isinstance(tools, Sequence) or not tools:
+            raise ValueError(f"servers[{ref!r}] must be a non-empty list of tool descriptors")
+        descriptors = []
+        for tool in tools:
+            if not isinstance(tool, Mapping):
+                raise ValueError(f"servers[{ref!r}] tools must be MCP descriptor mappings")
+            descriptor = copy.deepcopy(dict(tool))
+            descriptor.setdefault("inputSchema", dict(_EMPTY_SCHEMA))
+            descriptors.append(descriptor)
+        handle = McpServerHandle(
+            ref=asset,
+            endpoint_url=f"{_DECLARED_HOST}/{asset.group_id}/{asset.asset_id}/{asset.version}/mcp",
+            governance=GovernanceReport(
+                governed=True,
+                checks=[Check("simulated", True, "declared in donkey.simulate_mcp()")],
+            ),
+        )
+        declared.append((handle, descriptors))
+    return declared
+
+
+@contextlib.contextmanager
+def simulate_declared(
+    donkey: Donkey,
+    capture: str,
+    servers: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    times: int = 1,
+    call_tool: Callable[[str, Mapping[str, Any]], Mapping[str, Any]] | None = None,
+) -> Iterator[None]:
+    """The engine behind ``Donkey.simulate_mcp()`` (#1391, ADR 0023).
+
+    ``donkey.tools.discover()`` (and the resolve behind ``live_tools()``) answer from the declared
+    ``servers`` (marked governed by a ``simulated`` check) instead of Exchange,
+    and every set they return binds through one :class:`McpReplay` whose
+    baseline serves the declared tools. ``call_tool`` answers an unmatched
+    ``tools/call``; the default returns one text item. After exit those sets
+    fail closed: their clients refuse every request.
+    """
+    if capture not in _METHODS:
+        raise ValueError(f"Unknown MCP capture {capture!r}; choose from {', '.join(_METHODS)}")
+    if type(times) is not int or times < 1:
+        raise ValueError("times must be a positive integer")
+    declared = _declared(servers)
+    answer = call_tool or _default_result
+    baselines = {
+        handle.endpoint_url: mcp_baseline(handle.endpoint_url, tools=tools, call_tool=answer)
+        for handle, tools in declared
+    }
+
+    def route(request: httpx.Request) -> httpx.Response:
+        baseline = baselines.get(str(request.url))
+        if baseline is None:
+            raise ValueError("MCP baseline request escaped the declared servers")
+        return baseline.handle_request(request)
+
+    handles = [handle for handle, _ in declared]
+    replay = McpReplay(ToolSet(handles), capture, httpx.MockTransport(route), times)
+    try:
+        with mcp_discovery_scope(
+            donkey,
+            handles,
+            auth=ClientIdAuth("simulated", "simulated"),
+            transport={"factory": replay.client},
+        ):
+            yield
     finally:
         replay.close()

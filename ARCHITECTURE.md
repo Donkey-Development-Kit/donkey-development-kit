@@ -145,8 +145,10 @@ independent siblings (`integrations | a2a`), so neither may import the other
 (ADR 0014).
 
 It is `exhaustive`, so a new top-level module fails `lint-imports` until it is
-placed. Its one ignored import is `Donkey.simulate()`'s lazy import of
-`simulator.inject`: public API whose implementation lives in the simulator.
+placed. Its two ignored imports are `Donkey.simulate()`'s lazy import of
+`simulator.inject` and `Donkey.simulate_mcp()`'s lazy import of
+`simulator.mcp` (ADR 0023): public API whose implementation lives in the
+simulator.
 Beside it:
 
 - **Nothing imports the CLI.** `cli` sits on top, so no library module imports
