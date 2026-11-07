@@ -356,6 +356,22 @@ donkey.simulate(
 
 Inject a real gateway refusal in-process, no server.
 
+### `donkey.simulate_mcp()`
+
+```python nocheck
+donkey.simulate_mcp(
+    capture: str,
+    *,
+    servers: Mapping[str, Sequence[Mapping[str, Any]]],
+    times: int = 1,
+    call_tool: Callable[[str, Mapping[str, Any]], Mapping[str, Any]] | None = None,
+) -> AbstractContextManager[None]
+```
+
+Inject a captured gateway refusal into MCP tool calls, no gateway.
+
+Guide: [`/simulator`](https://docs.donkey-kit.dev/simulator.md)
+
 ### `donkey.flush_telemetry()`
 
 ```python nocheck

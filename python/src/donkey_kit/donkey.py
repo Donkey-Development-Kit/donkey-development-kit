@@ -393,7 +393,7 @@ class ToolsFacade:
         ``discover(locked=True)`` with the same ``tags=`` and ``governed=``.
 
         Provisional (ADR 0020): may change in a minor release, with a migration
-        note (ADR 0023 covers its root export). This was a synchronous method that always raised
+        note (ADR 0024 covers its root export). This was a synchronous method that always raised
         ``NotImplementedError``; it is now a coroutine.
 
         Args:
@@ -1500,6 +1500,51 @@ class Donkey:
 
         clients: list[Any] = [self._http, self._sync_http_client()]
         return _simulate(clients, error, times=times)
+
+    def simulate_mcp(
+        self,
+        capture: str,
+        *,
+        servers: Mapping[str, Sequence[Mapping[str, Any]]],
+        times: int = 1,
+        call_tool: Callable[[str, Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    ) -> AbstractContextManager[None]:
+        """Inject a captured gateway refusal into MCP tool calls, no gateway (#1391, BG §1.5).
+
+        The MCP counterpart of :meth:`simulate`. Inside the block,
+        ``donkey.tools.discover()`` returns the ``servers`` you declare (its
+        filters are not applied) instead of reading Exchange, and the bindings it
+        produces talk to an offline replay. The next ``times`` matching MCP requests
+        get the captured refusal named ``capture``; every other request is answered
+        from the declared tools::
+
+            servers = {"acme/crm-tools/1.0.0": [{"name": "lookup_customer"}]}
+            with donkey.simulate_mcp("pii-request", servers=servers):
+                tools = await (await donkey.tools.discover()).langgraph()
+                await agent.ainvoke(...)  # the tool call is refused as a real PII block
+
+        ``capture`` is one of ``pii-request``, ``pii-response-sse``,
+        ``schema-invalid-args``, ``abac-denied``, ``global-access`` (``tools/call``)
+        or ``poisoning-block-list`` (``tools/list``): the packaged Omni Gateway
+        captures, injected verbatim with ``x-donkey-simulator: true``.
+
+        ``servers`` maps each ``group_id/asset_id/version`` ref to its MCP tool
+        descriptors; a descriptor without ``inputSchema`` gets an empty object
+        schema. Declared servers are marked governed by a ``simulated`` check.
+        ``call_tool(name, arguments)`` answers a ``tools/call`` that is not
+        injected; the default returns one text item. Bind inside the block: after
+        it exits, those bindings refuse every request rather than reach a network.
+        Nesting raises ``RuntimeError``. The model client is untouched; combine
+        with :meth:`simulate` for that.
+
+        Supported bindings and their version floors are those of
+        :func:`donkey_kit.simulator.mcp.simulate_mcp`; ADK and CrewAI are refused.
+
+        Docs: https://docs.donkey-kit.dev/simulator
+        """
+        from .simulator.mcp import simulate_declared
+
+        return simulate_declared(self, capture, servers, times=times, call_tool=call_tool)
 
     @property
     def _sync_http(self) -> DonkeyClient | None:

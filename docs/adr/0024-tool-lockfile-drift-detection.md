@@ -1,4 +1,4 @@
-# ADR 0023: The tool lockfile pins gateway-visible tool descriptors and detects drift; it never controls access
+# ADR 0024: The tool lockfile pins gateway-visible tool descriptors and detects drift; it never controls access
 
 - **Status:** Accepted
 - **Date:** 2026-11-07

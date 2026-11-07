@@ -240,7 +240,7 @@ class ToolLockDrift(DonkeyError):
     Raised before any tool binds. ``drift`` lists every pinned server or tool
     that is missing or changed. A tool the lock does not know is not drift: it
     is dropped and reported in ``ToolSet.excluded`` as ``"unpinned"``.
-    Provisional (ADR 0020). A root export by exception (ADR 0023)."""
+    Provisional (ADR 0020). A root export by exception (ADR 0024)."""
 
     remediation: str = "Review the gateway change, then re-run donkey.tools.lock() to accept it."
 

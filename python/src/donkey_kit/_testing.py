@@ -17,7 +17,7 @@ registry (#210), so a registration one test makes never leaks into the next.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
 from .core import classifier
@@ -26,12 +26,15 @@ if TYPE_CHECKING:
     from .core.transport import DonkeyAsyncClient, DonkeyClient
     from .donkey import Donkey
     from .integrations._base import Adapter
+    from .registry.models import McpServerHandle
+    from .tools.auth import McpAuth
     from .tools.session import ToolSet
 
 __all__ = [
     "SwappableClient",
     "http_clients",
     "isolated_classify",
+    "mcp_discovery_scope",
     "mcp_factory_scope",
     "resolved_adapters",
     "swap_transport",
@@ -85,6 +88,17 @@ def mcp_factory_scope(tools: ToolSet, factory: Callable[..., Any]) -> Iterator[N
             state.pop("factory", None)
         else:
             state["factory"] = previous
+
+
+def mcp_discovery_scope(
+    donkey: Donkey,
+    servers: Sequence[McpServerHandle],
+    *,
+    auth: McpAuth,
+    transport: dict[str, Callable[..., Any]],
+) -> contextlib.AbstractContextManager[None]:
+    """Make ``donkey.tools`` answer from ``servers`` until exit (#1391, ADR 0023)."""
+    return donkey._tools._discovery.simulated(servers, auth=auth, transport=transport)
 
 
 @contextlib.contextmanager

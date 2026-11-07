@@ -1475,7 +1475,7 @@ error event is captured. SSE errors and elicitation remain #1384/#1236.
 | MCP Payload Optimization `1.2.1`, base64 | VERIFIED (LIVE) | HTTP 200 SSE; a `data:image/png;base64,…` string echoed by a tool error became `[base64 data removed]` (control: untouched). A bare base64 string of the same length was **not** stripped. Still `isError: true`, not a refusal | 2026-11-07 | `optimization-base64.json`, `optimization-base64-control.json`, `optimization-base64-bare.json`; DDK / Sandbox, `shared-omni-gateway`, instances `ddk-langgraph-mcp-sanitize-nulls` (`21281859`) and `-sanitize-toon` (`21281860`), deployed `mcp-tool-response-sanitization 1.2.1`, gateway version not recorded; the control is `ddk-langgraph-mcp-global` (`21281858`, no payload policy); capture-only, no live SDK/framework round-trip |
 | MCP Payload Optimization `1.2.1`, remove nulls | VERIFIED (LIVE) | HTTP 200 SSE; with `remove_nulls`, null-valued keys were dropped at every depth and the JSON text came back compact (`{"id":1,…}`, no spaces); the control kept the nulls and Python-style spacing. `isError: false` | 2026-11-07 | `optimization-nulls.json`, `optimization-nulls-control.json`; DDK / Sandbox, `shared-omni-gateway`, instances `ddk-langgraph-mcp-sanitize-nulls` (`21281859`) and `-sanitize-toon` (`21281860`), deployed `mcp-tool-response-sanitization 1.2.1`, gateway version not recorded; the control is `ddk-langgraph-mcp-global` (`21281858`, no payload policy); capture-only, no live SDK/framework round-trip; synthetic result of the provisioning-repo `capture_records(sample="nulls")` tool |
 | MCP Payload Optimization `1.2.1`, TOON encoding | VERIFIED (LIVE) | HTTP 200 SSE; with `enable_toon_encoding` and `min_response_bytes: 0`, a uniform array of 20 objects arrived as text starting `TOON: [20]{id,name,status,score}:` (shorter than the JSON control; not valid JSON). A JSON object with nulls was not TOON-encoded (returned as the control). Content type unchanged (`text/event-stream`) | 2026-11-07 | `optimization-toon.json`, `optimization-toon-control.json`, `optimization-toon-ineligible.json`; DDK / Sandbox, `shared-omni-gateway`, instances `ddk-langgraph-mcp-sanitize-nulls` (`21281859`) and `-sanitize-toon` (`21281860`), deployed `mcp-tool-response-sanitization 1.2.1`, gateway version not recorded; the control is `ddk-langgraph-mcp-global` (`21281858`, no payload policy); capture-only, no live SDK/framework round-trip; synthetic `capture_records(sample="uniform")` |
-| MCP Payload Optimization, LLM trimming via `expected_info` | UNVERIFIED | — | — | — (needs a model proxy; SDK #1641) |
+| MCP Payload Optimization `1.2.1`, Smart Response Trimming via `expected_info` | VERIFIED (LIVE) | HTTP 200 SSE; with `extractEnabled`, a model proxy (`ddk-openai-model-routing`, `openai/gpt-5-mini`) and `thresholdBytes: 200`, a 1.6 KB JSON result sent with `expected_info` (a sibling of the tool arguments in `tools/call`) came back as `[2,4,6,8,10,12,14,16,18,20]`; the same call without `expected_info`, and the same call on an instance without the policy, returned the result untouched. With an unresolvable model proxy host the call still returned HTTP 200 with the untrimmed result (fail-open). Not explored: results over the default 8000-byte threshold, non-2xx or slow proxies, `tool_overrides` | 2026-11-07 | `optimization-trim.json`, `optimization-trim-control.json`, `optimization-trim-no-policy.json`, `optimization-trim-unreachable.json`; DDK / Sandbox, `shared-omni-gateway`, instances `ddk-langgraph-mcp-sanitize-trim` (`21282559`) and `-sanitize-trim-down` (`21282560`), deployed `mcp-tool-response-sanitization 1.2.1`, gateway version not recorded; capture-only, no live SDK/framework round-trip; the model's output is non-deterministic |
 
 Policies were attached one at a time and the instance redeployed individually;
 API Manager attachment alone did not activate the policy. Every temporary
@@ -1876,6 +1876,47 @@ The observed HTTP clients close and background threads terminate nonetheless.
 No runtime patch or warning suppression is added. This is offline handling
 evidence only, not a new live gateway round-trip, capture or policy-enforcement
 claim.
+
+**ADK and CrewAI scoped offline replay: UNSUPPORTED (verified negative), 2026-11-07,
+#1643 (split from #1391).** Neither `ToolSet.adk()` nor `ToolSet.crewai()` is wired
+to `simulate_mcp`; the `ConfigError` guard in `ToolSet._plan` stays. Probes were
+local and socket-free (no live requests, global patches or production changes).
+
+*CrewAI.* Every `crewai>=1.15.3` and `crewai-tools[mcp]>=1.15.32` release
+(tested up to 1.15.37) pins `mcp<2`, while simulation needs `mcp>=2.3.0` (the
+baseline's negotiated protocol and the response-id adaptation). uv reports the
+pair unsatisfiable; the only resolution downgrades `crewai` to 1.6.1, below the
+package floor. No resolver-compatible stack exists. The earlier HTTP 403 stall
+exemption is separate and unchanged.
+
+*ADK.* On `google-adk` 2.9.0 and 2.14.0 with `mcp` 2.3.0, `McpToolset` accepts
+`httpx_client_factory=replay.client` and the replay works: native
+`initialize` → `tools/list` → `tools/call`, success after the single capture,
+reconnect after `close()`, failed initialize raising `ConnectionError`, expiry
+sending nothing to the baseline, and every replay client closed. Releases
+2.4.0–2.8.0 (including the `[adk]` floor, 2.4.0) fail to import `McpToolset`
+against `mcp` 2.3.0 (`mcp.shared.session` is missing); 2.9.0 is the first that
+imports. Blocking limitations:
+
+- **Not fail-closed.** `MCPSessionManager._get_mtls_transport` builds Google's
+  own mTLS transport when `GOOGLE_API_USE_CLIENT_CERTIFICATE` is not `false`
+  and credentials resolve, and uses it *instead of* the supplied
+  `httpx_client_factory`. With that transport substituted, the request reached it
+  and no replay client was built. Closing this needs a process-environment
+  change or an ADK patch, both out of scope.
+- **Error identity is lost.** A captured refusal comes back as
+  `{'error': 'MCP tool execution failed: …'}`, not an exception, so
+  `typed_refusals()` cannot recover it (the existing ADK exemption).
+- `retry_on_errors` retries any exception once, and ADK logs
+  `Error on session runner task` on failed initialize.
+
+`tests/conformance/test_adk_mcp_simulation.py` pins both facts (replay lifecycle with
+mTLS off, and the mTLS bypass as a canary that fails once ADK closes the gap); it
+skips unless `google-adk>=2.9` imports on `mcp>=2.3.0`.
+
+Revisit when ADK exposes an injection seam that cannot be bypassed and the
+`[adk]` floor reaches a release that imports on `mcp` 2.3.0, or when CrewAI
+admits `mcp>=2.3.0`. This establishes no live gateway evidence.
 
 **Reusable offline MCP baseline: VERIFIED (local round-trip), 2026-11-05, #1391.**
 `simulator.mcp.mcp_baseline` returns an endpoint-scoped, stateless

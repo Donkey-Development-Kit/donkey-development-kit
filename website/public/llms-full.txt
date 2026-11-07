@@ -1928,6 +1928,11 @@ rejection with the SDK's typed refusal.
   sends through the SDK's shared HTTP client, so per-run correlation, retries,
   spans, `donkey.last_call` and the `jwt`-mode JWT apply (see [Notes](#notes)).
 
+**Listed upstream.** Microsoft Agent Framework lists DDK as "Donkey Development Kit"
+under Middleware in its
+[community projects](https://github.com/microsoft/agent-framework/blob/main/python/samples/community-projects.md)
+catalog.
+
 ## Install
 
 ```bash
@@ -6701,11 +6706,44 @@ sentinel, the scenarios below, one shared budget window, and the
 
 ## MCP tool fault injection
 
-On `develop` (not yet in a released package),
+On `develop` (not yet in a released package), `donkey.simulate_mcp()` makes
+your agent's MCP tool calls hit a captured gateway refusal, with no gateway and
+no Exchange. It is the MCP counterpart of `donkey.simulate(PIIDetected)`, which
+still targets model calls only.
+
+You declare the servers and tools the test needs. Inside the block,
+`donkey.tools.discover()` returns those servers instead of reading Exchange, so
+your agent's own discovery code runs unchanged:
+
+```python
+servers = {"acme/crm-tools/1.0.0": [{"name": "lookup_customer"}]}
+
+with donkey.simulate_mcp("pii-request", servers=servers):
+    tools = await donkey.tools.discover()
+    agent = build_agent(await tools.langgraph())
+    await agent.ainvoke(...)  # the first tool call is refused as a real PIIDetected
+```
+
+- `servers` maps each `group_id/asset_id/version` ref to its MCP tool
+  descriptors. A descriptor without `inputSchema` gets an empty object schema.
+  Declared servers are marked governed by a `simulated` check, and
+  `discover()`'s filters are not applied to them.
+- `times=1` (the default) counts injected requests. After that, a `tools/call`
+  is answered by `call_tool(name, arguments)`. If you pass no `call_tool`, the
+  answer is a single text item.
+- Bind inside the block. After the block exits, those bindings refuse every
+  request instead of reaching a network. Blocks do not nest.
+- The model client is untouched. Combine it with `donkey.simulate(...)` to
+  inject into both.
+
+The capture names, the bindings that are supported and the behavior below are
+the same as for the low-level helper.
+
+### Low-level helper for a hand-built ToolSet
+
 `donkey_kit.simulator.mcp.simulate_mcp()` injects a named captured refusal into
-one `ToolSet`. This is separate from `donkey.simulate(PIIDetected)`, which still
-targets model calls. Bind and connect inside the context; bindings made before
-entry are not intercepted.
+one `ToolSet` you already have, with a baseline you provide. Bind and connect
+inside the context; bindings made before entry are not intercepted.
 
 ```python
 import httpx
@@ -7291,6 +7329,12 @@ Asking for a refusal no gateway response produces — for example a client-side
   every-Nth-call PII blocks or a shrinking budget window, use the
   [`gateway` fixture](#the-gateway-fixture) with
   `set_scenarios(...)`, or [`donkey mock --scenario`](https://docs.donkey-kit.dev/simulator.md#scenario-scripting).
+
+`simulate()` covers model calls only. To refuse an MCP **tool call** (a PII
+block, schema rejection, catalog poisoning block or access denial), use
+[`donkey.simulate_mcp("pii-request", servers=...)`](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection).
+Inside that block, `donkey.tools.discover()` returns the servers you declare,
+so no gateway or Exchange is needed.
 
 ## The conformance plugin — run it against your agent
 
@@ -9287,17 +9331,37 @@ Progressive Disclosure.
 
 ## MCP Payload Optimization
 
-Supply `expected_info` when the tool's exposed input schema accepts it. DDK's
-native bindings forward that argument unchanged; the gateway owns any extraction
-or trimming. Local reference-server checks establish forwarding, not live
-gateway optimization or a client-side trimming implementation.
+The policy never refuses. It rewrites the content of a `tools/call` result, so an
+agent can receive text where it expected JSON. The result stays an ordinary tool
+result (`isError` is whatever the tool returned), never a typed refusal, and DDK
+has no TOON decoder. Read the framework-native result as returned rather than
+assuming decoded JSON or a plain string.
 
-The live capture covers HTML-to-Markdown conversion and whitespace collapse
-in an SSE tool result. The upstream result remained `isError: true`, not a
-typed refusal. JSON response-format coverage is partial; base64, null removal,
-TOON and LLM trimming are not established by that capture. DDK has no TOON decoder.
-Read the framework-native result as returned rather than assuming decoded JSON
-or a plain string.
+What each transform did in a live capture of `mcp-tool-response-sanitization`
+1.2.1, one transform per gateway instance, always against an unmodified control:
+
+| Transform | Observed |
+| --- | --- |
+| HTML to Markdown, whitespace collapse | HTML echoed in a tool result became Markdown with collapsed whitespace. |
+| Strip base64 | A `data:image/png;base64,…` string became `[base64 data removed]`. A bare base64 string without the `data:` prefix was left alone. |
+| Remove nulls | Null-valued keys were dropped at every depth and the JSON came back compact. |
+| TOON | A uniform array of 20 objects arrived as text starting `TOON: [20]{id,name,status,score}:`, shorter than the JSON and not parseable as JSON. A JSON object with nulls was not TOON-encoded. |
+| Smart Response Trimming | With a model proxy configured and `expected_info` sent, a 1.6 KB JSON result came back as only the requested ids. Without `expected_info`, or without the policy, it came back untouched. |
+
+Smart Response Trimming runs only when the request carries a non-empty
+`expected_info` and the cleaned result exceeds the policy's byte threshold. Put
+`expected_info` in the tool arguments, next to the tool's own, and only when the
+tool's exposed input schema accepts it. DDK's native bindings forward that
+argument unchanged; the gateway owns the extraction. With the model proxy
+unreachable, the capture returned HTTP 200 with the untrimmed result (the policy
+fails open), so do not rely on trimming for size limits.
+
+Not established: results over the default 8000-byte threshold, a model proxy that
+answers non-2xx or slowly, content entries beyond the first, per-tool overrides,
+and other result shapes or sizes than the ones above. Captures are raw gateway
+responses, not a round trip through a framework binding, and the gateway runtime
+version was not recorded. The evidence rows are in
+[verified APIs](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md).
 
 ## Agent telemetry
 
@@ -17251,6 +17315,22 @@ donkey.simulate(
 ```
 
 Inject a real gateway refusal in-process, no server.
+
+### `donkey.simulate_mcp()`
+
+```python nocheck
+donkey.simulate_mcp(
+    capture: str,
+    *,
+    servers: Mapping[str, Sequence[Mapping[str, Any]]],
+    times: int = 1,
+    call_tool: Callable[[str, Mapping[str, Any]], Mapping[str, Any]] | None = None,
+) -> AbstractContextManager[None]
+```
+
+Inject a captured gateway refusal into MCP tool calls, no gateway.
+
+Guide: [`/simulator`](https://docs.donkey-kit.dev/simulator.md)
 
 ### `donkey.flush_telemetry()`
 

@@ -60,6 +60,13 @@ DONKEY_DISCOVER_LEFT_OUT = "donkey.discover.left_out"
 
 
 @dataclasses.dataclass(frozen=True)
+class _Simulated:
+    servers: tuple[McpServerHandle, ...]
+    auth: McpAuth
+    transport: dict[str, Callable[..., Any]]
+
+
+@dataclasses.dataclass(frozen=True)
 class _Found:
     servers: tuple[McpServerHandle, ...]
     at: datetime
@@ -99,6 +106,42 @@ class Discovery:
         self._approvals = approvals
         self._cache: TTLCache[_Found] = TTLCache(ttl_s=cfg.registry_cache_ttl_s)
         self._said_unfiltered = False
+        # Set only inside donkey.simulate_mcp(): the declared servers stand in for
+        # Exchange, and every set built from them shares one offline transport (#1391).
+        self._simulated: _Simulated | None = None
+
+    @contextlib.contextmanager
+    def simulated(
+        self,
+        servers: Sequence[McpServerHandle],
+        *,
+        auth: McpAuth,
+        transport: dict[str, Callable[..., Any]],
+    ) -> Iterator[None]:
+        """Answer :meth:`discover`, :meth:`resolve` and :meth:`warm` from
+        ``servers`` instead of the registry until the block exits (#1391,
+        ADR 0023). Every ``ToolSet`` built inside binds with ``auth`` and shares
+        ``transport``, so the caller decides what its MCP clients reach. No
+        registry read and no endpoint check happens for them. Nesting refuses."""
+        if self._simulated is not None:
+            raise RuntimeError("donkey.simulate_mcp() blocks do not nest")
+        self._simulated = _Simulated(tuple(servers), auth, transport)
+        try:
+            yield
+        finally:
+            self._simulated = None
+
+    def _simulated_set(self, servers: Sequence[McpServerHandle]) -> ToolSet:
+        assert self._simulated is not None
+        return ToolSet(
+            list(servers),
+            _natives=self._natives,
+            _approval_registry=self._approvals,
+            _auth=self._simulated.auth,
+            _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
+            _user_header=user_token_header(self._cfg),
+            _mcp_transport=self._simulated.transport,
+        )
 
     async def discover(
         self,
@@ -110,6 +153,8 @@ class Discovery:
         lock: Lockfile | None = None,
     ) -> ToolSet:
         """See ``ToolsFacade.discover``."""
+        if self._simulated is not None:
+            return self._simulated_set(self._simulated.servers)
         criteria = governed if isinstance(governed, GovernanceCriteria) else GovernanceCriteria()
         if governed is None and not self._said_unfiltered:
             self._said_unfiltered = True
@@ -163,6 +208,8 @@ class Discovery:
         governed: bool | GovernanceCriteria | None,
     ) -> int:
         """See ``ToolsFacade.warm``."""
+        if self._simulated is not None:
+            return len(self._simulated.servers)
         criteria = governed if isinstance(governed, GovernanceCriteria) else GovernanceCriteria()
         key = self._key(domain, tags, governed, criteria)
         with self._span(SPAN_WARM) as record:
@@ -238,7 +285,21 @@ class Discovery:
         lookups are, for ``registry_cache_ttl_s`` seconds (:meth:`refresh` drops
         them). A server that does not resolve is in the set with a failed
         ``resolve_mcp`` check, so listing its tools refuses it."""
-        handle = await self._handle(AssetRef.parse(ref), GovernanceCriteria())
+        asset = AssetRef.parse(ref)
+        if self._simulated is not None:
+            declared = [
+                s for s in self._simulated.servers if s.ref.coordinates == asset.coordinates
+            ]
+            if not declared:
+                raise RegistryError(
+                    f"{asset.coordinates} is not one of the servers this "
+                    "donkey.simulate_mcp() block declares.",
+                    remediation=(
+                        "Add it to simulate_mcp(servers=...), or resolve it outside the block."
+                    ),
+                )
+            return self._simulated_set(declared)
+        handle = await self._handle(asset, GovernanceCriteria())
         return ToolSet(
             [handle],
             _natives=self._natives,

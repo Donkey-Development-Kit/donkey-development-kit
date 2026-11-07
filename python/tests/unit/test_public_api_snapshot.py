@@ -135,6 +135,7 @@ MEMBERS = [
     "Donkey.run_from_headers(headers, *, team=None, project=None, env=None, enduser_id=None, business_group=None, typed_refusals=True, ledger_max_entries=1000)",
     "Donkey.serve(handler, *, host='127.0.0.1', port=8000, url=None, version='0.0.0')",
     "Donkey.simulate(error, *, times=1)",
+    "Donkey.simulate_mcp(capture, *, servers, times=1, call_tool=None)",
     "Donkey.tool(func=None, /, *, approval=None, risk=None, approval_timeout='15m', server=None)",
     "Donkey.tools [property]",
     "ToolSet.adk() [async]",
@@ -265,7 +266,7 @@ def test_a2a_facade_is_the_provisional_root_export_exception() -> None:
 
 
 def test_tool_lock_drift_is_a_provisional_root_export() -> None:
-    """ADR 0023: the lockfile's error is a provisional root export, like A2AFacade."""
+    """ADR 0024: the lockfile's error is a provisional root export, like A2AFacade."""
     assert "ToolLockDrift" in ROOT_ALL
     assert _is_provisional(donkey_kit.ToolLockDrift)
     lock = next(m for m in PROVISIONAL_MEMBERS if m.startswith("ToolsFacade.lock("))
