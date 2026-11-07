@@ -94,3 +94,4 @@ is not rewritten.
 | [0020](0020-provisional-members-of-stable-classes.md) | A public member of a stable class may be provisional, when its docstring and the snapshot both say so | Accepted | #1499 |
 | [0021](0021-jsonrpc-refusal-matching.md) | JSON-RPC refusals share the custom-policy registry through an explicit opt-in | Accepted | #1385 |
 | [0022](0022-scoped-a2a-outbound-plane.md) | Outbound A2A uses a scoped credential plane and a provisional facade over the official SDK | Proposed (implementation and API tier enforcement present; user acceptance pending) | #1395 |
+| [0023](0023-tool-lockfile-drift-detection.md) | The tool lockfile pins gateway-visible tool descriptors and detects drift; it never controls access | Accepted | #1646 |

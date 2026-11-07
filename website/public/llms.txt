@@ -50,7 +50,7 @@
 - [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md): (status: live) Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
 - [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md): (status: live) Turn discovered governed MCP servers into each framework's native tool objects, with auth, lifecycle, name collisions, and filtering handled for you.
 - [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md): (status: offline-verified) Consume policy-shaped MCP catalogs and handle gateway refusals without guessing policy identity or reimplementing enforcement.
-- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md): (status: roadmap) Pin governed tool versions and content digests in a donkey.lock so catalog changes become reviewable diffs, not runtime surprises.
+- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md): (status: offline-verified) Pin the tools each governed MCP server lists in a donkey.lock, so a catalog change becomes a typed ToolLockDrift and a reviewable diff instead of a runtime surprise.
 - [Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md): (status: offline-verified) Send official A2A SDK requests to registry-resolved governed agents, with scoped authentication and context-managed streams.
 
 ## Registry & catalog

@@ -1,7 +1,7 @@
 """Types outside the stable namespace, most of them for surfaces still blocked
 on verification (§0.3).
 
-The lockfile and the governed-state search join (BG §2.7) and ``Publication``'s
+The governed-state search join (BG §2.7) and ``Publication``'s
 descriptor derivation (BG §2.5) raise ``NotImplementedError("blocked on
 verification: …")``; the registry and tool-call types those surfaces share have
 no settled tier yet. The types are importable so code can be written against

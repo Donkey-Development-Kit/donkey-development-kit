@@ -87,7 +87,7 @@ linear stack:
   and exits 3.
 - **`donkey_kit.experimental`** re-exports the types outside the stable
   namespace (`AssetRef`, `Publication`, `STRICT`, `RegistryError`, …). Most
-  serve a surface still blocked on verification, such as the lockfile or the
+  serve a surface still blocked on verification, such as `Publication` or the
   governed-state search join; the registry and tool-call types those surfaces
   share have no settled tier yet. They are importable, but they are not in
   `donkey_kit.__all__` and may change in any release (ADR 0006) until their
@@ -528,7 +528,7 @@ Anypoint sandbox before it can be trusted, and it offers exactly two mechanisms:
 
 - **`blocked("…")`** returns a `NotImplementedError("blocked on verification: …")`.
   It is used where there is no defensible placeholder at all — e.g. a
-  `Publication`'s descriptor derivation and the lockfile's resolution API. The
+  `Publication`'s descriptor derivation and the governed-state search filters. The
   SDK raises rather than guesses. **Do not replace a `blocked(...)` guard with a guess.**
 - **`Unverified(...)`** placeholder constants hold a documented best-guess that is
   fully overridable via config/env, and emit a one-time `UnverifiedValueWarning`
@@ -562,8 +562,7 @@ publication of scanned MCP servers and agents with `donkey publish` and
 `ToolSet` bindings through the governed gateway (`docs/verified-apis.md` §9),
 and the `as_user()` user-token header (`docs/verified-apis.md` §13). Still
 blocked: a `Publication`'s descriptor derivation (`preview()`, `export()`,
-BG §2.5), the lockfile (`donkey.tools.lock()`, `discover(locked=True)`,
-BG §2.7), the governed-state search filters (`search(governed=, environment=,
+BG §2.5), the governed-state search filters (`search(governed=, environment=,
 domain=)`) and the hidden `donkey status`. The framework adapters are not
 blocked. They build their native object directly, and an adapter refuses with
 `blocked(...)` only when the installed framework version lacks the class or
