@@ -157,8 +157,9 @@ async def test_unsupported_bindings_fail_before_optional_import_or_connection() 
     with simulate_mcp(tools, "pii-request", baseline=httpx.MockTransport(baseline)):
         from donkey_kit.core.errors import ConfigError
 
-        with pytest.raises(ConfigError, match="only LangGraph"):
-            await tools._plan("adk()", per_tool=False)
+        for binding in ("adk()", "crewai()"):
+            with pytest.raises(ConfigError, match="only LangGraph"):
+                await tools._plan(binding, per_tool=False)
     with pytest.raises(ValueError, match="capture"):
         with simulate_mcp(toolset(), "made-up", baseline=httpx.MockTransport(baseline)):
             pass

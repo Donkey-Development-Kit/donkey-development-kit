@@ -1871,6 +1871,47 @@ No runtime patch or warning suppression is added. This is offline handling
 evidence only, not a new live gateway round-trip, capture or policy-enforcement
 claim.
 
+**ADK and CrewAI scoped offline replay: UNSUPPORTED (verified negative), 2026-11-07,
+#1643 (split from #1391).** Neither `ToolSet.adk()` nor `ToolSet.crewai()` is wired
+to `simulate_mcp`; the `ConfigError` guard in `ToolSet._plan` stays. Probes were
+local and socket-free (no live requests, global patches or production changes).
+
+*CrewAI.* Every `crewai>=1.15.3` and `crewai-tools[mcp]>=1.15.32` release
+(tested up to 1.15.37) pins `mcp<2`, while simulation needs `mcp>=2.3.0` (the
+baseline's negotiated protocol and the response-id adaptation). uv reports the
+pair unsatisfiable; the only resolution downgrades `crewai` to 1.6.1, below the
+package floor. No resolver-compatible stack exists. The earlier HTTP 403 stall
+exemption is separate and unchanged.
+
+*ADK.* On `google-adk` 2.9.0 and 2.14.0 with `mcp` 2.3.0, `McpToolset` accepts
+`httpx_client_factory=replay.client` and the replay works: native
+`initialize` → `tools/list` → `tools/call`, success after the single capture,
+reconnect after `close()`, failed initialize raising `ConnectionError`, expiry
+sending nothing to the baseline, and every replay client closed. Releases
+2.4.0–2.8.0 (including the `[adk]` floor, 2.4.0) fail to import `McpToolset`
+against `mcp` 2.3.0 (`mcp.shared.session` is missing); 2.9.0 is the first that
+imports. Blocking limitations:
+
+- **Not fail-closed.** `MCPSessionManager._get_mtls_transport` builds Google's
+  own mTLS transport when `GOOGLE_API_USE_CLIENT_CERTIFICATE` is not `false`
+  and credentials resolve, and uses it *instead of* the supplied
+  `httpx_client_factory`. With that transport substituted, the request reached it
+  and no replay client was built. Closing this needs a process-environment
+  change or an ADK patch, both out of scope.
+- **Error identity is lost.** A captured refusal comes back as
+  `{'error': 'MCP tool execution failed: …'}`, not an exception, so
+  `typed_refusals()` cannot recover it (the existing ADK exemption).
+- `retry_on_errors` retries any exception once, and ADK logs
+  `Error on session runner task` on failed initialize.
+
+`tests/conformance/test_adk_mcp_simulation.py` pins both facts (replay lifecycle with
+mTLS off, and the mTLS bypass as a canary that fails once ADK closes the gap); it
+skips unless `google-adk>=2.9` imports on `mcp>=2.3.0`.
+
+Revisit when ADK exposes an injection seam that cannot be bypassed and the
+`[adk]` floor reaches a release that imports on `mcp` 2.3.0, or when CrewAI
+admits `mcp>=2.3.0`. This establishes no live gateway evidence.
+
 **Reusable offline MCP baseline: VERIFIED (local round-trip), 2026-11-05, #1391.**
 `simulator.mcp.mcp_baseline` returns an endpoint-scoped, stateless
 `httpx.MockTransport` with supplied descriptors and a synchronous call handler.
