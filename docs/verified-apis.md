@@ -87,6 +87,35 @@
 > live-capture issue, which stays open until a capture replaces the derived
 > fixture and the row moves to `VERIFIED (LIVE)`.
 >
+> **Tested versions.** A `VERIFIED` row about a versioned platform component
+> (a gateway policy, a policy definition or implementation, the gateway
+> runtime) records which version the evidence came from, so a later version
+> bump can be told apart from the version we tested. Three rules:
+>
+> 1. **Name the version in the row's evidence, using these labels.**
+>    `deployed <asset> <version>` is the version actually applied when the
+>    behaviour was observed (read from `policy:list` or API Manager, not from
+>    the docs). `gateway <version>` is the Omni/Flex Gateway runtime. For
+>    `VERIFIED (POLICY SOURCE)` the version is the policy asset version or
+>    commit read (already required by ADR 0016). Where a row carries a
+>    dedicated version column (the §4 policy tables' **Exchange asset
+>    (verified)**), that column holds the `deployed` version.
+> 2. **Never let a docs-page version stand in for a tested one.** A version
+>    taken from the documentation is written `docs <version>` and is
+>    informational only. If the deployed version was not recorded, write
+>    `deployed version not recorded` rather than omitting it or copying the
+>    docs version. A row that says nothing is read as untracked.
+> 3. **A new version is a new observation, not an edit.** When a policy or
+>    gateway version changes and the behaviour is re-checked, add a dated
+>    `Re-verified <date> on <asset> <version>` note (as the §2 Ingress Format
+>    rows do) and keep the earlier version visible; when it is not re-checked,
+>    leave the row as is, because its tested version is then the stale one.
+>    A re-check that finds a different shape moves the row to the new status
+>    and records the version where it changed.
+>
+> Rows written before this convention are not backfilled; they are filled in
+> as each is next re-verified or touched.
+>
 > This is the verification ledger. For any row still `UNVERIFIED`, the
 > implementing engineer must, against a **real Anypoint sandbox**, confirm the
 > signature, then change the row's status, fill in the **Verified value**,
@@ -552,7 +581,12 @@ provisioning proxies (`ddk-injection-guard`, `ddk-azure-content-safety`), not
 only typed from the policy pages; the CrowdStrike AIDR row is the exception, at
 `VERIFIED (POLICY SOURCE)`. They have **no `_verify.py` constant** —
 `classify()` reads them straight from the response — so the verification record
-is these rows, not an `Unverified(...)` flip:
+is these rows, not an `Unverified(...)` flip. The version in parentheses after
+each policy link below is the **docs page version** (`docs <version>`), not a
+tested one; the version the live capture ran against is recorded in the
+**Exchange asset (verified)** column of the table at the end of this section
+(see *Tested versions* in the legend). Rows there that predate that rule are
+filled in on their next re-verification:
 
 | Shape | HTTP | Discriminator | Maps to | Source |
 |---|---|---|---|---|

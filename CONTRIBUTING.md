@@ -502,7 +502,11 @@ test docstring.
 the regenerated integrity lock (`python -m donkey_kit.simulator.fixtures
 --relock` — the reviewable "I re-captured this, I meant it" step); and one
 row in the `docs/verified-apis.md` ledger carrying the date, the instance ID,
-and the policy + gateway version. Nothing else belongs in the repo — no
+and the **tested** policy + gateway version: the version deployed when you
+captured (read from `policy:list` or API Manager), written `deployed <asset>
+<version>` and `gateway <version>`, never the version on the docs page (see
+*Tested versions* in the ledger legend). If you did not record it, say
+`deployed version not recorded`. Nothing else belongs in the repo — no
 `docs/evidence/<issue>/` folders, and no committed local gate logs (pytest /
 mypy / ruff / import-linter output); CI is the record for those. Deployment,
 teardown, and inventory receipts go in the **PR description**, not a committed
