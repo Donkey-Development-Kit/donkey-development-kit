@@ -1530,7 +1530,8 @@ table.
 **Decision.** The wire contract above is settled, and nothing further needs an
 Anypoint sandbox. The SDK side shipped in #1646, which removed the
 `blocked_lock()` guard: `donkey.tools.lock()` writes `./donkey.lock` (JSON,
-`"version": 1`, `"digest": "sha256"`, servers keyed `group_id/asset_id`), and
+`"version": 1`, `"digest": "sha256"`, servers keyed `group_id/asset_id`, each
+tool's digest over its contract fields), and
 `discover(locked=True)` raises `ToolLockDrift` on a removed or changed pinned
 tool or a missing pinned server, and drops unpinned tools (`reason="unpinned"`).
 Its tests replay recorded `tools/list` catalogs; a full live `lock()` then

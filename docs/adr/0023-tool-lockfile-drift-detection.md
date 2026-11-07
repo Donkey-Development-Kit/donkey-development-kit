@@ -27,14 +27,18 @@ and a second, client-side tool search.
 1. The lock pins what `tools/list` returns, keyed by the gateway-visible name.
    An upstream name is never recorded. Under Progressive Disclosure, the lock
    pins `search_tools` and `invoke_tool` and never calls `search_tools`.
-2. Each tool's digest is the SHA-256 of its full descriptor, serialised as JSON
-   with sorted keys, compact separators and `ensure_ascii=False`
-   (`tools/lockfile.py`, `digest`). Nothing hashes unsorted JSON.
+2. Each tool's digest is the SHA-256 of its descriptor restricted to `name`,
+   `title`, `description`, `inputSchema`, `outputSchema` and `annotations`,
+   serialised as JSON with sorted keys, compact separators and
+   `ensure_ascii=False` (`tools/lockfile.py`, `digest`). Nothing hashes
+   unsorted JSON. Other fields are left out so that a field the `mcp` library
+   adds or defaults does not change every digest.
 3. The file is `./donkey.lock` by default. It is JSON with sorted keys, with
    `"version": 1` and `"digest": "sha256"` at the top level, and it keys
    servers by `group_id/asset_id`, so a version bump that lists the same tools
    is not drift. `read_lock` raises `ConfigError` for any other version or
-   digest, and for a missing or malformed file.
+   digest, and for a missing, undecodable or malformed file. `lock()` refuses
+   to write a lock with no servers (`ConfigError`).
 4. These are drift, and raise `ToolLockDrift` before any tool binds:
    - a pinned server that is not discovered (raised by `discover()`, with no
      connection made)
@@ -44,7 +48,9 @@ and a second, client-side tool search.
    A tool or server the lock does not pin is not drift. It is dropped, logged
    as a warning, and reported in `ToolSet.excluded` with `reason="unpinned"`.
 5. The check compares what the calling identity is listed. A pinned tool that
-   one caller is not listed is drift for that caller.
+   one caller is not listed is drift for that caller. Server presence is
+   checked once, by `discover()`; narrowing a locked set with `filter()` is
+   not drift.
 6. The lock is a drift detector, never access control. The SDK does not refuse
    a call by name because it is unpinned or upstream; the gateway's policies
    enforce.
@@ -62,6 +68,9 @@ review. Rule 7 is enforced by the public API snapshot.
   building a client-side discovery protocol.
 - **Hash the raw `tools/list` bytes.** Rejected: raw key order is unstable, as
   #1642 observed live.
+- **Hash the whole descriptor.** Rejected: the SDK reads descriptors through
+  the `mcp` library's model, and a newer library can add default-valued fields,
+  so one environment's lock would drift in another with no gateway change.
 - **Treat an unpinned tool as drift.** Rejected: a server that adds a tool would
   then break every locked agent. Dropping the tool keeps the bound set to what
   was reviewed, and the warning surfaces the change.

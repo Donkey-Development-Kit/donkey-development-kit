@@ -9369,7 +9369,10 @@ It takes the same `tags=`, `governed=` and `auth=` as `discover()`, plus
 `path=` to write somewhere other than `./donkey.lock`. It locks the whole
 listing, so lock first and narrow with `filter()` afterwards. If you pass
 `governed=None` and the set contains an ungoverned server, it still raises
-`UngovernedMcpServer`.
+`UngovernedMcpServer`. If discovery finds no servers at all, `lock()` raises
+`ConfigError` and writes nothing, rather than a lock that would bind nothing.
+Run `lock()` as the identity your agent runs as, not inside
+`donkey.as_user()`; see the note under [Check against the lock](#check-against-the-lock).
 
 ## What the lock records
 
@@ -9401,10 +9404,12 @@ the same bytes:
 - Under Progressive Disclosure, the gateway lists `search_tools` and
   `invoke_tool`, and those two are what the lock pins. The lock never calls
   `search_tools` to pin the tools a search would return.
-- Each digest is the SHA-256 of the full tool descriptor as the gateway lists
-  it, serialised as JSON with sorted keys. The gateway does not return
-  descriptor keys in a stable order, so a change of key order does not count
-  as a change.
+- Each digest is the SHA-256 of the tool's `name`, `title`, `description`,
+  `inputSchema`, `outputSchema` and `annotations` (those present), serialised
+  as JSON with sorted keys. The gateway does not return descriptor keys in a
+  stable order, so a change of key order does not count as a change. Other
+  fields, such as `_meta`, are left out, so that a new field in the MCP
+  library does not read as a change to every tool.
 
 Commit `donkey.lock` with your agent code. When someone re-locks, a catalog
 change then shows up as a diff in a pull request.
@@ -9424,7 +9429,10 @@ except ToolLockDrift as exc:
 ```
 
 `discover(locked=True)` reads `./donkey.lock`, or the file you pass as
-`lock_path=`. The check runs when the set first lists its tools. Every binding
+`lock_path=`. Pass it the same `tags=` and `governed=` you locked with: a
+pinned server that this discovery does not return, because it is outside the
+tags or no longer governed, counts as missing. Narrowing the set afterwards
+with `filter()` is not drift. The check runs when the set first lists its tools. Every binding
 lists them before it builds anything, so a set that has drifted never reaches
 your framework. `await tools.describe()` runs the same check without binding.
 
