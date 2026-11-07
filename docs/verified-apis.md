@@ -1496,6 +1496,40 @@ name. `describe` reports the presence of `search_tools` / `invoke_tool` at info
 level without asserting which policy is installed. Discovery stays
 connection-free, and the lockfile verification guards remain unchanged.
 
+#### Lockfile contract under Progressive Disclosure and Tool Mapping (#1642, BG §2.7)
+
+Probed live 2026-11-07 on the provisioned `ddk-langgraph-mcp-mapping`
+(`21279563`, `mcp-tool-mapping` 1.0.2) and `ddk-langgraph-mcp-progressive`
+(`21279564`, `mcp-tools-progressive-disclosure` 1.0.1) instances, DDK / Sandbox,
+`shared-omni-gateway`, three fresh sessions each. Read-only: no policy was changed.
+
+| Observation | Status | Value |
+| --- | --- | --- |
+| `tools/list` key order | VERIFIED (LIVE) | The serialised `inputSchema` property order differs between sessions of the same instance, so a hash of the raw bytes or of an unsorted dump is unstable. A hash of the sorted-key canonical JSON of the tool list was identical across three sessions on both instances |
+| Tool Mapping, listed names | VERIFIED (LIVE) | `tools/list` shows `arithmetic` (mapped description `Arithmetic tool.`) and no `calculate` |
+| Tool Mapping, upstream name still callable | VERIFIED (LIVE) | `tools/call calculate` returns `42` as well as `tools/call arithmetic`: the mapping renames the listing but does not hide the upstream tool. An unknown name returns an `isError: true` text result `unknown tool 'nope'` |
+| Progressive Disclosure, listed names | VERIFIED (LIVE) | `tools/list` is exactly `search_tools` and `invoke_tool`; the catalog is identical in every session |
+| Progressive Disclosure, real tools | VERIFIED (LIVE) | Reachable only through `search_tools` (`query` is a case-insensitive regex over name and description; optional `limit` and `cursor`; result `structuredContent.matches[]` of `name`, `description`, `inputSchema`, plus `nextCursor` when `limit` truncates). `invoke_tool` takes `name` and `arguments`; `tool_name` is rejected with `-32602` / `invalid_params`. A direct `tools/call calculate` also succeeds |
+
+**Contract.** The lock pins what `tools/list` returns, keyed by the
+gateway-visible name, because that is the only name a caller can rely on under
+both policies (the filter and approval rules already use it, #1389). Each entry
+records the name and a digest of the canonical (sorted-key) JSON of the whole
+descriptor. Drift is a gateway-visible name added, removed or renamed, or a
+digest change. Under Progressive Disclosure the lock pins the two meta-tools
+only. It does not pin the `search_tools` results: they depend on the query, and
+pinning them would be a second discovery protocol, which the client-side tool
+search exclusion rules out. A Tool Mapping rename is drift by this rule, and the
+upstream name is never recorded, because the gateway does not expose the mapping
+table.
+
+**Decision.** The wire contract above is settled, and nothing further needs an
+Anypoint sandbox. The `blocked_lock()` guard stays in place: what remains is SDK
+design and code (file format, location, `lock()` and `discover(locked=True)`
+semantics), tracked as a follow-up rather than guessed here. The raw upstream
+name staying callable means a lock is a drift detector, not an access control:
+enforcement stays with the gateway's own policies.
+
 Each row marked `VERIFIED (local round-trip)` was produced by a probe in
 `python/scripts/mcp_binding/` (harness, reference server and how to run one:
 `python/scripts/mcp_binding/README.md`). The probe binds the framework's own MCP
