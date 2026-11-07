@@ -156,17 +156,37 @@ both remain [blocked on verification](https://docs.donkey-kit.dev/tool-access/lo
 
 ## MCP Payload Optimization
 
-Supply `expected_info` when the tool's exposed input schema accepts it. DDK's
-native bindings forward that argument unchanged; the gateway owns any extraction
-or trimming. Local reference-server checks establish forwarding, not live
-gateway optimization or a client-side trimming implementation.
+The policy never refuses. It rewrites the content of a `tools/call` result, so an
+agent can receive text where it expected JSON. The result stays an ordinary tool
+result (`isError` is whatever the tool returned), never a typed refusal, and DDK
+has no TOON decoder. Read the framework-native result as returned rather than
+assuming decoded JSON or a plain string.
 
-The live capture covers HTML-to-Markdown conversion and whitespace collapse
-in an SSE tool result. The upstream result remained `isError: true`, not a
-typed refusal. JSON response-format coverage is partial; base64, null removal,
-TOON and LLM trimming are not established by that capture. DDK has no TOON decoder.
-Read the framework-native result as returned rather than assuming decoded JSON
-or a plain string.
+What each transform did in a live capture of `mcp-tool-response-sanitization`
+1.2.1, one transform per gateway instance, always against an unmodified control:
+
+| Transform | Observed |
+| --- | --- |
+| HTML to Markdown, whitespace collapse | HTML echoed in a tool result became Markdown with collapsed whitespace. |
+| Strip base64 | A `data:image/png;base64,…` string became `[base64 data removed]`. A bare base64 string without the `data:` prefix was left alone. |
+| Remove nulls | Null-valued keys were dropped at every depth and the JSON came back compact. |
+| TOON | A uniform array of 20 objects arrived as text starting `TOON: [20]{id,name,status,score}:`, shorter than the JSON and not parseable as JSON. A JSON object with nulls was not TOON-encoded. |
+| Smart Response Trimming | With a model proxy configured and `expected_info` sent, a 1.6 KB JSON result came back as only the requested ids. Without `expected_info`, or without the policy, it came back untouched. |
+
+Smart Response Trimming runs only when the request carries a non-empty
+`expected_info` and the cleaned result exceeds the policy's byte threshold. Put
+`expected_info` in the tool arguments, next to the tool's own, and only when the
+tool's exposed input schema accepts it. DDK's native bindings forward that
+argument unchanged; the gateway owns the extraction. With the model proxy
+unreachable, the capture returned HTTP 200 with the untrimmed result (the policy
+fails open), so do not rely on trimming for size limits.
+
+Not established: results over the default 8000-byte threshold, a model proxy that
+answers non-2xx or slowly, content entries beyond the first, per-tool overrides,
+and other result shapes or sizes than the ones above. Captures are raw gateway
+responses, not a round trip through a framework binding, and the gateway runtime
+version was not recorded. The evidence rows are in
+[verified APIs](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/docs/verified-apis.md).
 
 ## Agent telemetry
 
