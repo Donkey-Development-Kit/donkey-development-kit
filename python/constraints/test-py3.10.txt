@@ -13,7 +13,7 @@ backports-asyncio-runner==1.2.0
 certifi==2026.10.23
 cffi==2.1.1
 charset-normalizer==3.5.2
-click==8.5.0
+click==8.5.1
 coverage==7.16.2
 cryptography==50.0.2
 culsans==0.11.0

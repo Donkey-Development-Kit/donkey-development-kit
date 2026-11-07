@@ -7,7 +7,7 @@ annotated-types==0.8.0
 anyio==4.16.0
 certifi==2026.10.23
 charset-normalizer==3.5.2
-click==8.5.0
+click==8.5.1
 googleapis-common-protos==1.76.0
 h11==0.16.0
 httpcore==1.0.9
@@ -15,7 +15,7 @@ httpcore2==2.16.0
 httpx==0.28.1
 httpx2==2.16.0
 idna==3.20
-jiter==0.18.0
+jiter==0.19.0
 openai==3.46.0
 opentelemetry-api==1.45.2
 opentelemetry-exporter-http-transport==0.66b2
