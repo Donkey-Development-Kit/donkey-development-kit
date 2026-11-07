@@ -15,6 +15,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,21 +37,29 @@ __all__ = [
     "compare_lock",
     "digest",
     "read_lock",
+    "server_key",
     "write_lock",
 ]
 
 LOCK_FILE = "donkey.lock"
 LOCK_VERSION = 1
 _DIGEST = "sha256"
+_HEX_DIGEST = re.compile(r"[0-9a-f]{64}")
+# The descriptor fields a digest covers: the MCP contract a model sees. Fields an
+# ``mcp`` release adds later (``icons``, ``execution``, ``_meta``) never move a digest.
+DIGEST_FIELDS = ("name", "title", "description", "inputSchema", "outputSchema", "annotations")
 _MISSING_REMEDIATION = "Run donkey.tools.lock() to write the lockfile, then retry."
 
 
 def digest(descriptor: Mapping[str, object]) -> str:
     """The sha256 hex digest of ``descriptor`` as canonical JSON.
 
-    Keys are sorted, because the gateway's raw key order is not stable across
-    calls (#1642), so the same descriptor always hashes the same."""
-    canonical = json.dumps(descriptor, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    Only the contract fields in ``DIGEST_FIELDS`` (those present) are hashed, so
+    a field a newer ``mcp`` release adds does not change a digest. Keys are
+    sorted, because the gateway's raw key order is not stable across calls
+    (#1642), so the same descriptor always hashes the same."""
+    covered = {k: descriptor[k] for k in DIGEST_FIELDS if k in descriptor}
+    canonical = json.dumps(covered, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -65,13 +76,16 @@ class LockedServer:
 
 @dataclass(frozen=True)
 class Lockfile:
-    """The parsed ``donkey.lock``: pinned servers keyed ``group_id/asset_id``,
-    so a version bump reads as drift and not as a new server."""
+    """The parsed ``donkey.lock``: pinned servers keyed ``group_id/asset_id``.
+
+    The version is recorded for information only. A new version that lists the
+    same tools is not drift, and one that changes a tool is."""
 
     servers: Mapping[str, LockedServer]
 
 
-def _key(server: McpServerHandle) -> str:
+def server_key(server: McpServerHandle) -> str:
+    """The lock key of ``server``: ``group_id/asset_id``."""
     return f"{server.ref.group_id}/{server.ref.asset_id}"
 
 
@@ -79,11 +93,26 @@ def _tool_digests(server: McpServerHandle) -> dict[str, str]:
     return {str(tool.get("name")): digest(tool) for tool in server.tool_descriptors or ()}
 
 
+def _strict_digests(server: McpServerHandle) -> dict[str, str]:
+    digests: dict[str, str] = {}
+    for tool in server.tool_descriptors or ():
+        name = tool.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"{server.ref.coordinates}: a listed tool has no name.")
+        if name in digests:
+            raise ValueError(
+                f"{server.ref.coordinates}: duplicate tool name {name!r} in its listing."
+            )
+        digests[name] = digest(tool)
+    return digests
+
+
 def build_lock(servers: Sequence[McpServerHandle]) -> Lockfile:
     """Pin every tool each of ``servers`` lists.
 
     Raises:
-        ValueError: A server's descriptors are not loaded; run ``describe()``.
+        ValueError: A server's descriptors are not loaded (run ``describe()``),
+            or its listing has a tool with no name or two tools of one name.
     """
     pinned: dict[str, LockedServer] = {}
     for server in servers:
@@ -92,17 +121,24 @@ def build_lock(servers: Sequence[McpServerHandle]) -> Lockfile:
                 f"{server.ref.coordinates}: tool descriptors are not loaded; "
                 "call ToolSet.describe() first."
             )
-        pinned[_key(server)] = LockedServer(
+        pinned[server_key(server)] = LockedServer(
             group_id=server.ref.group_id,
             asset_id=server.ref.asset_id,
             version=server.ref.version,
-            tools=_tool_digests(server),
+            tools=_strict_digests(server),
         )
     return Lockfile(servers=pinned)
 
 
 def write_lock(lock: Lockfile, path: Path) -> None:
-    """Write ``lock`` to ``path`` as sorted, indented JSON with a trailing newline."""
+    """Write ``lock`` to ``path`` as sorted, indented JSON with a trailing newline.
+
+    The write is atomic: a temporary file beside ``path`` is renamed over it, so
+    a failed write never leaves a truncated lockfile.
+
+    Raises:
+        OSError: The file or its directory cannot be written.
+    """
     document = {
         "version": LOCK_VERSION,
         "digest": _DIGEST,
@@ -116,7 +152,15 @@ def write_lock(lock: Lockfile, path: Path) -> None:
             for key, s in lock.servers.items()
         },
     }
-    path.write_text(json.dumps(document, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    text = json.dumps(document, sort_keys=True, indent=2) + "\n"
+    handle, temp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            out.write(text)
+        os.replace(temp, path)
+    except BaseException:
+        Path(temp).unlink(missing_ok=True)
+        raise
 
 
 def read_lock(path: Path) -> Lockfile:
@@ -124,7 +168,8 @@ def read_lock(path: Path) -> Lockfile:
 
     Raises:
         ConfigError: The file is missing, is not valid JSON, has an unsupported
-            ``version`` or ``digest``, or lacks a key.
+            ``version`` or ``digest``, lacks a key, has a malformed digest or
+            has a server key that is not ``group_id/asset_id``.
     """
 
     def bad(problem: str) -> ConfigError:
@@ -139,6 +184,8 @@ def read_lock(path: Path) -> Lockfile:
         raise ConfigError(
             f"Lockfile {path} does not exist.", remediation=_MISSING_REMEDIATION
         ) from None
+    except UnicodeDecodeError:
+        raise bad("not UTF-8") from None
     except OSError as exc:
         raise bad(f"cannot be read ({exc.strerror or type(exc).__name__})") from None
     try:
@@ -147,7 +194,7 @@ def read_lock(path: Path) -> Lockfile:
         raise bad("not valid JSON") from None
     if not isinstance(raw, dict):
         raise bad("the top level is not an object")
-    if raw.get("version") != LOCK_VERSION:
+    if type(raw.get("version")) is not int or raw["version"] != LOCK_VERSION:
         raise bad(f"unsupported version {raw.get('version')!r} (this SDK reads {LOCK_VERSION})")
     if raw.get("digest") != _DIGEST:
         raise bad(f"unsupported digest {raw.get('digest')!r} (this SDK reads {_DIGEST!r})")
@@ -160,14 +207,20 @@ def read_lock(path: Path) -> Lockfile:
             tools = entry["tools"]
             if not isinstance(tools, dict):
                 raise TypeError
-            pinned[str(key)] = LockedServer(
+            locked = LockedServer(
                 group_id=str(entry["group_id"]),
                 asset_id=str(entry["asset_id"]),
                 version=str(entry["version"]),
-                tools={str(n): str(d) for n, d in tools.items()},
+                tools={str(n): d for n, d in tools.items()},
             )
         except (KeyError, TypeError):
             raise bad(f"server {key!r} is malformed") from None
+        if f"{locked.group_id}/{locked.asset_id}" != key:
+            raise bad(f"server key {key!r} is not group_id/asset_id")
+        for name, pinned_digest in locked.tools.items():
+            if not isinstance(pinned_digest, str) or not _HEX_DIGEST.fullmatch(pinned_digest):
+                raise bad(f"server {key!r} tool {name!r} has a malformed digest")
+        pinned[key] = locked
     return Lockfile(servers=pinned)
 
 
@@ -187,7 +240,7 @@ class ToolLockDrift(DonkeyError):
     Raised before any tool binds. ``drift`` lists every pinned server or tool
     that is missing or changed. A tool the lock does not know is not drift: it
     is dropped and reported in ``ToolSet.excluded`` as ``"unpinned"``.
-    Provisional (ADR 0020)."""
+    Provisional (ADR 0020). A root export by exception (ADR 0023)."""
 
     remediation: str = "Review the gateway change, then re-run donkey.tools.lock() to accept it."
 
@@ -207,7 +260,10 @@ class ToolLockDrift(DonkeyError):
         lines = []
         for d in drift:
             if d.kind == "server_missing":
-                lines.append(f"{d.server}: server not found")
+                lines.append(
+                    f"{d.server}: server not discovered (removed, no longer governed, "
+                    "or outside this discover()'s tags / governed)"
+                )
             else:
                 what = "was removed" if d.kind == "tool_missing" else "changed"
                 lines.append(f"{d.server}: tool {d.tool!r} {what}")
@@ -215,19 +271,22 @@ class ToolLockDrift(DonkeyError):
 
 
 def compare_lock(
-    lock: Lockfile, servers: Sequence[McpServerHandle]
+    lock: Lockfile, servers: Sequence[McpServerHandle], *, check_presence: bool = True
 ) -> tuple[tuple[LockDrift, ...], frozenset[tuple[str, str]]]:
     """Compare ``lock`` with ``servers``: the drift, and the unpinned
     ``(server_key, tool_name)`` pairs.
 
-    A server whose descriptors are not loaded is checked for presence only."""
-    present = {_key(s): s for s in servers}
+    A server whose descriptors are not loaded is checked for presence only. With
+    ``check_presence=False`` a pinned server missing from ``servers`` is skipped,
+    for a set already narrowed by ``filter(servers=...)``."""
+    present = {server_key(s): s for s in servers}
     drift: list[LockDrift] = []
     unpinned: set[tuple[str, str]] = set()
     for key, pinned in lock.servers.items():
         server = present.get(key)
         if server is None:
-            drift.append(LockDrift(key, None, "server_missing"))
+            if check_presence:
+                drift.append(LockDrift(key, None, "server_missing"))
             continue
         if server.tool_descriptors is None:
             continue

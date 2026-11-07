@@ -63,8 +63,6 @@ _.run_from_headers  # unused method (src/donkey_kit/donkey.py): public API, #308
 _.correlation_headers  # unused method (src/donkey_kit/donkey.py): public API, #308
 _.flush_telemetry  # unused method (src/donkey_kit/donkey.py): public API, #954
 domain  # unused variable (src/donkey_kit/donkey.py)
-locked  # unused variable (src/donkey_kit/donkey.py)
-_.lock  # unused method (src/donkey_kit/donkey.py)
 langgraph  # unused variable (src/donkey_kit/donkey.py)
 adk  # unused variable (src/donkey_kit/donkey.py)
 strands  # unused variable (src/donkey_kit/donkey.py)

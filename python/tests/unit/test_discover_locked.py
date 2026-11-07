@@ -115,6 +115,29 @@ async def test_discover_locked_drops_unpinned_server(
     assert [s.ref.asset_id for s in tools.servers] == ["inventory"]
 
 
+async def test_lock_with_no_servers_raises_and_writes_nothing(tmp_path: Path) -> None:
+    lock = tmp_path / "donkey.lock"
+    async with _donkey(_Registry()) as donkey:
+        with pytest.raises(ConfigError, match="no MCP servers") as exc:
+            await donkey.tools.lock(path=lock)
+    assert "tags" in exc.value.remediation
+    assert not lock.exists()
+
+
+async def test_locked_discover_does_not_poison_the_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _replay(monkeypatch, _catalog("mapping"))
+    lock = tmp_path / "donkey.lock"
+    async with _donkey(_Registry("inventory")) as donkey:
+        await donkey.tools.lock(path=lock)
+    async with _donkey(_Registry("inventory", "extra")) as donkey:
+        locked = await donkey.tools.discover(locked=True, lock_path=lock)
+        plain = await donkey.tools.discover()
+    assert [s.ref.asset_id for s in locked.servers] == ["inventory"]
+    assert sorted(s.ref.asset_id for s in plain.servers) == ["extra", "inventory"]
+
+
 def test_tool_lock_drift_exported() -> None:
     from donkey_kit import ToolLockDrift as Exported
 

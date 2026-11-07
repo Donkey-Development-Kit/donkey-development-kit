@@ -82,7 +82,7 @@ from .filter import (
     descriptor_tokens,
     resolve_collisions,
 )
-from .lockfile import Lockfile, ToolLockDrift, compare_lock
+from .lockfile import Lockfile, ToolLockDrift, compare_lock, server_key
 from .mcp import client_factory, list_tools, open_session, open_transport
 
 __all__ = ["ToolSet", "UngovernedMcpServer"]
@@ -306,7 +306,9 @@ class ToolSet:
         kept = self._servers if servers is None else _select(self._servers, servers)
         if all(s.tool_descriptors is not None for s in kept):
             check_patterns(new, [d for _, d in _index(kept, None)])
-        return self._with(_servers=kept, _filters=(*self._filters, new))
+        names = {s.ref.asset_id for s in kept}
+        unpinned = tuple(e for e in self._unpinned if e.server in names)
+        return self._with(_servers=kept, _filters=(*self._filters, new), _unpinned=unpinned)
 
     def descriptor_tokens(self) -> int:
         """Estimate the prompt tokens this set's tool descriptors cost on every
@@ -526,9 +528,14 @@ class ToolSet:
             GatewayApprovalDenied: The user denied that approval.
             AuthError: The gateway refused the credential or the user's token.
             ToolInvocationError: A server could not list its tools.
-            ToolLockDrift: The set is locked and a pinned server or tool is
-                missing or changed. A tool the lock does not pin is dropped
+            ToolLockDrift: The set is locked and a pinned tool of a server in the
+                set is missing or changed. A tool the lock does not pin is dropped
                 with a warning and listed in :attr:`excluded`.
+
+        The lock is checked here, when the set lists its tools, which is bind
+        time for every binding. A whole-server binding (ADK, Strands, CrewAI,
+        Agent Framework, OpenAI Agents) then binds the framework's own later
+        listing, narrowed by tool name, so that listing is not re-checked.
         """
         self._require_governed()
         missing = [i for i, s in enumerate(self._servers) if s.tool_descriptors is None]
@@ -562,7 +569,9 @@ class ToolSet:
         self, lock: Lockfile, servers: list[McpServerHandle]
     ) -> tuple[list[McpServerHandle], tuple[ToolExclusion, ...]]:
         """Raise on drift from ``lock``; drop the tools it does not pin (BG §2.7)."""
-        drift, unpinned = compare_lock(lock, servers)
+        # Presence was checked once, at discover(); filter(servers=...) may have
+        # narrowed the set since.
+        drift, unpinned = compare_lock(lock, servers, check_presence=False)
         if drift:
             raise ToolLockDrift.of(drift)
         if not unpinned:
@@ -570,7 +579,7 @@ class ToolSet:
         kept: list[McpServerHandle] = []
         found: list[ToolExclusion] = []
         for server in servers:
-            key = f"{server.ref.group_id}/{server.ref.asset_id}"
+            key = server_key(server)
             names = sorted(n for k, n in unpinned if k == key)
             if names:
                 _log.warning(

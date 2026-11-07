@@ -264,6 +264,15 @@ def test_a2a_facade_is_the_provisional_root_export_exception() -> None:
     assert _is_provisional(Donkey.a2a)
 
 
+def test_tool_lock_drift_is_a_provisional_root_export() -> None:
+    """ADR 0023: the lockfile's error is a provisional root export, like A2AFacade."""
+    assert "ToolLockDrift" in ROOT_ALL
+    assert _is_provisional(donkey_kit.ToolLockDrift)
+    lock = next(m for m in PROVISIONAL_MEMBERS if m.startswith("ToolsFacade.lock("))
+    assert lock
+    assert _is_provisional(ToolsFacade.lock)
+
+
 def test_every_public_member_is_in_exactly_one_tier_list() -> None:
     assert not set(MEMBERS) & set(PROVISIONAL_MEMBERS)
     assert sorted(MEMBERS + PROVISIONAL_MEMBERS) == current_members(provisional=None)

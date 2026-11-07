@@ -34,7 +34,7 @@ from ..registry.criteria import Check, GovernanceCriteria, GovernanceReport
 from ..registry.exchange import ExchangeRegistry
 from ..registry.models import AssetRef, McpServerHandle
 from .auth import McpAuth, check_gateway_endpoint
-from .lockfile import Lockfile, ToolLockDrift, compare_lock
+from .lockfile import Lockfile, ToolLockDrift, compare_lock, server_key
 from .session import ToolSet
 
 __all__ = ["Discovery"]
@@ -419,7 +419,7 @@ def _pinned(lock: Lockfile, servers: list[McpServerHandle]) -> list[McpServerHan
     drift, _ = compare_lock(lock, servers)
     if drift:
         raise ToolLockDrift.of(drift)
-    kept = [s for s in servers if f"{s.ref.group_id}/{s.ref.asset_id}" in lock.servers]
+    kept = [s for s in servers if server_key(s) in lock.servers]
     for dropped in servers:
         if dropped not in kept:
             _log.warning(

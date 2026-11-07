@@ -44,6 +44,7 @@ from .core.classifier import classify as _classify
 from .core.config import ConfigOverrides, DonkeyConfig
 from .core.correlation import AttributionScope, attribution_scope
 from .core.cost import CostTags
+from .core.errors import ConfigError
 from .core.identity import UserScope
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.reactions import Duration, OnRefusal
@@ -251,7 +252,9 @@ class ToolsFacade:
                 warning. The returned set checks each ``tools/list`` against the
                 lock when it is described or bound, and drops tools the lock does
                 not pin (``ToolSet.excluded``, ``reason="unpinned"``). The lock
-                detects drift; it does not control access.
+                detects drift; it does not control access. Pass the same ``tags=`` and
+                ``governed=`` as :meth:`lock`, or a pinned server this call does
+                not discover reads as drift.
             lock_path: The lockfile ``locked=True`` reads.
             auth: The gateway credential bindings send. ``None`` uses the
                 data-plane consumer credential (``llm_proxy_auth``).
@@ -385,8 +388,12 @@ class ToolsFacade:
         :meth:`discover` with ``locked=True`` later checks the gateway against it.
         The lock detects drift; it does not control access.
 
+        Run it as the service identity, not inside :meth:`Donkey.as_user`: a
+        caller whose catalog omits a pinned tool is drift. Later, call
+        ``discover(locked=True)`` with the same ``tags=`` and ``governed=``.
+
         Provisional (ADR 0020): may change in a minor release, with a migration
-        note. This was a synchronous method that always raised
+        note (ADR 0023 covers its root export). This was a synchronous method that always raised
         ``NotImplementedError``; it is now a coroutine.
 
         Args:
@@ -404,10 +411,20 @@ class ToolsFacade:
             RegistryError: Exchange or API Manager refused a read.
             AuthError: The gateway refused the credential.
             ToolInvocationError: A server could not list its tools.
+            ValueError: A server lists a tool with no name or two of one name.
+            OSError: The lockfile cannot be written.
 
         Docs: https://docs.donkey-kit.dev/tool-access/lockfile
         """
         tools = await self._discovery.discover(domain=None, tags=tags, governed=governed, auth=auth)
+        if not tools.servers:
+            raise ConfigError(
+                "donkey.tools.lock() found no MCP servers to pin.",
+                remediation=(
+                    "Check the tags= and governed= arguments and that the gateway "
+                    "credential can see the servers in Exchange; no lockfile was written."
+                ),
+            )
         described = await tools.describe()
         target = Path(path)
         write_lock(build_lock(described.servers), target)
