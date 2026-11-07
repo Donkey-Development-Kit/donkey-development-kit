@@ -1867,6 +1867,10 @@ imports. Blocking limitations:
 - `retry_on_errors` retries any exception once, and ADK logs
   `Error on session runner task` on failed initialize.
 
+`tests/conformance/test_adk_mcp_simulation.py` pins both facts (replay lifecycle with
+mTLS off, and the mTLS bypass as a canary that fails once ADK closes the gap); it
+skips unless `google-adk>=2.9` imports on `mcp>=2.3.0`.
+
 Revisit when ADK exposes an injection seam that cannot be bypassed and the
 `[adk]` floor reaches a release that imports on `mcp` 2.3.0, or when CrewAI
 admits `mcp>=2.3.0`. This establishes no live gateway evidence.
