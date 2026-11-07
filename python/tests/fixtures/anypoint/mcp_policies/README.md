@@ -97,7 +97,7 @@ After every scenario the original policy IDs were present again:
 `9667746` (API Key). After the final redeploy, discovery returned the original
 four tools and `calculate("6*7")` returned HTTP 200 SSE text `42`.
 
-**Not yet captured:** the elicitation `decline` rewrite and LLM trimming.
+**Not yet captured:** the elicitation `decline` rewrite.
 The JSON-response attempt on Mule-hosted instance `21263396` hit HTTP 401
 `Authentication Attempt Failed` with the available consumer credentials; those
 responses are not fixtures or verification evidence. Its temporary PII policies
@@ -140,3 +140,34 @@ fixed synthetic data. The gateway runtime version was not recorded.
 
 Trigger conditions beyond these cases (other shapes, size thresholds, SSE vs
 JSON upstreams) were not explored. No SDK classification or decoding changes.
+
+### Smart Response Trimming (2026-11-07, #1641)
+
+Test-only captures from two more permanent DDK / Sandbox instances, built like the
+three above. Policy `mcp-tool-response-sanitization` `1.2.1` configuration on both:
+`{"min_response_bytes":0,"extractEnabled":true,"modelBasedRouting":true,"llmModel":"openai/gpt-5-mini","thresholdBytes":200,"llmTimeoutMs":30000}`
+plus the model proxy URL and a consumer `clientId`/`clientSecret` (not recorded).
+The model proxy is the existing `ddk-openai-model-routing` LLM Gateway proxy
+(`/chat/completions`, Client ID Enforcement); the low `thresholdBytes` is only
+there so the 1.6 KB synthetic result crosses it (the default is 8000).
+
+| Instance | Id | `llmProxyUrl` |
+| --- | --- | --- |
+| `ddk-langgraph-mcp-sanitize-trim` | `21282559` | `.../ddk-openai-model-routing/chat/completions` |
+| `ddk-langgraph-mcp-sanitize-trim-down` | `21282560` | `https://ddk-trim-unreachable.invalid/v1/chat/completions` |
+
+`expected_info` was sent as a sibling of the tool's own arguments inside
+`tools/call` `params.arguments` (the `capture_records` tool ignores it). All calls
+used `capture_records(sample="uniform")`.
+
+| File | Instance | Observation |
+| --- | --- | --- |
+| `optimization-trim-control.json` | `-sanitize-trim`, no `expected_info` | Result untouched (1.6 KB JSON text): no intent, no trimming. |
+| `optimization-trim-no-policy.json` | `-global`, with `expected_info` | Result untouched: the control for the next row. |
+| `optimization-trim.json` | `-sanitize-trim`, with `expected_info` | Result became `[2,4,6,8,10,12,14,16,18,20]`, the ids the intent asked for; `isError: false`. |
+| `optimization-trim-unreachable.json` | `-sanitize-trim-down`, with `expected_info` | Model proxy unreachable: HTTP 200 with the untrimmed result (fail-open, as documented). |
+
+Not explored: results over the default 8000-byte threshold, a proxy that answers
+non-2xx or times out (only an unresolvable host was seen), content entries
+beyond the first, and the `tool_overrides` interaction. The model's output is
+non-deterministic, so the contract test checks the size drop, not the exact bytes.

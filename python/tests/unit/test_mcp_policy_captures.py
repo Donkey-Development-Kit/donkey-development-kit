@@ -191,3 +191,18 @@ def test_payload_optimization_toon_encodes_a_uniform_array_and_leaves_other_json
     # A JSON object with nulls is not an eligible shape: the same policy leaves it as the control.
     _, untouched = _text("optimization-toon-ineligible")
     assert untouched == _text("optimization-nulls-control")[1]
+
+
+def test_payload_optimization_smart_trimming_needs_expected_info_and_fails_open() -> None:
+    """#1641: the model proxy distills the result only when ``expected_info`` is sent."""
+    _, control = _text("optimization-trim-control")  # policy on, no expected_info
+    assert len(json.loads(control)) == 20
+    assert _text("optimization-trim-no-policy")[1] == control  # no policy: untouched either way
+    result, trimmed = _text("optimization-trim")
+    assert result["result"]["isError"] is False
+    # The model's exact words vary; the size drop is the contract.
+    assert len(trimmed) < len(control) / 4
+    # The model proxy being unreachable is fail-open: HTTP 200 and the clean, untrimmed result.
+    unreachable, text = _text("optimization-trim-unreachable")
+    assert unreachable["result"]["isError"] is False
+    assert text == control
