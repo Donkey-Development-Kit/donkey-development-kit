@@ -82,6 +82,7 @@ from .filter import (
     descriptor_tokens,
     resolve_collisions,
 )
+from .lockfile import Lockfile, ToolLockDrift, compare_lock
 from .mcp import client_factory, list_tools, open_session, open_transport
 
 __all__ = ["ToolSet", "UngovernedMcpServer"]
@@ -170,6 +171,8 @@ class ToolSet:
         _endpoint_check: Callable[[bool, bool], None] | None = None,
         _step_up_wait: float = 0.0,
         _mcp_transport: dict[str, Callable[..., Any]] | None = None,
+        _lock: Lockfile | None = None,
+        _unpinned: tuple[ToolExclusion, ...] = (),
     ) -> None:
         self._servers = list(servers)
         # Every filter() call so far: a tool is exposed only if all accept it,
@@ -199,6 +202,10 @@ class ToolSet:
         # How long listing waits for a gateway step-up (CIBA) approval; 0 raises at once (#214).
         self._step_up_wait = _step_up_wait
         self._mcp_transport = _mcp_transport if _mcp_transport is not None else {}
+        # The donkey.lock discover(locked=True) read (BG §2.7): describe() checks the
+        # listing against it, and drops the tools it does not pin (kept in _unpinned).
+        self._lock = _lock
+        self._unpinned = _unpinned
 
     def _with(
         self,
@@ -208,6 +215,7 @@ class ToolSet:
         _approvals: tuple[ApprovalRule, ...] | None = None,
         _step_up_wait: float | None = None,
         _mcp_transport: dict[str, Callable[..., Any]] | None = None,
+        _unpinned: tuple[ToolExclusion, ...] | None = None,
     ) -> ToolSet:
         return ToolSet(
             _servers if _servers is not None else self._servers,
@@ -222,6 +230,8 @@ class ToolSet:
             _endpoint_check=self._endpoint_check,
             _step_up_wait=self._step_up_wait if _step_up_wait is None else _step_up_wait,
             _mcp_transport=self._mcp_transport if _mcp_transport is None else _mcp_transport,
+            _lock=self._lock,
+            _unpinned=self._unpinned if _unpinned is None else _unpinned,
         )
 
     @property
@@ -441,16 +451,20 @@ class ToolSet:
     def excluded(self) -> tuple[ToolExclusion, ...]:
         """The tools the servers list that this set does not expose, and why (#312).
 
-        Today every entry is a tool a :meth:`filter` call removed
-        (``reason="filter"``). A tool outside the consumer's MCP access profile is
+        An entry is a tool a :meth:`filter` call removed (``reason="filter"``) or,
+        on a set from ``discover(locked=True)``, a tool ``donkey.lock`` does not
+        pin (``reason="unpinned"``). A tool outside the consumer's MCP access profile is
         not here: the gateway leaves it out of ``tools/list`` for that caller
         (docs/verified-apis.md §9, #303), so the SDK never sees it. A server
         whose descriptors are not known yet (see :meth:`describe`) adds nothing.
         """
-        return tuple(
-            ToolExclusion(name=d.name, server=d.server, reason="filter")
-            for _, d in _index(self._servers, None)
-            if not all(f.accepts(d) for f in self._filters)
+        return (
+            tuple(
+                ToolExclusion(name=d.name, server=d.server, reason="filter")
+                for _, d in _index(self._servers, None)
+                if not all(f.accepts(d) for f in self._filters)
+            )
+            + self._unpinned
         )
 
     def _descriptors(self, *, filtered: bool = True) -> list[ToolDescriptor]:
@@ -512,6 +526,9 @@ class ToolSet:
             GatewayApprovalDenied: The user denied that approval.
             AuthError: The gateway refused the credential or the user's token.
             ToolInvocationError: A server could not list its tools.
+            ToolLockDrift: The set is locked and a pinned server or tool is
+                missing or changed. A tool the lock does not pin is dropped
+                with a warning and listed in :attr:`excluded`.
         """
         self._require_governed()
         missing = [i for i, s in enumerate(self._servers) if s.tool_descriptors is None]
@@ -530,11 +547,47 @@ class ToolSet:
                     "Tool names alone do not identify an installed gateway policy.",
                     server.ref.coordinates,
                 )
+        unpinned = self._unpinned
+        if self._lock is not None:
+            servers, unpinned = self._enforce_lock(self._lock, servers)
         every = [d for _, d in _index(servers, None)]
         for each in self._filters:
             check_patterns(each, every)
         check_rules(self._approvals, every)
-        return self._with(_servers=servers) if missing else self
+        if missing or unpinned is not self._unpinned:
+            return self._with(_servers=servers, _unpinned=unpinned)
+        return self
+
+    def _enforce_lock(
+        self, lock: Lockfile, servers: list[McpServerHandle]
+    ) -> tuple[list[McpServerHandle], tuple[ToolExclusion, ...]]:
+        """Raise on drift from ``lock``; drop the tools it does not pin (BG §2.7)."""
+        drift, unpinned = compare_lock(lock, servers)
+        if drift:
+            raise ToolLockDrift.of(drift)
+        if not unpinned:
+            return servers, self._unpinned
+        kept: list[McpServerHandle] = []
+        found: list[ToolExclusion] = []
+        for server in servers:
+            key = f"{server.ref.group_id}/{server.ref.asset_id}"
+            names = sorted(n for k, n in unpinned if k == key)
+            if names:
+                _log.warning(
+                    "MCP server %s lists tools donkey.lock does not pin; dropped: %s. "
+                    "Re-run donkey.tools.lock() to pin them.",
+                    server.ref.coordinates,
+                    ", ".join(names),
+                )
+                found.extend(ToolExclusion(n, server.ref.asset_id, "unpinned") for n in names)
+                server = dataclasses.replace(
+                    server,
+                    tool_descriptors=tuple(
+                        t for t in server.tool_descriptors or () if str(t.get("name")) not in names
+                    ),
+                )
+            kept.append(server)
+        return kept, self._unpinned + tuple(found)
 
     async def _list(self, indexes: list[int]) -> list[tuple[dict[str, object], ...]]:
         factory = self._mcp_transport.get("factory")
