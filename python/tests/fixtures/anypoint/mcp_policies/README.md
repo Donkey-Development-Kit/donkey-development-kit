@@ -97,11 +97,46 @@ After every scenario the original policy IDs were present again:
 `9667746` (API Key). After the final redeploy, discovery returned the original
 four tools and `calculate("6*7")` returned HTTP 200 SSE text `42`.
 
-**Not yet captured:** the elicitation `decline` rewrite, base64/null/TOON
-payload transforms, and LLM trimming.
+**Not yet captured:** the elicitation `decline` rewrite and LLM trimming.
 The JSON-response attempt on Mule-hosted instance `21263396` hit HTTP 401
 `Authentication Attempt Failed` with the available consumer credentials; those
 responses are not fixtures or verification evidence. Its temporary PII policies
 were removed and its original policy IDs restored and redeployed. Issue #1384
 stays open for elicitation; #1390 owns detailed payload-transform coverage.
 No SDK matcher, guard, or framework-support claim changes in this capture slice.
+
+### Payload Optimization Transforms (2026-11-07, #1639, #1640)
+
+Test-only captures (not packaged or simulator-served, like `pii-response-json`)
+from three DDK / Sandbox instances on `shared-omni-gateway`, each fronting the
+`ddk-langgraph-mcp` Exchange asset `0.2.0` with MCP Support, one policy, then
+Credential Injection (`X-DDK-Access-Key`). They are permanent policy-test
+instances created by the provisioning repo's `scripts/deploy_policy_instances.py`,
+not temporary attachments, so there was no chain to restore.
+
+| Instance | Id | Policy `mcp-tool-response-sanitization` `1.2.1` configuration |
+| --- | --- | --- |
+| `ddk-langgraph-mcp-global` (control) | `21281858` | none (Global Access blocking `current_time`; it leaves other tools untouched) |
+| `ddk-langgraph-mcp-sanitize-nulls` | `21281859` | `{"min_response_bytes":0,"remove_nulls":true}` (base64 stripping is the default) |
+| `ddk-langgraph-mcp-sanitize-toon` | `21281860` | `{"min_response_bytes":0,"enable_toon_encoding":true}` |
+
+Requests were `tools/call` with an unauthenticated MCP session (the gateway
+injects the API key), `initialize` protocol `2025-06-18`. The upstream JSON
+comes from the synthetic `capture_records` tool of the provisioning repo
+(`nulls`: one record with null fields; `uniform`: twenty same-shape records);
+the base64 cases echo a string through a `calculate` error. All values are
+fixed synthetic data. The gateway runtime version was not recorded.
+
+| File | Observation |
+| --- | --- |
+| `optimization-base64-control.json` | Data URI echoed untouched. |
+| `optimization-base64.json` | The data URI became `[base64 data removed]`; `isError: true` stays a tool result. |
+| `optimization-base64-bare.json` | A bare base64 string was **not** stripped. |
+| `optimization-nulls-control.json` | JSON with `null` values, Python-style spacing. |
+| `optimization-nulls.json` | Null keys removed at every depth, JSON re-serialized compact. |
+| `optimization-toon-control.json` | The uniform array as JSON text. |
+| `optimization-toon.json` | `TOON: [20]{id,name,status,score}:` text, not JSON. |
+| `optimization-toon-ineligible.json` | A JSON object with nulls was not TOON-encoded. |
+
+Trigger conditions beyond these cases (other shapes, size thresholds, SSE vs
+JSON upstreams) were not explored. No SDK classification or decoding changes.
