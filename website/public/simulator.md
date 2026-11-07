@@ -88,11 +88,44 @@ sentinel, the scenarios below, one shared budget window, and the
 
 ## MCP tool fault injection
 
-On `develop` (not yet in a released package),
+On `develop` (not yet in a released package), `donkey.simulate_mcp()` makes
+your agent's MCP tool calls hit a captured gateway refusal, with no gateway and
+no Exchange. It is the MCP counterpart of `donkey.simulate(PIIDetected)`, which
+still targets model calls only.
+
+You declare the servers and tools the test needs. Inside the block,
+`donkey.tools.discover()` returns those servers instead of reading Exchange, so
+your agent's own discovery code runs unchanged:
+
+```python
+servers = {"acme/crm-tools/1.0.0": [{"name": "lookup_customer"}]}
+
+with donkey.simulate_mcp("pii-request", servers=servers):
+    tools = await donkey.tools.discover()
+    agent = build_agent(await tools.langgraph())
+    await agent.ainvoke(...)  # the first tool call is refused as a real PIIDetected
+```
+
+- `servers` maps each `group_id/asset_id/version` ref to its MCP tool
+  descriptors. A descriptor without `inputSchema` gets an empty object schema.
+  Declared servers are marked governed by a `simulated` check, and
+  `discover()`'s filters are not applied to them.
+- `times=1` (the default) counts injected requests. After that, a `tools/call`
+  is answered by `call_tool(name, arguments)`. If you pass no `call_tool`, the
+  answer is a single text item.
+- Bind inside the block. After the block exits, those bindings refuse every
+  request instead of reaching a network. Blocks do not nest.
+- The model client is untouched. Combine it with `donkey.simulate(...)` to
+  inject into both.
+
+The capture names, the bindings that are supported and the behavior below are
+the same as for the low-level helper.
+
+### Low-level helper for a hand-built ToolSet
+
 `donkey_kit.simulator.mcp.simulate_mcp()` injects a named captured refusal into
-one `ToolSet`. This is separate from `donkey.simulate(PIIDetected)`, which still
-targets model calls. Bind and connect inside the context; bindings made before
-entry are not intercepted.
+one `ToolSet` you already have, with a baseline you provide. Bind and connect
+inside the context; bindings made before entry are not intercepted.
 
 ```python
 import httpx

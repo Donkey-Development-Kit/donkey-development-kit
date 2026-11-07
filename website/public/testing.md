@@ -59,6 +59,12 @@ Asking for a refusal no gateway response produces — for example a client-side
   [`gateway` fixture](#the-gateway-fixture) with
   `set_scenarios(...)`, or [`donkey mock --scenario`](https://docs.donkey-kit.dev/simulator.md#scenario-scripting).
 
+`simulate()` covers model calls only. To refuse an MCP **tool call** (a PII
+block, schema rejection, catalog poisoning block or access denial), use
+[`donkey.simulate_mcp("pii-request", servers=...)`](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection).
+Inside that block, `donkey.tools.discover()` returns the servers you declare,
+so no gateway or Exchange is needed.
+
 ## The conformance plugin — run it against your agent
 
 Installing `donkey-kit[test]` registers a pytest plugin with a conformance suite

@@ -134,6 +134,7 @@ MEMBERS = [
     "Donkey.run_from_headers(headers, *, team=None, project=None, env=None, enduser_id=None, business_group=None, typed_refusals=True, ledger_max_entries=1000)",
     "Donkey.serve(handler, *, host='127.0.0.1', port=8000, url=None, version='0.0.0')",
     "Donkey.simulate(error, *, times=1)",
+    "Donkey.simulate_mcp(capture, *, servers, times=1, call_tool=None)",
     "Donkey.tool(func=None, /, *, approval=None, risk=None, approval_timeout='15m', server=None)",
     "Donkey.tools [property]",
     "ToolSet.adk() [async]",
