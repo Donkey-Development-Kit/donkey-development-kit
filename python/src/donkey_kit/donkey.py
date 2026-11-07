@@ -23,6 +23,7 @@ import warnings
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from contextvars import ContextVar
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
 from .a2a.client import A2AFacade
@@ -62,7 +63,8 @@ from .llm.client import LLMClient
 from .registry.criteria import GovernanceCriteria
 from .registry.exchange import ExchangeRegistry
 from .tools.auth import McpAuth, gateway_auth
-from .tools.discovery import Discovery, blocked_lock
+from .tools.discovery import Discovery
+from .tools.lockfile import LOCK_FILE, build_lock, read_lock, write_lock
 from .tools.session import ToolSet
 
 # Imported at runtime: the public API surface check resolves ``Donkey.from_env``'s
@@ -217,6 +219,7 @@ class ToolsFacade:
         tags: list[str] | None = None,
         governed: bool | GovernanceCriteria | None = True,
         locked: bool = False,
+        lock_path: str | os.PathLike[str] = LOCK_FILE,
         auth: McpAuth | None = None,
     ) -> ToolSet:
         """Discover the MCP servers in Exchange and return a bindable ``ToolSet``.
@@ -243,22 +246,29 @@ class ToolsFacade:
             governed: ``True`` (the default) keeps the servers the default
                 ``GovernanceCriteria`` passes; a ``GovernanceCriteria`` (such as
                 ``STRICT``) sets the rules; ``None`` keeps every server.
-            locked: Resolve only what ``donkey.lock`` pins. Not supported yet.
+            locked: Resolve only what the lockfile pins (Provisional, ADR 0020).
+                A discovered server the lock does not pin is dropped with a
+                warning. The returned set checks each ``tools/list`` against the
+                lock when it is described or bound, and drops tools the lock does
+                not pin (``ToolSet.excluded``, ``reason="unpinned"``). The lock
+                detects drift; it does not control access.
+            lock_path: The lockfile ``locked=True`` reads.
             auth: The gateway credential bindings send. ``None`` uses the
                 data-plane consumer credential (``llm_proxy_auth``).
 
         Raises:
-            ConfigError: The control-plane settings are missing.
+            ConfigError: The control-plane settings are missing, or ``locked=True``
+                and the lockfile is missing or unreadable.
             RegistryError: Exchange or API Manager refused a read.
-            NotImplementedError: ``domain`` or ``locked=True`` was given; see
-                docs/verified-apis.md §7.
+            ToolLockDrift: ``locked=True`` and a pinned server was not discovered.
+                Tool-level drift raises when the set is described or bound.
+            NotImplementedError: ``domain`` was given; see docs/verified-apis.md §7.
 
         Docs: https://docs.donkey-kit.dev/tool-access/discovery
         """
-        if locked:
-            raise blocked_lock()
+        lock = read_lock(Path(lock_path)) if locked else None
         return await self._discovery.discover(
-            domain=domain, tags=tags, governed=governed, auth=auth
+            domain=domain, tags=tags, governed=governed, auth=auth, lock=lock
         )
 
     async def live_tools(self, ref: str) -> tuple[dict[str, object], ...]:
@@ -356,11 +366,52 @@ class ToolsFacade:
         Exchange and API Manager again."""
         self._discovery.refresh()
 
-    def lock(self) -> None:
-        """Write a ``donkey.lock`` of resolved versions + digests (BG §2.7)."""
-        raise _verify.blocked(
-            "resolution API needed for the lockfile (BG §2.7, the Verification milestone)."
-        )
+    async def lock(
+        self,
+        *,
+        tags: list[str] | None = None,
+        governed: bool | GovernanceCriteria | None = True,
+        auth: McpAuth | None = None,
+        path: str | os.PathLike[str] = LOCK_FILE,
+    ) -> Path:
+        """Write ``donkey.lock``, pinning the tools each discovered server lists now.
+
+        Discovers as :meth:`discover` does, lists every server's tools (a
+        ``tools/list`` per server, with the credential a binding sends) and
+        writes each gateway-visible tool name with the digest of its descriptor.
+        Under Tool Mapping that is the mapped name, and under Progressive
+        Disclosure it is ``search_tools`` and ``invoke_tool``: the lock never
+        records upstream names or search results (docs/verified-apis.md §9).
+        :meth:`discover` with ``locked=True`` later checks the gateway against it.
+        The lock detects drift; it does not control access.
+
+        Provisional (ADR 0020): may change in a minor release, with a migration
+        note. This was a synchronous method that always raised
+        ``NotImplementedError``; it is now a coroutine.
+
+        Args:
+            tags: As for :meth:`discover`.
+            governed: As for :meth:`discover`.
+            auth: As for :meth:`discover`.
+            path: Where to write the lockfile.
+
+        Returns:
+            The path written.
+
+        Raises:
+            UngovernedMcpServer: A server in the set is not governed (``governed=None``).
+            ConfigError: The control-plane settings or gateway credential are missing.
+            RegistryError: Exchange or API Manager refused a read.
+            AuthError: The gateway refused the credential.
+            ToolInvocationError: A server could not list its tools.
+
+        Docs: https://docs.donkey-kit.dev/tool-access/lockfile
+        """
+        tools = await self._discovery.discover(domain=None, tags=tags, governed=governed, auth=auth)
+        described = await tools.describe()
+        target = Path(path)
+        write_lock(build_lock(described.servers), target)
+        return target.resolve()
 
 
 class Donkey:

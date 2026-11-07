@@ -33,31 +33,12 @@ _CONFIG = DonkeyConfig(
 )
 
 
-_SYNC_BLOCKED_SURFACES: tuple[tuple[str, Callable[[Donkey], object]], ...] = (
-    ("Donkey.tools.lock", lambda donkey: donkey.tools.lock()),
-)
-
 _ASYNC_BLOCKED_SURFACES: tuple[tuple[str, Callable[[Donkey], Awaitable[object]]], ...] = (
-    ("Donkey.tools.discover(locked=True)", lambda donkey: donkey.tools.discover(locked=True)),
     (
         "publish_if_changed",
         lambda donkey: publish_if_changed(_PUBLICATION, donkey),
     ),
 )
-
-
-@pytest.mark.parametrize(
-    ("_surface", "invoke"),
-    _SYNC_BLOCKED_SURFACES,
-    ids=[surface for surface, _ in _SYNC_BLOCKED_SURFACES],
-)
-async def test_sync_verification_blocked_surfaces_remain_blocked(
-    _surface: str,
-    invoke: Callable[[Donkey], object],
-) -> None:
-    async with Donkey(_CONFIG, auth=StaticToken("unused")) as donkey:
-        with pytest.raises(NotImplementedError, match=r"^blocked on verification:"):
-            invoke(donkey)
 
 
 @pytest.mark.parametrize(

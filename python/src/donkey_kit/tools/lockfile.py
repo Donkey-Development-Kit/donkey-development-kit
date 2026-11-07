@@ -191,8 +191,14 @@ class ToolLockDrift(DonkeyError):
 
     remediation: str = "Review the gateway change, then re-run donkey.tools.lock() to accept it."
 
-    def __init__(self, message: str, *, drift: tuple[LockDrift, ...] = ()) -> None:
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str,
+        *,
+        drift: tuple[LockDrift, ...] = (),
+        remediation: str | None = None,
+    ) -> None:
+        super().__init__(message, remediation=remediation)
         self.drift = drift
 
     @classmethod

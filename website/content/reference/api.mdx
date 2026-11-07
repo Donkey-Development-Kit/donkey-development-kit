@@ -654,6 +654,7 @@ is raised.
 | `PromptInjectionBlocked` | `PolicyViolation` | The prompt-injection-protection policy flagged the request as an injection attempt. |
 | `RequestRateLimitExceeded` | `PolicyViolation` | A request-rate-limit policy refused the request: the window's request count is spent. |
 | `TokenBudgetExceeded` | `PolicyViolation` | A token-rate-limit policy refused the request: the budget window is spent. |
+| `ToolLockDrift` | `DonkeyError` | The gateway's tools no longer match `donkey.lock`. |
 | `ToolNotInProfile` | `PolicyViolation` | The gateway refused an MCP tool call: the tool is outside this consumer's access profile. |
 | `UngovernedMcpServer` | `DonkeyError` | A `ToolSet` binding was refused because a server in it is not governed. |
 | `UpstreamModelError` | `DonkeyError` | Provider-side failure (5xx). Retryable. |

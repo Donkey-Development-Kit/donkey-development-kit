@@ -88,6 +88,7 @@ ROOT_ALL = [
     "RunRefusal",
     "RunScope",
     "TokenBudgetExceeded",
+    "ToolLockDrift",
     "ToolNotInProfile",
     "ToolSet",
     "ToolSpec",
@@ -154,8 +155,7 @@ MEMBERS = [
     "ToolSet.servers [property]",
     "ToolSet.strands() [async]",
     "ToolSet.wait_for_gateway_approval(timeout='2m')",
-    "ToolsFacade.discover(*, domain=None, tags=None, governed=True, locked=False, auth=None) [async]",
-    "ToolsFacade.lock()",
+    "ToolsFacade.discover(*, domain=None, tags=None, governed=True, locked=False, lock_path='donkey.lock', auth=None) [async]",
     "ToolsFacade.refresh()",
     "ToolsFacade.warm(*, domain=None, tags=None, governed=True) [async]",
 ]
@@ -164,6 +164,7 @@ PROVISIONAL_MEMBERS = [
     "Donkey.a2a [property]",
     "ToolsFacade.live_card(ref) [async]",
     "ToolsFacade.live_tools(ref) [async]",
+    "ToolsFacade.lock(*, tags=None, governed=True, auth=None, path='donkey.lock') [async]",
 ]
 
 
