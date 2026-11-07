@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "text/event-stream",
+    "server": "Anypoint Flex Gateway"
+  },
+  "body": "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"content\":[{\"text\":\"TOON: [20]{id,name,status,score}:\\n  1,\\\"record-01\\\",active,3\\n  2,\\\"record-02\\\",idle,6\\n  3,\\\"record-03\\\",active,9\\n  4,\\\"record-04\\\",idle,12\\n  5,\\\"record-05\\\",active,15\\n  6,\\\"record-06\\\",idle,18\\n  7,\\\"record-07\\\",active,21\\n  8,\\\"record-08\\\",idle,24\\n  9,\\\"record-09\\\",active,27\\n  10,\\\"record-10\\\",idle,30\\n  11,\\\"record-11\\\",active,33\\n  12,\\\"record-12\\\",idle,36\\n  13,\\\"record-13\\\",active,39\\n  14,\\\"record-14\\\",idle,42\\n  15,\\\"record-15\\\",active,45\\n  16,\\\"record-16\\\",idle,48\\n  17,\\\"record-17\\\",active,51\\n  18,\\\"record-18\\\",idle,54\\n  19,\\\"record-19\\\",active,57\\n  20,\\\"record-20\\\",idle,60\",\"type\":\"text\"}],\"isError\":false}}\n\n"
+}

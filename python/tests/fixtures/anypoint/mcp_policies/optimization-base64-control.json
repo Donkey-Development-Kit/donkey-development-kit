@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "text/event-stream",
+    "server": "Anypoint Flex Gateway"
+  },
+  "body": "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"calculate failed: not an arithmetic expression: 'data:image/png;base64,RERLIHN5bnRoZXRpYyBjYXB0dXJlIGltYWdlIGJ5dGVzLiBEREsgc3ludGhldGljIGNhcHR1cmUgaW1hZ2UgYnl0ZXMuIERESyBzeW50aGV0aWMgY2FwdHVyZSBpbWFnZSBieXRlcy4g'\"}],\"isError\":true}}\n\n"
+}

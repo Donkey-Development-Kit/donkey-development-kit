@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "text/event-stream",
+    "server": "Anypoint Flex Gateway"
+  },
+  "body": "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"id\\\": 1, \\\"name\\\": \\\"capture\\\", \\\"nickname\\\": null, \\\"notes\\\": null, \\\"tags\\\": [\\\"a\\\", \\\"b\\\"], \\\"owner\\\": {\\\"id\\\": 7, \\\"email\\\": null}}\"}],\"isError\":false}}\n\n"
+}

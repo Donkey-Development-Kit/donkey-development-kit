@@ -147,3 +147,47 @@ def test_mapped_name_is_callable_and_transforms_are_not_refusals() -> None:
     assert "error" not in optimized and optimized["result"]["isError"] is True
     assert "DDK capture" in optimized["result"]["content"][0]["text"]
     assert "<p>" not in optimized["result"]["content"][0]["text"]
+
+
+def _text(name: str) -> tuple[dict[str, Any], str]:
+    capture, body = _capture(name)
+    assert "error" not in body
+    return body, body["result"]["content"][0]["text"]
+
+
+def test_payload_optimization_strips_a_base64_data_uri_but_not_bare_base64() -> None:
+    """#1639: the control returns the data URI untouched; the policy replaces it."""
+    _, control = _text("optimization-base64-control")
+    assert "data:image/png;base64," in control
+    result, stripped = _text("optimization-base64")
+    assert stripped == "calculate failed: not an arithmetic expression: '[base64 data removed]'"
+    assert result["result"]["isError"] is True  # still a tool result, not a refusal
+    # The same policy left a bare base64 string alone: only the data URI form was seen stripped.
+    _, bare = _text("optimization-base64-bare")
+    assert "RERLIHN5bnRoZXRpYyBiYXJl" in bare and "removed" not in bare
+
+
+def test_payload_optimization_remove_nulls_drops_null_fields_and_compacts_json() -> None:
+    """#1639: ``remove_nulls`` removes null-valued keys at every depth of a JSON result."""
+    _, control = _text("optimization-nulls-control")
+    original = json.loads(control)
+    assert original["nickname"] is None and original["owner"] == {"id": 7, "email": None}
+    result, optimized = _text("optimization-nulls")
+    expected = '{"id":1,"name":"capture","tags":["a","b"],"owner":{"id":7}}'
+    assert optimized == expected  # null keys gone, and the JSON is re-serialized compact
+    assert result["result"]["isError"] is False
+
+
+def test_payload_optimization_toon_encodes_a_uniform_array_and_leaves_other_json_alone() -> None:
+    """#1640: TOON replaces a uniform array of objects with a ``TOON:``-prefixed text block."""
+    _, control = _text("optimization-toon-control")
+    assert isinstance(json.loads(control), list) and len(json.loads(control)) == 20
+    result, toon = _text("optimization-toon")
+    assert result["result"]["isError"] is False
+    assert toon.startswith("TOON: [20]{id,name,status,score}:\n  1,")
+    assert len(toon) < len(control)
+    with pytest.raises(json.JSONDecodeError):  # an agent expecting JSON gets text, not JSON
+        json.loads(toon)
+    # A JSON object with nulls is not an eligible shape: the same policy leaves it as the control.
+    _, untouched = _text("optimization-toon-ineligible")
+    assert untouched == _text("optimization-nulls-control")[1]
