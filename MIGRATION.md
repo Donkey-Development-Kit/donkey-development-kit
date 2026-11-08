@@ -3,6 +3,10 @@
 <!-- toc -->
 **Contents**
 
+- [0.2.1: CLI argument swap and an async lock()](#021-cli-argument-swap-and-an-async-lock)
+  - [1. donkey expose and donkey preflight take the path, not the service](#1-donkey-expose-and-donkey-preflight-take-the-path-not-the-service)
+  - [2. donkey.tools.lock() is async](#2-donkeytoolslock-is-async)
+  - [New in 0.2.1 (not breaking)](#new-in-021-not-breaking)
 - [0.2.0: governed tools, publishing, approvals and more typed refusals](#020-governed-tools-publishing-approvals-and-more-typed-refusals)
   - [1. A CIBA approval response is GatewayApprovalPending or GatewayApprovalDenied](#1-a-ciba-approval-response-is-gatewayapprovalpending-or-gatewayapprovaldenied)
   - [2. Google Model Armor and CrowdStrike AIDR blocks are ContentSafetyBlocked](#2-google-model-armor-and-crowdstrike-aidr-blocks-are-contentsafetyblocked)
@@ -64,6 +68,63 @@
   - [16. An Agent Kill Switch block raises AgentKilled](#16-an-agent-kill-switch-block-raises-agentkilled)
   - [17. donkey-kit[all] leaves out the seven connection_kwargs() frameworks](#17-donkey-kitall-leaves-out-the-seven-connection_kwargs-frameworks)
 <!-- tocstop -->
+
+## 0.2.1: CLI argument swap and an async lock()
+
+Two changes since `0.2.0` can affect existing code. Neither touches the
+library's model, registry or governed-call paths.
+
+### 1. `donkey expose` and `donkey preflight` take the path, not the service
+
+**Who:** scripts, CI jobs and runbooks that call `donkey expose SERVICE` or
+`donkey preflight SERVICE` (#1515).
+
+**Symptom:** the positional argument is now the path to scan (default `.`), and
+the service ID moved to `--service`. A bare service ID is read as a path, so
+`donkey preflight my-svc` stops with `nothing to scan at my-svc`, or scans a
+`./my-svc` directory that holds no `.donkey-kit.toml`.
+
+| | Command |
+|---|---|
+| 0.2.0 (old) | `donkey preflight my-svc` or `donkey expose my-svc --path ./repo` |
+| 0.2.1 (new) | `donkey preflight ./repo --service my-svc` or `donkey expose --service my-svc` |
+
+**Back-compat:** the old `SERVICE --path PATH` form still works. The hidden
+`--path` option is read, the first positional is taken as the service, and
+the command prints a deprecation warning on stderr. The bare `donkey preflight
+SERVICE` form, with no `--path`, is also deprecated: #1667 makes a single
+positional that is not an existing path and matches a declared service ID
+behave as `--service`, with the same warning. Both old forms are deprecated
+and are removed in 0.3.0.
+
+**Fix:** pass the path as the argument and the service as `--service`. Only
+`--service` is needed when the project declares more than one service.
+
+### 2. `donkey.tools.lock()` is async
+
+**Who:** code that calls `donkey.tools.lock()`.
+
+On `0.2.0`, `ToolsFacade.lock()` was a synchronous stub that raised
+`NotImplementedError` (blocked on the resolution API, BG §2.7). In 0.2.1 it is
+implemented as `async def lock(*, tags=None, governed=True, auth=None, path="donkey.lock")`
+and returns the `Path` it wrote. Calling it without `await` now gives a
+never-awaited coroutine and writes no lockfile.
+
+**Fix:** await it, as the other `donkey.tools` calls are:
+
+```python
+path = await donkey.tools.lock(tags=["inventory"])
+```
+
+See [Pinning & lockfile](/tool-access/lockfile).
+
+### New in 0.2.1 (not breaking)
+
+- `donkey.simulate_mcp()` and the packaged MCP captures in the simulator.
+- Outbound A2A calls, `GatewayAuthChallenge`, and A2A quality annotations on
+  `donkey.a2a.call` spans. Explanation text needs
+  `telemetry_capture_content=True`.
+- `donkey.tools.lock()` and `discover(locked=True)`.
 
 ## 0.2.0: governed tools, publishing, approvals and more typed refusals
 

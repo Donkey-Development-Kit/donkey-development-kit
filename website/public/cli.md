@@ -542,10 +542,17 @@ published version.
 ### `donkey expose`
 
 ```bash
-donkey preflight sku-manager           # what expose would do; reads only
-donkey expose sku-manager --dry-run    # the same
-donkey expose sku-manager              # publish, create, add policies, deploy
+donkey preflight --service sku-manager          # what expose would do; reads only
+donkey expose --service sku-manager --dry-run   # the same
+donkey expose --service sku-manager             # publish, create, add policies, deploy
 ```
+
+The argument is the path to scan (`.` by default), and `--service` names the
+service, which you can leave out when the project has exactly one. The 0.2.0
+form, with the service ID as the argument (`donkey preflight sku-manager`), still
+works until 0.3.0: when nothing is at that path and the project has a service
+with that ID, the command reads it as `--service` and prints a deprecation
+warning.
 
 Puts one MCP server or A2A agent behind a gateway that already exists, in the
 environment `ANYPOINT_ENV` (or `--env`) names. It runs one step at a time and

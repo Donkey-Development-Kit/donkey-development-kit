@@ -24,8 +24,7 @@ delegation, and [`donkey.serve()`](/a2a) to make your own agent callable.
   A refusal to a streaming method before SSE starts does not prove streaming success.
 </Callout>
 
-The outbound facade and auth-challenge types are available on `develop`, not
-yet in published `0.2.0`. `A2AFacade` is provisional; framework-native
+The outbound facade and auth-challenge types are new in 0.2.1. `A2AFacade` is provisional; framework-native
 `AgentHandle.as_tool()` binding remains planned.
 
 ## Protocol versions
@@ -126,7 +125,7 @@ DDK records known evaluation/status values and finite numeric scores on
 `donkey.a2a.call` spans from successful delegation HTTP responses. Explanations
 require `telemetry_capture_content=True` and are limited to 4096 characters;
 they can repeat sensitive request content. This recording is **OFFLINE-VERIFIED**,
-available on `develop` but not published `0.2.0`. See the
+new in 0.2.1. See the
 [quality span contract](/telemetry#outbound-a2a-spans).
 
 Agent Card URL rewriting is **VERIFIED (LIVE)** for one JSONRPC card GET with
