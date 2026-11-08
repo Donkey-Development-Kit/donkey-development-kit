@@ -93,7 +93,7 @@ sentinel, the scenarios below, one shared budget window, and the
 
 ## MCP tool fault injection
 
-On `develop` (not yet in a released package), `donkey.simulate_mcp()` makes
+New in 0.2.1, `donkey.simulate_mcp()` makes
 your agent's MCP tool calls hit a captured gateway refusal, with no gateway and
 no Exchange. It is the MCP counterpart of `donkey.simulate(PIIDetected)`, which
 still targets model calls only.
@@ -115,6 +115,14 @@ with donkey.simulate_mcp("pii-request", servers=servers):
   descriptors. A descriptor without `inputSchema` gets an empty object schema.
   Declared servers are marked governed by a `simulated` check, and
   `discover()`'s filters are not applied to them.
+- `discover(locked=True)` checks the declared servers against `donkey.lock`
+  as it does at a live gateway, so you can test drift offline. A missing lock
+  raises `ConfigError`. A pinned server you did not declare raises
+  `ToolLockDrift`, and a declared server or tool the lock does not pin is
+  dropped. A tool you declare with a different descriptor raises
+  `ToolLockDrift` when the set binds. Call `donkey.tools.lock(path=...)` inside
+  the block to pin the declared servers. See
+  [Pinning & lockfile](/tool-access/lockfile).
 - `times=1` (the default) counts injected requests. After that, a `tools/call`
   is answered by `call_tool(name, arguments)`. If you pass no `call_tool`, the
   answer is a single text item.
@@ -307,8 +315,7 @@ or multiple endpoints, continue supplying your own `httpx.MockTransport`.
 
 Separately, the package data contains **15 captured MCP responses**: 13 policy
 envelopes in `anypoint/mcp_policies` and two access-denial header/body pairs in
-`anypoint/mcp_access`. These captures are available on `develop`, not yet in a
-released package. Use `donkey_kit.simulator.fixtures.fixture_bytes()` to read
+`anypoint/mcp_access`. These captures are new in 0.2.1. Use `donkey_kit.simulator.fixtures.fixture_bytes()` to read
 them without depending on a repository checkout's test files.
 
 This is raw offline replay, not a `donkey mock` route or a `donkey-sim/` sentinel,
@@ -581,7 +588,7 @@ request = SendMessageRequest(
 )
 
 async def test_delegation_handles_a_pii_block():
-    async with Donkey.from_env() as donkey:
+    async with Donkey.from_env(allow_a2a_sdk_telemetry=True) as donkey:
         with donkey.simulate_a2a("pii-send", agents=["acme/triage-agent/1.0.0"]):
             with pytest.raises(ToolInvocationError):
                 await donkey.a2a.send("acme/triage-agent/1.0.0", request)
@@ -598,6 +605,12 @@ async def test_delegation_handles_a_pii_block():
   `"simulated reply"`, or what `reply(text)` returns.
 - Every injected response carries `x-donkey-simulator: true`. Blocks do not
   nest, and after the block the refs resolve through Exchange again.
+- The outbound [A2A SDK tracing gate](/telemetry#outbound-a2a-spans) applies
+  offline too. With opentelemetry installed (the `[otel]` and `[all]` extras)
+  and `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED` unset, the first call raises
+  `ConfigError` instead of the refusal. Set the variable to `false` before
+  importing `a2a` (for example in `conftest.py`), or build the client with
+  `Donkey.from_env(allow_a2a_sdk_telemetry=True)`.
 
 | `capture` | `version="1.0"` | `version="0.3"` | Raised error |
 |---|---|---|---|

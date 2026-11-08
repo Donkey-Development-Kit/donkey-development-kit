@@ -11,6 +11,12 @@ So the tokens live here, on a stack in a contextvar of their own. Each task and
 thread has its own context, so concurrent entries of one object never see each
 other's tokens, and nested re-entry on one task pops in LIFO order. Private:
 the scopes are the public face.
+
+The stack itself is never restored with ``_entries.reset``: a pop always sets
+the stack minus the popped entry (#1674). A saved reset token would capture
+the whole stack at push time, so after an out-of-order exit (manual
+``__exit__`` calls: push A, push B, pop A) resetting B's token would bring A
+back, and a second pop of A would reuse A's spent value tokens.
 """
 
 from __future__ import annotations
@@ -22,14 +28,14 @@ __all__ = ["pop_entry", "push_entry"]
 
 
 class _Entry:
-    """One entry of a scope: the tokens it set, and the token of its own push."""
+    """One entry of a scope: its owner and the tokens it set. Compared by
+    identity, so two entries of one owner stay distinct."""
 
-    __slots__ = ("owner", "pushed", "tokens")
+    __slots__ = ("owner", "tokens")
 
     def __init__(self, owner: object, tokens: list[Token[Any]]) -> None:
         self.owner = owner
         self.tokens = tokens
-        self.pushed: Token[tuple[_Entry, ...]] | None = None
 
 
 _entries: ContextVar[tuple[_Entry, ...]] = ContextVar("donkey_scope_entries", default=())
@@ -37,24 +43,21 @@ _entries: ContextVar[tuple[_Entry, ...]] = ContextVar("donkey_scope_entries", de
 
 def push_entry(owner: object, tokens: list[Token[Any]]) -> None:
     """Record the tokens ``owner``'s entry just set, in the current context."""
-    entry = _Entry(owner, tokens)
-    entry.pushed = _entries.set((*_entries.get(), entry))
+    _entries.set((*_entries.get(), _Entry(owner, tokens)))
 
 
 def pop_entry(owner: object) -> None:
     """Reset the tokens of ``owner``'s innermost entry in the current context,
     newest first, then drop the entry. A no-op when this context never entered
     ``owner``."""
-    for entry in reversed(_entries.get()):
+    stack = _entries.get()
+    for entry in reversed(stack):
         if entry.owner is owner:
             break
     else:
         return
+    # Drop the entry before resetting its tokens, so a reset that raises can
+    # never leave a spent entry behind for a later pop to reuse.
+    _entries.set(tuple(e for e in stack if e is not entry))
     for token in reversed(entry.tokens):
         token.var.reset(token)
-    stack = _entries.get()
-    if stack[-1] is entry and entry.pushed is not None:
-        _entries.reset(entry.pushed)
-    else:
-        # Exited out of order (manual __exit__ calls): drop only this entry.
-        _entries.set(tuple(e for e in stack if e is not entry))

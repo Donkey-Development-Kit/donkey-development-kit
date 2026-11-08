@@ -1,15 +1,19 @@
-"""``Donkey.simulate_mcp()`` argument checks and discovery scoping (#1391, ADR 0023)."""
+"""``Donkey.simulate_mcp()`` argument checks and discovery scoping (#1391, ADR 0023),
+and ``discover(locked=True)`` inside the block (#1671, ADR 0024)."""
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 from donkey_kit import Donkey
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.errors import ConfigError
+from donkey_kit.tools.lockfile import LockDrift, LockedServer, Lockfile, ToolLockDrift, write_lock
 
 _SERVERS = {"acme/crm-tools/1.0.0": [{"name": "lookup_customer"}]}
 
@@ -47,6 +51,84 @@ async def test_discover_returns_declared_governed_servers_without_registry() -> 
         assert await donkey.tools.warm() == 1
     with pytest.raises(ConfigError):
         await donkey.tools.discover()
+
+
+def _lock(path: Path, *assets: str) -> Path:
+    servers = {
+        f"acme/{a}": LockedServer("acme", a, "1.0.0", {"lookup_customer": "0" * 64}) for a in assets
+    }
+    write_lock(Lockfile(servers=servers), path)
+    return path
+
+
+async def test_discover_locked_without_a_lockfile_raises_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)  # no ./donkey.lock: same refusal as a live discover()
+    donkey = _donkey()
+    with donkey.simulate_mcp("pii-request", servers=_SERVERS):
+        with pytest.raises(ConfigError):
+            await donkey.tools.discover(locked=True)
+
+
+async def test_discover_locked_raises_drift_for_a_pinned_server_not_declared(
+    tmp_path: Path,
+) -> None:
+    lock = _lock(tmp_path / "donkey.lock", "crm-tools", "billing")
+    donkey = _donkey()
+    with donkey.simulate_mcp("pii-request", servers=_SERVERS):
+        with pytest.raises(ToolLockDrift) as caught:
+            await donkey.tools.discover(locked=True, lock_path=lock)
+    assert caught.value.drift == (LockDrift("acme/billing", None, "server_missing"),)
+
+
+async def test_discover_locked_drops_a_declared_server_the_lock_does_not_pin(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    lock = _lock(tmp_path / "donkey.lock", "crm-tools")
+    servers = {**_SERVERS, "acme/billing/2.0.0": [{"name": "refund"}]}
+    donkey = _donkey()
+    with donkey.simulate_mcp("pii-request", servers=servers):
+        with caplog.at_level(logging.WARNING):
+            tools = await donkey.tools.discover(locked=True, lock_path=lock)
+        unlocked = await donkey.tools.discover()
+    assert [s.ref.coordinates for s in tools.servers] == ["acme/crm-tools/1.0.0"]
+    assert "acme/billing/2.0.0 is not pinned in donkey.lock" in caplog.text
+    assert len(unlocked.servers) == 2
+
+
+async def test_discover_locked_checks_declared_tools_against_the_lock(tmp_path: Path) -> None:
+    pytest.importorskip("mcp")  # describe() lists tools through the offline MCP session
+    lock = tmp_path / "donkey.lock"
+    donkey = _donkey()
+    with donkey.simulate_mcp("pii-request", servers=_SERVERS):
+        path = await donkey.tools.lock(path=lock)
+        described = await (await donkey.tools.discover(locked=True, lock_path=path)).describe()
+        assert [t["name"] for t in described.servers[0].tool_descriptors or ()] == [
+            "lookup_customer"
+        ]
+    changed = {"acme/crm-tools/1.0.0": [{"name": "lookup_customer", "description": "Find anyone"}]}
+    with donkey.simulate_mcp("pii-request", servers=changed):
+        tools = await donkey.tools.discover(locked=True, lock_path=lock)
+        with pytest.raises(ToolLockDrift) as caught:
+            await tools.describe()
+    assert caught.value.drift == (LockDrift("acme/crm-tools", "lookup_customer", "changed"),)
+
+
+async def test_discover_locked_drops_declared_tools_the_lock_does_not_pin(tmp_path: Path) -> None:
+    pytest.importorskip("mcp")
+    lock = tmp_path / "donkey.lock"
+    donkey = _donkey()
+    with donkey.simulate_mcp("pii-request", servers=_SERVERS):
+        await donkey.tools.lock(path=lock)
+    grown = {
+        "acme/crm-tools/1.0.0": [*_SERVERS["acme/crm-tools/1.0.0"], {"name": "delete_customer"}]
+    }
+    with donkey.simulate_mcp("pii-request", servers=grown):
+        described = await (await donkey.tools.discover(locked=True, lock_path=lock)).describe()
+    (server,) = described.servers
+    assert [t["name"] for t in server.tool_descriptors or ()] == ["lookup_customer"]
+    assert [(e.name, e.reason) for e in described.excluded] == [("delete_customer", "unpinned")]
 
 
 def test_nesting_raises_and_leaves_the_outer_block_intact() -> None:
