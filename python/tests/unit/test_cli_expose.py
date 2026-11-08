@@ -236,9 +236,60 @@ def test_the_0_2_0_form_still_works_with_a_warning(repo: Path, anypoint: FakeAny
     assert "would expose MCP server sku-manager" in result.output
 
 
-def test_a_service_id_where_the_path_goes_gets_a_hint(repo: Path) -> None:
-    result = runner.invoke(app, ["preflight", "sku-manager"])
+@pytest.mark.parametrize("command", [["preflight"], ["expose", "--dry-run"]])
+def test_the_bare_0_2_0_service_argument_still_works_with_a_warning(
+    repo: Path, anypoint: FakeAnypoint, command: list[str]
+) -> None:
+    """#1667: ``donkey preflight SERVICE``, with nothing at that path and a
+    service of that ID here, reads as ``--service SERVICE``."""
+    result = runner.invoke(app, [*command, "sku-manager"])
+
+    assert result.exit_code == 0, result.output
+    assert "a service ID as the argument is deprecated: pass --service sku-manager" in (
+        result.stderr
+    )
+    assert "would expose MCP server sku-manager" in result.output
+    assert anypoint.writes() == []
+
+
+def test_the_bare_0_2_0_form_exposes(repo: Path, anypoint: FakeAnypoint) -> None:
+    result = runner.invoke(app, ["expose", "sku-manager"])
+
+    assert result.exit_code == 0, result.output
+    assert "is deprecated" in result.stderr
+    assert f"MCP server sku-manager is exposed at {URL}" in result.output
+
+
+def test_an_unknown_service_id_where_the_path_goes_gets_a_hint(repo: Path) -> None:
+    result = runner.invoke(app, ["preflight", "other-service"])
 
     assert result.exit_code == 2
+    assert "is deprecated" not in result.output
     assert "nothing to scan" in result.output
-    assert "pass --service sku-manager" in result.output
+    assert "pass --service other-service" in result.output
+
+
+def test_a_directory_named_like_the_service_gets_a_hint(repo: Path) -> None:
+    """#1667: a service ID that is also a directory name scans that directory;
+    when it finds no config there, say how to name the service instead."""
+    (repo / "sku-manager").mkdir()
+
+    result = runner.invoke(app, ["preflight", "sku-manager"])
+
+    assert result.exit_code == 1
+    assert "is deprecated" not in result.stderr
+    assert "nothing was sent" in result.stderr
+    assert "to expose the service sku-manager, pass --service sku-manager" in result.stderr
+
+
+def test_a_project_directory_gets_no_hint(repo: Path, anypoint: FakeAnypoint) -> None:
+    sub = repo / "svc"
+    sub.mkdir()
+    (sub / ".donkey-kit.toml").write_text(CONFIG.replace(f'target = "{GATEWAY}"\n', ""))
+    (sub / "app.py").write_text(SOURCE, encoding="utf-8")
+
+    result = runner.invoke(app, ["preflight", "svc"])
+
+    assert result.exit_code == 1
+    assert "missing-target" in result.stderr
+    assert "pass --service" not in result.stderr
