@@ -29,12 +29,14 @@ from .errors import (
     _match_token_budget,
     _match_upstream_failure,
     _Shape,
+    _shape,
 )
 
 __all__ = [
     "PROVIDER_VALUES",
     "REGISTERED_MATCHER",
     "RpcShape",
+    "binding_refusal",
     "jsonrpc_refusal",
     "policy_header",
     "policy_identity",
@@ -380,6 +382,24 @@ def _match_http(s: _Shape) -> DonkeyError:
     return refusal or ToolInvocationError(
         f"JSON-RPC operation failed ({s.status}); inspect .response.", **s.kw
     )
+
+
+def binding_refusal(response: ResponseLike) -> DonkeyError | None:
+    """The typed refusal a per-tool MCP binding's HTTP error stands for, or ``None``.
+
+    For a 4xx other than 401 and 429 with no auth challenge; the bridge classifies
+    the rest. A JSON-RPC body is typed only as a valid envelope, by
+    :func:`jsonrpc_refusal`. Any other body takes only a built-in shape with its
+    own discriminator, such as the CIBA denial or the kill switch (#1670,
+    docs/verified-apis.md §4). A body matching none stays untyped: the generic
+    unconfirmed-refusal fall-through is not applied to an MCP server's errors.
+    """
+    s = _shape(response, correlation_id=None, call_id=None)
+    if s.body is not None and "jsonrpc" in s.body:
+        if not valid_envelope(s.body):
+            return None
+        return jsonrpc_refusal(s.body, status=s.status, headers=s.response.headers, **s.kw)
+    return next((e for matcher in _POLICY_MATCHERS if (e := matcher(s)) is not None), None)
 
 
 _JSONRPC_MATCHER[:] = [_match_http]

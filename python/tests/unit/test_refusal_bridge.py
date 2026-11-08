@@ -9,6 +9,7 @@ response. Base-only: nothing here needs a framework extra.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import types
@@ -29,8 +30,9 @@ from donkey_kit import (
     typed_refusals,
 )
 from donkey_kit.core import _wire
-from donkey_kit.core.errors import ModelSubstituted
+from donkey_kit.core.errors import AgentKilled, ModelSubstituted
 from donkey_kit.core.refusals import translate
+from donkey_kit.core.step_up import GatewayApprovalDenied, GatewayApprovalPending
 from donkey_kit.core.telemetry import run_scope
 from donkey_kit.integrations import ADAPTERS, refusal_translators
 
@@ -282,6 +284,8 @@ def test_mcp_binding_auth_challenge_keeps_http_precedence() -> None:
         b"{}",
         b'{"result":{}}',
         b'{"error":{"code":-32603,"message":"Internal error"}}',
+        b'{"error":"forbidden"}',
+        b'{"error":{"code":"forbidden","message":"no"}}',
     ],
 )
 def test_mcp_binding_unmarked_403_remains_original(body: bytes) -> None:
@@ -289,6 +293,69 @@ def test_mcp_binding_unmarked_403_remains_original(body: bytes) -> None:
     response = httpx.Response(403, content=body, request=request)
     error = httpx.HTTPStatusError("forbidden", request=request, response=response)
     assert translate(error) is None
+
+
+_REJECTIONS = Path(donkey_kit.__file__).parent / "simulator/_fixtures/rejections"
+
+
+def _binding_error(slug: str, status: int) -> httpx.HTTPStatusError:
+    """A binding-marked ``HTTPStatusError`` answering with a captured rejection (§4)."""
+    request = httpx.Request(
+        "POST",
+        "https://proxy/mcp/",
+        headers={"x-correlation-id": "correlation", "x-call-id": "call"},
+        extensions={
+            "donkey_mcp_binding": True,
+            "donkey_correlation_header": "x-correlation-id",
+            "donkey_call_id_header": "x-call-id",
+        },
+    )
+    response = httpx.Response(
+        status,
+        content=(_REJECTIONS / f"reject.{slug}.body.json").read_bytes(),
+        headers={"content-type": "application/json", "x-request-id": "request"},
+        request=request,
+    )
+    return httpx.HTTPStatusError("refused", request=request, response=response)
+
+
+@pytest.mark.parametrize(
+    ("slug", "status", "kind"),
+    [
+        ("ciba-denied", 403, GatewayApprovalDenied),
+        ("agent-killed", 403, AgentKilled),
+        ("ciba-pending", 401, GatewayApprovalPending),
+    ],
+)
+def test_mcp_binding_types_the_gateways_own_http_refusals(
+    slug: str, status: int, kind: type[DonkeyError]
+) -> None:
+    # #1670: a CIBA denial or a kill switch on a tools/call is not a JSON-RPC
+    # envelope, and is typed as it is on the LLM transport.
+    error = _binding_error(slug, status)
+    typed = translate(error)
+    assert type(typed) is kind
+    assert typed.response is error.response
+    assert (typed.correlation_id, typed.call_id, typed.request_id) == (
+        "correlation",
+        "call",
+        "request",
+    )
+
+
+def test_mcp_binding_types_a_ciba_denial_through_the_refusing_wrapper() -> None:
+    from donkey_kit.core.identity import Requester
+    from donkey_kit.tools.session import _refusing
+
+    error = _binding_error("ciba-denied", 403)
+
+    async def denied() -> None:
+        raise error  # mcp 1.x: the HTTPStatusError, its body read by the binding
+
+    service = Requester(None, None, None)
+    with pytest.raises(GatewayApprovalDenied) as caught:
+        asyncio.run(_refusing(denied, tool="add", server="s", bound_for=service)())
+    assert caught.value.framework_error is not None
 
 
 @pytest.mark.parametrize("capture", ["pii-request", "pii-response-sse"])

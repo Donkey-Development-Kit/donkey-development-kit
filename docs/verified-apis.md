@@ -2003,10 +2003,24 @@ The `CIBA` body (`authorization_pending` / `access_denied`) was not visible in a
 a plain `401` looks identical, so a framework's `tools/call` error cannot tell a pending user
 approval from a bad credential. So:
 
-- **The bindings do not retry or type a `tools/call` step-up.** A wrapper in `_invoker` would be
-  guessing from a bare status. It would need the SDK to read the response body itself, which
-  needs its own HTTP hook per framework, or a live capture showing the gateway sends a
-  discriminating header (it sends none: no `www-authenticate`, §4 item 8).
+- **The bindings never retry a `tools/call` step-up, and type it only on `mcp` 1.x.** The
+  fixtures above predate the binding's own HTTP client: since #1557 the client
+  `tools/mcp.py` `client_factory` builds reads a bounded error body and marks the request
+  `donkey_mcp_binding`, so on `mcp` 1.x the `HTTPStatusError` carries the gateway's body.
+  `core/refusals.py` `translate()` types such a response with
+  `core/jsonrpc_refusals.py` `binding_refusal()`: a 401, a 429, a 5xx or an auth challenge goes
+  to `classify()` (so the `401` `authorization_pending` is `GatewayApprovalPending`), a valid
+  JSON-RPC envelope goes to `jsonrpc_refusal()`, and any other 4xx body is typed only by a
+  built-in discriminator: `403` `access_denied` is `GatewayApprovalDenied`, `403`
+  `{"error":{"code":"agent_killed"}}` is `AgentKilled` (#1670). A 4xx body matching none of them
+  stays the framework's error, never the generic unconfirmed `PolicyViolation`. The per-tool
+  bindings' `tools/session.py` `_refusing` wrapper, `donkey.run()` and `typed_refusals()` all go
+  through `translate()`. On `mcp` 2.x the client raises `MCPError` `-32603` with no status and
+  no body, so nothing there is typed. Offline only: unit tests
+  (`tests/unit/test_refusal_bridge.py`
+  `test_mcp_binding_types_the_gateways_own_http_refusals`) replay the captured §4 bodies
+  (`simulator/_fixtures/rejections/reject.ciba-*`, `reject.agent-killed`) on a binding-marked
+  response; no framework was rerun through the binding client against a step-up server.
 - **`tools/list` is typed.** `open_session`'s response hook reads the body, so
   `GatewayApprovalPending` / `GatewayApprovalDenied` arrive there. `ToolSet.wait_for_gateway_approval()`
   waits on that path (#214). Both are offline only: `tests/unit/test_mcp_client.py`
