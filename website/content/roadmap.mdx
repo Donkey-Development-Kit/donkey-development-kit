@@ -126,10 +126,11 @@ which one is in progress.
   A tool lockfile (`donkey.lock`) for governed MCP tools, a governed outbound
   A2A call path with typed refusals, `simulate_mcp()` and `simulate_a2a()` to
   inject named refusals offline, and a JSON-RPC refusal matcher shared by MCP
-  and A2A. The gateway's MCP and A2A policy refusals are typed and documented,
-  including PII detection, schema validation and tool poisoning, and raw PII
-  echoed in refusal bodies is redacted. What remains open is review follow-up
-  and the docs for promoting the release.
+  and A2A. The gateway's MCP and A2A policy refusals are verified and
+  documented, PII detection and the content-safety blocks are typed, and raw
+  PII echoed in refusal bodies is redacted. Schema-validation and
+  tool-poisoning refusals are captured but stay untyped, because the gateway
+  marks no policy on them.
 </RoadmapPhase>
 
 ## Phase 3 — Platform capabilities
