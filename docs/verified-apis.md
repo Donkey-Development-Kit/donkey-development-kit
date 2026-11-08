@@ -1499,6 +1499,12 @@ uses a stand-in, not a live policy-and-framework round trip. A gate on
 name. `describe` reports the presence of `search_tools` / `invoke_tool` at info
 level without asserting which policy is installed. Discovery stays
 connection-free; the lockfile (#1646) pins the gateway-visible names, below.
+`tests/conformance/test_mcp_gateway_catalog_binding.py` declares the same two
+captured catalogs through `donkey.simulate_mcp()` and binds them with the real
+LangGraph adapter: the bound tools carry exactly the gateway-visible names and
+descriptions (`arithmetic`, not `calculate`; `search_tools` and `invoke_tool`
+only). That is an offline replay of the captured catalogs, not a live
+round trip through a framework.
 
 #### Lockfile contract under Progressive Disclosure and Tool Mapping (#1642, BG §2.7)
 
