@@ -54,12 +54,16 @@ and a second, client-side tool search.
 6. The lock is a drift detector, never access control. The SDK does not refuse
    a call by name because it is unpinned or upstream; the gateway's policies
    enforce.
-7. `lock()`, `discover(locked=True)`, `lock_path=`, `ToolLockDrift` and the file
-   format are Provisional (ADR 0020).
+7. `lock()`, `discover(locked=True)`, the `locked=` and `lock_path=` parameters,
+   `ToolLockDrift` and the file format are all Provisional (ADR 0020).
+   `ToolLockDrift` is a root export by exception, like `A2AFacade` (ADR 0022):
+   it is listed in `donkey_kit.__all__` but does not carry the stable
+   deprecation guarantee. The generated API reference derives this from the
+   `Provisional (ADR 0020)` mark in its docstring.
 
 Rules 1 to 5 are enforced by `tests/unit/test_lockfile.py`,
 `test_toolset_lock.py` and `test_discover_locked.py`. Rule 6 is enforced by
-review. Rule 7 is enforced by the public API snapshot.
+review. Rule 7 is enforced by the public API snapshot and the generated API reference.
 
 ### Alternatives considered
 

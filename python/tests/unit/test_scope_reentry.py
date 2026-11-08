@@ -5,7 +5,8 @@
 object. So a scope built once and entered concurrently restores each entry's
 own state on exit, in either exit order: nothing stays bound after the block
 and no ``ValueError`` about a token from a different context is raised. Nested
-re-entry of one object on one task restores in LIFO order too.
+re-entry of one object on one task restores in LIFO order too, and an
+out-of-order manual exit drops only its own entry (#1674).
 """
 
 from __future__ import annotations
@@ -14,11 +15,13 @@ import asyncio
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from typing import Any
 
 import pytest
 
 from donkey_kit import CacheControls
+from donkey_kit.core._scope_entry import _entries, pop_entry, push_entry
 from donkey_kit.core.cachecontrol import CacheScope, current_cache_controls
 from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.core.correlation import (
@@ -148,3 +151,54 @@ def test_run_scope_restores_the_outer_run_when_reused_inside_it() -> None:
             assert current_correlation_id() == "inner"
         assert current_correlation_id() == "inner"
     assert current_correlation_id() is None
+
+
+# --- out-of-order exit (#1674) -----------------------------------------------
+
+_v: ContextVar[int | None] = ContextVar("test_scope_entry_v", default=None)
+_w: ContextVar[int | None] = ContextVar("test_scope_entry_w", default=None)
+
+
+def test_out_of_order_pop_leaves_no_stale_entry() -> None:
+    a, b = object(), object()
+    push_entry(a, [_v.set(1)])
+    push_entry(b, [_w.set(2)])
+    pop_entry(a)
+    assert (_v.get(), _w.get()) == (None, 2)
+    pop_entry(b)
+    assert (_v.get(), _w.get()) == (None, None)
+    assert _entries.get() == ()
+    # A second exit of A is the documented no-op, not a spent-token RuntimeError.
+    pop_entry(a)
+    pop_entry(b)
+    assert _entries.get() == ()
+
+
+def test_out_of_order_pop_of_three_entries_keeps_the_rest() -> None:
+    a, b, c = object(), object(), object()
+    push_entry(a, [_v.set(1)])
+    push_entry(b, [_w.set(2)])
+    push_entry(c, [])
+    pop_entry(b)
+    assert [e.owner for e in _entries.get()] == [a, c]
+    pop_entry(c)
+    assert [e.owner for e in _entries.get()] == [a]
+    pop_entry(a)
+    assert _entries.get() == ()
+    assert (_v.get(), _w.get()) == (None, None)
+
+
+def test_out_of_order_manual_exit_of_public_scopes() -> None:
+    # The reachable path: manual __enter__/__exit__ in non-LIFO order.
+    user = UserScope(_cfg(), "token-alice")
+    attribution = AttributionScope(business_group="bg-1")
+    user.__enter__()
+    attribution.__enter__()
+    user.__exit__(None, None, None)
+    attribution.__exit__(None, None, None)
+    assert current_user() is None
+    assert current_business_group() is None
+    assert _entries.get() == ()
+    user.__exit__(None, None, None)  # no-op
+    attribution.__exit__(None, None, None)  # no-op
+    assert _entries.get() == ()

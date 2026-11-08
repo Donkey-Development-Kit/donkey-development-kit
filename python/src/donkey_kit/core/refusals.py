@@ -63,10 +63,8 @@ from types import TracebackType
 from typing import Any, ParamSpec, TypeVar, cast
 
 from . import _wire
-from ._refusal_body import json_body, sent_ids
 from .errors import DonkeyError, ResponseLike, classify
-from .jsonrpc_refusals import jsonrpc_refusal, rpc_error, valid_envelope
-from .lastcall import request_id
+from .jsonrpc_refusals import binding_refusal, jsonrpc_refusal, rpc_error
 
 __all__ = [
     "RefusalCapture",
@@ -168,19 +166,7 @@ def _translate_one(exc: BaseException, hooks: tuple[Translator, ...]) -> DonkeyE
                     and governed.status_code < 500
                     and (_wire.WWW_AUTHENTICATE_HEADER not in governed.headers)
                 ):
-                    body = json_body(governed)
-                    correlation, call = sent_ids(governed)
-                    if body is None or not valid_envelope(body):
-                        return None
-                    return jsonrpc_refusal(
-                        body,
-                        status=governed.status_code,
-                        headers=governed.headers,
-                        correlation_id=correlation,
-                        call_id=call,
-                        request_id=request_id(governed),
-                        response=governed,
-                    )
+                    return binding_refusal(governed)
             return classify(governed)
         cause = link.__cause__
         # Probe only this seam: an accessor failure must not replace the error.

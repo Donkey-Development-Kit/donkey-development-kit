@@ -155,7 +155,7 @@ default and recorded only with `telemetry_capture_content=True`, truncated to
 4096 characters. Opt-in permits sensitive content export; it does not sanitize
 the explanation. This recording is **OFFLINE-VERIFIED** against captured v0.3
 headers and mock send/stream IO, not a live facade or streaming evaluation.
-It is available on `develop`, not in published `0.2.0`.
+It is new in 0.2.1.
 
 DDK does not send `X-AGENT-ID` on MCP or A2A calls: its effect on
 `mulesoft_agent_connection_count` attribution has not been verified live.
@@ -472,11 +472,10 @@ donkey = Donkey.from_env(telemetry_capture_content=True)
 [precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence) (set in code → env → config
 files → default) and **defaults to `False`**. When
 enabled, LLM content is emitted under the pinned semconv attribute names
-`gen_ai.prompt` and `gen_ai.completion`. On `develop`, it also permits outbound
+`gen_ai.prompt` and `gen_ai.completion`. New in 0.2.1, it also permits outbound
 A2A quality explanations under `donkey.a2a.quality.explanation`, limited to
 4096 characters. Gateway explanations may repeat request text and are exported
-without sanitization; truncation is not redaction. This A2A behavior is not in
-the published `0.2.0` package.
+without sanitization; truncation is not redaction. This A2A behavior is new in 0.2.1.
 
 When off, prompt/completion attributes are excluded by the LLM span allowlist
 and A2A quality explanation text is omitted by the outbound recorder. Numeric

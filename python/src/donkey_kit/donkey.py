@@ -1581,6 +1581,11 @@ class Donkey:
         refs resolve through Exchange again. Nesting raises ``RuntimeError``.
         Outbound only: for an agent you serve, use ``donkey mock --scenario``.
 
+        The outbound A2A SDK tracing gate applies offline too: with opentelemetry
+        installed and ``OTEL_INSTRUMENTATION_A2A_SDK_ENABLED`` unset, the first
+        call raises ``ConfigError``. Set that variable to ``false`` before
+        importing ``a2a``, or build with ``allow_a2a_sdk_telemetry=True``.
+
         Docs: https://docs.donkey-kit.dev/simulator
         """
         from .simulator.a2a import simulate_declared

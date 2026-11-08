@@ -118,9 +118,13 @@ The SDK does not retry a pending approval on its own. To wait for one while list
 MCP server's tools, use `toolset.wait_for_gateway_approval("2m")`: it re-sends the
 `tools/list` after each `retry_after` until the user approves, raises
 `GatewayApprovalDenied` at once if they deny, and raises the last
-`GatewayApprovalPending` when the timeout passes. A tool *call* is not retried: the
-framework MCP clients lose the response body that tells a pending approval from a bad
-credential, so handle `GatewayApprovalPending` where your framework lets you. `donkey mock
+`GatewayApprovalPending` when the timeout passes. A tool *call* is never retried, and
+whether its answer is typed depends on the installed `mcp` package. On `mcp` 1.x, a tool
+from a per-tool binding, or any call under `donkey.run()` or `typed_refusals()`, raises
+`GatewayApprovalPending`, `GatewayApprovalDenied` or, for the kill switch, `AgentKilled`.
+On `mcp` 2.x the client raises an `MCPError` `-32603` with no status or body, so the
+answer reaches you as the framework's own error. [Step-up on a tool
+call](/hitl#step-up-on-a-tool-call) has the details. `donkey mock
 --scenario ciba:pending=2` plays the sequence offline. [Gateway step-up](/hitl#gateway-step-up)
 covers the whole flow.
 
