@@ -17,7 +17,8 @@ import hashlib
 import json
 import os
 import re
-import tempfile
+import secrets
+import stat
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -134,7 +135,8 @@ def write_lock(lock: Lockfile, path: Path) -> None:
     """Write ``lock`` to ``path`` as sorted, indented JSON with a trailing newline.
 
     The write is atomic: a temporary file beside ``path`` is renamed over it, so
-    a failed write never leaves a truncated lockfile.
+    a failed write never leaves a truncated lockfile. An existing file keeps its
+    permission bits; a new one gets ``0o666`` minus the umask.
 
     Raises:
         OSError: The file or its directory cannot be written.
@@ -153,8 +155,18 @@ def write_lock(lock: Lockfile, path: Path) -> None:
         },
     }
     text = json.dumps(document, sort_keys=True, indent=2) + "\n"
-    handle, temp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    # Not mkstemp: it forces 0600, which would make the lock unreadable to other
+    # users. os.open applies the process umask itself (0o666 & ~umask) without
+    # the process-global, racy os.umask() round-trip.
+    temp = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    handle = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
     try:
+        try:
+            existing: int | None = stat.S_IMODE(path.stat().st_mode)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and hasattr(os, "fchmod"):
+            os.fchmod(handle, existing)
         with os.fdopen(handle, "w", encoding="utf-8") as out:
             out.write(text)
         os.replace(temp, path)
