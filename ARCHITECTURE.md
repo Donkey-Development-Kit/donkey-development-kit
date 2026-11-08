@@ -172,7 +172,7 @@ Beside it:
    `tool_access` → `_policy_spec` → `jsonrpc_refusals` →
    `runledger | step_up | _tool_access` → `approval_types` → `errors` →
   `_refusal_body | lastcall | masking` → `_verify` →
-   `_wire | _response | _budget_headers | _window | _policy_sample`.
+   `_wire | _response | _budget_headers | _window | _policy_sample | _scope_entry`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
   through it. `runledger` holds the run ledger (#613): `correlation` binds one per
   `donkey.run()` block and the transport appends each call's `lastcall` record and
@@ -359,8 +359,8 @@ request either plane sends passes the same origin check.
   unread by core and bypass GenAI scanning. Context exit closes local
   resources and the span, never the remote task or the shared pool. REST,
   gRPC, OAuth completion, resubscription and framework `as_tool()` are not
-  implemented. The facade's intended provisional tier still needs the
-  docstring/snapshot agreement described in ADR 0022. Evidence remains
+  implemented. The facade is the provisional root-export exception
+  (ADR 0022): its docstring and the public-API snapshot agree. Evidence remains
   **OFFLINE-VERIFIED** (ledger §8.5): successful gateway send and SSE are NOT
   live verified by this implementation yet; refusal fixtures do not prove
   streaming success.
