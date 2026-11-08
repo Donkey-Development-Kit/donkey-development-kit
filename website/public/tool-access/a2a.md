@@ -220,8 +220,7 @@ without score, evaluation or explanation headers. This observation does not
 establish an internal evaluator cause or mean that `pending` is failure; those
 failure semantics, v1 evaluation and streaming remain unverified. The selected
 headers are test-only evidence, not a runtime or replay change or live SDK
-facade success. On `develop` (not
-published `0.2.0`), DDK records quality annotations from successful outbound
+facade success. New in 0.2.1, DDK records quality annotations from successful outbound
 POST responses on its [A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans). This recording
 is tested offline, including mock streaming; it is not live facade or streaming
 verification. Explanation text requires `telemetry_capture_content=True`, is

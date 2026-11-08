@@ -55,7 +55,7 @@ def test_packaged_mcp_docs_preserve_replay_boundaries() -> None:
         "15 captured MCP responses",
         "13 policy envelopes",
         "two access-denial header/body pairs",
-        "available on `develop`, not yet in a released package",
+        "These captures are new in 0.2.1",
         "not a `donkey mock` route or a `donkey-sim/` sentinel",
         "not bound-tool `simulate()` injection",
         "no session negotiation or request-ID rewriting",
