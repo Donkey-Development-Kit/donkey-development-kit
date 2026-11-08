@@ -24,7 +24,7 @@ from typing import Any, Literal
 
 import httpx
 
-from ..core import _verify, telemetry
+from ..core import telemetry
 from ..core.approvals import Approvals, NativePause
 from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
@@ -34,6 +34,7 @@ from ..registry.criteria import Check, GovernanceCriteria, GovernanceReport
 from ..registry.exchange import ExchangeRegistry
 from ..registry.models import AssetRef, McpServerHandle
 from .auth import McpAuth, check_gateway_endpoint
+from .lockfile import Lockfile, ToolLockDrift, compare_lock, server_key
 from .session import ToolSet
 
 __all__ = ["Discovery"]
@@ -149,6 +150,7 @@ class Discovery:
         tags: Sequence[str] | None,
         governed: bool | GovernanceCriteria | None,
         auth: McpAuth | None,
+        lock: Lockfile | None = None,
     ) -> ToolSet:
         """See ``ToolsFacade.discover``."""
         if self._simulated is not None:
@@ -170,8 +172,12 @@ class Discovery:
                 # times, so they may outlive this entry by up to one more TTL (#1483).
                 found = await self._fill(key, domain, tags, governed, criteria, fresh=True)
             record(found, hit)
+        servers = list(found.servers)
+        if lock is not None:
+            servers = _pinned(lock, servers)
         return ToolSet(
-            list(found.servers),
+            servers,
+            _lock=lock,
             _natives=self._natives,
             _approval_registry=self._approvals,
             _auth=auth if auth is not None else self._auth,
@@ -465,9 +471,21 @@ def _no_record(_found: _Found, _hit: bool) -> None:
     """The outcome callback when no span is recorded."""
 
 
-def blocked_lock() -> NotImplementedError:
-    """``discover(locked=True)``: pinned resolution waits on the lockfile."""
-    return _verify.blocked(
-        "discover(locked=True): resolving only what donkey.lock pins needs the lockfile "
-        "(BG §2.7, donkey.tools.lock())."
-    )
+def _pinned(lock: Lockfile, servers: list[McpServerHandle]) -> list[McpServerHandle]:
+    """The servers ``lock`` pins; no connection is made (BG §2.7).
+
+    Raises:
+        ToolLockDrift: A pinned server was not discovered.
+    """
+    drift, _ = compare_lock(lock, servers)
+    if drift:
+        raise ToolLockDrift.of(drift)
+    kept = [s for s in servers if server_key(s) in lock.servers]
+    for dropped in servers:
+        if dropped not in kept:
+            _log.warning(
+                "MCP server %s is not pinned in donkey.lock; dropped. "
+                "Re-run donkey.tools.lock() to pin it.",
+                dropped.ref.coordinates,
+            )
+    return kept

@@ -44,7 +44,8 @@ tools = await donkey.tools.discover(
 | `domain` | `str \| None` | Catalog domain. Raises `NotImplementedError` for now: Exchange has no domain filter. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
 | `governed` | `bool \| GovernanceCriteria \| None` | `True` (the default) applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered. |
-| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md)). Raises `NotImplementedError` for now. Default `False`. |
+| `locked` | `bool` | `True` reads `donkey.lock` and checks the set against it: drift raises `ToolLockDrift`, and unpinned tools are dropped (see [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md)). Provisional. Default `False`. |
+| `lock_path` | `str \| PathLike` | The lockfile `locked=True` reads. Default `"donkey.lock"`. |
 | `auth` | `McpAuth \| None` | The gateway credential bindings send. `None` uses the data-plane consumer credential; see [Auth](https://docs.donkey-kit.dev/tool-access/binding.md#auth). |
 
 It reads at most 200 MCP assets, and logs a warning when it reaches that limit;
@@ -315,4 +316,4 @@ tools = await donkey.tools.discover(tags=["erp"])  # cache hit
 ## Related
 
 - [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md) — turn a `ToolSet` into native tools.
-- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md) — pin resolved versions for production.
+- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md) — pin each server's listed tools and fail on drift.

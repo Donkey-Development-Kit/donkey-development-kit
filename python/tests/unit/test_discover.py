@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 import pytest
 
-from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit import DonkeyConfig
 from donkey_kit.core import telemetry
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.errors import AuthError, ConfigError, RegistryError, ToolInvocationError
@@ -338,12 +338,6 @@ async def test_discover_auth_overrides_the_default(monkeypatch: pytest.MonkeyPat
         {"client_id": "cid", "client_secret": "secret"},
         {"Authorization": "Bearer tok"},
     ]
-
-
-async def test_discover_locked_is_blocked() -> None:
-    async with Donkey(_CFG, auth=StaticToken("unused")) as donkey:
-        with pytest.raises(NotImplementedError, match=r"^blocked on verification:"):
-            await donkey.tools.discover(locked=True)
 
 
 # ---- describe() and the bind plan ----------------------------------------------

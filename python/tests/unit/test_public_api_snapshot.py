@@ -88,6 +88,7 @@ ROOT_ALL = [
     "RunRefusal",
     "RunScope",
     "TokenBudgetExceeded",
+    "ToolLockDrift",
     "ToolNotInProfile",
     "ToolSet",
     "ToolSpec",
@@ -155,8 +156,7 @@ MEMBERS = [
     "ToolSet.servers [property]",
     "ToolSet.strands() [async]",
     "ToolSet.wait_for_gateway_approval(timeout='2m')",
-    "ToolsFacade.discover(*, domain=None, tags=None, governed=True, locked=False, auth=None) [async]",
-    "ToolsFacade.lock()",
+    "ToolsFacade.discover(*, domain=None, tags=None, governed=True, locked=False, lock_path='donkey.lock', auth=None) [async]",
     "ToolsFacade.refresh()",
     "ToolsFacade.warm(*, domain=None, tags=None, governed=True) [async]",
 ]
@@ -165,6 +165,7 @@ PROVISIONAL_MEMBERS = [
     "Donkey.a2a [property]",
     "ToolsFacade.live_card(ref) [async]",
     "ToolsFacade.live_tools(ref) [async]",
+    "ToolsFacade.lock(*, tags=None, governed=True, auth=None, path='donkey.lock') [async]",
 ]
 
 
@@ -262,6 +263,15 @@ def test_a2a_facade_is_the_provisional_root_export_exception() -> None:
     assert _is_provisional(donkey_kit.A2AFacade)
     assert "Donkey.a2a [property]" in PROVISIONAL_MEMBERS
     assert _is_provisional(Donkey.a2a)
+
+
+def test_tool_lock_drift_is_a_provisional_root_export() -> None:
+    """ADR 0024: the lockfile's error is a provisional root export, like A2AFacade."""
+    assert "ToolLockDrift" in ROOT_ALL
+    assert _is_provisional(donkey_kit.ToolLockDrift)
+    lock = next(m for m in PROVISIONAL_MEMBERS if m.startswith("ToolsFacade.lock("))
+    assert lock
+    assert _is_provisional(ToolsFacade.lock)
 
 
 def test_every_public_member_is_in_exactly_one_tier_list() -> None:

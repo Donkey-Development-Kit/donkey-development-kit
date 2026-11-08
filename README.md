@@ -179,7 +179,7 @@ Each adapter factory's constructor row in §8 of the ledger reads **live-verifie
 Everything still gated raises `NotImplementedError("blocked on verification: …")`
 rather than guessing at an unverified endpoint, header, or class name. That
 currently covers a `Publication`'s descriptor derivation (`preview()`, `export()`),
-the lockfile (`donkey.tools.lock()`, `discover(locked=True)`), the governed-state
+the governed-state
 search filters (`search(governed=, environment=, domain=)`) and the hidden
 `donkey status` command. Exchange search and the publication of scanned MCP
 servers and agents (`donkey publish`, `donkey verify`) are verified against a

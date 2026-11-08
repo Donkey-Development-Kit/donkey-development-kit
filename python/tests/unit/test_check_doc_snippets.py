@@ -165,9 +165,9 @@ def test_nocheck_fence_is_skipped(tmp_path: Path) -> None:
 
 
 def test_live_page_must_not_call_a_blocked_api(tmp_path: Path) -> None:
-    code = "from donkey_kit import Donkey\nDonkey.from_env().tools.lock()"
+    code = "from donkey_kit import Donkey\nDonkey.from_env().registry.warm()"
     assert _messages(_page(tmp_path / "live", code, status="live")) == [
-        "`ToolsFacade.lock` raises `_verify.blocked` (§0.3), so a `status: live` page "
+        "`ExchangeRegistry.warm` raises `_verify.blocked` (§0.3), so a `status: live` page "
         "must not call it; mark the page `status: roadmap` or drop the call"
     ]
     # Only `live` claims the call works; other statuses document it honestly.
@@ -197,7 +197,7 @@ def test_real_blocked_surfaces_include_the_known_guards() -> None:
     import donkey_kit
 
     found = check.blocked_surfaces(Path(donkey_kit.__file__).parent)
-    assert "donkey_kit.donkey.ToolsFacade.lock" in found
+    assert "donkey_kit.registry.exchange.ExchangeRegistry.warm" in found
     assert "donkey_kit.registry.publication.publish_if_changed" in found
 
 

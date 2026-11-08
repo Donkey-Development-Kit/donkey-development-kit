@@ -55,6 +55,6 @@ def test_mcp_policy_inventory_keeps_partial_evidence_explicit() -> None:
         "source-only",
         "not live-verified",
         "no capture-backed fixture tests",
-        "blocked on verification",
+        "pins this gateway-visible catalog",
     ):
         assert boundary in text, boundary
