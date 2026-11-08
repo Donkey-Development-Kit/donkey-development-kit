@@ -591,9 +591,11 @@ ignore_imports = [
     # implementation is the simulator's base-path-safe inject module (httpx
     # only). The import is lazy, inside the method, so `import donkey_kit` never
     # loads the simulator. Donkey.simulate_mcp() (#1391, ADR 0023) is the same
-    # shape: a lazy import of the base-path-safe simulator.mcp.
+    # shape: a lazy import of the base-path-safe simulator.mcp, and
+    # Donkey.simulate_a2a() (#1652, ADR 0025) of simulator.a2a.
     "donkey_kit.donkey -> donkey_kit.simulator.inject",
     "donkey_kit.donkey -> donkey_kit.simulator.mcp",
+    "donkey_kit.donkey -> donkey_kit.simulator.a2a",
 ]
 
 [[tool.importlinter.contracts]]
@@ -615,10 +617,11 @@ forbidden_modules = [
     "donkey_kit.simulator.**",
 ]
 ignore_imports = [
-    # The lazy Donkey.simulate() and simulate_mcp() imports, as in the layers
-    # contract above.
+    # The lazy Donkey.simulate(), simulate_mcp() and simulate_a2a() imports, as
+    # in the layers contract above.
     "donkey_kit.donkey -> donkey_kit.simulator.inject",
     "donkey_kit.donkey -> donkey_kit.simulator.mcp",
+    "donkey_kit.donkey -> donkey_kit.simulator.a2a",
 ]
 
 [[tool.importlinter.contracts]]

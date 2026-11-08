@@ -24,7 +24,7 @@ from ..core.identity import current_user, user_token_header
 from ..core.inbound import outbound_call
 from ..core.step_up import GatewayAuthChallenge, GatewayAuthRequired
 from ..registry.criteria import GovernanceCriteria
-from ..registry.models import AssetRef
+from ..registry.models import AgentHandle, AssetRef
 from ..tools.auth import McpAuth, check_gateway_endpoint, gateway_auth
 
 if TYPE_CHECKING:
@@ -210,6 +210,45 @@ class A2AFacade:
         self._cfg = cfg
         self._shared = shared
         self._auth = gateway_auth(cfg, llm_auth)
+        # Set only inside donkey.simulate_a2a(): declared agents stand in for the
+        # registry, keyed by coordinates, with the credential they send (#1652).
+        self._simulated: tuple[dict[str, AgentHandle], McpAuth] | None = None
+
+    @contextmanager
+    def simulated(self, agents: Sequence[AgentHandle], *, auth: McpAuth) -> Iterator[None]:
+        """Resolve ``agents`` without the registry until the block exits (#1652,
+        ADR 0025). Inside it, a declared ref skips ``explain()`` and
+        ``resolve_agent()`` and sends ``auth``, with no endpoint check; any other
+        ref raises ``RegistryError``. The caller decides what the endpoints
+        reach. Nesting refuses."""
+        if self._simulated is not None:
+            raise RuntimeError("donkey.simulate_a2a() blocks do not nest")
+        self._simulated = ({a.ref.coordinates: a for a in agents}, auth)
+        try:
+            yield
+        finally:
+            self._simulated = None
+
+    async def _resolve(self, asset: AssetRef, criteria: GovernanceCriteria | None) -> AgentHandle:
+        if self._simulated is not None:
+            handle = self._simulated[0].get(asset.coordinates)
+            if handle is None:
+                raise RegistryError(
+                    f"{asset.coordinates} is not one of the agents this "
+                    "donkey.simulate_a2a() block declares. No request was sent.",
+                    remediation="Add the ref to simulate_a2a(agents=[...]).",
+                )
+            return handle
+        report = await self._registry.explain(asset, criteria=criteria or GovernanceCriteria())
+        if not report.governed:
+            raise RegistryError(
+                "Refusing to call an A2A agent that did not pass governance checks. "
+                "No gateway request was sent.",
+                remediation=(
+                    "Run donkey.registry.explain(ref, criteria=...) to inspect the verdict."
+                ),
+            )
+        return await self._registry.resolve_agent(asset)
 
     @asynccontextmanager
     async def _transport(
@@ -239,18 +278,12 @@ class A2AFacade:
                 "A2A calls require an Exchange asset reference, not a handle or URL."
             )
         asset = AssetRef.parse(ref)
-        report = await self._registry.explain(asset, criteria=criteria or GovernanceCriteria())
-        if not report.governed:
-            raise RegistryError(
-                "Refusing to call an A2A agent that did not pass governance checks. "
-                "No gateway request was sent.",
-                remediation=(
-                    "Run donkey.registry.explain(ref, criteria=...) to inspect the verdict."
-                ),
-            )
-        handle = await self._registry.resolve_agent(asset)
+        simulated = self._simulated
+        handle = await self._resolve(asset, criteria)
         endpoint = handle.endpoint_url
         credential = auth if auth is not None else self._auth
+        if simulated is not None:
+            credential = auth if auth is not None else simulated[1]
 
         with outbound_call(
             telemetry=self._cfg.telemetry,
@@ -260,13 +293,14 @@ class A2AFacade:
 
             async def headers(_request: httpx.Request) -> Mapping[str, str]:
                 user = current_user()
-                check_gateway_endpoint(
-                    self._cfg,
-                    credential=("code" if auth is not None else "config")
-                    if credential is not None
-                    else None,
-                    user=user is not None,
-                )
+                if simulated is None:
+                    check_gateway_endpoint(
+                        self._cfg,
+                        credential=("code" if auth is not None else "config")
+                        if credential is not None
+                        else None,
+                        user=user is not None,
+                    )
                 result = dict(await credential.headers()) if credential is not None else {}
                 if user is not None:
                     name = user_token_header(self._cfg)

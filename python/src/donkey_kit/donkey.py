@@ -1546,6 +1546,47 @@ class Donkey:
 
         return simulate_declared(self, capture, servers, times=times, call_tool=call_tool)
 
+    def simulate_a2a(
+        self,
+        capture: str,
+        *,
+        agents: Sequence[str],
+        version: str = "1.0",
+        times: int = 1,
+        reply: Callable[[str], str] | None = None,
+    ) -> AbstractContextManager[None]:
+        """Inject a captured gateway refusal into outbound A2A calls, no gateway (#1652, BG §1.5).
+
+        Provisional (ADR 0020): ``donkey.a2a`` is provisional, and so is this.
+
+        The A2A counterpart of :meth:`simulate` and :meth:`simulate_mcp`. Inside
+        the block, ``donkey.a2a.send()`` and ``stream()`` resolve the ``agents``
+        you declare instead of reading Exchange, and talk to an offline replay.
+        The next ``times`` calls of the capture's method get the captured
+        refusal named ``capture``; every other call gets a simulated reply::
+
+            with donkey.simulate_a2a("pii-send", agents=["acme/triage/1.0.0"]):
+                await donkey.a2a.send("acme/triage/1.0.0", request)  # raises the captured refusal
+
+        ``capture`` is ``<policy>-<send|stream>``: ``pii``, ``azure-block`` or
+        ``rate`` for ``version="1.0"``; ``pii-send`` or ``rate-send`` for
+        ``version="0.3"``. These are the packaged Omni Gateway captures, injected
+        verbatim with ``x-donkey-simulator: true``; the raised error is what the
+        existing classification gives each one. A ``-send`` capture answers
+        ``send()`` only and a ``-stream`` capture ``stream()`` only.
+
+        ``agents`` lists ``group_id/asset_id/version`` refs; any other ref raises
+        ``RegistryError``. ``reply(text)`` answers a call that is not injected;
+        the default returns one text part. After the block exits, the declared
+        refs resolve through Exchange again. Nesting raises ``RuntimeError``.
+        Outbound only: for an agent you serve, use ``donkey mock --scenario``.
+
+        Docs: https://docs.donkey-kit.dev/simulator
+        """
+        from .simulator.a2a import simulate_declared
+
+        return simulate_declared(self, capture, agents, version=version, times=times, reply=reply)
+
     @property
     def _sync_http(self) -> DonkeyClient | None:
         return self._runtime.built_sync_http

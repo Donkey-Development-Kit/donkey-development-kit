@@ -546,6 +546,54 @@ The request surfaces as a typed [`PromptInjectionBlocked`](https://docs.donkey-k
 `x-injection-protection: blocked` discriminator), so the refusal branch of a
 guardrailed bot is exercised before it faces a real attack.
 
+## Outbound A2A fault injection
+
+`donkey.simulate_a2a()` is the A2A counterpart of
+[`simulate()`](https://docs.donkey-kit.dev/testing.md) and
+[`simulate_mcp()`](#mcp-tool-fault-injection). It makes an agent you **call**
+through [`donkey.a2a`](https://docs.donkey-kit.dev/tool-access/a2a.md) get a captured gateway refusal, with
+no gateway and no Exchange. Like `donkey.a2a`, it is provisional.
+
+```python
+import pytest
+from a2a.types import Message, Part, Role, SendMessageRequest
+from donkey_kit import Donkey, ToolInvocationError
+
+request = SendMessageRequest(
+    message=Message(message_id="m1", role=Role.ROLE_USER, parts=[Part(text="Email a@b.c")])
+)
+
+async def test_delegation_handles_a_pii_block():
+    async with Donkey.from_env() as donkey:
+        with donkey.simulate_a2a("pii-send", agents=["acme/triage-agent/1.0.0"]):
+            with pytest.raises(ToolInvocationError):
+                await donkey.a2a.send("acme/triage-agent/1.0.0", request)
+            # times=1: the next call gets a simulated reply
+            await donkey.a2a.send("acme/triage-agent/1.0.0", request)
+```
+
+- Inside the block, the refs in `agents` resolve without Exchange: no
+  governance read and no endpoint lookup. Any other ref raises
+  `RegistryError`. The agent card and the replies are served offline, through
+  the official SDK's own JSON-RPC transports.
+- A `-send` capture refuses `send()` only, and a `-stream` capture refuses
+  `stream()` only. Every other call gets one text part,
+  `"simulated reply"`, or what `reply(text)` returns.
+- Every injected response carries `x-donkey-simulator: true`. Blocks do not
+  nest, and after the block the refs resolve through Exchange again.
+
+| `capture` | `version="1.0"` | `version="0.3"` | Raised error |
+|---|---|---|---|
+| `pii-send`, `pii-stream` | yes | `pii-send` only | `ToolInvocationError` |
+| `azure-block-send`, `azure-block-stream` | yes | no | `ContentSafetyBlocked` |
+| `rate-send`, `rate-stream` | yes | `rate-send` only | `TokenBudgetExceeded` |
+
+The raised error is whatever the existing classification gives each packaged
+Omni Gateway capture, the same bytes listed in
+[A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md). The rate-limit captures have
+no body, so the error carries headers only. This covers agents you call. For
+an agent you **serve**, use the ingress replay below.
+
 ## A2A ingress replay
 
 See [A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md) for the version-specific

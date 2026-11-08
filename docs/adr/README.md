@@ -96,3 +96,4 @@ is not rewritten.
 | [0022](0022-scoped-a2a-outbound-plane.md) | Outbound A2A uses a scoped credential plane and a provisional facade over the official SDK | Proposed (implementation and API tier enforcement present; user acceptance pending) | #1395 |
 | [0023](0023-simulate-mcp-declared-discovery.md) | `Donkey.simulate_mcp()` answers discovery from declared servers and lazily imports the simulator | Proposed | #1391 |
 | [0024](0024-tool-lockfile-drift-detection.md) | The tool lockfile pins gateway-visible tool descriptors and detects drift; it never controls access | Accepted | #1646 |
+| [0025](0025-simulate-a2a-declared-agents.md) | `Donkey.simulate_a2a()` resolves declared agents offline and lazily imports the simulator | Proposed | #1652 |

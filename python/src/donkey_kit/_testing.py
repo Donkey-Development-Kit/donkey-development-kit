@@ -26,12 +26,13 @@ if TYPE_CHECKING:
     from .core.transport import DonkeyAsyncClient, DonkeyClient
     from .donkey import Donkey
     from .integrations._base import Adapter
-    from .registry.models import McpServerHandle
+    from .registry.models import AgentHandle, McpServerHandle
     from .tools.auth import McpAuth
     from .tools.session import ToolSet
 
 __all__ = [
     "SwappableClient",
+    "a2a_discovery_scope",
     "http_clients",
     "isolated_classify",
     "mcp_discovery_scope",
@@ -99,6 +100,13 @@ def mcp_discovery_scope(
 ) -> contextlib.AbstractContextManager[None]:
     """Make ``donkey.tools`` answer from ``servers`` until exit (#1391, ADR 0023)."""
     return donkey._tools._discovery.simulated(servers, auth=auth, transport=transport)
+
+
+def a2a_discovery_scope(
+    donkey: Donkey, agents: Sequence[AgentHandle], *, auth: McpAuth
+) -> contextlib.AbstractContextManager[None]:
+    """Make ``donkey.a2a`` resolve only ``agents`` until exit (#1652, ADR 0025)."""
+    return donkey._a2a.simulated(agents, auth=auth)
 
 
 @contextlib.contextmanager

@@ -145,9 +145,10 @@ independent siblings (`integrations | a2a`), so neither may import the other
 (ADR 0014).
 
 It is `exhaustive`, so a new top-level module fails `lint-imports` until it is
-placed. Its two ignored imports are `Donkey.simulate()`'s lazy import of
-`simulator.inject` and `Donkey.simulate_mcp()`'s lazy import of
-`simulator.mcp` (ADR 0023): public API whose implementation lives in the
+placed. Its three ignored imports are `Donkey.simulate()`'s lazy import of
+`simulator.inject`, `Donkey.simulate_mcp()`'s lazy import of
+`simulator.mcp` (ADR 0023) and `Donkey.simulate_a2a()`'s lazy import of
+`simulator.a2a` (ADR 0025): public API whose implementation lives in the
 simulator.
 Beside it:
 
