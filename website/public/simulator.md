@@ -88,7 +88,7 @@ sentinel, the scenarios below, one shared budget window, and the
 
 ## MCP tool fault injection
 
-On `develop` (not yet in a released package), `donkey.simulate_mcp()` makes
+New in 0.2.1, `donkey.simulate_mcp()` makes
 your agent's MCP tool calls hit a captured gateway refusal, with no gateway and
 no Exchange. It is the MCP counterpart of `donkey.simulate(PIIDetected)`, which
 still targets model calls only.
@@ -302,8 +302,7 @@ or multiple endpoints, continue supplying your own `httpx.MockTransport`.
 
 Separately, the package data contains **15 captured MCP responses**: 13 policy
 envelopes in `anypoint/mcp_policies` and two access-denial header/body pairs in
-`anypoint/mcp_access`. These captures are available on `develop`, not yet in a
-released package. Use `donkey_kit.simulator.fixtures.fixture_bytes()` to read
+`anypoint/mcp_access`. These captures are new in 0.2.1. Use `donkey_kit.simulator.fixtures.fixture_bytes()` to read
 them without depending on a repository checkout's test files.
 
 This is raw offline replay, not a `donkey mock` route or a `donkey-sim/` sentinel,
