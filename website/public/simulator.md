@@ -110,6 +110,14 @@ with donkey.simulate_mcp("pii-request", servers=servers):
   descriptors. A descriptor without `inputSchema` gets an empty object schema.
   Declared servers are marked governed by a `simulated` check, and
   `discover()`'s filters are not applied to them.
+- `discover(locked=True)` checks the declared servers against `donkey.lock`
+  as it does at a live gateway, so you can test drift offline. A missing lock
+  raises `ConfigError`. A pinned server you did not declare raises
+  `ToolLockDrift`, and a declared server or tool the lock does not pin is
+  dropped. A tool you declare with a different descriptor raises
+  `ToolLockDrift` when the set binds. Call `donkey.tools.lock(path=...)` inside
+  the block to pin the declared servers. See
+  [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md).
 - `times=1` (the default) counts injected requests. After that, a `tools/call`
   is answered by `call_tool(name, arguments)`. If you pass no `call_tool`, the
   answer is a single text item.
