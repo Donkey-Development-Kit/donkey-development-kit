@@ -5338,10 +5338,33 @@ again. A longer timeout can therefore prompt the user more than once for the
 same listing, so `wait_for_gateway_approval()` emits a `ConfigWarning`
 (`donkey_kit.core.errors.ConfigWarning`) when you pass one.
 
-A tool *call* is neither typed nor retried. The framework MCP clients DDK binds
-to drop the response body, so a pending approval on `tools/call` reaches your
-code as the framework's own error, or as an error result, and looks the same as
-a refused credential. Handle it where your framework lets you.
+### Step-up on a tool call
+
+A tool *call* is never retried, and whether its step-up answer is typed depends
+on the version of the `mcp` package installed with your framework, not on the
+framework:
+
+- **`mcp` 1.x** (LangGraph's `langchain-mcp-adapters` runs on it): the client
+  raises an `httpx.HTTPStatusError`, and the HTTP client DDK hands the binding
+  reads the error body. A tool from a per-tool binding (`langgraph()`,
+  `llamaindex()`, `anthropic()`) then raises the gateway's answer typed, as in
+  the table above: `GatewayApprovalPending` for the `401`,
+  `GatewayApprovalDenied` for the `403`, and `AgentKilled` for a kill-switch
+  `403`. So does any block under `donkey.run()`, `@donkey.governed` or
+  `typed_refusals()`. Nothing is sent again: to wait for the user, call the
+  tool again after `retry_after`.
+- **`mcp` 2.x** (the current release, which most other frameworks install):
+  the client turns any HTTP error into an `MCPError` with code `-32603`, with
+  no status and no body, or into an error result. DDK cannot tell a step-up
+  from any other failure, so it reaches your code as the framework's own error
+  or result. Handle it where your framework lets you.
+
+A `403` from the MCP server whose body matches none of these shapes stays the
+framework's error. It is not turned into a generic `PolicyViolation`.
+
+The typed `mcp` 1.x path is checked offline, against the captured gateway
+answers. No framework client has been run against a live step-up on
+`tools/call`.
 
   **A CrewAI tool call behind step-up hangs.** Against a local replay of the
   gateway's pending answer, CrewAI's MCP adapter thread stopped on the `401`
