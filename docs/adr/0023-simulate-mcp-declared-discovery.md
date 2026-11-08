@@ -78,5 +78,12 @@ Two questions needed a decision:
   documented for a hand-built `ToolSet`.
 - The public API snapshot gains `Donkey.simulate_mcp`. The acceptance repo
   tracks the new member (ddk-acceptance-sync).
+- `discover(locked=True)` inside the block applies the ADR 0024 lock to the
+  declared servers, as a live `discover()` does (#1671). It still requires
+  the lockfile (`ConfigError` without one). A pinned server that is not
+  declared raises `ToolLockDrift`, and an unpinned server or tool is dropped.
+  The set checks each declared `tools/list` against the lock when it is
+  described or bound. Rule 2's "filters are not applied" covers `domain=`,
+  `tags=` and `governed=`, not the lock.
 - `simulate_a2a` (#1652) should follow rules 1, 3 and 4. If it needs a
   different discovery rule, it gets its own ADR.
