@@ -59,7 +59,7 @@ def mcp_baseline(
     resources, prompts or network fallback is provided.
 
     The transport accepts only the exact ``url`` and remains caller-owned.
-    See https://donkeydevelopmentkit.com/simulator for an example.
+    See https://docs.donkey-kit.dev/simulator for an example.
     """
     if not isinstance(server_protocol_version, str) or not server_protocol_version.strip():
         raise ValueError("server_protocol_version must be a non-empty version string")

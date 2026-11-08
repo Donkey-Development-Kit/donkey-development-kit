@@ -1,6 +1,6 @@
 # ADR 0023: `Donkey.simulate_mcp()` answers discovery from declared servers and lazily imports the simulator
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-07
 - **Issue:** #1391
 
