@@ -571,7 +571,7 @@ request = SendMessageRequest(
 )
 
 async def test_delegation_handles_a_pii_block():
-    async with Donkey.from_env() as donkey:
+    async with Donkey.from_env(allow_a2a_sdk_telemetry=True) as donkey:
         with donkey.simulate_a2a("pii-send", agents=["acme/triage-agent/1.0.0"]):
             with pytest.raises(ToolInvocationError):
                 await donkey.a2a.send("acme/triage-agent/1.0.0", request)
@@ -588,6 +588,12 @@ async def test_delegation_handles_a_pii_block():
   `"simulated reply"`, or what `reply(text)` returns.
 - Every injected response carries `x-donkey-simulator: true`. Blocks do not
   nest, and after the block the refs resolve through Exchange again.
+- The outbound [A2A SDK tracing gate](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans) applies
+  offline too. With opentelemetry installed (the `[otel]` and `[all]` extras)
+  and `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED` unset, the first call raises
+  `ConfigError` instead of the refusal. Set the variable to `false` before
+  importing `a2a` (for example in `conftest.py`), or build the client with
+  `Donkey.from_env(allow_a2a_sdk_telemetry=True)`.
 
 | `capture` | `version="1.0"` | `version="0.3"` | Raised error |
 |---|---|---|---|
