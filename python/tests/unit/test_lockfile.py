@@ -5,6 +5,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
+import stat
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +81,32 @@ def test_round_trip(tmp_path: Path) -> None:
     document = json.loads(text)
     assert document["version"] == 1
     assert document["digest"] == "sha256"
+
+
+_posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+
+
+@_posix_only
+def test_new_lock_honours_umask(tmp_path: Path) -> None:
+    lock = build_lock([_server(_catalog("progressive"))])
+    path = tmp_path / "donkey.lock"
+    old = os.umask(0o022)
+    try:
+        write_lock(lock, path)
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o644
+
+
+@_posix_only
+def test_rewrite_preserves_existing_mode(tmp_path: Path) -> None:
+    lock = build_lock([_server(_catalog("progressive"))])
+    path = tmp_path / "donkey.lock"
+    path.write_text("{}", encoding="utf-8")
+    path.chmod(0o664)
+    write_lock(lock, path)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o664
+    assert read_lock(path) == lock
 
 
 def test_read_missing_lock(tmp_path: Path) -> None:
