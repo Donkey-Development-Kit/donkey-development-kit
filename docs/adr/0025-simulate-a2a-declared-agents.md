@@ -1,6 +1,6 @@
 # ADR 0025: `Donkey.simulate_a2a()` resolves declared agents offline and lazily imports the simulator
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-07
 - **Issue:** #1652
 

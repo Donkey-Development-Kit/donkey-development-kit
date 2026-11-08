@@ -22,6 +22,10 @@ even though it is importable from `donkey_kit` and listed in
 `donkey_kit.__all__`. The facade's send/stream signatures and the accessor
 may change in a minor release with a migration note.
 
+`ToolLockDrift` is also **provisional** (ADR 0020):
+a root export by exception, not covered by the stable deprecation guarantee,
+and may change in a minor release with a migration note.
+
 `donkey_kit.core` and the other public submodules are **provisional**: they
 are documented and may change in a minor release, with a migration note.
 Some types you meet through a stable object live there, such as
