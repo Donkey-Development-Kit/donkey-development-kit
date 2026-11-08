@@ -1164,6 +1164,22 @@ as do `agents-strands-last-call`, `agent-framework-middleware`, and
 simulator and mock transports, not a new live gateway round-trip. Historical
 live evidence and verification statuses remain unchanged.
 
+#### MS Agent Framework release re-check (2026-11-08, #1659)
+
+The MS Agent Framework contract lock now selects `agent-framework==1.25.0`,
+`agent-framework-core==1.25.0` and `agent-framework-openai==1.18.1`, with
+`openai==3.46.0` (the lock moved in #1664 together with its co-bumped
+`agent-framework-*` packages). On Python 3.12, `verify_frameworks.py --only
+agent_framework agent_framework.responses --require-installed --emit-verified`
+confirms construction and the expected native class for both
+`OpenAIChatCompletionClient` and `OpenAIChatClient`. `nox -s
+'adapter-contract(agent_framework)'` passes (5,967 passed, 400 skipped,
+28 deselected), including the strict example smoke, and `nox -s
+agent-framework-middleware` passes (97 passed, 69 skipped). The 1.25.0 release
+notes were not otherwise inspected. These are offline checks against the local
+simulator and mock transports, not a new live gateway round-trip. Historical
+live evidence and verification statuses remain unchanged.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
