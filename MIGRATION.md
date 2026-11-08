@@ -3,9 +3,10 @@
 <!-- toc -->
 **Contents**
 
-- [0.2.1: CLI argument swap and an async lock()](#021-cli-argument-swap-and-an-async-lock)
+- [0.2.1: CLI argument swap, an async lock() and narrower refusal types](#021-cli-argument-swap-an-async-lock-and-narrower-refusal-types)
   - [1. donkey expose and donkey preflight take the path, not the service](#1-donkey-expose-and-donkey-preflight-take-the-path-not-the-service)
   - [2. donkey.tools.lock() is async](#2-donkeytoolslock-is-async)
+  - [3. Some refusals get a narrower type](#3-some-refusals-get-a-narrower-type)
   - [New in 0.2.1 (not breaking)](#new-in-021-not-breaking)
 - [0.2.0: governed tools, publishing, approvals and more typed refusals](#020-governed-tools-publishing-approvals-and-more-typed-refusals)
   - [1. A CIBA approval response is GatewayApprovalPending or GatewayApprovalDenied](#1-a-ciba-approval-response-is-gatewayapprovalpending-or-gatewayapprovaldenied)
@@ -69,10 +70,11 @@
   - [17. donkey-kit[all] leaves out the seven connection_kwargs() frameworks](#17-donkey-kitall-leaves-out-the-seven-connection_kwargs-frameworks)
 <!-- tocstop -->
 
-## 0.2.1: CLI argument swap and an async lock()
+## 0.2.1: CLI argument swap, an async lock() and narrower refusal types
 
-Two changes since `0.2.0` can affect existing code. Neither touches the
-library's model, registry or governed-call paths.
+Three changes since `0.2.0` can affect existing code. The first two touch only
+the CLI and `donkey.tools.lock()`. The third changes which exception type a few
+gateway refusals raise.
 
 ### 1. `donkey expose` and `donkey preflight` take the path, not the service
 
@@ -118,13 +120,41 @@ path = await donkey.tools.lock(tags=["inventory"])
 
 See [Pinning & lockfile](/tool-access/lockfile).
 
+### 3. Some refusals get a narrower type
+
+**Who:** code that catches a specific exception type, or checks
+`type(err) is ...`, on the responses below. `except PolicyViolation` and
+`except DonkeyError` still catch every refusal on this list except the
+missing-model `400`.
+
+| Response | 0.2.0 | 0.2.1 |
+|---|---|---|
+| LLM proxy `400` "Missing 'model' field in request" (#1547) | unconfirmed `PolicyViolation` | `ModelNotRoutable`, `.model` is `None` |
+| A2A v1 Bedrock Guardrails block (#1630) | `ToolInvocationError` | `ContentSafetyBlocked`, `provider="bedrock-guardrails"` |
+| A2A Azure Content Safety reject, `x-flex-azure-guardrails-action: reject` (#1394) | `ToolInvocationError` | `ContentSafetyBlocked`, `provider="azure-content-safety"` |
+| MCP PII Detector `403` (#1386) | the framework's raw error | `PIIDetected`, with `.phase` and `.findings` |
+| CIBA denial or kill-switch `403` on a per-tool MCP binding (#1670) | the framework's raw error | `GatewayApprovalDenied` or `AgentKilled` |
+
+**Fix:** catch the new type, or keep catching `PolicyViolation`. The
+missing-model `400` is the one exception: `ModelNotRoutable` is not a
+`PolicyViolation`, so code that caught it as `PolicyViolation` must catch
+`ModelNotRoutable` instead. MCP
+schema-validation and tool-poisoning refusals are unchanged, and stay the
+framework's error.
+
 ### New in 0.2.1 (not breaking)
 
 - `donkey.simulate_mcp()` and the packaged MCP captures in the simulator.
+- `donkey.simulate_a2a()`, which injects a captured gateway refusal into
+  outbound A2A calls. It is provisional.
 - Outbound A2A calls, `GatewayAuthChallenge`, and A2A quality annotations on
   `donkey.a2a.call` spans. Explanation text needs
   `telemetry_capture_content=True`.
+- `jsonrpc_refusal()`, which types a JSON-RPC policy refusal shared by MCP and
+  A2A.
 - `donkey.tools.lock()` and `discover(locked=True)`.
+- `donkey dev` replays A2A instance rejections, and serves A2A v0.3 with
+  `--protocol-version 0.3.0`.
 
 ## 0.2.0: governed tools, publishing, approvals and more typed refusals
 
