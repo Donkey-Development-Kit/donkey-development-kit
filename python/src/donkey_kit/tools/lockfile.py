@@ -157,9 +157,11 @@ def write_lock(lock: Lockfile, path: Path) -> None:
     text = json.dumps(document, sort_keys=True, indent=2) + "\n"
     # Not mkstemp: it forces 0600, which would make the lock unreadable to other
     # users. os.open applies the process umask itself (0o666 & ~umask) without
-    # the process-global, racy os.umask() round-trip.
+    # the process-global, racy os.umask() round-trip. O_BINARY (Windows only)
+    # matches what mkstemp did, so the text wrapper below does not yield \r\r\n.
     temp = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
-    handle = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    handle = os.open(temp, flags, 0o666)
     try:
         try:
             existing: int | None = stat.S_IMODE(path.stat().st_mode)
