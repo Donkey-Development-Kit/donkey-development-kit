@@ -1164,6 +1164,18 @@ as do `agents-strands-last-call`, `agent-framework-middleware`, and
 simulator and mock transports, not a new live gateway round-trip. Historical
 live evidence and verification statuses remain unchanged.
 
+#### LiteLLM release re-check (2026-11-08, #1658)
+
+The ADK contract lock now selects `litellm==1.108.3` (patch bump from 1.108.2),
+with `google-adk==2.14.0` and `openai==3.46.0`. On Python 3.12,
+`verify_frameworks.py --only adk --require-installed --emit-verified` confirms
+both the LiteLLM and Gemini constructors and their expected native classes
+(`GovernedLiteLlm`, `GovernedGemini`). `nox -s 'adapter-contract(adk)'` passes
+(5,563 passed, 674 skipped, 28 deselected), including the strict example smoke.
+The 1.108.3 release notes were not otherwise inspected. These are offline checks
+against the local simulator and mock transports, not a new live gateway
+round-trip. Historical live evidence and verification statuses remain unchanged.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always

@@ -5527,8 +5527,7 @@ delegation, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) to make y
   the v1 transport there.
   A refusal to a streaming method before SSE starts does not prove streaming success.
 
-The outbound facade and auth-challenge types are available on `develop`, not
-yet in published `0.2.0`. `A2AFacade` is provisional; framework-native
+The outbound facade and auth-challenge types are new in 0.2.1. `A2AFacade` is provisional; framework-native
 `AgentHandle.as_tool()` binding remains planned.
 
 ## Protocol versions
@@ -5629,7 +5628,7 @@ DDK records known evaluation/status values and finite numeric scores on
 `donkey.a2a.call` spans from successful delegation HTTP responses. Explanations
 require `telemetry_capture_content=True` and are limited to 4096 characters;
 they can repeat sensitive request content. This recording is **OFFLINE-VERIFIED**,
-available on `develop` but not published `0.2.0`. See the
+new in 0.2.1. See the
 [quality span contract](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans).
 
 Agent Card URL rewriting is **VERIFIED (LIVE)** for one JSONRPC card GET with
@@ -5859,7 +5858,7 @@ default and recorded only with `telemetry_capture_content=True`, truncated to
 4096 characters. Opt-in permits sensitive content export; it does not sanitize
 the explanation. This recording is **OFFLINE-VERIFIED** against captured v0.3
 headers and mock send/stream IO, not a live facade or streaming evaluation.
-It is available on `develop`, not in published `0.2.0`.
+It is new in 0.2.1.
 
 DDK does not send `X-AGENT-ID` on MCP or A2A calls: its effect on
 `mulesoft_agent_connection_count` attribution has not been verified live.
@@ -6176,11 +6175,10 @@ donkey = Donkey.from_env(telemetry_capture_content=True)
 [precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence) (set in code → env → config
 files → default) and **defaults to `False`**. When
 enabled, LLM content is emitted under the pinned semconv attribute names
-`gen_ai.prompt` and `gen_ai.completion`. On `develop`, it also permits outbound
+`gen_ai.prompt` and `gen_ai.completion`. New in 0.2.1, it also permits outbound
 A2A quality explanations under `donkey.a2a.quality.explanation`, limited to
 4096 characters. Gateway explanations may repeat request text and are exported
-without sanitization; truncation is not redaction. This A2A behavior is not in
-the published `0.2.0` package.
+without sanitization; truncation is not redaction. This A2A behavior is new in 0.2.1.
 
 When off, prompt/completion attributes are excluded by the LLM span allowlist
 and A2A quality explanation text is omitted by the outbound recorder. Numeric
@@ -6733,7 +6731,7 @@ sentinel, the scenarios below, one shared budget window, and the
 
 ## MCP tool fault injection
 
-On `develop` (not yet in a released package), `donkey.simulate_mcp()` makes
+New in 0.2.1, `donkey.simulate_mcp()` makes
 your agent's MCP tool calls hit a captured gateway refusal, with no gateway and
 no Exchange. It is the MCP counterpart of `donkey.simulate(PIIDetected)`, which
 still targets model calls only.
@@ -6947,8 +6945,7 @@ or multiple endpoints, continue supplying your own `httpx.MockTransport`.
 
 Separately, the package data contains **15 captured MCP responses**: 13 policy
 envelopes in `anypoint/mcp_policies` and two access-denial header/body pairs in
-`anypoint/mcp_access`. These captures are available on `develop`, not yet in a
-released package. Use `donkey_kit.simulator.fixtures.fixture_bytes()` to read
+`anypoint/mcp_access`. These captures are new in 0.2.1. Use `donkey_kit.simulator.fixtures.fixture_bytes()` to read
 them without depending on a repository checkout's test files.
 
 This is raw offline replay, not a `donkey mock` route or a `donkey-sim/` sentinel,
@@ -8104,10 +8101,17 @@ published version.
 ### `donkey expose`
 
 ```bash
-donkey preflight sku-manager           # what expose would do; reads only
-donkey expose sku-manager --dry-run    # the same
-donkey expose sku-manager              # publish, create, add policies, deploy
+donkey preflight --service sku-manager          # what expose would do; reads only
+donkey expose --service sku-manager --dry-run   # the same
+donkey expose --service sku-manager             # publish, create, add policies, deploy
 ```
+
+The argument is the path to scan (`.` by default), and `--service` names the
+service, which you can leave out when the project has exactly one. The 0.2.0
+form, with the service ID as the argument (`donkey preflight sku-manager`), still
+works until 0.3.0: when nothing is at that path and the project has a service
+with that ID, the command reads it as `--service` and prints a deprecation
+warning.
 
 Puts one MCP server or A2A agent behind a gateway that already exists, in the
 environment `ANYPOINT_ENV` (or `--env`) names. It runs one step at a time and
@@ -9864,8 +9868,7 @@ without score, evaluation or explanation headers. This observation does not
 establish an internal evaluator cause or mean that `pending` is failure; those
 failure semantics, v1 evaluation and streaming remain unverified. The selected
 headers are test-only evidence, not a runtime or replay change or live SDK
-facade success. On `develop` (not
-published `0.2.0`), DDK records quality annotations from successful outbound
+facade success. New in 0.2.1, DDK records quality annotations from successful outbound
 POST responses on its [A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans). This recording
 is tested offline, including mock streaming; it is not live facade or streaming
 verification. Explanation text requires `telemetry_capture_content=True`, is
@@ -16432,14 +16435,14 @@ In code, `Donkey.from_env(send_cost_headers=True)`.
 | Env var | `DonkeyConfig` field | Meaning |
 |---|---|---|
 | `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
-| `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans; on `develop`, also permit outbound A2A quality explanations (default **`false`**). |
+| `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans; since 0.2.1, also permit outbound A2A quality explanations (default **`false`**). |
 | `DONKEY_TELEMETRY_INSTALL_GLOBAL` | `telemetry_install_global` | Install DDK's OTLP provider as the process-global OpenTelemetry provider (default **`false`**). See [DDK leaves the global provider to you](https://docs.donkey-kit.dev/telemetry.md#ddk-leaves-the-global-provider-to-you). |
 | `DONKEY_ALLOW_A2A_SDK_TELEMETRY` | `allow_a2a_sdk_telemetry` | Permit outbound A2A calls with enabled SDK tracing (default **`false`**), accepting that it may export sensitive diagnostics. Independent of DDK's `telemetry` setting. |
 
 `telemetry_capture_content` defaults to `false` on purpose: spans are emitted
 inside your process, **upstream of the gateway's PII masking**, so capturing
 content re-exports the very text the platform masks. Enable it only for a
-trusted collector. On `develop` (not published `0.2.0`), the same opt-in also
+trusted collector. New in 0.2.1, the same opt-in also
 exports gateway quality explanations on outbound A2A spans. These may repeat
 request text and are not sanitized; they are truncated to 4096 characters,
 which is not redaction. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md).
