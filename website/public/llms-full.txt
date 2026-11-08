@@ -6728,6 +6728,14 @@ with donkey.simulate_mcp("pii-request", servers=servers):
   descriptors. A descriptor without `inputSchema` gets an empty object schema.
   Declared servers are marked governed by a `simulated` check, and
   `discover()`'s filters are not applied to them.
+- `discover(locked=True)` checks the declared servers against `donkey.lock`
+  as it does at a live gateway, so you can test drift offline. A missing lock
+  raises `ConfigError`. A pinned server you did not declare raises
+  `ToolLockDrift`, and a declared server or tool the lock does not pin is
+  dropped. A tool you declare with a different descriptor raises
+  `ToolLockDrift` when the set binds. Call `donkey.tools.lock(path=...)` inside
+  the block to pin the declared servers. See
+  [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md).
 - `times=1` (the default) counts injected requests. After that, a `tools/call`
   is answered by `call_tool(name, arguments)`. If you pass no `call_tool`, the
   answer is a single text item.
@@ -9568,6 +9576,16 @@ change, review it, then run `donkey.tools.lock()` again.
   `donkey.as_user()`, or an access rule scoped to one client. That caller gets
   `ToolLockDrift` with `kind="tool_missing"`. Lock with the identity your
   agent runs as.
+
+## Test drift offline
+
+Inside a [`donkey.simulate_mcp()`](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection)
+block, `discover(locked=True)` checks the declared servers against the lock
+with the same rules as the table above. Declare the servers your lock pins,
+then change a descriptor or leave a server out to make the test raise
+`ToolLockDrift`. `donkey.tools.lock(path=...)` inside the block writes a lock
+of the declared servers. The lockfile still has to exist: without one,
+`discover(locked=True)` raises `ConfigError`, as it does outside the block.
 
 ## Verification status
 
