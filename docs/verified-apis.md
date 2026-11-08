@@ -47,9 +47,10 @@
 > unrecognised content-moderation shape (§4, the fall-through;
 > federated-guardrail verdicts are tracked in #305), the business-group
 > attribution header and the inbound correlation id on a served request (§3),
-> and which policies are Connected-Mode-only (§6). The lockfile (BG §2.7) and
-> the governed-state search filters (`search(governed=, environment=,
-> domain=)`, §6, §7) keep their code guards. §11
+> and which policies are Connected-Mode-only (§6). The governed-state search
+> filters (`search(governed=, environment=, domain=)`, §6, §7) keep their code
+> guards. The lockfile (BG §2.7) shipped in #1646 on the §9 contract settled by
+> #1642. §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
 > code path was wired to them.
@@ -1497,7 +1498,7 @@ uses a stand-in, not a live policy-and-framework round trip. A gate on
 `invoke_tool` covers every invocation of that meta-tool, not one nested tool
 name. `describe` reports the presence of `search_tools` / `invoke_tool` at info
 level without asserting which policy is installed. Discovery stays
-connection-free, and the lockfile verification guards remain unchanged.
+connection-free; the lockfile (#1646) pins the gateway-visible names, below.
 
 #### Lockfile contract under Progressive Disclosure and Tool Mapping (#1642, BG §2.7)
 
@@ -1527,9 +1528,14 @@ upstream name is never recorded, because the gateway does not expose the mapping
 table.
 
 **Decision.** The wire contract above is settled, and nothing further needs an
-Anypoint sandbox. The `blocked_lock()` guard stays in place: what remains is SDK
-design and code (file format, location, `lock()` and `discover(locked=True)`
-semantics), tracked as a follow-up rather than guessed here. The raw upstream
+Anypoint sandbox. The SDK side shipped in #1646, which removed the
+`blocked_lock()` guard: `donkey.tools.lock()` writes `./donkey.lock` (JSON,
+`"version": 1`, `"digest": "sha256"`, servers keyed `group_id/asset_id`, each
+tool's digest over its contract fields), and
+`discover(locked=True)` raises `ToolLockDrift` on a removed or changed pinned
+tool or a missing pinned server, and drops unpinned tools (`reason="unpinned"`).
+Its tests replay recorded `tools/list` catalogs; a full live `lock()` then
+`discover(locked=True)` round trip is not recorded yet. The raw upstream
 name staying callable means a lock is a drift detector, not an access control:
 enforcement stays with the gateway's own policies.
 

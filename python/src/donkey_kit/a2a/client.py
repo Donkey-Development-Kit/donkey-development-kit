@@ -217,7 +217,7 @@ class A2AFacade:
     @contextmanager
     def simulated(self, agents: Sequence[AgentHandle], *, auth: McpAuth) -> Iterator[None]:
         """Resolve ``agents`` without the registry until the block exits (#1652,
-        ADR 0024). Inside it, a declared ref skips ``explain()`` and
+        ADR 0025). Inside it, a declared ref skips ``explain()`` and
         ``resolve_agent()`` and sends ``auth``, with no endpoint check; any other
         ref raises ``RegistryError``. The caller decides what the endpoints
         reach. Nesting refuses."""

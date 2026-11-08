@@ -88,6 +88,7 @@ if TYPE_CHECKING:
     from .llm.client import LLMClient
     from .registry import ExchangeRegistry, GovernanceCriteria
     from .tools.auth import McpAuth
+    from .tools.lockfile import ToolLockDrift
     from .tools.session import ToolSet, UngovernedMcpServer
 
 # The public names resolve lazily (PEP 562): ``import donkey_kit`` loads no
@@ -149,6 +150,7 @@ _LAZY = {
     "RequestRateLimitExceeded": ".core.errors",
     "RunScope": ".core.telemetry",
     "TokenBudgetExceeded": ".core.errors",
+    "ToolLockDrift": ".tools.lockfile",
     "ToolNotInProfile": ".core.tool_access",
     "ToolSet": ".tools.session",
     "ToolSpec": ".core.toolspec",
@@ -274,6 +276,7 @@ __all__ = [
     "RunRefusal",
     "RunScope",
     "TokenBudgetExceeded",
+    "ToolLockDrift",
     "ToolNotInProfile",
     "ToolSet",
     "ToolSpec",

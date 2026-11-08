@@ -134,8 +134,8 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
   
     **Purpose:** discover governed MCP tools from the catalog and bind them as
     native framework tools. **Advantage:** allow/deny filtering and approval
-    gates, with pinning and a lockfile on the Roadmap — only governed tools
-    reach your agent.
+    gates, and a `donkey.lock` that turns catalog drift into a typed error —
+    only governed tools reach your agent.
   
   
     **Purpose:** `donkey.serve()` makes your agent callable by other agents in

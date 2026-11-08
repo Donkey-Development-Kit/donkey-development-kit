@@ -1,6 +1,6 @@
 """Offline outbound A2A capture injection for ``donkey.simulate_a2a()`` (BG §1.4 / §1.5, #1652).
 
-Declared agents stand in for the registry inside the block (ADR 0024). Their
+Declared agents stand in for the registry inside the block (ADR 0025). Their
 endpoints live on the reserved ``.invalid`` host, and one transport fronts the
 shared async client: it answers that host with the packaged Omni Gateway
 capture (#1393) for the next ``times`` matching calls, and an offline agent

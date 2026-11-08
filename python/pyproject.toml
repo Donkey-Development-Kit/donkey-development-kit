@@ -592,7 +592,7 @@ ignore_imports = [
     # only). The import is lazy, inside the method, so `import donkey_kit` never
     # loads the simulator. Donkey.simulate_mcp() (#1391, ADR 0023) is the same
     # shape: a lazy import of the base-path-safe simulator.mcp, and
-    # Donkey.simulate_a2a() (#1652, ADR 0024) of simulator.a2a.
+    # Donkey.simulate_a2a() (#1652, ADR 0025) of simulator.a2a.
     "donkey_kit.donkey -> donkey_kit.simulator.inject",
     "donkey_kit.donkey -> donkey_kit.simulator.mcp",
     "donkey_kit.donkey -> donkey_kit.simulator.a2a",

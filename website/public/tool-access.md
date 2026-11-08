@@ -18,7 +18,7 @@ agent = create_react_agent(donkey.langgraph.chat_model("gpt-4o"), await tools.la
 ```
 
 Everything else in this section — search filters, session management,
-per-framework binding and planned lockfile pinning — makes those two lines
+per-framework binding and lockfile pinning — makes those two lines
 hold up in production.
 
 [Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md) is separate: `donkey.a2a.send()` and
@@ -54,7 +54,7 @@ Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-a
     Turn a `ToolSet` into each framework's own native tool objects.
   
   
-    Pin resolved versions and digests so a run is reproducible.
+    Pin each server's listed tools in `donkey.lock` and fail on drift.
   
   
     Send SDK requests and stream SDK events through a registry-pinned gateway.

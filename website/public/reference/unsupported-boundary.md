@@ -112,8 +112,8 @@ tool calls.
 
 ## Deliberately outside the boundary
 
-- `Publication.preview()` and `Publication.export()`, `donkey.tools.lock()`
-  and `donkey.registry.warm()` are Roadmap, not
+- `Publication.preview()`, `Publication.export()` and
+  `donkey.registry.warm()` are Roadmap, not
   hidden dependencies. Today they raise
   `NotImplementedError("blocked on verification: …")` before making any
   network request, so they are not classified above.

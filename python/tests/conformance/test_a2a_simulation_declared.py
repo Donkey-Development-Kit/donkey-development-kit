@@ -1,4 +1,4 @@
-"""``Donkey.simulate_a2a()``: declared agents called offline via the SDK (#1652, ADR 0024)."""
+"""``Donkey.simulate_a2a()``: declared agents called offline via the SDK (#1652, ADR 0025)."""
 
 from __future__ import annotations
 

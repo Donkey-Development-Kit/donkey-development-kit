@@ -151,8 +151,9 @@ A filter or approval rule naming a hidden upstream name raises `ConfigError`
 when tools are listed. See [Gateway-visible catalogs](https://docs.donkey-kit.dev/tool-access/binding.md#gateway-visible-catalogs).
 
 Discovery stays connection-free; `describe()` or binding reads the tool catalog.
-Neither `donkey.tools.lock()` nor `discover(locked=True)` pins this catalog today:
-both remain [blocked on verification](https://docs.donkey-kit.dev/tool-access/lockfile.md).
+[`donkey.tools.lock()`](https://docs.donkey-kit.dev/tool-access/lockfile.md) pins this gateway-visible catalog: the
+mapped name under Tool Mapping, and `search_tools` and `invoke_tool` under
+Progressive Disclosure.
 
 ## MCP Payload Optimization
 

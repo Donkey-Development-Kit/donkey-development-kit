@@ -105,7 +105,7 @@ def mcp_discovery_scope(
 def a2a_discovery_scope(
     donkey: Donkey, agents: Sequence[AgentHandle], *, auth: McpAuth
 ) -> contextlib.AbstractContextManager[None]:
-    """Make ``donkey.a2a`` resolve only ``agents`` until exit (#1652, ADR 0024)."""
+    """Make ``donkey.a2a`` resolve only ``agents`` until exit (#1652, ADR 0025)."""
     return donkey._a2a.simulated(agents, auth=auth)
 
 
