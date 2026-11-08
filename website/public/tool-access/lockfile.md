@@ -127,6 +127,16 @@ change, review it, then run `donkey.tools.lock()` again.
   `ToolLockDrift` with `kind="tool_missing"`. Lock with the identity your
   agent runs as.
 
+## Test drift offline
+
+Inside a [`donkey.simulate_mcp()`](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection)
+block, `discover(locked=True)` checks the declared servers against the lock
+with the same rules as the table above. Declare the servers your lock pins,
+then change a descriptor or leave a server out to make the test raise
+`ToolLockDrift`. `donkey.tools.lock(path=...)` inside the block writes a lock
+of the declared servers. The lockfile still has to exist: without one,
+`discover(locked=True)` raises `ConfigError`, as it does outside the block.
+
 ## Verification status
 
 The lock's behaviour is tested offline, against `tools/list` replies recorded

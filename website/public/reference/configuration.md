@@ -409,14 +409,14 @@ In code, `Donkey.from_env(send_cost_headers=True)`.
 | Env var | `DonkeyConfig` field | Meaning |
 |---|---|---|
 | `DONKEY_TELEMETRY` | `telemetry` | Emit OTel spans at all (default `true`). |
-| `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans; on `develop`, also permit outbound A2A quality explanations (default **`false`**). |
+| `DONKEY_TELEMETRY_CAPTURE_CONTENT` | `telemetry_capture_content` | Put prompt/completion text on spans; since 0.2.1, also permit outbound A2A quality explanations (default **`false`**). |
 | `DONKEY_TELEMETRY_INSTALL_GLOBAL` | `telemetry_install_global` | Install DDK's OTLP provider as the process-global OpenTelemetry provider (default **`false`**). See [DDK leaves the global provider to you](https://docs.donkey-kit.dev/telemetry.md#ddk-leaves-the-global-provider-to-you). |
 | `DONKEY_ALLOW_A2A_SDK_TELEMETRY` | `allow_a2a_sdk_telemetry` | Permit outbound A2A calls with enabled SDK tracing (default **`false`**), accepting that it may export sensitive diagnostics. Independent of DDK's `telemetry` setting. |
 
 `telemetry_capture_content` defaults to `false` on purpose: spans are emitted
 inside your process, **upstream of the gateway's PII masking**, so capturing
 content re-exports the very text the platform masks. Enable it only for a
-trusted collector. On `develop` (not published `0.2.0`), the same opt-in also
+trusted collector. New in 0.2.1, the same opt-in also
 exports gateway quality explanations on outbound A2A spans. These may repeat
 request text and are not sanitized; they are truncated to 4096 characters,
 which is not redaction. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md).

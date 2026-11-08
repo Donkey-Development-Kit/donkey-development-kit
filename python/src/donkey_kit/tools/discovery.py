@@ -131,10 +131,18 @@ class Discovery:
         finally:
             self._simulated = None
 
-    def _simulated_set(self, servers: Sequence[McpServerHandle]) -> ToolSet:
+    def _simulated_set(
+        self, servers: Sequence[McpServerHandle], lock: Lockfile | None = None
+    ) -> ToolSet:
+        """A set of declared ``servers``. A ``lock`` is checked as a live
+        :meth:`discover` checks it (#1671, ADR 0024): a pinned server that is
+        not declared raises ``ToolLockDrift``, an unpinned one is dropped, and
+        the set checks each ``tools/list`` against the lock."""
         assert self._simulated is not None
+        kept = _pinned(lock, list(servers)) if lock is not None else list(servers)
         return ToolSet(
-            list(servers),
+            kept,
+            _lock=lock,
             _natives=self._natives,
             _approval_registry=self._approvals,
             _auth=self._simulated.auth,
@@ -154,7 +162,7 @@ class Discovery:
     ) -> ToolSet:
         """See ``ToolsFacade.discover``."""
         if self._simulated is not None:
-            return self._simulated_set(self._simulated.servers)
+            return self._simulated_set(self._simulated.servers, lock)
         criteria = governed if isinstance(governed, GovernanceCriteria) else GovernanceCriteria()
         if governed is None and not self._said_unfiltered:
             self._said_unfiltered = True
