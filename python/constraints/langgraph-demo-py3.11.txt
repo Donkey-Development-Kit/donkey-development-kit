@@ -23,7 +23,7 @@ idna==3.20
 import-linter==2.16
 iniconfig==2.3.1
 jiter==0.19.0
-jsonpatch==1.44
+jsonpatch==1.45
 jsonpointer==3.10
 langchain-core==1.7.6
 langchain-openai==1.7.4
@@ -48,7 +48,7 @@ opentelemetry-proto==1.45.2
 opentelemetry-sdk==1.45.2
 opentelemetry-semantic-conventions==0.66b2
 orjson==3.13.0
-ormsgpack==1.13.0
+ormsgpack==1.13.1
 packaging==26.3
 pathspec==1.1.1
 pluggy==1.7.0
@@ -58,11 +58,11 @@ pydantic-core==2.50.4
 pygments==2.21.0
 pytest==9.2.0
 pytest-asyncio==1.4.1.post1
-pytest-randomly==5.0.0
+pytest-randomly==5.1.0
 pytest-socket==0.8.1
 pytest-timeout==2.4.0
 pyyaml==6.0.3
-regex==2026.11.7
+regex==2026.11.9
 requests==2.34.2
 requests-toolbelt==1.0.0
 respx==0.23.1
@@ -82,5 +82,5 @@ uuid-utils==0.19.0
 uvicorn==0.54.0
 vulture==2.16
 websockets==17.4
-xxhash==4.0.2
+xxhash==4.1.0
 zstandard==0.25.0
