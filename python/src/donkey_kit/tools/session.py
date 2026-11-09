@@ -51,6 +51,7 @@ in code, so it has no such check.
 from __future__ import annotations
 
 import asyncio
+import copy
 import dataclasses
 import functools
 import logging
@@ -60,6 +61,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequenc
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from fnmatch import fnmatchcase
+from types import SimpleNamespace
 from typing import Any, TypeVar
 
 from ..core import _verify
@@ -533,7 +535,8 @@ class ToolSet:
                 with a warning and listed in :attr:`excluded`.
 
         The lock is checked here, when the set lists its tools, which is bind
-        time for every binding. A whole-server binding (ADK, Strands, CrewAI,
+        time for every binding. Per-tool bindings convert this validated snapshot,
+        not a second listing. A whole-server binding (ADK, Strands, CrewAI,
         Agent Framework, OpenAI Agents) then binds the framework's own later
         listing, narrowed by tool name, so that listing is not re-checked.
         """
@@ -695,6 +698,13 @@ class ToolSet:
             )
         described = await self.describe()
         servers = described.servers
+        if self._lock is not None:
+            # Own the checked catalog across the authentication await and native
+            # conversion, independent of the caller's mutable descriptor dictionaries.
+            servers = tuple(
+                dataclasses.replace(s, tool_descriptors=copy.deepcopy(s.tool_descriptors))
+                for s in servers
+            )
         indexed = _index(servers, self._filters)
         exposed, _ = resolve_collisions([d for _, d in indexed])
         exposed_as = {id(d): name for name, d in exposed.items()}
@@ -790,7 +800,21 @@ class ToolSet:
         )
         bound: list[Any] = []
         for server, names in plan:
-            for tool in await client.get_tools(server_name=server.ref.coordinates):
+            if self._lock is not None:
+                from langchain_mcp_adapters.tools import convert_mcp_tool_to_langchain_tool
+
+                native = [
+                    convert_mcp_tool_to_langchain_tool(
+                        None,
+                        descriptor,
+                        connection=client.connections[server.ref.coordinates],
+                        server_name=server.ref.coordinates,
+                    )
+                    for descriptor in _locked_descriptors(server, names)
+                ]
+            else:
+                native = await client.get_tools(server_name=server.ref.coordinates)
+            for tool in native:
                 plan_tool = names.get(tool.name)
                 if plan_tool is None:
                     continue
@@ -832,6 +856,24 @@ class ToolSet:
             http = self._client_factory(server.endpoint_url, headers)(headers=headers)
             client = BasicMCPClient(server.endpoint_url, http_client=http)
             spec = McpToolSpec(client, allowed_tools=sorted(names))
+            if self._lock is not None:
+                # McpToolSpec 0.6 consumes MCP 2's snake-case schema attribute.
+                # Supply its conversion input from the canonical wire snapshot,
+                # regardless of the installed MCP model's Python field spelling.
+                snapshot = [
+                    SimpleNamespace(
+                        name=d["name"],
+                        description=d.get("description") or "",
+                        input_schema=copy.deepcopy(d.get("inputSchema") or {}),
+                    )
+                    for d in server.tool_descriptors or ()
+                    if d.get("name") in names
+                ]
+
+                async def fetch_tools(snapshot: list[Any] = snapshot) -> list[Any]:
+                    return snapshot
+
+                spec.fetch_tools = fetch_tools
             for tool in await spec.to_tool_list_async():
                 plan_tool = names[tool.metadata.name]
                 tool.metadata.name = plan_tool.exposed
@@ -878,7 +920,12 @@ class ToolSet:
                         http_factory=self._mcp_transport.get("factory"),
                     )
                 )
-                for mcp_tool in (await session.list_tools()).tools:
+                native = (
+                    _locked_descriptors(server, names)
+                    if self._lock is not None
+                    else (await session.list_tools()).tools
+                )
+                for mcp_tool in native:
                     plan_tool = names.get(mcp_tool.name)
                     if plan_tool is None:
                         continue
@@ -1169,6 +1216,17 @@ def _wrong_user(tool: str, server: str, bound_for: Requester) -> AuthError:
             "the service. A binding sends the identity it was bound for (BG §2.4)."
         ),
     )
+
+
+def _locked_descriptors(server: McpServerHandle, names: Mapping[str, _Tool]) -> list[Any]:
+    """Native MCP models from the snapshot already checked by compare_lock (ADR 0024)."""
+    from mcp.types import Tool
+
+    return [
+        Tool.model_validate(copy.deepcopy(descriptor))
+        for descriptor in server.tool_descriptors or ()
+        if descriptor.get("name") in names
+    ]
 
 
 def _select(servers: list[McpServerHandle], patterns: list[str]) -> list[McpServerHandle]:

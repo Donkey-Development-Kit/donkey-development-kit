@@ -304,6 +304,14 @@ refused on resume. None of them is a `PolicyViolation`, and refusal handlers
 never see them. `ApprovalRejected` shares the `ApprovalError` base with the
 gateway's `GatewayApprovalDenied`, and `ApprovalNotFound` means the id is not
 pending on this `Donkey` (see [Resolving](/hitl#resolving)).
+
+A native approval resume with missing requester evidence raises `AuthError`
+without running the tool, even if the framework kept its durable pause.
+Changed approval values or exact types, custom objects in reviewed arguments,
+and cyclic argument data raise `ConfigError`. The ADK plugin's trusted injected
+`ToolContext` is execution-only and identity-checked, not reviewed data.
+Request a fresh approval with unchanged acyclic built-in data;
+see [Human approval](/hitl).
 `ConfigError` is raised locally, before any request. It reports every missing
 field at once, and it also reports an endpoint that may not receive the
 configured credentials: a non-`https://` URL, or a URL from the project's config

@@ -447,6 +447,18 @@ _INVOCATIONS_KEPT = 256
 _APPROVED: contextvars.ContextVar[Approval | None] = contextvars.ContextVar(
     "donkey_adk_approved", default=None
 )
+_INJECTED: contextvars.ContextVar[tuple[str, Mapping[str, Any]] | None] = contextvars.ContextVar(
+    "donkey_adk_injected", default=None
+)
+
+
+def execution_arguments(tool: str) -> Mapping[str, Any]:
+    """Consume the plugin's trusted execution-only context for this tool call."""
+    injected = _INJECTED.get()
+    if injected is None or injected[0] != tool:
+        return {}
+    _INJECTED.set(None)
+    return injected[1]
 
 
 def approval_plugin(name: str = "donkey_approval") -> BasePlugin:
@@ -555,6 +567,9 @@ def _approval_plugin_class() -> type[BasePlugin]:
                 record_decision(approval, approved=approved, by=by)
             if approved:
                 _APPROVED.set(approval)
+                _INJECTED.set(
+                    (spec.name, {context_param: tool_context} if context_param in params else {})
+                )
                 return None
             # The rejecter's name stays out of the model's context, as on the
             # other frameworks (#213, #1234); the decision span event records it.
@@ -565,9 +580,11 @@ def _approval_plugin_class() -> type[BasePlugin]:
 
         async def after_tool_callback(self, **kwargs: Any) -> None:
             _APPROVED.set(None)
+            _INJECTED.set(None)
 
         async def on_tool_error_callback(self, **kwargs: Any) -> None:
             _APPROVED.set(None)
+            _INJECTED.set(None)
 
         async def after_run_callback(self, *, invocation_context: Any) -> None:
             with self._lock:

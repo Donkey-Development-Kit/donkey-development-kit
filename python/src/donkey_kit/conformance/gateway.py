@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..core import _wire
+from ..core.config import DonkeyConfig
 from ..simulator.app import ASGIApp, SimulatorConfig, build_app
 from ..simulator.scenarios import FaultScenario, parse_scenario
 
@@ -48,11 +49,18 @@ _LOCAL_EXTRA_HINT = (
     '    pip install "donkey-kit[local]"'
 )
 
-# Request headers whose values are redacted in the spy: the consumer-auth secret
-# (BG §1.1 — the `client_secret` request header the transport sends) and any
-# bearer token. Matched case-insensitively; ASGI already lowercases header names.
-_REDACTED_HEADERS = frozenset(
-    {_wire.LLM_PROXY_CLIENT_SECRET_HEADER, _wire.LLM_PROXY_WALLET_JWT_HEADER.lower()}
+# Only names the SDK forbids for custom key/user-token headers survive recording.
+# Correlation, call-id and cost names can be repurposed after their configured
+# names move, so their values must be redacted even without the caller's config.
+_RECORDED_HEADERS = frozenset(
+    name.lower()
+    for name in (
+        "content-type",
+        _wire.LLM_PROXY_CLIENT_ID_HEADER,
+        _wire.LLM_PROXY_WALLET_CLIENT_ID_HEADER,
+        _wire.ATTRIBUTION_APP_HEADER_PLACEHOLDER,
+        _wire.ATTRIBUTION_BUSINESS_GROUP_HEADER_PLACEHOLDER,
+    )
 )
 _REDACTED = "***"
 
@@ -64,9 +72,13 @@ _STARTUP_TIMEOUT_S = 10.0
 class RecordedRequest:
     """One request the gateway received, as seen from the gateway's side.
 
-    ``headers`` has the consumer-auth secret redacted (see :data:`_REDACTED_HEADERS`),
-    so a captured request is safe to print in an assertion failure or a fixture
-    dump. It does not carry the body — the simulator replays captured shapes and
+    ``headers`` retains only client/wallet IDs, reserved application/business-
+    group attribution and content-type values. Correlation, call-ID, cost-tag
+    and all other values are redacted, even without ``recording_config``.
+    Those retained names cannot carry custom credentials in a valid SDK config;
+    a non-SDK client must not put secrets in them. Header names alone cannot
+    identify credentials deliberately sent under these reserved names.
+    It does not carry the body — the simulator replays captured shapes and
     does not evaluate request content (#189/#250)."""
 
     method: str
@@ -74,14 +86,26 @@ class RecordedRequest:
     headers: Mapping[str, str]
 
 
-def _record(scope: MutableMapping[str, Any]) -> RecordedRequest:
-    """Build a :class:`RecordedRequest` from an ASGI ``http`` scope, redacting
-    the consumer-auth secret and any bearer header."""
+def _record(scope: MutableMapping[str, Any], *, cfg: DonkeyConfig | None = None) -> RecordedRequest:
+    """Build a request record with only explicitly allowlisted header values."""
     raw: Any = scope.get("headers") or []
+    sensitive = (
+        {
+            name.lower()
+            for name in (cfg.llm_proxy_key_header, cfg.user_token_header)
+            if name is not None
+        }
+        if cfg is not None
+        else set()
+    )
     headers: dict[str, str] = {}
     for name, value in raw:
         key = name.decode("latin-1")
-        headers[key] = _REDACTED if key.lower() in _REDACTED_HEADERS else value.decode("latin-1")
+        headers[key] = (
+            value.decode("latin-1")
+            if key.lower() in _RECORDED_HEADERS and key.lower() not in sensitive
+            else _REDACTED
+        )
     return RecordedRequest(
         method=str(scope.get("method", "")),
         path=str(scope.get("path", "")),
@@ -95,8 +119,9 @@ class _RecordingApp:
     :meth:`Gateway.set_scenarios` can reconfigure the simulator live, without
     restarting the server or losing the request log."""
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, cfg: DonkeyConfig | None = None) -> None:
         self.app = app
+        self.cfg = cfg
         self.requests: list[RecordedRequest] = []
 
     async def __call__(
@@ -106,7 +131,7 @@ class _RecordingApp:
         send: Callable[[MutableMapping[str, Any]], Awaitable[None]],
     ) -> None:
         if scope.get("type") == "http":
-            self.requests.append(_record(scope))
+            self.requests.append(_record(scope, cfg=self.cfg))
         await self.app(scope, receive, send)
 
 
@@ -150,10 +175,17 @@ class Gateway:
         parsed = tuple(parse_scenario(s) if isinstance(s, str) else s for s in scenarios)
         self.configure(SimulatorConfig(scenarios=parsed))
 
-    def configure(self, config: SimulatorConfig | None = None) -> None:
+    def configure(
+        self, config: SimulatorConfig | None = None, *, recording_config: DonkeyConfig | None = None
+    ) -> None:
         """Swap in a fresh simulator built from ``config`` (the defaults when
         ``None``), live: same port, same request log. :meth:`set_scenarios` is the
-        scenarios-only shorthand; this also takes the budget-window tunables."""
+        scenarios-only shorthand; this also takes the budget-window tunables.
+        ``recording_config`` identifies custom key/user-token headers whose
+        values must be redacted even when their names are allowlisted. Omitting
+        it retains the recorder's current config."""
+        if recording_config is not None:
+            self._recorder.cfg = recording_config
         self._recorder.app = build_app(config)
 
     def reset(self) -> None:
@@ -181,9 +213,12 @@ def start_gateway(
     *,
     host: str = "127.0.0.1",
     startup_timeout: float = _STARTUP_TIMEOUT_S,
+    recording_config: DonkeyConfig | None = None,
 ) -> Gateway:
     """Boot the local gateway simulator on an ephemeral port and return a
     :class:`Gateway` handle. The caller owns teardown via :meth:`Gateway.close`.
+    Pass ``recording_config`` when custom key/user-token header names are used;
+    their values are redacted even if those names are normally allowlisted.
 
     Raises :class:`ImportError` (naming ``pip install "donkey-kit[local]"``) when
     the ``[local]`` extra — ``starlette`` + ``uvicorn`` — is not installed.
@@ -195,7 +230,7 @@ def start_gateway(
 
     try:
         # build_app imports starlette lazily; a missing [local] surfaces here too.
-        recorder = _RecordingApp(build_app(config))
+        recorder = _RecordingApp(build_app(config), recording_config)
     except ImportError as exc:
         raise ImportError(_LOCAL_EXTRA_HINT) from exc
 

@@ -80,7 +80,7 @@ refused anything, and the [refusal handlers](https://docs.donkey-kit.dev/refusal
 |---|---|
 | `id` | The id you pass to `resolve` or `reject`. |
 | `tool` | The tool's name. |
-| `arguments` | The call's arguments by parameter name, defaults included, as a read-only mapping. |
+| `arguments` | A detached snapshot of the call's arguments by parameter name, defaults included, with a read-only top-level mapping. |
 | `risk` | The `risk=` the tool declared, or `None`. |
 | `correlation_id` | The enclosing `donkey.run()` id, or a fresh one outside a run. |
 | `requested_at`, `expires_at` | Unix timestamps. `expired` is true once `expires_at` has passed. |
@@ -88,6 +88,28 @@ refused anything, and the [refusal handlers](https://docs.donkey-kit.dev/refusal
 `err.tool`, `err.arguments`, `err.risk` and `err.correlation_id` are shortcuts
 to the same values. The exception's message names the tool and the approval id,
 never the arguments.
+
+The gate snapshots execution arguments separately. Changing the original values
+or nested containers in `Approval.arguments` cannot change the pending call.
+Reviewed tool arguments must be acyclic exact built-in data: `dict`, `list`, `tuple`, `set`,
+`frozenset`, `bytearray`, or scalar `None`, `bool`, `int`, `float`, `complex`,
+`str`, `bytes` and `range`. Custom objects (including subclasses of these types)
+and cycles raise `ConfigError`; convert them to built-in data before requesting
+a fresh approval. Snapshots allow at most 64 nested containers along any path,
+including the outer parameter mapping. Exceeding this limit raises `ConfigError`
+with remediation to reduce nesting before requesting a fresh approval.
+The ADK approval plugin's trusted injected `ToolContext` is
+execution-only, excluded from review and snapshots, and must be the exact
+object the plugin supplied. This exception does not admit caller-supplied custom
+data. Native resumes compare values and exact types recursively: `True`, `1`
+and `1.0`, for example, are not interchangeable and raise `ConfigError` if changed.
+Matching also preserves scalar representations: a `range` must retain its
+`start`, `stop` and `step`, even if a different range yields the same sequence.
+Floats and both complex components must retain their binary representations,
+including signed zero. NaNs match only when their binary representations are
+identical, not merely because both values are NaN.
+Python tool defaults are snapshotted for execution even when a callable exposes
+`__signature__`; that attribute alone does not select MCP argument behavior.
 
 ## Resolving
 
@@ -158,15 +180,21 @@ instead. The tool sends the token recorded at the pause, and if it has expired
 by then, the gateway refuses it as a typed error.
 
 The four framework pauses below record the requester when DDK sees the pause:
-the LangGraph interrupt, the Strands `ApprovalHook`, the ADK plugin, and
-`pending_approvals(result)` for the OpenAI Agents SDK. For the OpenAI Agents
-SDK, call `pending_approvals` inside the `as_user()` block that ran the agent.
+the LangGraph interrupt, the Strands `ApprovalHook`, the ADK plugin, and the
+initial `needs_approval` callback installed by DDK's OpenAI Agents SDK
+`function_tool`. Run the agent inside the requester's `as_user()` scope so that
+initial callback records the origin. `pending_approvals()` only inspects pauses:
+it never reconstructs lost requester evidence or rebinds it to the inspector.
+Repeated inspection in the same process preserves retained origin evidence
+and emits no additional pending event.
 
   A framework pause keeps its requester in process memory only, for the most
   recent 1,024 pauses, by the framework's approval id. DDK never writes the
   token into a checkpoint or a run state. A pause resumed after a restart, or
-  in another process, runs as the resuming code's own binding, and DDK logs a
-  `WARNING` on the `donkey_kit.core.approvals` logger naming the approval.
+  in another process, or after its requester state was evicted, raises
+  `AuthError` and the tool is not run. Request a fresh approval in the original
+  requester's context and resume in the same process while that state is retained.
+  An `as_user()` block alone cannot restore lost requester evidence.
   Only the gated tool is re-bound, so the
   framework's other model calls in the resumed run use the resuming code's
   binding too. To run the whole resumed run as the requester, resume it inside
@@ -198,7 +226,8 @@ whatever span is current, with one event:
 | `donkey.approval.resume_refused` | — |
 
 `donkey.approval.resume_refused` marks a framework pause that was approved but
-whose resume DDK refused with `AuthError`, because it ran as another user (see
+whose resume DDK refused with `AuthError`, because it ran as another user or
+its requester state was missing (see
 [Who a resumed call runs as](#who-a-resumed-call-runs-as)). The trail then
 shows that the approved tool never ran.
 
@@ -220,9 +249,10 @@ read, so `DONKEY_TELEMETRY=false` does not stop them reaching a
 ## Pending approvals live in memory
 
 Each client's registry is in-process memory. A restart forgets every pending
-approval, and resolving one after a restart raises `ApprovalNotFound`. When a pause has to
-survive a restart, use a framework's own durable pause, such as LangGraph's
-checkpointer or the OpenAI Agents SDK's serialised `RunState` (see below).
+approval, and resolving one after a restart raises `ApprovalNotFound`. A
+framework's durable pause, such as LangGraph's checkpointer or the OpenAI Agents
+SDK's serialised `RunState`, can retain the pause but not DDK's requester
+evidence. After a restart, request a fresh approval before running the tool.
 
 ## The framework approval helpers
 
@@ -322,9 +352,10 @@ a non-empty string, and DDK records it without authenticating it.
 
 The pause lives in your checkpointer, not in `donkey.approvals`: `pending()`
 does not list it, and `resolve` and `reject` do not apply to it. A durable
-checkpointer keeps it across a restart. A fresh process with the same graph and
-thread resumes it, and the approval id joins the pending and approved events
-because DDK derives it from the thread, the tool and the arguments. The
+checkpointer keeps it across a restart, but a fresh process cannot run the gated
+tool without the retained requester evidence: it raises `AuthError`. Request a
+fresh approval instead. The approval id is derived from the thread, the tool
+and the arguments. The
 interrupt's value, arguments included, is stored by your checkpointer like the
 rest of the graph's state.
 
@@ -386,8 +417,11 @@ async with donkey.run(id=approval.correlation_id):
 ```
 
 `pending_approvals(result)` returns an `Approval` for each paused call to a
-gated tool, with the SDK's `ToolApprovalItem` on `native`, and records its
-pending span event. It skips interruptions it did not gate, so your own
+gated tool, with the SDK's `ToolApprovalItem` on `native`. The initial
+`needs_approval` callback records the requester and pending span event;
+inspection records neither, even when inspecting restored state. Repeated
+same-process inspection is idempotent for retained requester evidence. It skips
+interruptions it did not gate, so your own
 `needs_approval` tools are left to you. `approve(state, approval, by=...)`
 records the approver and approves the call on the `RunState`. It returns the
 `Approval` with `native` set to that `RunState`, and the next
@@ -410,9 +444,13 @@ result. It does not raise `ApprovalRejected`, and the rejecter's name never
 reaches the model.
 
 The pause lives in the `RunState`, not in `donkey.approvals`. It survives
-`state.to_string()` and `RunState.from_string(agent, ...)`, and the approval id
+`state.to_string()` and `RunState.from_string(agent, ...)`, but that serialization
+does not retain DDK's in-process requester evidence. After losing that evidence,
+request a fresh approval; a native resume raises `AuthError` without running
+the tool. The approval id
 joins the pending and approved events because DDK derives it from the call id,
-the tool and the arguments. Decide through `approve` and `reject`: calling
+the tool and canonical JSON arguments, independent of JSON key order or
+whitespace. This stable id does not recreate requester evidence. Decide through `approve` and `reject`: calling
 `RunState.approve` yourself runs the tool with no approver on record, and DDK
 does not offer the SDK's `always_approve` or `always_reject`, which would let
 later calls run with no decision recorded.
@@ -486,7 +524,8 @@ Resume the agent on a list of responses, one for each paused call. Each helper
 returns the `Approval` with the Strands `interruptResponse` on `native`:
 
 - `approve(approval, by=...)` records the approver and runs the tool once,
-  under the approval's correlation id, wherever and whenever you resume.
+  under the approval's correlation id, while requester evidence is retained
+  and the resumed arguments match.
 - `reject(approval, by=..., message=...)` records who refused, and the tool is
   not run. Strands sends the model `message` as an error tool result, or a
   default that names the tool, never the rejecter. Nothing raises `ApprovalRejected`:
@@ -501,10 +540,10 @@ turn.
 
 Strands holds the pause, not `donkey.approvals`: `pending()` does not list it,
 and `approval_timeout` does not apply. The approval id is derived from Strands'
-tool-use id, the tool and the arguments. To resume a call in a fresh process
-that restored the agent from a Strands session, give the restored agent a new
-`ApprovalHook`. The decision is then recorded under the same approval id, with
-the resume's time and correlation id.
+tool-use id, the tool and the arguments. Restoring the agent from a Strands
+session and adding a new `ApprovalHook` does not restore DDK's requester
+evidence. A native resume in a fresh process raises `AuthError` without running
+the tool; request a fresh approval instead.
 
 A model call the approved tool makes is judged by the gateway as usual.
 `ApprovalHook` is a `GovernedToolHook`: it re-raises a governed refusal from
@@ -606,9 +645,10 @@ each paused call's placeholder result, `{"status": "awaiting approval",
 "approval_id": ...}`, as text. Don't show it as the agent's answer.
 
 ADK holds the pause, not `donkey.approvals`: `pending()` does not list it, and
-`approval_timeout` does not apply. The pause lives in the session's events, so
-a fresh process with a fresh plugin can resume it from any persistent
-`SessionService`. The approval id is derived from ADK's function-call id, the
+`approval_timeout` does not apply. A persistent `SessionService` retains the
+pause's events, but a fresh process and plugin do not retain DDK's requester
+evidence. A native resume then raises `AuthError` without running the tool;
+request a fresh approval instead. The approval id is derived from ADK's function-call id, the
 tool and the arguments as sent, so the decision is recorded under the same id
 and joins the pause's correlation id.
 
@@ -639,6 +679,11 @@ same span events, and resolves through `donkey.approvals`: the client whose
 `donkey.run()` or `as_user()` block runs the call, else the client whose
 `tools.discover()` built the set. `Approval.arguments`
 holds the tool's arguments by name, taken from its input schema.
+
+Schema defaults appear in the review snapshot, but only supplied fields are
+sent in the MCP invocation; the server remains responsible for omitted defaults.
+This behavior is explicitly selected for MCP schema invokers, not inferred
+from a Python callable having `__signature__`.
 
 | Keyword | Default | Meaning |
 |---|---|---|

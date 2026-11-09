@@ -76,8 +76,8 @@ class Runtime:
         # Anypoint platform calls.
         self._llm_auth = llm_auth
         data_plane_auth = llm_auth if self._cfg.llm_proxy_auth in TOKEN_AUTH_MODES else None
-        if data_plane_auth is not None and self._cfg.llm_proxy_auth == "bearer":
-            # Bearer mode (#836): check the endpoint before every token, so a
+        if data_plane_auth is not None:
+            # Token modes: check the endpoint before every token, so a
             # raw request through the shared client is covered as well as the
             # factories, which run the same check through validated().
             data_plane_auth = EndpointCheckedAuth(

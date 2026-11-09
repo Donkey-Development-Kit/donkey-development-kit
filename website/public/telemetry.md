@@ -927,6 +927,12 @@ such as `donkey_kit.core.auth`, instead of the package.
   logged by exception type, not message. A unit test pins this against every
   credential the SDK sends: the bearer token, client id and client secret.
 
+If every `ChainedAuth` provider fails, the final `AuthError` names only the
+last exception type, not its message, and suppresses exception chaining.
+Refusal-handler failures likewise omit callback messages and tracebacks; the
+`donkey_kit.core.reactions` logger records only the handler label and exception
+type at `WARNING`, and the original refusal still propagates.
+
 The SDK does not use WARNING log records for configuration problems. A one-time
 problem you have to fix is a Python warning instead, raised through
 `warnings.warn` with its own category, so you can filter it or make it an

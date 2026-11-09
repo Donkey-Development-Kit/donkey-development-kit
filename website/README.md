@@ -27,7 +27,9 @@ FlexSearch). It indexes the built HTML, so the `postbuild` hook runs
 means **search only works against the built export, not `npm run dev`.**
 
 The preview command serves the generated static files from `out/`, matching
-GitHub Pages more closely than the Next.js development server. The deployed site
+GitHub Pages more closely than the Next.js development server. It binds only to
+`127.0.0.1`; resolved files, including symlink targets, must remain inside the
+real `out/` directory. Invalid or unavailable paths are refused. The deployed site
 is served from the domain root, so a plain `npm run build` is what ships. To
 check a build hosted under a project sub-path instead, set the same variable for
 both commands:
@@ -140,6 +142,7 @@ Needs Node >= 22 (CI uses 24). Run after `npm ci`:
 
 ```bash
 npm run typecheck                                  # tsc --noEmit
+npm test                                           # includes local preview containment tests
 npm run lint                                       # syntax-check the .mjs files (scripts/lint.mjs)
 DOCS_BASE_PATH=/donkey-development-kit npm run build
 DOCS_BASE_PATH=/donkey-development-kit npm run check:links   # internal links + #anchors in out/

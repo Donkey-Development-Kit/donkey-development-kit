@@ -52,6 +52,65 @@ def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=build_app()), base_url="http://sim")
 
 
+@pytest.mark.parametrize(
+    "path", ["/responses", "/chat/completions", "/v1/messages", "/models/test:generateContent"]
+)
+@pytest.mark.parametrize("framing", ["declared", "chunked", "underdeclared"])
+async def test_model_body_limit(path: str, framing: str) -> None:
+    body = b" " * (4 * 1024 * 1024 + 1)
+    reads = 0
+
+    async def chunks():
+        nonlocal reads
+        for part in (body[:32], body[32:], b"not-read"):
+            reads += 1
+            yield part
+
+    headers = {"content-length": str(len(body))} if framing == "declared" else {}
+    if framing == "underdeclared":
+        headers["content-length"] = "1"
+    async with _client() as client:
+        response = await client.post(path, content=chunks(), headers=headers)
+    assert response.status_code == 413
+    assert response.headers[SIMULATOR_HEADER] == "true"
+    assert reads == (0 if framing == "declared" else 2)
+
+
+@pytest.mark.parametrize("chunked", [False, True])
+async def test_model_body_at_limit_remains_valid(chunked: bool) -> None:
+    body = b'{"model":"gpt-5.1"}'
+    body += b" " * (4 * 1024 * 1024 - len(body))
+
+    async def chunks():
+        yield body[:32]
+        yield body[32:]
+
+    async with _client() as client:
+        response = await client.post("/responses", content=chunks() if chunked else body)
+    assert response.status_code == 200
+    assert response.content == fx.load("success").body
+
+
+@pytest.mark.parametrize(
+    ("path", "status"),
+    [
+        ("/responses", 200),
+        ("/chat/completions", 200),
+        ("/v1/messages", 400),
+        ("/models/test:generateContent", 400),
+    ],
+)
+async def test_deeply_nested_json_uses_invalid_body_behavior(path: str, status: int) -> None:
+    # Only 400 KB: exercise decoder recursion, not the 4 MiB body limit.
+    body = b"[" * 200_000 + b"]" * 200_000
+    async with _client() as client:
+        response = await client.post(path, content=body)
+        later = await client.post(path, json={"model": "gpt-5.1"})
+    assert response.status_code == status
+    assert response.headers[SIMULATOR_HEADER] == "true"
+    assert later.status_code == 200
+
+
 async def test_happy_path_replays_success_verbatim_and_stamps_honesty() -> None:
     async with _client() as client:
         resp = await client.post("/v1/responses", json={"model": "gpt-5.1"})

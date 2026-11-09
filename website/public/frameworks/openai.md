@@ -173,10 +173,27 @@ The SDK's internal conformance matrix records no exemption for the Agents SDK,
 **approval round trip** included. An `@donkey.tool(approval="required")` wrapped
 with `donkey_kit.integrations.openai_agents.function_tool` sets the Agents SDK's
 own `needs_approval`, so `Runner.run` pauses with the call in
-`result.interruptions`. `pending_approvals`, `approve` and `reject` record the
-decision on the `RunState`, and `Runner.run(agent, state)` resumes (#213). Each
+`result.interruptions`. `pending_approvals` inspects the calls; `approve` and
+`reject` record the decision on the `RunState`, and
+`Runner.run(agent, state)` resumes (#213). Each
 helper returns an `Approval`; `approve` and `reject` return it with the
 `RunState` on `native`. See [Human approval](https://docs.donkey-kit.dev/hitl.md#in-an-openai-agents-sdk-run).
+
+A serialised `RunState` does not preserve DDK's in-process requester evidence.
+DDK registers that evidence in the initial `needs_approval` callback, under
+the scope running the agent. `pending_approvals()` only inspects pauses:
+repeated inspection preserves retained evidence without another pending event,
+and inspection of restored state never reconstructs missing evidence.
+With retained evidence, inspection and decisions keep the initial pause's
+correlation ID and timestamp, even outside the scope that paused the run.
+Approval arguments are the Agents SDK's validated Python values, including
+defaults and nested built-in containers. For example, JSON `1` becomes `1.0`
+for a `float` parameter before review; the resumed call must match that validated
+snapshot exactly. Custom objects, including Pydantic models, are refused before
+the pause. Use built-in data annotations for approval-gated tools.
+After a restart, another process or eviction, a native resume raises `AuthError`
+without running the gated tool. Request a fresh approval in the requester's
+context; changed approval arguments raise `ConfigError`.
 
 ## Notes
 

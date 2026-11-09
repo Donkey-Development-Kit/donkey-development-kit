@@ -174,8 +174,15 @@ documentation = "docs/hr-tools.md"     # Markdown that opens the asset's page
   the asset's protocol version and provider; without `provider` it shows
   "Other". Both describe an MCP server, so an agent's `assets` table can't set
   them; the table-wide ones apply to MCP servers only.
-- `documentation` is a Markdown file, relative to the scanned directory and
-  inside it. Its content opens the asset's page (see below).
+- `documentation` is a UTF-8 `.md` or `.markdown` file, relative to the scanned
+  directory and inside it. Hidden path components and components whose name
+  before the first dot is `credentials` or `secrets` (case-insensitive) are
+  refused, including symlink targets. Configuration guides such as `config.md`,
+  `docs/configuration.md` and `configuration/guide.md` are allowed. These naming
+  checks do not sanitize the file's content; review it before publishing.
+  The dry-run JSON shows the
+  source path; review it before publishing. Its content opens the asset's page
+  (see below).
 - A `.donkey-kit.local.toml` beside it overrides the project file key by key,
   as for `[donkey.mcp_servers]`.
 - The digest covers what would be published for that asset: its tools, their

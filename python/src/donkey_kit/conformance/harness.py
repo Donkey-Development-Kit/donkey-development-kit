@@ -418,7 +418,7 @@ class ConformanceHarness:
             self._donkey = Donkey(offline_config())
         else:
             self._donkey = Donkey(offline_config(proxy_url=gateway.url))
-            gateway.configure()  # a fresh, unarmed simulator per scenario
+            gateway.configure(recording_config=self._donkey.config)
             gateway.reset()
         self._probe = None
         self._bypass_attempts = []

@@ -188,7 +188,10 @@ async def test_agent_stops_after_a_refusal(gateway):
   `DONKEY_LLM_PROXY_URL` at.
 - The port is bound to `0`, so parallel `pytest -n` runs never collide.
 - `gateway.requests_received` counts requests; `gateway.requests` exposes each
-  one's method, path, and headers, with `client_secret` **redacted**.
+  one's method, path, and header names. Only content-type, client/wallet IDs
+  and reserved application/business-group attribution values are retained.
+  Correlation IDs, call IDs, cost values and every other header value are
+  `"***"`, even without `recording_config`.
 - `gateway.set_scenarios(...)` arms [scenario scripting](https://docs.donkey-kit.dev/simulator.md#scenario-scripting)
   (`pii_block`, `injection`, `budget`) **per test**.
 - Every response carries `x-donkey-simulator: true`.
@@ -196,6 +199,16 @@ async def test_agent_stops_after_a_refusal(gateway):
 
 The fixture needs the `[local]` extra (Starlette + Uvicorn); requesting it
 without that extra raises an `ImportError` naming the exact `pip install`.
+
+You can pass your `DonkeyConfig` as `recording_config` to
+`gateway.configure(...)` or `start_gateway(...)`; configured
+`llm_proxy_key_header` and `user_token_header` values are always redacted.
+Omitting it on a later `configure()` retains the recorder's current config.
+The conformance harness supplies its config itself. Valid SDK configuration
+reserves the retained names against custom credential use, but header names
+cannot prove arbitrary values safe: non-SDK clients must not put secrets in
+those names. This recorder is not a general-purpose sanitizer for arbitrary
+HTTP headers.
 
 ## Choosing a tool
 

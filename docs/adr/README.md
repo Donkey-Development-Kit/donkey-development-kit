@@ -97,3 +97,4 @@ is not rewritten.
 | [0023](0023-simulate-mcp-declared-discovery.md) | `Donkey.simulate_mcp()` answers discovery from declared servers and lazily imports the simulator | Accepted | #1391 |
 | [0024](0024-tool-lockfile-drift-detection.md) | The tool lockfile pins gateway-visible tool descriptors and detects drift; it never controls access | Accepted | #1646 |
 | [0025](0025-simulate-a2a-declared-agents.md) | `Donkey.simulate_a2a()` resolves declared agents offline and lazily imports the simulator | Accepted | #1652 |
+| [0026](0026-approval-snapshots-and-requester-loss.md) | Approval snapshots are isolated; missing native requesters fail closed (supersedes ADR 0018 decision 4's fallback) | Accepted | #1693 |

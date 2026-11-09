@@ -9,12 +9,6 @@ the call; ``reject(...)`` records who refused and drops it. A pending approval
 expires after its timeout, and resolving it then raises
 :class:`ApprovalTimedOut`, so nothing waits on a human forever.
 
-Each ``Donkey`` owns its own :class:`Approvals` (ADR 0018, #1423). A gated call
-records its approval on the client whose ``donkey.run()`` or ``donkey.as_user()``
-block runs it; outside one, on the client the tool was declared on
-(``@donkey.tool`` read from an instance, or the client whose discovery built the
-``ToolSet``); with neither, it raises :class:`~donkey_kit.core.errors.ConfigError`.
-
 The approval is client-side and advisory. Code that calls the function without
 the decorator bypasses it, and the gateway never learns that an approval was
 needed or who gave it. The gateway's own step-up is separate: its policy asks the
@@ -23,20 +17,9 @@ gateway refusal either: the resumed call goes through the governed transport
 like any other, and the gateway judges each model call it makes afresh, as it
 judges a refusal handler's re-send (BG §2.1).
 
-There is no queue and no approval UI (build plan, "Do not build"). Pending
-approvals live in memory, so a restart forgets them; a framework checkpointer is
-the durable form. ``gate(natives=...)`` takes framework hooks that pause the call
-with the framework's own primitive instead: LangGraph's ``interrupt()`` (#212),
-the OpenAI Agents SDK's ``needs_approval`` (#213), Strands' interrupt (#1234) and
-ADK's tool confirmation (#1235). Each adapter's ``pending_approvals`` /
-``approve`` / ``reject`` speak :class:`Approval`, with the framework's object on
-``native`` (#1422). A rejection differs: LangGraph raises :class:`ApprovalRejected`
-from the resumed tool, the others hand the model the rejection message as the
-tool's result. Core never imports a framework: the hooks are passed in from the
-top-level ``donkey`` module.
-
-A resumed call runs as its requester, with the user and attribution bound where it
-was requested, and a resolver bound to another user is refused (#1416, ``identity``).
+Pending approvals live in memory; framework hooks hold durable pauses (BG §2.3),
+with objects on ``Approval.native`` (#1422). Resume uses the requester's identity
+(#1416). Core imports no framework: ``donkey`` supplies the hooks.
 """
 
 from __future__ import annotations
@@ -51,7 +34,7 @@ import time
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any, Literal, TypeAlias, TypeVar
 
@@ -62,6 +45,9 @@ from .approval_types import (
     ApprovalRejected,
     ApprovalRequired,
     ApprovalTimedOut,
+    _bound_snapshots,
+    _matches,
+    _snapshot,
 )
 from .correlation import current_approvals_client, request_correlation_id, run_scope
 from .errors import AuthError, ConfigError
@@ -80,6 +66,7 @@ __all__ = [
     "Approvals",
     "NativePause",
     "gate",
+    "native_approval",
     "parse_timeout",
     "record_decision",
     "record_pending",
@@ -106,13 +93,8 @@ _EVENT_TIMED_OUT = "donkey.approval.timed_out"
 _EVENT_RESUME_REFUSED = "donkey.approval.resume_refused"
 
 
-#: A framework hook ``gate`` tries before raising :class:`ApprovalRequired`. It
-#: takes the tool name, the bound arguments and the risk, and returns ``None``
-#: when the call is not running inside its framework. Otherwise it pauses the
-#: call with the framework's own primitive (raising whatever the framework needs
-#: raised), raises :class:`ApprovalRejected`, or returns the approved
-#: :class:`Approval`, whose decision it has recorded; ``gate`` then runs the call
-#: under the approval's correlation id.
+#: A framework hook: decline with ``None``, pause/reject natively, or return an
+#: approved call. ``gate`` runs that call under its original correlation id.
 NativePause: TypeAlias = Callable[[str, Mapping[str, Any], str | None], Approval | None]
 
 
@@ -126,10 +108,9 @@ class _Pending:
 
 
 # The requesters of the latest framework pauses, by the framework's id (a pause
-# may never resume). Per process, not per client: an adapter's
-# ``pending_approvals()`` records a pause with no client to hand (ADR 0018).
+# may never resume). Only the initial native pause registers origin evidence.
 _LOCK = threading.Lock()
-_NATIVE_REQUESTERS: OrderedDict[str, Requester] = OrderedDict()
+_NATIVE_REQUESTERS: OrderedDict[str, tuple[Requester, Approval]] = OrderedDict()
 _NATIVE_KEPT = 1024
 
 
@@ -161,7 +142,6 @@ class Approvals:
         with self._lock:
             return self._find(approval_id).approval
 
-    # The tool's own return value, whatever the user's function returns.
     def resolve(self, approval_id: str, *, approved_by: str) -> Any:  # noqa: ANN401
         """Approve the call, record ``approved_by``, and run the tool.
 
@@ -268,11 +248,16 @@ def gate(
     timeout: float,
     natives: Sequence[NativePause] = (),
     declared_on: Approvals | None = None,
+    execution_defaults: bool = True,
+    injected_arguments: Callable[[str], Mapping[str, Any]] | None = None,
 ) -> _F:
     """Wrap ``func`` so a call requests approval instead of running it.
 
     The wrapper keeps ``func``'s name, docstring and signature, and is ``async``
     when ``func`` is, so a framework that introspects tools sees the original.
+    ``execution_defaults=False`` is for MCP schema invokers only; the
+    ``injected_arguments`` callback consumes trusted execution-only values.
+    their exact identities must match the call and they are excluded from review.
     It binds the call's arguments first, so a call that could never run raises
     :class:`TypeError` at once instead of waiting for an approver. Each of
     ``natives`` is tried next (see :data:`NativePause`); when none applies, the
@@ -283,26 +268,37 @@ def gate(
     kept for it when this process paused it (#1416). Only the gated tool is
     re-bound: the framework's other model calls in the resumed run keep the
     resuming code's binding. A pause from another process, or past the latest
-    1024, has no recorded requester: the call logs a warning and runs as the
-    resuming code's binding. A resume refused for running as another user records
+    1024, has no recorded requester: the call is refused with ``AuthError``
+    (ADR 0026). A resume refused for running as another user records
     a ``donkey.approval.resume_refused`` span event, so the audit trail does not
     end on an approval whose tool never ran.
 
     Raises:
         ConfigError: (from the gated call) No client owns it: it ran outside any
             ``donkey.run()`` / ``donkey.as_user()`` block and ``declared_on`` is
-            ``None``.
+            ``None``; arguments cannot be safely snapshotted or do not match
+            the native approval.
+        AuthError: A native approval's requester is missing or does not match
+            the resuming context.
     """
     signature = inspect.signature(func)
 
-    def ask(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[Approval, Requester | None]:
-        bound = signature.bind(*args, **kwargs)
-        bound.apply_defaults()
-        arguments = MappingProxyType(dict(bound.arguments))
+    def ask(
+        args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> tuple[Approval, Requester, inspect.BoundArguments]:
+        injected = injected_arguments(func.__name__) if injected_arguments else {}
+        call, reviewed = _bound_snapshots(signature, args, kwargs, injected, execution_defaults)
+        arguments = MappingProxyType(_snapshot(reviewed))
         for native in natives:
             approved = native(func.__name__, arguments, risk)
             if approved is not None:
-                return approved, _native_requester(approved)
+                requester = _native_requester(approved)
+                if not _matches(_snapshot(dict(approved.arguments)), reviewed):
+                    raise ConfigError(
+                        "approved tool arguments differ from the requested call",
+                        remediation="Request a fresh approval for the unchanged tool arguments.",
+                    )
+                return approved, requester, call
         registry = _owner(func.__name__, declared_on)
         now = time.time()
         approval = Approval(
@@ -314,8 +310,9 @@ def gate(
             requested_at=now,
             expires_at=now + timeout,
         )
-        # gate() is this module's own seam onto the registry it records on.
-        registry._add(_Pending(approval, func, args, dict(kwargs), capture_requester()))  # noqa: SLF001
+        registry._add(  # noqa: SLF001 -- this module owns the registry seam
+            _Pending(approval, func, call.args, call.kwargs, capture_requester())
+        )
         _record_pending(approval)
         raise ApprovalRequired(
             f"tool {approval.tool!r} needs human approval (id {approval.id})",
@@ -326,15 +323,17 @@ def gate(
 
         @functools.wraps(func)
         async def async_gated(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
-            with _as_requested(*ask(args, kwargs)):
-                return await func(*args, **kwargs)
+            approval, requester, bound = ask(args, kwargs)
+            with _as_requested(approval, requester):
+                return await func(*bound.args, **bound.kwargs)
 
         return async_gated  # type: ignore[return-value]
 
     @functools.wraps(func)
     def gated(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
-        with _as_requested(*ask(args, kwargs)):
-            return func(*args, **kwargs)
+        approval, requester, bound = ask(args, kwargs)
+        with _as_requested(approval, requester):
+            return func(*bound.args, **bound.kwargs)
 
     return gated  # type: ignore[return-value]
 
@@ -359,21 +358,28 @@ def _owner(tool: str, declared_on: Approvals | None) -> Approvals:
     )
 
 
-def _native_requester(approved: Approval) -> Requester | None:
-    """The requester this process recorded for a framework pause, checked against
-    this context; ``None`` (with a warning) when the pause was not seen here."""
+def _native_requester(approved: Approval) -> Requester:
+    """Check the retained requester and argument snapshot of a native pause."""
     with _LOCK:
-        requester = _NATIVE_REQUESTERS.get(approved.id)
-    if requester is None:
-        _log.warning(
-            "approval %s for tool %s resumes with no recorded requester (paused in another "
-            "process, before a restart, or past the latest %d pauses): it runs as this "
-            "code's own binding. Resume it inside the requester's donkey.as_user() block.",
-            approved.id,
-            approved.tool,
-            _NATIVE_KEPT,
+        recorded = _NATIVE_REQUESTERS.get(approved.id)
+    if recorded is None:
+        _record(approved, _EVENT_RESUME_REFUSED, {})
+        raise AuthError(
+            f"{_what(approved)} has no recorded requester; the tool was not run "
+            "(the pause was recorded in another process, before a restart, or was evicted)",
+            remediation=(
+                "Request a fresh approval in the original requester's context and resume "
+                "it in the same process while its requester state is retained. Merely "
+                "binding the resumer with donkey.as_user() cannot restore lost evidence."
+            ),
+            correlation_id=approved.correlation_id,
         )
-        return None
+    requester, origin = recorded
+    if not _matches(_snapshot(dict(approved.arguments)), dict(origin.arguments)):
+        raise ConfigError(
+            "approved tool arguments differ from the recorded pause",
+            remediation="Request a fresh approval for the unchanged tool arguments.",
+        )
     try:
         check_requester(requester, what=_what(approved))
     except AuthError:
@@ -385,15 +391,41 @@ def _native_requester(approved: Approval) -> Requester | None:
 
 def record_pending(approval: Approval) -> None:
     """Record ``approval`` as a call a framework paused, where it was requested:
-    a ``donkey.approval.pending`` span event, and the requester bound here, which
-    the gate runs the approved call as (#1416). The latest 1024 are kept, in this
-    process's memory, by the framework's id (ADR 0018)."""
+    a pending span event and the requester the approved call runs as (#1416).
+    The latest 1024 are kept by framework id (ADR 0018). Call only at the initial
+    pause, never during inspection; repeated registration preserves the origin."""
     with _LOCK:
-        _NATIVE_REQUESTERS[approval.id] = capture_requester()
+        if approval.id in _NATIVE_REQUESTERS:
+            return
+        _NATIVE_REQUESTERS[approval.id] = (
+            capture_requester(),
+            replace(approval, native=None),
+        )
         _NATIVE_REQUESTERS.move_to_end(approval.id)
         while len(_NATIVE_REQUESTERS) > _NATIVE_KEPT:
             _NATIVE_REQUESTERS.popitem(last=False)
     _record_pending(approval)
+
+
+def native_approval(
+    approval_id: str, *, arguments: Mapping[str, Any] | None = None
+) -> Approval | None:
+    """Read detached origin evidence without registering or refreshing it (ADR 0026).
+
+    Returns ``None`` after evidence is lost. If review arguments are supplied,
+    raises ``ConfigError`` when they differ from the retained exact snapshot.
+    """
+    with _LOCK:
+        recorded = _NATIVE_REQUESTERS.get(approval_id)
+    if recorded is None:
+        return None
+    origin = recorded[1]
+    if arguments is not None and not _matches(_snapshot(dict(arguments)), dict(origin.arguments)):
+        raise ConfigError(
+            "approved tool arguments differ from the recorded pause",
+            remediation="Request a fresh approval for the unchanged tool arguments.",
+        )
+    return replace(origin)
 
 
 def _record_pending(approval: Approval) -> None:

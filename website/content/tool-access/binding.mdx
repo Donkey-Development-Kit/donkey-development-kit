@@ -403,6 +403,17 @@ credential, `ToolInvocationError` when a server cannot list its tools, and
 no tool to bind, because `filter()` removed them all or the set is empty, logs
 why at info level and returns an empty list.
 
+During MCP listing and binding, HTTP error bodies are buffered only when they
+are complete, identity-encoded and at most 64 KiB. The five-second total
+deadline covers both reading and best-effort cleanup; a stalled close does not
+add another timeout. Cancellation propagates without waiting for cleanup.
+Oversized, compressed, interrupted or slow bodies are not classified from
+partial bytes. Status and headers remain available: an authentication status
+can still raise `AuthError`, while an unclassifiable listing failure raises
+`ToolInvocationError`. A partial body never becomes an approval response.
+For locked per-tool metadata guarantees and whole-server limitations, see
+[Pinning & lockfile](/tool-access/lockfile#check-against-the-lock).
+
 ### Tools outside your access profile
 
 The gateway's MCP access policies (MCP Global Access and Attribute-Based

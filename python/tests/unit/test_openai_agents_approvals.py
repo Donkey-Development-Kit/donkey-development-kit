@@ -307,7 +307,7 @@ async def test_a_gated_tool_pauses_the_run_with_the_sdks_own_approval(spans: Any
             result = await refunds.pause()
             (approval,) = ddk_agents.pending_approvals(result)
 
-    assert refunds.tool.needs_approval is True
+    assert callable(refunds.tool.needs_approval)
     assert refunds.ran == []
     (item,) = result.interruptions
     assert item.name == "issue_refund"
@@ -351,7 +351,11 @@ async def test_approve_records_the_approver_and_resumes_the_tool_once(spans: Any
     assert approved["donkey.correlation_id"] == "run-9"
 
 
-async def test_the_pause_survives_a_serialised_run_state(spans: Any) -> None:
+@pytest.mark.parametrize("lose_requester", [False, True])
+async def test_serialised_run_state_requires_retained_requester(
+    spans: Any,
+    lose_requester: bool,
+) -> None:
     """Only the serialised run state carries the pause: the approval registry
     is cleared, and the decision is taken on a state rebuilt from the string."""
     async with Donkey(_cfg()) as donkey:
@@ -359,10 +363,20 @@ async def test_the_pause_survives_a_serialised_run_state(spans: Any) -> None:
         result = await refunds.pause()
         (approval,) = ddk_agents.pending_approvals(result)
         stored = result.to_state().to_string()
-        approvals_mod._reset_for_tests()
+        if lose_requester:
+            approvals_mod._reset_for_tests()
 
         state = await agents.RunState.from_string(refunds.agent, stored)
+        ddk_agents.pending_approvals(state)
         ddk_agents.approve(state, approval.id, by="m.keller")
+        if lose_requester:
+            from donkey_kit import AuthError, typed_refusals
+
+            with pytest.raises(AuthError, match="no recorded requester"), typed_refusals():
+                await refunds.resume(state)
+            assert refunds.ran == []
+            assert _events(spans)[-1][0] == "donkey.approval.resume_refused"
+            return
         done = await refunds.resume(state)
 
     assert done.final_output == "done"
@@ -372,6 +386,267 @@ async def test_the_pause_survives_a_serialised_run_state(spans: Any) -> None:
     assert pending[1]["donkey.approval.id"] == approved[1]["donkey.approval.id"]
     # Outside a run, the pause, the decision and the tool share the approval id.
     assert refunds.ran[0][2] == approval.correlation_id == approval.id
+
+
+@pytest.mark.parametrize("lose_requester", [False, True])
+async def test_inspection_by_another_user_never_registers_requester(lose_requester: bool) -> None:
+    from donkey_kit import AuthError, typed_refusals
+
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey)
+        async with donkey.as_user(token="alice"):
+            result = await refunds.pause()
+            (approval,) = ddk_agents.pending_approvals(result)
+        stored = result.to_state().to_string()
+        if lose_requester:
+            approvals_mod._reset_for_tests()
+        state = await agents.RunState.from_string(refunds.agent, stored)
+        async with donkey.as_user(token="bob"):
+            ddk_agents.pending_approvals(result)
+            (restored,) = ddk_agents.pending_approvals(state)
+            assert restored.id == approval.id
+            ddk_agents.approve(state, restored, by="reviewer")
+            with pytest.raises(AuthError), typed_refusals():
+                await refunds.resume(state)
+        assert refunds.ran == []
+
+
+async def test_origin_is_registered_before_any_inspection() -> None:
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey)
+        async with donkey.as_user(token="alice"):
+            result = await refunds.pause()
+        state = result.to_state()
+        (approval,) = ddk_agents.pending_approvals(state)
+        ddk_agents.approve(state, approval, by="reviewer")
+        await refunds.resume(state)
+        assert len(refunds.ran) == 1
+
+
+@pytest.mark.parametrize("restore", [False, True])
+async def test_integer_json_float_argument_resumes_validated_call(restore: bool) -> None:
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey, arguments={"ticket_id": "T-1", "amount": 1})
+        result = await refunds.pause()
+        state = result.to_state()
+        if restore:
+            state = await agents.RunState.from_string(refunds.agent, state.to_string())
+        (approval,) = ddk_agents.pending_approvals(state)
+        ddk_agents.approve(state, approval, by="reviewer")
+        done = await refunds.resume(state)
+        assert done.final_output == "done"
+        assert refunds.ran[0][:2] == ("T-1", 1.0)
+        assert type(approval.arguments["amount"]) is float
+        assert type(refunds.ran[0][1]) is float
+
+
+@pytest.mark.parametrize("restore", [False, True])
+@pytest.mark.parametrize("by_id", [False, True])
+async def test_inspection_and_resume_keep_initial_metadata(
+    restore: bool, by_id: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[Any] = []
+    pending = ddk_agents.record_pending
+
+    def record(approval: Any) -> None:
+        events.append(approval)
+        pending(approval)
+
+    monkeypatch.setattr(ddk_agents, "record_pending", record)
+    monkeypatch.setattr(
+        ddk_agents, "record_decision", lambda approval, **kw: events.append(approval)
+    )
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey)
+        with monkeypatch.context() as clock:
+            clock.setattr(ddk_agents.time, "time", lambda: 1000.0)
+            async with donkey.run(id="origin-run"):
+                result = await refunds.pause()
+        state = result.to_state()
+        if restore:
+            state = await agents.RunState.from_string(refunds.agent, state.to_string())
+        async with donkey.run(id="inspector-run"):
+            (approval,) = ddk_agents.pending_approvals(state)
+        assert approval.correlation_id == "origin-run"
+        assert approval.requested_at == 1000.0
+        decided = ddk_agents.approve(state, approval.id if by_id else approval, by="reviewer")
+        await refunds.resume(state)
+        assert decided.requested_at == 1000.0
+        assert refunds.ran == [("T-1", 140.0, "origin-run")]
+        assert [event.correlation_id for event in events] == ["origin-run", "origin-run"]
+
+
+@pytest.mark.parametrize("sync", [False, True])
+async def test_validated_nested_containers_variadics_and_defaults(sync: bool) -> None:
+    seen: list[Any] = []
+    default = {"amounts": [2.0]}
+
+    def issue_refund(
+        ticket_id: str,
+        *amounts: float,
+        payload: dict[str, list[float]],
+        coordinates: tuple[float, float],
+        fallback: dict[str, list[float]] = default,
+        **labels: int,
+    ) -> str:
+        """Refund with nested built-in data."""
+        seen.append((ticket_id, amounts, payload, coordinates, fallback, labels))
+        return "refunded"
+
+    async def async_refund(*args: Any, **kwargs: Any) -> str:
+        return issue_refund(*args, **kwargs)
+
+    if not sync:
+        import functools
+
+        async_refund = functools.wraps(issue_refund)(async_refund)
+    wrapped = Donkey.tool(approval="required")(issue_refund if sync else async_refund)
+    async with Donkey(_cfg()) as donkey:
+        sent: list[Any] = []
+        raw = {
+            "ticket_id": "T-1",
+            "amounts": [1],
+            "payload": {"amounts": [3]},
+            "coordinates": [4, 5],
+            "labels": {"count": "6"},
+        }
+        for client in http_clients(donkey):
+            swap_transport(client, _gateway(sent, raw))
+        agent = agents.Agent(
+            name="refunds",
+            model=donkey.openai_agents.model("gpt-4o"),
+            tools=[ddk_agents.function_tool(wrapped, strict_mode=False)],
+        )
+        result = await agents.Runner.run(agent, "refund", run_config=_RUN)
+        state = await agents.RunState.from_string(agent, result.to_state().to_string())
+        (approval,) = ddk_agents.pending_approvals(state)
+        assert approval.arguments["amounts"] == (1.0,)
+        assert type(approval.arguments["amounts"][0]) is float
+        assert type(approval.arguments["payload"]["amounts"][0]) is float
+        assert approval.arguments["coordinates"] == (4.0, 5.0)
+        assert approval.arguments["labels"] == {"count": 6}
+        ddk_agents.approve(state, approval, by="reviewer")
+        await agents.Runner.run(agent, state, run_config=_RUN)
+        assert seen == [("T-1", (1.0,), {"amounts": [3.0]}, (4.0, 5.0), default, {"count": 6})]
+        assert seen[0][4] is not default
+
+
+async def test_nested_pydantic_objects_are_refused_before_recording_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pydantic import BaseModel
+
+    from donkey_kit import ConfigError, typed_refusals
+
+    class Payment(BaseModel):
+        amount: float
+
+    recorded: list[Any] = []
+    ran: list[Any] = []
+    monkeypatch.setattr(ddk_agents, "record_pending", recorded.append)
+
+    def issue_refund(payload: Any) -> str:
+        """Refund a typed payload."""
+        ran.append(payload)
+        return "refunded"
+
+    issue_refund.__annotations__["payload"] = dict[str, Payment]
+    wrapped = Donkey.tool(approval="required")(issue_refund)
+    async with Donkey(_cfg()) as donkey:
+        for client in http_clients(donkey):
+            swap_transport(client, _gateway([], {"payload": {"payment": {"amount": 1}}}))
+        agent = agents.Agent(
+            name="refunds",
+            model=donkey.openai_agents.model("gpt-4o"),
+            tools=[ddk_agents.function_tool(wrapped, strict_mode=False)],
+        )
+        with pytest.raises(ConfigError, match="snapshot") as refused, typed_refusals():
+            await agents.Runner.run(agent, "refund", run_config=_RUN)
+        assert "built-in" in refused.value.remediation
+    assert recorded == ran == []
+
+
+@pytest.mark.parametrize("mutation", [1, True])
+async def test_validated_review_type_mutation_is_not_coerced(mutation: Any) -> None:
+    from donkey_kit import ConfigError
+
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey, arguments={"ticket_id": "T-1", "amount": 1})
+        result = await refunds.pause()
+        (approval,) = ddk_agents.pending_approvals(result)
+        mutated = dataclasses.replace(
+            approval, arguments={**approval.arguments, "amount": mutation}
+        )
+        with pytest.raises(ConfigError, match="recorded pause"):
+            ddk_agents.approve(result.to_state(), mutated, by="reviewer")
+        assert refunds.ran == []
+
+
+@pytest.mark.parametrize("mutation", [None, 1, True])
+async def test_replayed_callback_keeps_origin_and_exact_validated_snapshot(
+    mutation: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from donkey_kit import ConfigError
+
+    recorded: list[Any] = []
+    pending = ddk_agents.record_pending
+
+    def record(approval: Any) -> None:
+        recorded.append(approval)
+        pending(approval)
+
+    monkeypatch.setattr(ddk_agents, "record_pending", record)
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey, arguments={"ticket_id": "T-1", "amount": 1})
+        async with donkey.run(id="origin-run"):
+            result = await refunds.pause()
+        origin = recorded[0]
+        callback = refunds.tool.needs_approval
+        assert callable(callback)
+        if mutation is not None:
+            # Same JSON, but validation now produces a different Python type.
+            spec = tool_spec(refunds.refund)
+            assert spec is not None
+            with pytest.raises(ConfigError, match="recorded pause"):
+                ddk_agents._approval(
+                    spec,
+                    result.interruptions[0].call_id,
+                    result.interruptions[0].arguments,
+                    {"ticket_id": "T-1", "amount": mutation},
+                )
+            assert recorded == [origin]
+        else:
+            async with donkey.run(id="replay-run"):
+                await callback(None, {"ticket_id": "T-1", "amount": 1}, "call-1")
+            assert len(recorded) == 2
+            assert recorded[1].correlation_id == origin.correlation_id
+            assert recorded[1].requested_at == origin.requested_at
+        assert refunds.ran == []
+
+
+async def test_missing_origin_inspection_does_not_rebind_or_register(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from donkey_kit import typed_refusals
+
+    async with Donkey(_cfg()) as donkey:
+        refunds = _Refunds(donkey, arguments={"ticket_id": "T-1", "amount": 1})
+        async with donkey.run(id="origin-run"):
+            result = await refunds.pause()
+        (origin,) = ddk_agents.pending_approvals(result)
+        state = await agents.RunState.from_string(refunds.agent, result.to_state().to_string())
+        approvals_mod._reset_for_tests()
+        registrations: list[Any] = []
+        monkeypatch.setattr(ddk_agents, "record_pending", registrations.append)
+        async with donkey.run(id="inspector-run"):
+            (inspected,) = ddk_agents.pending_approvals(state)
+            assert inspected.id == origin.id
+            assert approvals_mod.native_approval(origin.id) is None
+            ddk_agents.approve(state, inspected, by="reviewer")
+            with pytest.raises(AuthError, match="no recorded requester"), typed_refusals():
+                await refunds.resume(state)
+        assert registrations == refunds.ran == []
+        assert approvals_mod.native_approval(origin.id) is None
 
 
 async def test_a_sync_gated_tool_pauses_and_resumes() -> None:
@@ -584,7 +859,7 @@ def test_a_rebuilt_gated_tool_keeps_the_gate(rebuild: Any) -> None:
     tool = ddk_agents.function_tool(issue_refund)
     rebuilt = rebuild(tool)
     assert rebuilt is not tool
-    assert rebuilt.needs_approval is True
+    assert callable(rebuilt.needs_approval)
     # Bound to the rebuilt tool, not the original's invoker, and still the gate.
     assert rebuilt.on_invoke_tool is not tool.on_invoke_tool
     assert tool_spec(rebuilt.on_invoke_tool) is tool_spec(issue_refund)

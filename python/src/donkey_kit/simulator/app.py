@@ -28,6 +28,7 @@ type leaks across the boundary under ``mypy --strict``.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass
@@ -62,6 +63,10 @@ _SIMULATOR_HEADER_BYTES = SIMULATOR_HEADER.encode("latin-1")
 # whose model id is "donkey-sim/<shape>" is served that rejection shape. This is
 # a simulator control surface only — NEVER a real Omni Gateway behaviour (verification discipline).
 SIM_MODEL_PREFIX = "donkey-sim/"
+
+# Match the A2A dev ingress's 4 MiB bound, counting streamed bodies as well as
+# declared lengths. This is a local resource limit, not a gateway policy shape.
+_MAX_BODY_BYTES = 4 * 1024 * 1024
 
 # The budget window the live proxy emits on a happy-path `200` (with the
 # `llm-token-rate-limit` policy applied) is a single prose header,
@@ -291,9 +296,30 @@ class _Simulator:
         policies before it picks an upstream API. Only the happy-path bodies
         differ. ``path_model`` and ``stream`` are Gemini's, which names the
         model in the path and streams by method."""
+        from starlette.responses import Response
+
+        def too_large() -> Any:
+            return Response(
+                f"request body over the donkey simulator limit of {_MAX_BODY_BYTES} bytes\n",
+                status_code=413,
+                headers={SIMULATOR_HEADER: "true", "connection": "close"},
+                media_type="text/plain",
+            )
+
         try:
-            payload = await request.json()
-        except Exception:  # noqa: BLE001 — a malformed/empty body is just "happy path"
+            declared = int(request.headers.get("content-length", "0"))
+        except ValueError:
+            declared = 0  # count the actual bytes when the declaration is malformed
+        if declared > _MAX_BODY_BYTES:
+            return too_large()
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > _MAX_BODY_BYTES:
+                return too_large()
+            body.extend(chunk)
+        try:
+            payload = json.loads(body)
+        except (ValueError, RecursionError):  # malformed, empty or too-deep JSON is invalid input
             if route.invalid_json is not None:
                 # A native ingress answers its captured flat-string 400 (#1562).
                 return self._response(load(route.invalid_json))

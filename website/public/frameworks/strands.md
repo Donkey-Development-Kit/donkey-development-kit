@@ -134,7 +134,10 @@ Strands forwards to its internal OpenAI client.
   Strands' own interrupt. `pending_approvals(result)` returns each paused call
   as an `Approval`; resume the agent on `approve(...).native` or
   `reject(...).native`, the interrupt response each helper returns on the
-  `Approval`. See [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-strands-agent).
+  `Approval`. Missing in-process requester evidence on native resume raises
+  `AuthError` without running the tool; changed arguments raise `ConfigError`.
+  Request a fresh approval after a restart, another process or eviction. See
+  [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-strands-agent).
 - **Refusals inside tools stop the agent.** Strands sends a tool's exception
   to the model as an error tool result, a governed refusal included. Add
   `GovernedToolHook()` from `donkey_kit.integrations.strands` to the agent's

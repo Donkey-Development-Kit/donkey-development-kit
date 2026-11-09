@@ -680,13 +680,14 @@ class ExchangeRegistry:
                 f"UNKNOWN: no governance profile has evaluated {asset.coordinates}",
             )
         # One report per ruleset of the profiles that govern the asset's minor version.
-        statuses = {
-            str((r.get("ruleset") or {}).get("label")): str(r.get("summaryStatus")) for r in reports
-        }
-        detail = "; ".join(f"{label}: {status}" for label, status in sorted(statuses.items()))
-        if "NonConformant" in statuses.values():
+        statuses = sorted(
+            (str((r.get("ruleset") or {}).get("label")), str(r.get("summaryStatus")))
+            for r in reports
+        )
+        detail = "; ".join(f"{label}: {status}" for label, status in statuses)
+        if any(status == "NonConformant" for _, status in statuses):
             return Check("governance_pass", False, detail)
-        if set(statuses.values()) == {"Conformant"}:
+        if all(status == "Conformant" for _, status in statuses):
             return Check("governance_pass", True, detail)
         # ``Pending`` (not evaluated yet) or ``Failed`` (the evaluation did not run).
         return Check("governance_pass", None, f"UNKNOWN: {detail}")

@@ -890,6 +890,11 @@ config built entirely with `DonkeyConfig(...)` has its URLs in code too, so the
 rule never applies to it. Likewise, a URL you change in code is no longer
 treated as coming from the file.
 
+Both `jwt` and `bearer` modes check the data-plane credential endpoint before
+every provider token request, including raw sends through the shared client.
+User-token sends also check the receiving client's configuration on every send,
+not only the configuration that created the `as_user()` scope.
+
 The error names every credential that came from elsewhere, where each came
 from, the host, the key and the file:
 

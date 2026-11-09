@@ -55,7 +55,7 @@ from contextvars import ContextVar
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from ..core.approvals import Approval, record_decision, record_pending
+from ..core.approvals import Approval, native_approval, record_decision, record_pending
 from ..core.correlation import current_correlation_id
 from ..core.errors import DonkeyError
 from ..core.masking import masked
@@ -164,10 +164,16 @@ def function_tool(tool: Callable[..., Any], **kw: Any) -> FunctionTool:
 
     Takes the same keyword arguments as ``agents.function_tool``. For an
     approval-gated tool (``@donkey.tool(approval="required")``) it sets the SDK's
-    ``needs_approval=True``, so ``Runner.run`` stops before the tool runs and
+    ``needs_approval`` callback, so ``Runner.run`` stops before the tool runs and
     returns the call in ``result.interruptions``; see :func:`pending_approvals`.
     Once the run state approves the call, the tool runs under the approval, and
     a call the SDK has not approved still raises ``ApprovalRequired``.
+
+    Approval arguments use the SDK's validated Python values, including defaults
+    and nested built-in containers. Custom objects (including Pydantic models),
+    container subclasses and cycles are refused before the pause (ADR 0026);
+    use built-in data annotations instead. Validation is not a mutation exemption:
+    the resumed Python call must exactly match the retained validated snapshot.
 
     The default ``failure_error_function`` hands the model the SDK's fixed error
     text for an exception the tool raises, except a
@@ -202,7 +208,27 @@ def function_tool(tool: Callable[..., Any], **kw: Any) -> FunctionTool:
     if not gated:
         native: FunctionTool = agents.function_tool(tool, **kw)
         return native
-    native = agents.function_tool(tool, needs_approval=True, **kw)
+
+    from agents.function_schema import function_schema
+
+    schema = function_schema(
+        tool,
+        name_override=kw.get("name_override"),
+        description_override=kw.get("description_override"),
+        docstring_style=kw.get("docstring_style"),
+        use_docstring_info=kw.get("use_docstring_info", True),
+        strict_json_schema=kw.get("strict_mode", True),
+    )
+
+    async def needs_approval(_context: Any, arguments: dict[str, Any], call_id: str) -> bool:
+        parsed = schema.params_pydantic_model(**arguments)
+        args, kwargs = schema.to_call_args(parsed)
+        bound = spec.signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        record_pending(_approval(spec, call_id, json.dumps(arguments), dict(bound.arguments)))
+        return True
+
+    native = agents.function_tool(tool, needs_approval=needs_approval, **kw)
     # Re-class the SDK's own tool as its public FunctionTool subclass, the way the
     # SDK's FunctionTool.__copy__ rebuilds one, so __wrapped__ still reaches tool.
     native.__class__ = _gated_tool_class()
@@ -320,16 +346,15 @@ def approved_call(tool: str, arguments: Mapping[str, Any], risk: str | None) -> 
 def pending_approvals(
     run: RunResult | RunResultStreaming | RunState[Any, Any],
 ) -> tuple[Approval, ...]:
-    """The approval-gated calls a paused run is waiting on, each recorded as a
-    pending approval (BG §2.3, #213).
+    """Read the approval-gated calls a paused run is waiting on (BG §2.3, #213).
 
     Pass the ``RunResult`` (or its ``to_state()``) of a ``Runner.run`` that
     stopped on :func:`function_tool` calls. Each call becomes an
     :class:`~donkey_kit.core.approvals.Approval` (tool, arguments with defaults,
-    risk; ``native`` is the SDK's ``ToolApprovalItem``) and a
-    ``donkey.approval.pending`` span event; other interruptions are left out.
-    Call it once per pause, inside the ``donkey.run()`` that paused, so the
-    event carries the run's correlation id.
+    risk; ``native`` is the SDK's ``ToolApprovalItem``); other interruptions
+    are left out. Inspection never records
+    requester evidence or emits another pending event. The initial SDK approval
+    callback records the origin; inspecting restored state cannot replace it.
 
     The run state holds the pause, so ``approval_timeout`` does not apply and
     ``expires_at`` is ``math.inf``. The id is derived from the SDK's call id, the
@@ -345,7 +370,6 @@ def pending_approvals(
             approval = dataclasses.replace(
                 _approval(spec, item.call_id, item.arguments), native=item
             )
-            record_pending(approval)
             found.append(approval)
     return tuple(found)
 
@@ -471,7 +495,12 @@ def _gated_spec(item: ToolApprovalItem) -> ToolSpec | None:
     return None
 
 
-def _approval(spec: ToolSpec, call_id: str | None, raw: str | None) -> Approval:
+def _approval(
+    spec: ToolSpec,
+    call_id: str | None,
+    raw: str | None,
+    validated: dict[str, Any] | None = None,
+) -> Approval:
     """The approval for one SDK call of ``spec``'s tool."""
     try:
         parsed = json.loads(raw) if raw else {}
@@ -484,14 +513,20 @@ def _approval(spec: ToolSpec, call_id: str | None, raw: str | None) -> Approval:
         arguments = dict(bound.arguments)
     except TypeError:  # the model sent arguments the tool does not take
         pass
-    # The SDK's raw argument string, not the bound arguments: a default's repr
-    # can hold a memory address, which would change the id between processes.
-    digest = hashlib.sha256(repr((call_id, spec.name, raw or "")).encode())
+    # Canonical raw JSON, not bound defaults: the origin callback receives parsed
+    # arguments, while inspection receives the original JSON spelling.
+    encoded = json.dumps(parsed, sort_keys=True) if raw else "{}"
+    digest = hashlib.sha256(repr((call_id, spec.name, encoded)).encode())
     approval_id = digest.hexdigest()[:32]
+    # Replayed callbacks must neither replace origin metadata nor silently accept
+    # a changed validated snapshot (ADR 0026). Inspection supplies no new evidence.
+    origin = native_approval(approval_id, arguments=validated)
+    if origin is not None:
+        return origin
     return Approval(
         id=approval_id,
         tool=spec.name,
-        arguments=MappingProxyType(arguments),
+        arguments=MappingProxyType(arguments if validated is None else validated),
         risk=spec.risk,
         correlation_id=current_correlation_id() or approval_id,
         requested_at=time.time(),
@@ -510,6 +545,10 @@ def _paused(
         if spec is not None:
             found = _approval(spec, item.call_id, item.arguments)
             if found.id == wanted:
+                if not isinstance(approval, str):
+                    origin = native_approval(wanted, arguments=approval.arguments)
+                    if origin is not None:
+                        return item, origin
                 return item, found if isinstance(approval, str) else approval
     raise KeyError(
         f"no paused call for approval {wanted!r} in this run state: it was already "

@@ -26,6 +26,7 @@ from .headers import (
     _apply_auth,
     _apply_call_id_header,
     _apply_user_token,
+    _restore_user_token,
     _strip_a2a_headers,
     a2a_scope,
 )
@@ -170,6 +171,7 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
         return self._token_provider
 
     async def _inject_headers(self, request: httpx.Request) -> None:
+        _restore_user_token(request)
         scope = a2a_scope(request)
         if scope is not None:
             # Correlation remains shared, but the A2A callback owns all auth.

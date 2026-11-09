@@ -546,7 +546,11 @@ response runs it, never an automated agent against a live endpoint. Its own
 tests (`tests/unit/test_capture_fixture.py`) exercise every code path offline
 through `httpx.MockTransport`. `--out-dir` must sit under `tests/fixtures/` or
 `src/donkey_kit/simulator/_fixtures/`, the two trees it scrubs and relocks,
-and the script refuses a directory outside them before it sends anything. It
+and the script refuses a directory outside them before it sends anything.
+`--name` must be a single basename, without separators, drive prefixes,
+control characters, or `.` / `..`. Before sending, the script checks every
+possible output and the provenance `README.md`: destinations must stay inside
+the fixture roots and cannot be symlinks or non-regular files. It
 requests `Accept-Encoding: identity` so the body it writes is the bytes on the
 wire, and it refuses to write a compressed response. After it runs, review the
 diff and confirm `scrub_fixtures.py --check` is still clean before committing
@@ -980,7 +984,8 @@ if you touched adapters.
   and type names. `tests/unit/test_logging.py` asserts that no record carries a
   sent credential.
 - **No silent swallowing.** An `except` that does not re-raise either logs
-  `_log.debug(..., exc_info=True)` or says inline why the failure is expected.
+  the exception type without its message or traceback when a provider or
+  callback can carry secrets, or says inline why the failure is expected.
   Ruff selects `BLE`, `LOG`, and `G`, so a blind `except Exception` needs a
   `# noqa: BLE001 — <reason>` that states the reason. Pass log arguments
   lazily (`_log.debug("%s", x)`), never as an f-string.

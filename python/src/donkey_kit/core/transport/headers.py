@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from typing import cast
 
 import httpx
 
@@ -28,7 +29,7 @@ from ..correlation import (
 from ..cost import CostTags
 from ..endpoints import require_secure_url
 from ..errors import ConfigError
-from ..identity import user_token_header
+from ..identity import check_user_token_endpoint, user_token_header
 from ..masking import SENSITIVE_NAMES, Secret, masked
 
 __all__ = [
@@ -223,6 +224,7 @@ def strip_credential_headers(
 ) -> None:
     """Remove every header in ``names`` (lower-cased) from ``request``: by
     default :data:`CREDENTIAL_HEADERS`, or a config's :func:`credential_headers`."""
+    names |= cast("frozenset[str]", request.extensions.get("donkey_user_header_names", frozenset()))
     for name in [n for n in request.headers if n.lower() in names]:
         del request.headers[name]
 
@@ -438,20 +440,8 @@ def _apply_auth(
     """Stamp the per-send credential on a request already cleared by the
     checked-endpoint guard. Shared by both clients so they cannot drift (#728).
 
-    In ``jwt`` mode (model-wallet ingress, #509/#372) a data-plane send carries
-    the durable wallet-selector ``X-Client-Id``, on every send rather than only
-    in the ``default_headers`` snapshot, so adapters routed through the shared
-    client carry it too; a control-plane send never does. The name is VERIFIED
-    (docs/verified-apis.md §2/§3).
-
-    ``token`` is the attached provider's token, or ``None`` when there is none
-    (client-id mode, and always on the blocking client, whose token modes are
-    refused before a request is built). Three token-bearing ingresses ride here,
-    each on its own client and all as ``Authorization: Bearer`` (VERIFIED): the
-    control-plane OAuth2 client_credentials token (docs/verified-apis.md §12.1),
-    the data-plane model-wallet JWT in jwt mode (docs/verified-apis.md §2/§3,
-    #372), and the data-plane token in bearer mode, the same JWT Validation
-    bearer header with no wallet selector (#836)."""
+    Tokens ride as Authorization bearers (docs/verified-apis.md §2/§3/§12.1).
+    The blocking client has no provider and refuses token modes before send."""
     if cfg.llm_proxy_auth == "jwt" and not control_plane and cfg.llm_proxy_wallet_client_id:
         request.headers.setdefault(
             _verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER, cfg.llm_proxy_wallet_client_id
@@ -473,15 +463,37 @@ def _apply_auth(
 
 
 def _apply_user_token(cfg: DonkeyConfig, request: httpx.Request, token: str) -> None:
-    """Stamp the ``donkey.as_user(...)`` token (BG §2.4, #215) on a data-plane
-    request already cleared by the checked-endpoint guard, after :func:`_apply_auth`.
-
-    In ``Authorization`` (the default, docs/verified-apis.md §13) it
-    rides as a bearer and OVERRIDES what is there: in client-id mode that is the
-    OpenAI SDK's ``api_key`` sentinel, and yielding to it would send the call as
-    the service identity. A ``user_token_header`` override carries the raw token."""
+    """Stamp a checked user bearer or raw custom header (BG §2.4, docs/verified-apis.md §13)."""
     header = user_token_header(cfg)
+    check_user_token_endpoint(cfg, need="llm")
+    if (
+        cfg.llm_proxy_auth in TOKEN_AUTH_MODES
+        and header.lower() == _verify.LLM_PROXY_WALLET_JWT_HEADER.lower()
+    ):
+        raise ConfigError("user_token_header must not replace the data-plane token in token modes.")
+    previous = request.headers.get_list(header)
+    # Classification survives restoration and cross-client reuse; never stores values.
+    request.extensions["donkey_user_header_names"] = cast(
+        "frozenset[str]", request.extensions.get("donkey_user_header_names", frozenset())
+    ) | {header.lower()}
     if header.lower() == _verify.LLM_PROXY_WALLET_JWT_HEADER.lower():
         request.headers[header] = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {token}"
     else:
         request.headers[header] = token
+    request.extensions["donkey_user_header"] = (
+        header,
+        Secret(request.headers[header]),
+        [Secret(value) for value in previous],
+    )
+
+
+def _restore_user_token(request: httpx.Request) -> None:
+    """Undo only our last user-header write, before auth and origin stripping."""
+    state = request.extensions.pop("donkey_user_header", None)
+    if state is None:
+        return
+    header, injected, previous = cast("tuple[str, str, list[str]]", state)
+    if request.headers.get_list(header) == [injected]:
+        del request.headers[header]
+        if previous:
+            request.headers.update([(header, value) for value in previous])

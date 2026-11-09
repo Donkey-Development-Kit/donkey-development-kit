@@ -63,6 +63,56 @@ def _status(exc: BaseException) -> int | None:
     return _status(cause) if cause is not None and cause is not exc else None
 
 
+async def _read_error(response: Any) -> None:  # noqa: ANN401
+    """Buffer only complete, identity-encoded errors within the byte/time bounds."""
+    if response.status_code < 400:
+        return
+    streamable = _streamable()
+    http_lib = getattr(streamable, "httpx2", None) or streamable.httpx
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _ERROR_BODY_TIMEOUT
+    cleanup_budget = min(_ERROR_BODY_TIMEOUT / 5, 0.05)
+    refused = response.headers.get("content-encoding", "identity").lower() != "identity"
+
+    async def read() -> bytes:
+        head: list[bytes] = []
+        size = 0
+        async for chunk in response.stream:
+            size += len(chunk)
+            if size > _ERROR_BODY_CAP:
+                response.raise_for_status()
+            head.append(chunk)
+        return b"".join(head)
+
+    content: bytes | None = None
+    try:
+        if not refused:
+            if response.is_stream_consumed:
+                refused = len(response.content) > _ERROR_BODY_CAP
+                if not refused:
+                    return
+            else:
+                content = await asyncio.wait_for(
+                    read(), max(0.0, deadline - loop.time() - cleanup_budget)
+                )
+    except (asyncio.TimeoutError, http_lib.TransportError, http_lib.HTTPStatusError):
+        refused = True
+
+    # Cleanup shares the total deadline, including compressed/oversized refusals.
+    # Cancellation is not caught: never delay it behind a stalled close operation.
+    try:
+        close = response.stream.aclose if content is not None and not refused else response.aclose
+        await asyncio.wait_for(close(), max(0.0, deadline - loop.time()))
+    except Exception:  # noqa: BLE001 -- best-effort cleanup must retain the HTTP status
+        refused = True
+    if refused:
+        response.request.extensions.pop("donkey_mcp_binding", None)
+        response.raise_for_status()
+    if content is not None:
+        response.stream = http_lib.ByteStream(content)
+        await response.aread()
+
+
 @asynccontextmanager
 async def open_session(
     url: str,
@@ -73,14 +123,28 @@ async def open_session(
 ) -> AsyncIterator[Any]:
     """An initialized ``mcp.ClientSession`` to ``url``, sending ``headers`` on
     every request. Each HTTP error response the server answers with is appended
-    to ``errors``, its body read, so the caller can classify it."""
+    to ``errors``. Only complete identity-encoded bodies within 64 KiB and a
+    five-second deadline are retained for classification; otherwise only the
+    status and headers are retained."""
     streamable = _streamable()
     from mcp import ClientSession
 
     async def record(response: Any) -> None:  # noqa: ANN401
+        index = len(errors) if errors is not None else 0
         if errors is not None and response.status_code >= 400:
-            await response.aread()
-            errors.append(response)
+            # Retain the status even when buffering fails, but never classify a
+            # partial, compressed or oversized envelope as a typed step-up answer.
+            errors.append(
+                http_lib.Response(
+                    response.status_code,
+                    headers=response.headers,
+                    request=response.request,
+                    content=b"",
+                )
+            )
+        await _read_error(response)
+        if errors is not None and response.status_code >= 400:
+            errors[index] = response
 
     http_lib = getattr(streamable, "httpx2", None) or streamable.httpx
     http = (
@@ -123,37 +187,7 @@ def client_factory(url: str, credentials: Mapping[str, str]) -> Callable[..., An
     async def read_error(response: Any) -> None:  # noqa: ANN401
         if response.status_code < 400 or origin_of(str(response.request.url)) != origin:
             return
-        if response.is_stream_consumed:
-            if len(response.content) > _ERROR_BODY_CAP:
-                response.request.extensions.pop("donkey_mcp_binding", None)
-                response.raise_for_status()
-            return
-        streamable = _streamable()
-        http_lib = getattr(streamable, "httpx2", None) or streamable.httpx
-
-        async def read() -> None:
-            head: list[bytes] = []
-            size = 0
-            async for chunk in response.stream:
-                size += len(chunk)
-                if size > _ERROR_BODY_CAP:
-                    response.request.extensions.pop("donkey_mcp_binding", None)
-                    response.raise_for_status()
-                head.append(chunk)
-            await response.stream.aclose()
-            response.stream = http_lib.ByteStream(b"".join(head))
-            await response.aread()
-
-        # No public bounded-read seam exists in core.transport.streaming. Do not
-        # replay an incomplete body: the framework could drain it without a cap.
-        if response.headers.get("content-encoding", "identity") != "identity":
-            response.request.extensions.pop("donkey_mcp_binding", None)
-            response.raise_for_status()
-        try:
-            await asyncio.wait_for(read(), _ERROR_BODY_TIMEOUT)
-        except (asyncio.TimeoutError, http_lib.TransportError):
-            response.request.extensions.pop("donkey_mcp_binding", None)
-            response.raise_for_status()
+        await _read_error(response)
 
     def build(
         headers: Mapping[str, str] | None = None,

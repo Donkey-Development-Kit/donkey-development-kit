@@ -39,7 +39,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import ModuleType
 
 import httpx
@@ -134,6 +134,7 @@ def write_capture(response: httpx.Response, out_dir: Path, name: str) -> tuple[P
 
     Raises ``ValueError`` (before writing anything) for a compressed response:
     httpx has already decoded its body, so the pair would not be a capture."""
+    _validate_destination(out_dir, name)
     encoding = response.headers.get("content-encoding", "identity").strip().lower()
     if encoding != "identity":
         raise ValueError(
@@ -158,6 +159,7 @@ def append_provenance(out_dir: Path, name: str, provenance: str) -> Path:
     """Append one ``- `<name>`: <provenance>`` line to ``out_dir/README.md``,
     creating the file (with a one-line heading) if this is the directory's
     first capture."""
+    _validate_destination(out_dir, name)
     readme_path = out_dir / "README.md"
     line = f"- `{name}`: {provenance}\n"
     if readme_path.is_file():
@@ -175,6 +177,28 @@ def is_under_fixture_root(out_dir: Path) -> bool:
     places a capture is scrubbed and relocked."""
     resolved = out_dir.resolve()
     return any(resolved.is_relative_to(root.resolve()) for root in FIXTURE_ROOTS)
+
+
+def _validate_destination(out_dir: Path, name: str) -> None:
+    if (
+        not name
+        or name in {".", ".."}
+        or "/" in name
+        or "\\" in name
+        or PureWindowsPath(name).drive
+        or any(ord(char) < 32 for char in name)
+    ):
+        raise ValueError("capture name must be a non-empty basename, not a path")
+    if not is_under_fixture_root(out_dir) or (out_dir.exists() and not out_dir.is_dir()):
+        raise ValueError("unsafe capture destination: directory must stay inside a fixture root")
+    # Check every possible output before writing any of them (or sending traffic).
+    paths = [out_dir / f"{name}.headers.txt", out_dir / "README.md"]
+    paths.extend(out_dir / f"{name}.body.{suffix}" for suffix in ("json", "txt", "bin"))
+    for path in paths:
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            raise ValueError("unsafe capture destination: outputs must be regular files")
+        if not is_under_fixture_root(path):
+            raise ValueError("unsafe capture destination: output escapes the fixture roots")
 
 
 def relock(scrub_module: ModuleType) -> None:
@@ -231,6 +255,11 @@ def main(argv: list[str]) -> int:
             "src/donkey_kit/simulator/_fixtures/, so the capture would be neither "
             "scrubbed nor locked"
         )
+
+    try:
+        _validate_destination(args.out_dir, args.name)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     data = args.data.encode("utf-8") if args.data is not None else None
     with httpx.Client(timeout=args.timeout) as client:

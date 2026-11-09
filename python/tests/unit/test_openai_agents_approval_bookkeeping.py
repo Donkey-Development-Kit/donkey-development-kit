@@ -121,7 +121,7 @@ def recorded(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
 
 
 # --- pending_approvals ----------------------------------------------------------
-def test_pending_approvals_reads_a_result_and_records_each_gated_call(
+def test_pending_approvals_reads_a_result_without_registering_origin(
     recorded: list[tuple[str, Any]],
 ) -> None:
     state = _state()
@@ -134,14 +134,14 @@ def test_pending_approvals_reads_a_result_and_records_each_gated_call(
     assert (approval.risk, approval.correlation_id) == ("financial", "run-9")
     assert approval.expires_at == math.inf
     assert approval.native is state.items[0]  # the SDK's ToolApprovalItem
-    assert recorded == [("pending", approval)]
+    assert recorded == []
 
 
 def test_pending_approvals_reads_a_run_state_too(recorded: list[tuple[str, Any]]) -> None:
     (approval,) = ddk_agents.pending_approvals(_state())  # type: ignore[arg-type]
     # Outside a run, the approval is its own correlation id.
     assert approval.correlation_id == approval.id
-    assert len(recorded) == 1
+    assert recorded == []
 
 
 def test_pending_approvals_skips_calls_it_did_not_gate(recorded: list[tuple[str, Any]]) -> None:
@@ -204,11 +204,12 @@ def tag_ticket(ticket_id: str, marker: Any = _Unstable()) -> str:  # noqa: B008
     return ticket_id
 
 
-def test_the_approval_id_does_not_depend_on_a_default_s_repr() -> None:
+def test_custom_defaults_are_refused_before_native_approval() -> None:
     item = _Item("tag_ticket", "call-1", '{"ticket_id": "T-1"}', _agent(_native(tag_ticket)))
-    first = ddk_agents.pending_approvals(_State([item]))  # type: ignore[arg-type]
-    again = ddk_agents.pending_approvals(_State([item]))  # type: ignore[arg-type]
-    assert first[0].id == again[0].id
+    from donkey_kit import ConfigError
+
+    with pytest.raises(ConfigError, match="snapshot"):
+        ddk_agents.pending_approvals(_State([item]))  # type: ignore[arg-type]
 
 
 # --- approve / reject -------------------------------------------------------------
@@ -286,7 +287,7 @@ def test_a_call_is_decided_once_per_state(
         second(state, approval.id, by="bob")
 
     assert len(state.approved) + len(state.rejected) == 1
-    decisions = [by for kind, (_, by) in recorded[1:]]
+    decisions = [by for kind, (_, by) in recorded]
     assert decisions == ["alice"]
 
 
@@ -310,7 +311,7 @@ def test_a_decision_the_state_refuses_can_be_made_again(
     state.approve = broken  # type: ignore[method-assign]
     with pytest.raises(RuntimeError, match="state refused"):
         ddk_agents.approve(state, approval, by="alice")  # type: ignore[arg-type]
-    assert [kind for kind, _ in recorded] == ["pending"]  # nothing recorded
+    assert recorded == []  # neither inspection nor a failed decision records anything
     del state.approve  # back to the class's own method
     ddk_agents.approve(state, approval, by="alice")  # type: ignore[arg-type]
     assert state.approved == state.items

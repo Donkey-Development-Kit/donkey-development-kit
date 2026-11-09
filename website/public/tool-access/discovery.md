@@ -63,6 +63,13 @@ filters and approval rules; see
 For access-scoped lists, refusal handling and result transformations, see
 [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md).
 
+When listing tools, the SDK retains HTTP error bodies for classification only
+within a 64 KiB limit and a five-second total deadline shared by the read and
+best-effort cleanup, with no compressed or partial envelope classification.
+Cancellation is not delayed by cleanup. Authentication failures remain `AuthError`; other
+listing failures surface as `ToolInvocationError`. See
+[Results and errors](https://docs.donkey-kit.dev/tool-access/binding.md#results-and-errors).
+
 ## Registry search
 
 `donkey.registry.search()` is Live. `discover(...)`
@@ -259,7 +266,9 @@ It reads the asset version's API Manager instances in the environment set by
   gateways by name.
 - A version with no deployed instance fails the policy and gateway checks.
 - `governance_pass` reads the reports of the business group's API Governance
-  profiles. It is `False` when a report is `NonConformant`. It is UNKNOWN when
+  profiles, retaining every report even when ruleset labels repeat. Any
+  `NonConformant` report makes it `False`; it is `True` only when every report
+  is `Conformant`. It is UNKNOWN when
   no profile has evaluated the version, when a report is pending or failed, or
   when the read is refused. API Governance evaluates an asset version when it
   is published, so a profile created later does not report on it.

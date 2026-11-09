@@ -122,12 +122,15 @@ with a `.remediation`, before any request leaves the process.
 |---|---|---|
 | No `token`: empty, blank or `None` | `donkey.as_user(...)` itself | the missing `token` |
 | An approved tool resumed with another user's token | when the tool would run | the approval and the tool |
+| A native approval resumed without retained requester state | when the tool would run | the approval and the tool; request a fresh approval |
 | A per-tool MCP binding called under a different user from the one it was bound for | when the tool would be called | the tool and its server |
 
 The same rule holds across an approval. A tool that waits for a human runs as
 the user who asked for it, with their token and attribution, wherever it is
 resumed. Resuming it inside `as_user()` under a different token raises
-`AuthError` instead of running it as someone else. See
+`AuthError` instead of running it as someone else. Native approvals also fail
+closed when requester state is lost after a restart, another process or
+eviction; binding the resumer with `as_user()` cannot recover that evidence. See
 [Who a resumed call runs as](https://docs.donkey-kit.dev/hitl.md#who-a-resumed-call-runs-as).
 
 MCP tools follow it too. A binding sends the identity it was bound with, so
@@ -147,6 +150,11 @@ inside one.
 The errors and the SDK's logs never contain the token itself. There is **no
 setting that enables a fallback** to the service identity, and none will be
 added: a block that can't run as the user doesn't run.
+
+The receiving transport checks its own configuration before every user-token
+send, even if another `Donkey` created the `as_user()` scope. On a reused HTTP
+request, the SDK restores or removes its previous user-header write before
+applying the current scope; a token from a finished scope is not retained.
 
 Adapters that only take `connection_kwargs()` and don't route through the shared
 transport never see the block, so their calls are not made as the user.

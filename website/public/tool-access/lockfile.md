@@ -108,6 +108,16 @@ with `filter()` is not drift. The check runs when the set first lists its tools.
 lists them before it builds anything, so a set that has drifted never reaches
 your framework. `await tools.describe()` runs the same check without binding.
 
+Locked per-tool bindings (`langgraph()`, `llamaindex()` and `anthropic()`)
+build native tools from an owned copy of the validated descriptor snapshot,
+not a second listing. Their names and metadata stay with that snapshot through
+invocation; the gateway still decides whether each call is allowed.
+
+Whole-server bindings (ADK, Strands, CrewAI, Agent Framework and OpenAI Agents)
+instead use the framework's later listing, narrowed by tool name. That later
+listing is not re-checked against the lock, so these bindings do not provide
+the same metadata snapshot guarantee.
+
 | What changed at the gateway | Result |
 | --- | --- |
 | A pinned server is no longer discovered | `ToolLockDrift`, `kind="server_missing"`, raised by `discover()` before any connection |

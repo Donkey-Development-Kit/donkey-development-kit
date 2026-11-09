@@ -86,6 +86,17 @@ All four model routes share the `donkey-sim/`
 sentinel, the scenarios below, one shared budget window, and the
 `x-donkey-simulator` header. Any other route answers `404`.
 
+Model request bodies are limited to 4 MiB, checking both declared content
+length and streamed bytes. A larger body receives a plain-text HTTP `413`
+with `x-donkey-simulator: true`. This is a local resource limit, not a captured
+gateway policy refusal.
+
+JSON that exceeds the parser's nesting depth follows the existing invalid-body
+behavior rather than producing a server error: the OpenAI-format routes treat
+it as an empty payload (a default happy-path `200` when no scenario intervenes),
+while the native Anthropic and Gemini routes return their captured invalid-JSON
+`400`. This is not a new gateway rejection shape or a configurable depth limit.
+
 ## MCP tool fault injection
 
 New in 0.2.1, `donkey.simulate_mcp()` makes

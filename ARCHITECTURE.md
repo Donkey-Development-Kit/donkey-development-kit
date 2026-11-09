@@ -189,7 +189,23 @@ Beside it:
   tool's model calls go through the transport like any other, so an approval
   never overrides a refusal. A resumed tool runs as its requester: `identity`
   captures the user and attribution bound when the call was asked for, and
-  re-binds them on resume (#1416). Inside a LangGraph graph the gate pauses with `interrupt()` instead
+  re-binds them on resume (#1416). Approval arguments and pending execution
+  arguments are separate detached snapshots of acyclic exact built-in data;
+  custom objects in reviewed data and cycles raise `ConfigError`. ADK's plugin
+  provides an execution-only `ToolContext` exemption checked by object identity;
+  it is not snapshotted or reviewed. The gate's explicit `execution_defaults`
+  flag keeps Python defaults in execution while MCP invokers send only supplied
+  fields; `__signature__` does not select that behavior. Native comparison
+  checks exact types recursively, without cross-type equality coercions.
+  Native requester and argument
+  evidence is retained for the latest 1,024 pauses in process memory. A missing
+  requester refuses execution with `AuthError`; changed arguments raise
+  `ConfigError` (ADR 0026). A durable framework pause does not restore that
+  evidence after a restart. Only initial native pauses register origin evidence;
+  OpenAI Agents does this in `needs_approval`, not `pending_approvals()`.
+  Inspection never reconstructs origin evidence, and repeated registration
+  preserves the retained origin without another pending event.
+  Inside a LangGraph graph the gate pauses with `interrupt()` instead
   (#212): `donkey.py` passes the LangGraph adapter's hook into `gate(natives=...)`,
   so core still imports no framework.
   `inbound` binds the run for one inbound A2A task (#225): it adopts the
@@ -416,7 +432,10 @@ request either plane sends passes the same origin check.
   either plane: in `validated()` for model calls and the registry, before each
   control-plane token fetch, and before a `Donkey(auth=…)` provider's token is
   requested. The `donkey.as_user()` token counts as set in code too, and is
-  checked against `llm_proxy_url` when the scope is built (#1439). A URL
+  checked against `llm_proxy_url` when the scope is built (#1439), and against
+  the receiving transport's config on every send. Both JWT and bearer provider
+  tokens are endpoint-checked before each token request. Reused requests undo
+  the SDK's previous user-header write before applying the current scope. A URL
   derived from a configured endpoint is held to the rule of the endpoint it
   came from (ADR 0019, #1479). Discovery reads the MCP and A2A gateway URLs
   from the control plane at `base_url`. So before a discovered `ToolSet` lists

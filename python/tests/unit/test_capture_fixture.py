@@ -30,6 +30,11 @@ def _load() -> ModuleType:
 capture_fixture = _load()
 
 
+@pytest.fixture(autouse=True)
+def fixture_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(capture_fixture, "FIXTURE_ROOTS", (tmp_path,))
+
+
 def _client(handler: httpx.MockTransport | None = None) -> httpx.Client:
     if handler is None:
         handler = httpx.MockTransport(
@@ -137,7 +142,7 @@ def test_out_dir_must_be_inside_a_fixture_root(tmp_path: Path) -> None:
     assert capture_fixture.is_under_fixture_root(
         capture_fixture.FIXTURE_ROOTS[0] / "anypoint" / "model_wallet"
     )
-    assert not capture_fixture.is_under_fixture_root(tmp_path)
+    assert not capture_fixture.is_under_fixture_root(tmp_path.parent / "outside")
 
 
 def test_main_rejects_an_out_dir_that_would_go_unlocked(tmp_path: Path) -> None:
@@ -145,7 +150,7 @@ def test_main_rejects_an_out_dir_that_would_go_unlocked(tmp_path: Path) -> None:
         capture_fixture.main(
             [
                 "--out-dir",
-                str(tmp_path),
+                str(tmp_path.parent / "outside"),
                 "--name",
                 "x",
                 "--url",
@@ -288,3 +293,82 @@ def test_main_runs_end_to_end_against_a_mock_transport(
     assert (out_dir / "responses.success.body.json").is_file()
     assert "Captured 2026-10-05" in (out_dir / "README.md").read_text(encoding="utf-8")
     assert _FakeFixtures.relocked is True
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["", ".", "..", "../escape", "/absolute", "sub/name", r"sub\name", "C:escape", "bad\x00"],
+)
+def test_write_capture_rejects_non_basename_names(tmp_path: Path, name: str) -> None:
+    with pytest.raises(ValueError, match="name"):
+        capture_fixture.write_capture(httpx.Response(200, content=b"body"), tmp_path, name)
+    assert not any(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("target", ["sample.headers.txt", "sample.body.bin", "README.md"])
+def test_capture_rejects_symlink_outputs_before_any_write(tmp_path: Path, target: str) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.write_text("untouched")
+    (tmp_path / target).symlink_to(outside)
+    with pytest.raises(ValueError, match="destination"):
+        capture_fixture.write_capture(httpx.Response(200, content=b"body"), tmp_path, "sample")
+    assert outside.read_text() == "untouched"
+    assert list(tmp_path.iterdir()) == [tmp_path / target]
+
+
+def test_capture_rejects_symlink_directory(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-dir"
+    outside.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="destination"):
+        capture_fixture.write_capture(httpx.Response(200), linked, "sample")
+    assert not any(outside.iterdir())
+
+
+def test_provenance_rejects_symlink_readme(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-readme"
+    outside.write_text("untouched")
+    (tmp_path / "README.md").symlink_to(outside)
+    with pytest.raises(ValueError, match="destination"):
+        capture_fixture.append_provenance(tmp_path, "sample", "capture")
+    assert outside.read_text() == "untouched"
+
+
+def test_write_capture_rejects_directory_output(tmp_path: Path) -> None:
+    (tmp_path / "sample.body.bin").mkdir()
+    with pytest.raises(ValueError, match="destination"):
+        capture_fixture.write_capture(httpx.Response(200, content=b"body"), tmp_path, "sample")
+    assert not (tmp_path / "sample.headers.txt").exists()
+
+
+def test_write_capture_rejects_outside_root(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    with pytest.raises(ValueError, match="destination"):
+        capture_fixture.write_capture(httpx.Response(200), outside, "sample")
+    assert not outside.exists()
+
+
+@pytest.mark.parametrize("unsafe", ["name", "destination"])
+def test_main_rejects_unsafe_capture_before_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unsafe: str
+) -> None:
+    def no_client(**kwargs: object) -> None:
+        pytest.fail("unsafe capture must not send traffic")
+
+    monkeypatch.setattr(httpx, "Client", no_client)
+    if unsafe == "destination":
+        (tmp_path / "sample.body.json").symlink_to(tmp_path / "absent")
+    with pytest.raises(SystemExit, match="2"):
+        capture_fixture.main(
+            [
+                "--out-dir",
+                str(tmp_path),
+                "--name",
+                "../escape" if unsafe == "name" else "sample",
+                "--url",
+                "https://example.invalid",
+                "--provenance",
+                "capture",
+            ]
+        )

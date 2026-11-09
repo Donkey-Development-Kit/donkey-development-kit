@@ -3,6 +3,7 @@
 <!-- toc -->
 **Contents**
 
+- [Approval and credential hardening](#approval-and-credential-hardening)
 - [0.2.1: CLI argument swap, an async lock() and narrower refusal types](#021-cli-argument-swap-an-async-lock-and-narrower-refusal-types)
   - [1. donkey expose and donkey preflight take the path, not the service](#1-donkey-expose-and-donkey-preflight-take-the-path-not-the-service)
   - [2. donkey.tools.lock() is async](#2-donkeytoolslock-is-async)
@@ -69,6 +70,75 @@
   - [16. An Agent Kill Switch block raises AgentKilled](#16-an-agent-kill-switch-block-raises-agentkilled)
   - [17. donkey-kit[all] leaves out the seven connection_kwargs() frameworks](#17-donkey-kitall-leaves-out-the-seven-connection_kwargs-frameworks)
 <!-- tocstop -->
+
+## Approval and credential hardening
+
+- Approval-gated tools now execute detached argument snapshots. Mutating the
+  original arguments or nested `Approval.arguments` values cannot change the
+  pending call. Use acyclic exact built-in containers and scalar values;
+  custom objects, subclasses and cycles in reviewed arguments raise `ConfigError`.
+  Convert custom user values to built-in data before requesting a fresh approval.
+  Snapshots are limited to 64 nested containers along any path, including the
+  outer parameter mapping. Deeper data raises actionable `ConfigError`; reduce
+  nesting before requesting a fresh approval.
+  The ADK plugin's trusted injected `ToolContext` remains supported as an
+  execution-only, identity-checked value excluded from review and snapshots.
+  Python defaults are captured for execution even with a custom `__signature__`;
+  only explicitly marked MCP schema invokers send supplied fields without
+  filling omitted schema defaults. Those defaults still appear for review.
+- Native framework resumes need the requester and argument evidence retained
+  in the same process for the latest 1,024 pauses. A restart, another process or
+  eviction loses that evidence and raises `AuthError` without running the tool.
+  Changed approval arguments raise `ConfigError`, including changes between
+  equal-looking but different exact types such as `True`, `1` and `1.0`.
+  Matching also requires identical `range` parameters (`start`, `stop`, `step`),
+  not just equal sequences. Float and complex-component binary representations
+  must match, so signed zero is preserved and NaNs match only identical binary
+  representations. Code that normalizes these representations between pause and
+  resume must request a fresh approval instead.
+  Request a fresh approval in
+  the original requester's context; `as_user()` alone cannot restore lost state.
+  Durable checkpoints and run states retain the framework pause, not DDK's
+  requester evidence.
+- OpenAI Agents SDK tools register requester evidence in the initial
+  `needs_approval` callback, not when `pending_approvals()` inspects the pause.
+  Run the agent in the requester's scope. Repeated same-process inspection
+  leaves retained evidence unchanged and emits no new pending event; inspecting
+  restored pauses never reconstructs missing evidence, even inside `as_user()`.
+  Approval ids use canonical JSON arguments, so key order or whitespace changes
+  do not change the id; this does not make a restored pause safe to execute.
+- User-token sends check the receiving client's endpoint configuration on
+  every send. Reused requests no longer retain SDK-injected user headers from
+  a finished scope. Both JWT and bearer provider tokens are endpoint-checked
+  before token requests, including raw shared-client sends.
+- `ChainedAuth` reports only the last provider exception type if all providers
+  fail, without exception chaining. Refusal-handler diagnostics omit callback
+  messages and tracebacks; the original refusal still propagates.
+- Locked per-tool MCP bindings use the validated descriptor snapshot instead
+  of a second listing. Whole-server bindings retain their later-listing limit.
+  MCP HTTP error classification accepts only complete identity-encoded bodies
+  within 64 KiB and a five-second total deadline shared with best-effort cleanup.
+  Cancellation does not wait behind cleanup. Authentication statuses still raise
+  `AuthError` and other listing failures raise `ToolInvocationError`.
+- Publication documentation must be a UTF-8 `.md` or `.markdown` source inside
+  the scanned root. Hidden path components and components named `credentials`
+  or `secrets` before the first dot (case-insensitive), including symlink targets,
+  are refused. `config.md`, `docs/configuration.md` and configuration directories
+  remain valid sources. Review both the dry-run source path and the file content;
+  path checks are not content sanitization.
+- Local gateway recordings always redact correlation, call-ID and cost values,
+  even without `recording_config`. Tests that asserted those recorded values
+  must instead inspect the request at an appropriate test seam. Only client/wallet
+  IDs, reserved application/business-group attribution and content-type values
+  remain visible. Valid SDK config reserves those names against custom credentials;
+  non-SDK clients must not place secrets there. Header names alone cannot make
+  arbitrary values safe. `recording_config` remains available on
+  `Gateway.configure()` and `start_gateway()` for configured secret-name redaction.
+- The simulator limits model request bodies to 4 MiB and answers larger bodies
+  with its own plain-text `413`, not a captured gateway refusal. Too-deep JSON
+  uses existing invalid-body behavior: an empty payload on OpenAI routes (default
+  happy-path `200` absent a scenario), and captured invalid-JSON `400` on native
+  Anthropic/Gemini routes, not an uncaught parser error.
 
 ## 0.2.1: CLI argument swap, an async lock() and narrower refusal types
 

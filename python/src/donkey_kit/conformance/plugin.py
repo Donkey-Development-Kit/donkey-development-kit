@@ -376,7 +376,10 @@ def gateway() -> Any:
     mock`` replay, on a real port bound to ``0`` (so parallel ``pytest -n`` runs
     never collide), and records every request in a spy the test can assert on
     (:attr:`~.gateway.Gateway.requests_received` plus per-request method, path and
-    headers with ``client_secret`` redacted). Torn down when the test exits,
+    headers with only client/wallet IDs, reserved application/business-group
+    attribution and content-type values retained). Correlation, call-ID, cost-tag
+    and all other values are redacted, regardless of the caller's config.
+    Non-SDK clients must not send secrets under the retained names. Torn down when the test exits,
     including on failure.
 
     Needs the ``[local]`` extra (``starlette`` + ``uvicorn``); taking the fixture

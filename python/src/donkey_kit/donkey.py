@@ -164,6 +164,15 @@ def _adk_approval(tool: str, arguments: Mapping[str, Any], risk: str | None) -> 
 # Strands and ADK hooks only for a call their hook or plugin approved.
 _NATIVES = (_openai_agents_approval, _strands_approval, _adk_approval, _langgraph_interrupt)
 
+
+def _injected_arguments(tool: str) -> Mapping[str, Any]:
+    if "google.adk" not in sys.modules:
+        return {}
+    from .integrations.adk import execution_arguments
+
+    return execution_arguments(tool)
+
+
 # The approvals of the client whose ``donkey.tool`` is running, so a tool gated
 # there records on that client outside any of its scopes (ADR 0018).
 _declaring: ContextVar[Approvals | None] = ContextVar("donkey_declaring_client", default=None)
@@ -1277,7 +1286,14 @@ class Donkey:
 
         def decorate(fn: _Callable) -> _Callable:
             target = (
-                gate(fn, risk=risk, timeout=timeout, natives=_NATIVES, declared_on=declared_on)
+                gate(
+                    fn,
+                    risk=risk,
+                    timeout=timeout,
+                    natives=_NATIVES,
+                    declared_on=declared_on,
+                    injected_arguments=_injected_arguments,
+                )
                 if approval
                 else fn
             )

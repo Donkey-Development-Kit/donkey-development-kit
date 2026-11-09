@@ -244,6 +244,158 @@ def test_resolve_runs_the_call_under_the_approvals_correlation_id() -> None:
             donkey.approvals.resolve(err.approval.id, approved_by="m.keller")
 
 
+@pytest.mark.parametrize("reviewer_mutates", [False, True])
+def test_nested_approval_arguments_are_detached(donkey: Donkey, reviewer_mutates: bool) -> None:
+    @donkey.tool(approval="required")
+    def transfer(payload: dict[str, Any]) -> dict[str, Any]:
+        """Execute the reviewed transfer."""
+        return payload
+
+    original = {"recipient": {"name": "Alice"}, "amounts": [100, {"fee": 2}]}
+    approval = _requested(lambda: transfer(original)).approval
+    changed = approval.arguments["payload"] if reviewer_mutates else original
+    changed["recipient"]["name"] = "Bob"
+    changed["amounts"][1]["fee"] = 500
+    changed["amounts"].append(1000)
+    assert donkey.approvals.resolve(approval.id, approved_by="reviewer") == {
+        "recipient": {"name": "Alice"},
+        "amounts": [100, {"fee": 2}],
+    }
+    if not reviewer_mutates:
+        assert approval.arguments["payload"]["recipient"]["name"] == "Alice"
+
+
+async def test_argument_snapshot_survives_delay_between_resolve_and_await(donkey: Donkey) -> None:
+    @donkey.tool(approval="required")
+    async def transfer(payload: list[dict[str, int]]) -> list[dict[str, int]]:
+        """Execute the reviewed transfer."""
+        return payload
+
+    original = [{"amount": 100}]
+    with pytest.raises(ApprovalRequired) as info:
+        await transfer(original)
+    approval = info.value.approval
+    resumed = donkey.approvals.resolve(approval.id, approved_by="reviewer")
+    original[0]["amount"] = 1000
+    approval.arguments["payload"][0]["amount"] = 2000
+    assert await resumed == [{"amount": 100}]
+
+
+def test_unsafe_custom_arguments_fail_before_requesting_approval(donkey: Donkey) -> None:
+    class Uncopyable:
+        def __deepcopy__(self, memo: object) -> Uncopyable:
+            raise AssertionError("custom copy hooks must not run")
+
+    @donkey.tool(approval="required")
+    def transfer(payload: object) -> None:
+        """Execute the reviewed transfer."""
+        pytest.fail("unsafe arguments must not execute")
+
+    with pytest.raises(ConfigError, match="snapshot") as info:
+        transfer({"nested": Uncopyable()})
+    assert "built-in" in info.value.remediation
+    assert donkey.approvals.pending() == ()
+
+
+def test_snapshot_preserves_normal_argument_types_defaults_and_call_shape(donkey: Donkey) -> None:
+    @donkey.tool(approval="required")
+    def transfer(
+        payload: dict[str, Any], /, *extra: object, options: tuple[int, ...] = (1,), **tags: object
+    ) -> tuple[object, ...]:
+        """Execute a normal Python tool call."""
+        return payload, extra, options, tags
+
+    payload = {"tuple": (1, [2]), "set": {3}, "frozen": frozenset({4}), "bytes": bytearray(b"5")}
+    approval = _requested(lambda: transfer(payload, b"x", enabled=True)).approval
+    assert donkey.approvals.resolve(approval.id, approved_by="reviewer") == (
+        payload,
+        (b"x",),
+        (1,),
+        {"enabled": True},
+    )
+
+
+def test_mutable_default_is_snapshotted_before_review(donkey: Donkey) -> None:
+    default = [{"amount": 100}]
+
+    @donkey.tool(approval="required")
+    def transfer(payload: list[dict[str, int]] = default) -> list[dict[str, int]]:
+        """Execute a transfer with its reviewed default."""
+        return payload
+
+    approval = _requested(transfer).approval
+    default[0]["amount"] = 1000
+    assert donkey.approvals.resolve(approval.id, approved_by="reviewer") == [{"amount": 100}]
+
+
+def test_explicit_signature_cannot_bypass_default_snapshot(donkey: Donkey) -> None:
+    default = [{"amount": 100}]
+
+    def transfer(payload: object = default) -> object:
+        """Execute the reviewed transfer."""
+        return payload
+
+    transfer.__signature__ = inspect.signature(transfer)
+    tool = donkey.tool(approval="required")(transfer)
+    approval = _requested(tool).approval
+    default[0]["amount"] = 1000
+    assert donkey.approvals.resolve(approval.id, approved_by="reviewer") == [{"amount": 100}]
+
+
+@pytest.mark.parametrize("shape", ["cycle", "subclass"])
+def test_unsafe_container_arguments_are_refused(donkey: Donkey, shape: str) -> None:
+    class CustomList(list[Any]):
+        def __deepcopy__(self, memo: object) -> CustomList:
+            return self
+
+    payload: list[Any] = [] if shape == "cycle" else CustomList()
+    if shape == "cycle":
+        payload.append(payload)
+
+    @donkey.tool(approval="required")
+    def transfer(payload: object) -> None:
+        """Execute a transfer."""
+        pytest.fail("unsafe arguments must not execute")
+
+    with pytest.raises(ConfigError, match="snapshot"):
+        transfer(payload)
+    assert donkey.approvals.pending() == ()
+
+
+@pytest.mark.parametrize("depth", [64, 1200])
+def test_excessively_nested_arguments_raise_actionable_config_error(
+    donkey: Donkey, depth: int
+) -> None:
+    payload: object = "leaf"
+    for _ in range(depth):
+        payload = [payload]
+
+    @donkey.tool(approval="required")
+    def transfer(payload: object) -> None:
+        """Execute the reviewed transfer."""
+        pytest.fail("excessively nested arguments must not execute")
+
+    with pytest.raises(ConfigError, match="nesting") as info:
+        transfer(payload)
+    assert "nesting" in info.value.remediation
+    assert donkey.approvals.pending() == ()
+
+
+def test_nested_arguments_within_snapshot_limit_can_resume(donkey: Donkey) -> None:
+    payload: object = "leaf"
+    for _ in range(63):
+        payload = [payload]
+
+    @donkey.tool(approval="required")
+    def transfer(payload: object) -> object:
+        """Execute the reviewed transfer."""
+        return payload
+
+    approval = _requested(lambda: transfer(payload)).approval
+    result = donkey.approvals.resolve(approval.id, approved_by="reviewer")
+    assert result == payload
+
+
 async def test_resolve_of_an_async_tool_is_awaited(donkey: Donkey) -> None:
     @donkey.tool(approval="required")
     async def issue_refund(ticket_id: str) -> str:
@@ -561,6 +713,15 @@ def test_approval_is_a_frozen_value_object() -> None:
     )
     with pytest.raises(AttributeError):
         approval.tool = "other"  # type: ignore[misc]
+
+
+def test_approval_construction_detaches_nested_arguments() -> None:
+    original = {"payload": [{"amount": 100}]}
+    approval = Approval("a-1", "transfer", original, None, "run-1", 0.0, 1.0)
+    original["payload"][0]["amount"] = 1000
+    assert approval.arguments["payload"] == [{"amount": 100}]
+    with pytest.raises(TypeError):
+        approval.arguments["payload"] = []  # type: ignore[index] -- read-only public mapping
 
 
 def test_native_defaults_to_none_and_is_left_out_of_equality_and_the_repr() -> None:

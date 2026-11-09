@@ -303,7 +303,15 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   confirmation. `pending_approvals(events)` returns each paused call as an
   `Approval`; resume the run on a user message whose parts are
   `approve(...).native` or `reject(...).native`, the `types.Part` each helper
-  returns on the `Approval`. See [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-google-adk-app).
+  returns on the `Approval`. DDK's requester evidence remains in process
+  memory, not the session events: missing evidence on native resume raises
+  `AuthError` without running the tool, and changed arguments raise `ConfigError`.
+  Request a fresh approval after losing that state. See
+  [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#in-a-google-adk-app).
+- **The plugin's injected `ToolContext` is execution-only.** It is excluded
+  from approval review and snapshots, and execution must receive that exact
+  framework-supplied object. Reviewed arguments and defaults still require
+  acyclic exact built-in data; this is not an exemption for custom user values.
 - **`gemini()` needs the `adk` extra's minimum `google-adk`** (see
   [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md)), the first release whose
   `Gemini` accepts `client_kwargs`. On an older
