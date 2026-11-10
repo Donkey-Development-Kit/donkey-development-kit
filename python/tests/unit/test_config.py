@@ -135,6 +135,49 @@ def test_install_global_env_overrides_toml(tmp_path, monkeypatch: pytest.MonkeyP
     assert DonkeyConfig.from_env().telemetry_install_global is False  # env wins
 
 
+def test_a2a_sdk_permission_precedence(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    assert DonkeyConfig().allow_a2a_sdk_telemetry is False
+    assert DonkeyConfig.resolve().allow_a2a_sdk_telemetry is False
+    project = tmp_path / ".donkey-kit.toml"
+    project.write_text("[donkey]\nallow_a2a_sdk_telemetry = true\n")
+    assert DonkeyConfig.resolve().allow_a2a_sdk_telemetry is True
+    monkeypatch.setenv("DONKEY_ALLOW_A2A_SDK_TELEMETRY", "false")
+    cfg = DonkeyConfig.resolve()
+    assert cfg.allow_a2a_sdk_telemetry is False
+    assert cfg.source_of("allow_a2a_sdk_telemetry").kind == "env"
+    assert DonkeyConfig.resolve(allow_a2a_sdk_telemetry=True).allow_a2a_sdk_telemetry is True
+    assert cfg.with_overrides(allow_a2a_sdk_telemetry=True).allow_a2a_sdk_telemetry is True
+    assert DonkeyConfig(telemetry=True).allow_a2a_sdk_telemetry is False
+
+
+@pytest.mark.parametrize("token", ["1", "true", "YES", " on ", "0", "false", "NO", "off"])
+def test_a2a_sdk_permission_bool_tokens(tmp_path, monkeypatch, token) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    monkeypatch.setenv("DONKEY_ALLOW_A2A_SDK_TELEMETRY", token)
+    assert DonkeyConfig.resolve().allow_a2a_sdk_telemetry is (
+        token.strip().lower() in {"1", "true", "yes", "on"}
+    )
+
+
+@pytest.mark.parametrize("source", ["code", "override", "env", "toml"])
+def test_a2a_sdk_permission_invalid_bool(tmp_path, monkeypatch, source) -> None:
+    _isolate_toml(tmp_path, monkeypatch)
+    with pytest.raises(ConfigError, match="allow_a2a_sdk_telemetry"):
+        if source == "code":
+            DonkeyConfig(allow_a2a_sdk_telemetry="true")
+        elif source == "override":
+            DonkeyConfig().with_overrides(allow_a2a_sdk_telemetry=1)
+        elif source == "env":
+            monkeypatch.setenv("DONKEY_ALLOW_A2A_SDK_TELEMETRY", "flase")
+            DonkeyConfig.resolve()
+        else:
+            (tmp_path / ".donkey-kit.toml").write_text(
+                '[donkey]\nallow_a2a_sdk_telemetry = "flase"\n'
+            )
+            DonkeyConfig.resolve()
+
+
 # --- on_model_substitution resolution + validation (BG §1.1, #309) ---------------
 # Off by default: a routing substitution is surfaced passively on last_call
 # unless the developer opts into a hard error, through the normal precedence.

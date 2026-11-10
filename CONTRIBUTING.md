@@ -249,8 +249,9 @@ Where a green local `nox` and a red CI run can still differ:
   `pip-audit` action that audits the session's pin list, and the whole
   `dependency-review` and `action-self-test` jobs stay in the workflow.
 - **Other workflows.** `secret-scan`, the nightly matrix and the publish
-  workflows are not sessions. To scan the history as `secret-scan` does, run
-  `gitleaks git .` from the repository root.
+  workflows are not sessions. `secret-scan` scans a PR's own commits and, on a
+  push, the pushed branch's history. To scan your branch as a PR would, run
+  `gitleaks git --log-opts="origin/develop..HEAD" .` from the repository root.
 
 The `test-3.11` session's coverage step fails below the floor (`fail_under` in
 `[tool.coverage.report]`, `python/pyproject.toml`, #751); in CI it also posts the
@@ -258,8 +259,9 @@ report to the job summary. The floor only goes up. Raise it in the PR whose
 tests lift the total past the next integer, and never lower it to make a PR
 pass.
 
-**Commit hooks.** `pre-commit install` runs the checks that are fast on staged
-files at each commit: gitleaks (secrets, configured in `.gitleaks.toml`),
+**Commit hooks.** Run `pre-commit install` once per clone; the hooks then
+apply in every worktree of that clone. They run the checks that are fast on
+staged files at each commit: gitleaks (secrets, configured in `.gitleaks.toml`),
 `ruff check`, `ruff format`, `lint-imports`, and the llms regeneration when a
 website page changes. When a hook rewrites a file (`ruff format`, the llms
 generator), the commit fails; stage the change and commit again. The byte-exact
@@ -500,7 +502,11 @@ test docstring.
 the regenerated integrity lock (`python -m donkey_kit.simulator.fixtures
 --relock` — the reviewable "I re-captured this, I meant it" step); and one
 row in the `docs/verified-apis.md` ledger carrying the date, the instance ID,
-and the policy + gateway version. Nothing else belongs in the repo — no
+and the **tested** policy + gateway version: the version deployed when you
+captured (read from `policy:list` or API Manager), written `deployed <asset>
+<version>` and `gateway <version>`, never the version on the docs page (see
+*Tested versions* in the ledger legend). If you did not record it, say
+`deployed version not recorded`. Nothing else belongs in the repo — no
 `docs/evidence/<issue>/` folders, and no committed local gate logs (pytest /
 mypy / ruff / import-linter output); CI is the record for those. Deployment,
 teardown, and inventory receipts go in the **PR description**, not a committed
@@ -540,7 +546,11 @@ response runs it, never an automated agent against a live endpoint. Its own
 tests (`tests/unit/test_capture_fixture.py`) exercise every code path offline
 through `httpx.MockTransport`. `--out-dir` must sit under `tests/fixtures/` or
 `src/donkey_kit/simulator/_fixtures/`, the two trees it scrubs and relocks,
-and the script refuses a directory outside them before it sends anything. It
+and the script refuses a directory outside them before it sends anything.
+`--name` must be a single basename, without separators, drive prefixes,
+control characters, or `.` / `..`. Before sending, the script checks every
+possible output and the provenance `README.md`: destinations must stay inside
+the fixture roots and cannot be symlinks or non-regular files. It
 requests `Accept-Encoding: identity` so the body it writes is the bytes on the
 wire, and it refuses to write a compressed response. After it runs, review the
 diff and confirm `scrub_fixtures.py --check` is still clean before committing
@@ -974,7 +984,8 @@ if you touched adapters.
   and type names. `tests/unit/test_logging.py` asserts that no record carries a
   sent credential.
 - **No silent swallowing.** An `except` that does not re-raise either logs
-  `_log.debug(..., exc_info=True)` or says inline why the failure is expected.
+  the exception type without its message or traceback when a provider or
+  callback can carry secrets, or says inline why the failure is expected.
   Ruff selects `BLE`, `LOG`, and `G`, so a blind `except Exception` needs a
   `# noqa: BLE001 — <reason>` that states the reason. Pass log arguments
   lazily (`_log.debug("%s", x)`), never as an f-string.

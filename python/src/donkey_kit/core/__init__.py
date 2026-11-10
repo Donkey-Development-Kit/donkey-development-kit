@@ -36,10 +36,16 @@ from .errors import (
     UpstreamRequestError,
 )
 from .identity import UserScope
+from .jsonrpc_refusals import jsonrpc_refusal
 from .lastcall import LastCall, LastCallStatus
 from .reactions import RefusalContext
 from .runledger import RunLedger, RunRefusal, RunUsage
-from .step_up import GatewayApprovalDenied, GatewayApprovalPending
+from .step_up import (
+    GatewayApprovalDenied,
+    GatewayApprovalPending,
+    GatewayAuthChallenge,
+    GatewayAuthRequired,
+)
 from .telemetry import (
     RunScope,
     current_correlation_id,
@@ -83,6 +89,8 @@ __all__ = [
     "DonkeyError",
     "GatewayApprovalDenied",
     "GatewayApprovalPending",
+    "GatewayAuthChallenge",
+    "GatewayAuthRequired",
     "GatewayUnavailable",
     "LastCall",
     "LastCallStatus",
@@ -122,6 +130,7 @@ __all__ = [
     "current_cache_controls",
     "current_correlation_id",
     "current_cost_tags",
+    "jsonrpc_refusal",
     "new_correlation_id",
     "run_context",
 ]

@@ -22,8 +22,8 @@ from typing import Any
 
 import pytest
 
-from donkey_kit import ApprovalRequired, Donkey, PIIDetected
-from donkey_kit.core.approvals import Approval, Approvals
+from donkey_kit import ApprovalRequired, ConfigError, Donkey, PIIDetected
+from donkey_kit.core.approvals import Approval, Approvals, record_pending
 from donkey_kit.core.correlation import run_scope
 from donkey_kit.integrations import strands as strands_mod
 from donkey_kit.integrations.strands import (
@@ -71,7 +71,12 @@ def fake_strands(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def recorded(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
     events: list[tuple[str, Any]] = []
-    monkeypatch.setattr(strands_mod, "record_pending", lambda a: events.append(("pending", a)))
+
+    def pending(approval: Approval) -> None:
+        record_pending(approval)
+        events.append(("pending", approval))
+
+    monkeypatch.setattr(strands_mod, "record_pending", pending)
 
     def decision(approval: Any, *, approved: bool, by: str) -> None:
         events.append(("approved" if approved else "rejected", (approval, by)))
@@ -248,8 +253,9 @@ def test_the_approval_id_depends_on_the_call_as_sent() -> None:
     assert one() == first
     assert one(tool_use_id="tu-2") != first
     assert one(arguments={"ticket_id": "T-2"}) != first
-    # A default's repr never reaches the id, so a restored session matches it.
-    assert one(tool=tag_ticket) == one(tool=tag_ticket)
+    # Custom defaults cannot be safely snapshotted (ADR 0026).
+    with pytest.raises(ConfigError, match="snapshot"):
+        one(tool=tag_ticket)
 
 
 # --- the decision -----------------------------------------------------------------

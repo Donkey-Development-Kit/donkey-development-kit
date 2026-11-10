@@ -18,7 +18,6 @@ Driven with ``httpx.MockTransport``, so no network is touched.
 
 from __future__ import annotations
 
-import logging
 import math
 import time
 from collections.abc import Awaitable, Mapping
@@ -382,26 +381,187 @@ async def test_a_native_resume_under_another_user_is_refused() -> None:
     assert seen == []
 
 
-async def test_a_pause_this_process_did_not_record_runs_as_the_resumer(
-    caplog: pytest.LogCaptureFixture,
+@pytest.mark.parametrize("loss", ["missing", "evicted"])
+@pytest.mark.parametrize("resumer", [None, _ALICE, _BOB])
+async def test_native_requester_loss_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    loss: str,
+    resumer: str | None,
 ) -> None:
-    """After a restart DDK holds no requester for a framework's pause, so the
-    resuming code's own binding stands, with a warning (#1423)."""
+    """A durable pause is not evidence of the lost requester's identity."""
     seen: Seen = []
     tool = _native_tool(seen, _FakeFramework())
     async with Donkey(_cfg()) as donkey:
         async with donkey.as_user(token=_ALICE):
             with pytest.raises(_Paused):
                 tool("T-1")
-        approvals_mod._reset_for_tests()
-        async with donkey.as_user(token=_BOB):
-            with caplog.at_level(logging.WARNING, logger="donkey_kit.core.approvals"):
+        if loss == "missing":
+            approvals_mod._reset_for_tests()
+        else:
+            monkeypatch.setattr(approvals_mod, "_NATIVE_KEPT", 1)
+            record_pending(Approval("other", "other", {}, None, "other", time.time(), math.inf))
+        with pytest.raises(AuthError, match="no recorded requester") as info:
+            if resumer is None:
                 tool("T-1")
-    assert seen == [(_BOB, None, None)]
-    (record,) = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert "native-1" in record.getMessage()
-    assert "no recorded requester" in record.getMessage()
-    assert _BOB not in record.getMessage()
+            else:
+                async with donkey.as_user(token=resumer):
+                    tool("T-1")
+    assert seen == []
+    assert "fresh approval" in info.value.remediation
+    assert info.value.correlation_id == "native-1"
+    for token in (_ALICE, _BOB):
+        assert token not in str(info.value) and token not in info.value.remediation
+
+
+def test_native_initial_unbound_execution_can_pause_and_resume() -> None:
+    seen: Seen = []
+    tool = _native_tool(seen, _FakeFramework())
+    with pytest.raises(_Paused):
+        tool("T-1")
+    assert tool("T-1") == "refunded"
+    assert seen == [(None, None, None)]
+
+
+def test_repeat_registration_does_not_replace_original_requester() -> None:
+    framework = _FakeFramework()
+    seen: Seen = []
+    tool = _native_tool(seen, framework)
+    with Donkey(_cfg()) as donkey:
+        with donkey.as_user(token=_ALICE), pytest.raises(_Paused):
+            tool("T-1")
+        assert framework.approval is not None
+        with donkey.as_user(token=_BOB):
+            record_pending(framework.approval)
+        tool("T-1")
+    assert seen == [(_ALICE, None, None)]
+
+
+@pytest.mark.parametrize(
+    ("original", "changed"),
+    [
+        (True, 1),
+        (1, 1.0),
+        ({True: "x"}, {1: "x"}),
+        ({1}, {1.0}),
+        ([True], [1]),
+        ([1], (1,)),
+        (b"x", bytearray(b"x")),
+        (range(0, 1, 1), range(0, 1, 2)),
+        (range(0, 0, 1), range(1, 1, 1)),
+        (-0.0, 0.0),
+        (complex(-0.0, 1.0), complex(0.0, 1.0)),
+        (complex(1.0, -0.0), complex(1.0, 0.0)),
+        ({-0.0: "x"}, {0.0: "x"}),
+        (float("inf"), float("-inf")),
+        (float("nan"), 0.0),
+    ],
+)
+def test_native_matching_requires_exact_recursive_types(original: object, changed: object) -> None:
+    framework = _FakeFramework()
+    ran: list[object] = []
+
+    def transfer(payload: object) -> None:
+        ran.append(payload)
+
+    tool = gate(transfer, risk=None, timeout=60, natives=[framework])
+    with pytest.raises(_Paused):
+        tool(original)
+    from donkey_kit import ConfigError
+
+    with pytest.raises(ConfigError, match="arguments differ"):
+        tool(changed)
+    assert ran == []
+
+
+@pytest.mark.parametrize(
+    "value", [range(0, 1, 2), -0.0, complex(-0.0, -0.0), float("nan"), complex(float("nan"), -0.0)]
+)
+def test_native_matching_allows_unchanged_scalar_representation(value: object) -> None:
+    framework = _FakeFramework()
+    ran: list[object] = []
+
+    def transfer(payload: object) -> None:
+        ran.append(payload)
+
+    tool = gate(transfer, risk=None, timeout=60, natives=[framework])
+    with pytest.raises(_Paused):
+        tool(value)
+    tool(value)
+    assert len(ran) == 1 and ran[0] is value
+
+
+def test_native_matching_distinguishes_nan_payloads() -> None:
+    import struct
+
+    original = struct.unpack("!d", bytes.fromhex("7ff8000000000001"))[0]
+    changed = struct.unpack("!d", bytes.fromhex("7ff8000000000002"))[0]
+    framework = _FakeFramework()
+    ran: list[object] = []
+
+    def transfer(payload: object) -> None:
+        ran.append(payload)
+
+    tool = gate(transfer, risk=None, timeout=60, natives=[framework])
+    with pytest.raises(_Paused):
+        tool(original)
+    from donkey_kit import ConfigError
+
+    with pytest.raises(ConfigError, match="arguments differ"):
+        tool(changed)
+    assert ran == []
+
+
+@pytest.mark.parametrize("container", [dict, set, frozenset])
+def test_nan_container_matching_cannot_reuse_one_matching_entry(container: Any) -> None:
+    import struct
+
+    def nan(payload: int) -> float:
+        return struct.unpack("!d", (0x7FF8000000000000 + payload).to_bytes(8, "big"))[0]
+
+    first = [nan(1), nan(1)]
+    second = [nan(1), nan(2)]
+    original = {key: "x" for key in first} if container is dict else container(first)
+    changed = {key: "x" for key in second} if container is dict else container(second)
+    framework = _FakeFramework()
+    ran: list[object] = []
+
+    def transfer(payload: object) -> None:
+        ran.append(payload)
+
+    tool = gate(transfer, risk=None, timeout=60, natives=[framework])
+    with pytest.raises(_Paused):
+        tool(original)
+    tool(original)
+    assert len(ran) == 1
+    ran.clear()
+    from donkey_kit import ConfigError
+
+    with pytest.raises(ConfigError, match="arguments differ"):
+        tool(changed)
+    assert ran == []
+
+
+@pytest.mark.parametrize("mutate_call_too", [False, True])
+def test_native_reviewer_mutation_cannot_change_execution(mutate_call_too: bool) -> None:
+    framework = _FakeFramework()
+    ran: list[object] = []
+
+    def transfer(payload: object) -> None:
+        ran.append(payload)
+
+    tool = gate(transfer, risk=None, timeout=60.0, natives=[framework])
+    payload = {"amounts": [100]}
+    with pytest.raises(_Paused):
+        tool(payload)
+    assert framework.approval is not None
+    framework.approval.arguments["payload"]["amounts"].append(1000)
+    if mutate_call_too:
+        payload["amounts"].append(1000)
+    from donkey_kit import ConfigError
+
+    with pytest.raises(ConfigError, match="arguments differ"):
+        tool(payload)
+    assert ran == []
 
 
 async def test_a_refused_native_resume_is_a_span_event(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -438,9 +598,9 @@ def test_only_the_latest_native_pauses_are_kept(monkeypatch: pytest.MonkeyPatch)
     for n in range(3):
         record_pending(Approval(f"a{n}", "issue_refund", {}, None, f"a{n}", time.time(), math.inf))
     assert list(approvals_mod._NATIVE_REQUESTERS) == ["a1", "a2"]
-    # Recording a pause again refreshes it.
+    # A repeat cannot overwrite origin evidence or extend its retention.
     record_pending(Approval("a1", "issue_refund", {}, None, "a1", time.time(), math.inf))
-    assert list(approvals_mod._NATIVE_REQUESTERS) == ["a2", "a1"]
+    assert list(approvals_mod._NATIVE_REQUESTERS) == ["a1", "a2"]
 
 
 def test_a_raised_approval_is_not_kept_as_a_native_pause() -> None:

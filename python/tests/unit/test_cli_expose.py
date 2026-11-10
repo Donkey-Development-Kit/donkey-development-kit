@@ -83,9 +83,9 @@ def anypoint(repo: Path, monkeypatch: pytest.MonkeyPatch) -> FakeAnypoint:
 
 
 def test_expose_then_rerun(repo: Path, anypoint: FakeAnypoint) -> None:
-    first = runner.invoke(app, ["expose", "--path", str(repo)])
+    first = runner.invoke(app, ["expose", str(repo)])
     writes = anypoint.writes()
-    again = runner.invoke(app, ["expose", "--path", str(repo)])
+    again = runner.invoke(app, ["expose", str(repo)])
 
     assert first.exit_code == 0, first.output
     assert "✓ instance            created" in first.output
@@ -101,7 +101,7 @@ def test_expose_then_rerun(repo: Path, anypoint: FakeAnypoint) -> None:
 def test_preflight_and_dry_run_write_nothing(
     repo: Path, anypoint: FakeAnypoint, command: list[str]
 ) -> None:
-    result = runner.invoke(app, [*command, "sku-manager", "--path", str(repo)])
+    result = runner.invoke(app, [*command, str(repo), "--service", "sku-manager"])
 
     assert result.exit_code == 0, result.output
     assert "· instance            planned  would create sku-manager on shared-omni-gateway" in (
@@ -114,7 +114,7 @@ def test_preflight_and_dry_run_write_nothing(
 def test_preflight_names_a_missing_gateway_and_where_to_create_it(
     repo: Path, anypoint: FakeAnypoint
 ) -> None:
-    result = runner.invoke(app, ["preflight", "--path", str(repo), "--target", "absent-gateway"])
+    result = runner.invoke(app, ["preflight", str(repo), "--target", "absent-gateway"])
 
     assert result.exit_code == 1
     assert "✗ gateway" in result.output
@@ -125,7 +125,7 @@ def test_preflight_names_a_missing_gateway_and_where_to_create_it(
 
 
 def test_preflight_names_a_missing_environment(repo: Path, anypoint: FakeAnypoint) -> None:
-    result = runner.invoke(app, ["preflight", "--path", str(repo), "--env", "Nope"])
+    result = runner.invoke(app, ["preflight", str(repo), "--env", "Nope"])
 
     assert result.exit_code == 1
     assert "no environment 'Nope'" in result.output
@@ -138,7 +138,7 @@ def test_a_missing_scope_is_named(repo: Path, anypoint: FakeAnypoint) -> None:
 
     anypoint.refuse["deploy"] = httpx.Response(403, json={"message": "Forbidden"})
 
-    result = runner.invoke(app, ["expose", "--path", str(repo)])
+    result = runner.invoke(app, ["expose", str(repo)])
 
     assert result.exit_code == 1
     assert "✗ deployment" in result.output
@@ -146,7 +146,7 @@ def test_a_missing_scope_is_named(repo: Path, anypoint: FakeAnypoint) -> None:
 
 
 def test_json_report(repo: Path, anypoint: FakeAnypoint) -> None:
-    result = runner.invoke(app, ["--json", "preflight", "--path", str(repo)])
+    result = runner.invoke(app, ["--json", "preflight", str(repo)])
 
     assert result.exit_code == 0, result.output
     report = json.loads(result.stdout)
@@ -168,7 +168,7 @@ def test_json_report(repo: Path, anypoint: FakeAnypoint) -> None:
 def test_declaration_issues_exit_1_and_send_nothing(repo: Path, anypoint: FakeAnypoint) -> None:
     (repo / ".donkey-kit.toml").write_text(CONFIG.replace(f'target = "{GATEWAY}"\n', ""))
 
-    result = runner.invoke(app, ["expose", "--path", str(repo)])
+    result = runner.invoke(app, ["expose", str(repo)])
 
     assert result.exit_code == 1
     assert "missing-target  donkey.expose" in result.stderr
@@ -186,7 +186,7 @@ def test_json_with_declaration_issues_prints_the_report(
     """#1427: a document on stdout, as well as the issues on stderr."""
     (repo / ".donkey-kit.toml").write_text(CONFIG.replace(f'target = "{GATEWAY}"\n', ""))
 
-    result = runner.invoke(app, ["--json", *command, "--path", str(repo)])
+    result = runner.invoke(app, ["--json", *command, str(repo)])
 
     assert result.exit_code == 1
     report = json.loads(result.stdout)
@@ -207,13 +207,13 @@ def test_no_control_plane_credentials_exit_2(repo: Path, monkeypatch: pytest.Mon
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("ANYPOINT_ORG_ID", ORG)
 
-    result = runner.invoke(app, ["preflight", "--path", str(repo)])
+    result = runner.invoke(app, ["preflight", str(repo)])
 
     assert result.exit_code == 2
 
 
 def test_nothing_at_the_path_exits_2(repo: Path) -> None:
-    result = runner.invoke(app, ["preflight", "--path", str(repo / "absent")])
+    result = runner.invoke(app, ["preflight", str(repo / "absent")])
 
     assert result.exit_code == 2
     assert "nothing to scan" in result.output
@@ -225,3 +225,71 @@ def test_both_commands_are_in_the_help() -> None:
     assert result.exit_code == 0
     assert "expose" in result.output
     assert "preflight" in result.output
+
+
+def test_the_0_2_0_form_still_works_with_a_warning(repo: Path, anypoint: FakeAnypoint) -> None:
+    """#1515: ``SERVICE --path PATH`` reads as ``PATH --service SERVICE``."""
+    result = runner.invoke(app, ["preflight", "sku-manager", "--path", str(repo)])
+
+    assert result.exit_code == 0, result.output
+    assert "--path is deprecated" in result.output
+    assert "would expose MCP server sku-manager" in result.output
+
+
+@pytest.mark.parametrize("command", [["preflight"], ["expose", "--dry-run"]])
+def test_the_bare_0_2_0_service_argument_still_works_with_a_warning(
+    repo: Path, anypoint: FakeAnypoint, command: list[str]
+) -> None:
+    """#1667: ``donkey preflight SERVICE``, with nothing at that path and a
+    service of that ID here, reads as ``--service SERVICE``."""
+    result = runner.invoke(app, [*command, "sku-manager"])
+
+    assert result.exit_code == 0, result.output
+    assert "a service ID as the argument is deprecated: pass --service sku-manager" in (
+        result.stderr
+    )
+    assert "would expose MCP server sku-manager" in result.output
+    assert anypoint.writes() == []
+
+
+def test_the_bare_0_2_0_form_exposes(repo: Path, anypoint: FakeAnypoint) -> None:
+    result = runner.invoke(app, ["expose", "sku-manager"])
+
+    assert result.exit_code == 0, result.output
+    assert "is deprecated" in result.stderr
+    assert f"MCP server sku-manager is exposed at {URL}" in result.output
+
+
+def test_an_unknown_service_id_where_the_path_goes_gets_a_hint(repo: Path) -> None:
+    result = runner.invoke(app, ["preflight", "other-service"])
+
+    assert result.exit_code == 2
+    assert "is deprecated" not in result.output
+    assert "nothing to scan" in result.output
+    assert "pass --service other-service" in result.output
+
+
+def test_a_directory_named_like_the_service_gets_a_hint(repo: Path) -> None:
+    """#1667: a service ID that is also a directory name scans that directory;
+    when it finds no config there, say how to name the service instead."""
+    (repo / "sku-manager").mkdir()
+
+    result = runner.invoke(app, ["preflight", "sku-manager"])
+
+    assert result.exit_code == 1
+    assert "is deprecated" not in result.stderr
+    assert "nothing was sent" in result.stderr
+    assert "to expose the service sku-manager, pass --service sku-manager" in result.stderr
+
+
+def test_a_project_directory_gets_no_hint(repo: Path, anypoint: FakeAnypoint) -> None:
+    sub = repo / "svc"
+    sub.mkdir()
+    (sub / ".donkey-kit.toml").write_text(CONFIG.replace(f'target = "{GATEWAY}"\n', ""))
+    (sub / "app.py").write_text(SOURCE, encoding="utf-8")
+
+    result = runner.invoke(app, ["preflight", "svc"])
+
+    assert result.exit_code == 1
+    assert "missing-target" in result.stderr
+    assert "pass --service" not in result.stderr

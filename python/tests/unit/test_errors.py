@@ -389,6 +389,28 @@ def test_bare_model_name_400_is_model_not_routable_not_a_refusal() -> None:
     assert "file an issue" not in err.remediation.lower()
 
 
+def test_bare_model_name_400_keeps_its_own_remediation() -> None:
+    err = classify(httpx.Response(400, json={"error": _UNROUTABLE}))
+    assert err.remediation == ModelNotRoutable.remediation
+
+
+_MISSING = "Failed to parse model from request: Missing 'model' field in request"
+
+
+def test_missing_model_400_is_model_not_routable_not_a_refusal() -> None:
+    err = classify(httpx.Response(400, json={"error": _MISSING}))
+    assert isinstance(err, ModelNotRoutable)
+    assert not isinstance(err, PolicyViolation)
+    assert err.model is None
+    assert err.remediation == ModelNotRoutable.missing_model_remediation
+    assert "file an issue" not in err.remediation.lower()
+
+
+def test_nested_envelope_with_the_missing_model_text_stays_upstream() -> None:
+    err = classify(httpx.Response(400, json={"error": {"message": _MISSING}}))
+    assert isinstance(err, UpstreamRequestError)
+
+
 def test_nested_envelope_with_the_unroutable_text_stays_upstream() -> None:
     """The nested upstream envelope is checked first and keeps its own type."""
     err = classify(httpx.Response(400, json={"error": {"message": _UNROUTABLE}}))

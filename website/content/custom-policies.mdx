@@ -76,7 +76,8 @@ condition in it must hold.
 
 | Key | Matches | Value |
 | --- | --- | --- |
-| `status` | The HTTP status. Required. | An `int` in 400–499, except 401 (always auth) and 429 (always a rate limit or token budget) |
+| `status` | The HTTP status. Required. | An `int` in 400–499, except 401 and 429; 200 only with `jsonrpc_code` |
+| `jsonrpc_code` | Opt into JSON-RPC error matching, not ordinary HTTP rules | Exact `int`, never a `bool` or string; requires a policy-identifying body or header condition and a class `policy` slug |
 | `error_type` | The nested error `type`, or the string `status` of Gemini's envelope | `str` |
 | `error_code` | The nested error `code`, as a string (a numeric code is compared as its string form) | `str` |
 | `headers` | Response headers. Names are case-insensitive; values are exact; several are ANDed. | `{name: value}` |
@@ -268,6 +269,80 @@ A tie is never settled by registration order. The response becomes the generic
 `PolicyViolation`, with `policy="unknown"`, and its remediation names both
 registrations. DDK logs a warning the first time it sees each tie.
 
+### JSON-RPC errors
+
+JSON-RPC uses generic error codes for many unrelated failures. Opt in explicitly
+with `jsonrpc_code` and a marker your custom policy sets. This synthetic Acme
+example is not a built-in MCP or A2A policy contract (BG §2.2):
+
+```python
+from donkey_kit import classify, jsonrpc_refusal
+
+registration = classify.register(
+    match={
+        "status": 200,
+        "jsonrpc_code": -32099,
+        "body": {"error.data.policy": "acme-salary-guard"},
+    },
+    raises=SalaryLeakBlocked,  # must define policy and remediation
+)
+
+raw_error = {
+    "code": -32099,
+    "message": "Request refused.",
+    "data": {"policy": "acme-salary-guard"},
+}
+refusal = jsonrpc_refusal(raw_error, status=200)
+assert isinstance(refusal, SalaryLeakBlocked)
+assert isinstance(classify(registration.example()), SalaryLeakBlocked)
+```
+
+`status` remains required in the registration and matches exactly. The helper's
+status and headers are optional context, but without a status it cannot match a
+custom registration. Body paths start at the full envelope (`error.data.*`);
+raw error objects are normalized to that envelope. Existing body patterns,
+type-strict leaves, case-insensitive header names, specificity, ties,
+`unregister()` and `isolated_classify()` work the same way. `jsonrpc_code` counts
+as one discriminator. Registrations without it remain HTTP-only.
+
+Policy identity requires an exact, nonempty identifier in `error.data.policy` or
+`error.data.reason`, or a nonempty custom `x-*` header condition. Other body paths
+can refine a match but cannot establish identity. Protocol code/version/id,
+message/detail strings, and generic reasons such as `FORBIDDEN` or `INVALID_PARAMS`
+alone are not policy identity. This also excludes provider reasons such as
+`NOT_FOUND` and `INVALID_ARGUMENT`, case-insensitively. Regex patterns never
+establish identity on their own, even on a policy/reason path; they can refine
+a match with an independent literal identifier or custom policy header.
+Standard security, request-id, correlation, forwarding and server headers such
+as `x-content-type-options`, `x-frame-options`, `x-request-id` and `x-powered-by`
+cannot establish identity. You are responsible for choosing a custom header
+that your policy sets, rather than an incidental transport header.
+ErrorInfo `@type` and `domain` are protocol metadata, not policy identifiers.
+Unknown errors with explicit structured
+`data.policy` or `policy_*` reason markers return `PolicyViolation(policy="unknown")`;
+ordinary or ambiguous errors return `None`. The captured tool-access denial
+always wins over custom registrations. The [MCP PII built-in](/errors#mcp-pii-metadata)
+also wins when both PII markers and its phase/code pair match; a registration
+fully claimed by that rule is rejected. HTTP 401, auth challenges and 429 remain
+auth/rate-limit errors.
+
+`jsonrpc_refusal()` also walks exception `.error`, causes, contexts and exception
+groups without importing an MCP/A2A framework. It does not echo raw message/data
+into exception text or logs. The legacy tool denial still extracts its tool name.
+Explicit envelopes must use version `2.0`, a string/integer/null id, and an error
+without a simultaneous result or tool-result `isError: true`. Malformed envelopes
+are not traversed or treated as policy refusals, whether mappings or duck objects.
+Plain exception `.error` wrappers without protocol metadata remain supported.
+
+<Callout type="info">
+  This is a classification helper, not new framework binding coverage or
+  schema typing. MCP PII matching is described on [Errors](/errors#mcp-pii-metadata).
+  Calling `classify(response)` explicitly recognizes
+  JSON-RPC error envelopes, but the transport does not automatically inspect
+  successful HTTP 200 bodies. Registering a JSON-RPC shape does not make
+  `donkey.run()`, handlers or `simulate()` intercept those responses.
+</Callout>
+
 ### Built-in shapes always win
 
 The gateway's own policies are classified first, so a registration can never
@@ -359,10 +434,14 @@ records it.
 
 ## Testing
 
-`donkey.simulate(SalaryLeakBlocked)` works for a registered type with no
+`donkey.simulate(SalaryLeakBlocked)` works for an error-status registered type with no
 hand-written fixture. It serves the minimal response the registration describes,
 through the real transport, and checks that the response is classified back to
 your type.
+HTTP-200 JSON-RPC registrations are not injectable: `simulate()` raises a
+`ValueError` because successful responses bypass transport refusal hooks. Test
+those shapes explicitly with `jsonrpc_refusal()` or `classify(registration.example())`.
+Non-200 JSON-RPC registrations use the shared classifier and refusal handlers.
 
 Registrations are process-wide, so a registration made in one test would leak
 into the next. The plugin's `donkey` fixture drops any registration made during

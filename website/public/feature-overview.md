@@ -134,8 +134,8 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
   
     **Purpose:** discover governed MCP tools from the catalog and bind them as
     native framework tools. **Advantage:** allow/deny filtering and approval
-    gates, with pinning and a lockfile on the Roadmap — only governed tools
-    reach your agent.
+    gates, and a `donkey.lock` that turns catalog drift into a typed error —
+    only governed tools reach your agent.
   
   
     **Purpose:** `donkey.serve()` makes your agent callable by other agents in
@@ -151,6 +151,12 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     `donkey verify` checks the live servers and agents against what was
     published. **Advantage:** the catalog stays in sync from CI, not by hand.
   
+
+    **Purpose:** `donkey.a2a.send()` and context-managed `stream()` delegate
+    using official SDK requests and responses. **Advantage:** registry-pinned
+    gateway routing, per-request credentials and local stream cleanup.
+    Provisional API; successful gateway send and SSE are not yet live-verified
+    by this implementation. Framework agent-as-tool binding remains planned.
 
 ## What DDK leaves to the platform
 

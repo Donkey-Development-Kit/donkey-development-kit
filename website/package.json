@@ -11,7 +11,7 @@
     "build": "next build",
     "postbuild": "pagefind --site out --output-subdir _pagefind",
     "preview:pages": "node scripts/preview-pages.mjs",
-    "test": "node --test lib/analytics.test.mjs lib/repo.test.mjs lib/site.test.mjs lib/status.test.mjs lib/version.test.mjs",
+    "test": "node --test lib/analytics.test.mjs lib/preview-pages.test.mjs lib/repo.test.mjs lib/site.test.mjs lib/status.test.mjs lib/version.test.mjs",
     "lint": "node scripts/lint.mjs",
     "typecheck": "tsc --noEmit",
     "check:links": "node scripts/check-links.mjs",
@@ -27,14 +27,15 @@
   "devDependencies": {
     "@types/node": "^22.20.5",
     "@types/react": "^19.0.0",
-    "pagefind": "^1.5.2",
+    "pagefind": "^1.6.0",
     "patch-package": "8.0.1",
     "typescript": "^6.0.3"
   },
   "overrides": {
     "zod": "4.6.7",
     "@xmldom/xmldom": "0.9.12",
-    "katex": "0.18.10"
+    "katex": "0.18.10",
+    "minimatch": "11.0.1"
   },
   "engines": {
     "node": ">=22"

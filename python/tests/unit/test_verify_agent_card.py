@@ -120,7 +120,9 @@ class _Registry(ExchangeRegistry):
 
     report: GovernanceReport = _GOVERNED
 
-    async def explain(self, ref: AssetRef | str, *, criteria: Any) -> GovernanceReport:
+    async def explain(
+        self, ref: AssetRef | str, *, criteria: Any, fresh: bool = False
+    ) -> GovernanceReport:
         return self.report
 
 

@@ -145,7 +145,7 @@ def test_a_native_pause_is_tried_first(registry: Approvals) -> None:
 
     def native(tool: str, arguments: Mapping[str, Any], risk: str | None) -> Approval:
         seen.append((tool, dict(arguments), risk))
-        return Approval(
+        approval = Approval(
             id="lg-1",
             tool=tool,
             arguments=arguments,
@@ -154,6 +154,10 @@ def test_a_native_pause_is_tried_first(registry: Approvals) -> None:
             requested_at=0.0,
             expires_at=math.inf,
         )
+        from donkey_kit.core.approvals import record_pending
+
+        record_pending(approval)
+        return approval
 
     tools = ToolSet(
         [_server("billing", "issue_refund")], _natives=(native,), _approval_registry=registry

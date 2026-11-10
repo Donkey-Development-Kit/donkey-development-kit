@@ -10,10 +10,13 @@ SDK itself does along the way, such as retries and token refreshes, see
 
 ## OpenTelemetry GenAI spans
 
-Every governed call produces a span following the OpenTelemetry **GenAI
+Every governed model call produces a span following the OpenTelemetry **GenAI
 semantic conventions** — `gen_ai.system`, `gen_ai.request.model`,
 `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` — plus attributes
-for the governance layer that generic instrumentation cannot know about:
+for the governance layer that generic instrumentation cannot know about.
+`gen_ai.system` is the bare vendor the gateway served (`openai`), even when the
+proxy reports a qualified `mulesoft:openai`; `donkey.last_call.served_provider`
+keeps the qualified value.
 
 ```
 donkey.policy.decision      = allow | refuse
@@ -64,6 +67,13 @@ A **refused** request still produces a span, with `donkey.policy.decision=refuse
 and `otel.status_code=ERROR`. A streaming response produces **exactly one** span,
 with token counts filled in at stream end.
 
+DDK's GenAI spans mark escaping exceptions as `ERROR` without copying exception
+messages, tracebacks or chained diagnostics into events or status descriptions.
+This holds even with content capture enabled; the original exception still
+propagates to the caller. Raw refusal `.response` bodies and the LLM PII
+`.gateway_message` remain available for explicit inspection and may contain
+blocked values. Host or framework instrumentation has its own recording policy.
+
 A [tool that needs approval](https://docs.donkey-kit.dev/hitl.md) records each step of its approval as a
 `donkey.tool.approval` span with one event (`donkey.approval.pending`,
 `.approved`, `.rejected` or `.timed_out`). The event names the approver and
@@ -81,6 +91,76 @@ emit path is Anypoint-specific**, so if your team already runs Grafana, Elastic,
 Honeycomb, New Relic, Datadog, Dynatrace, Langfuse or Phoenix, "policy refusals
 per hour by type" and "tokens per ticket" show up in the dashboard you already
 have. See [Send spans to your observability backend](#send-spans-to-your-observability-backend).
+
+### Outbound A2A spans
+
+  The official A2A SDK has its own instrumentation, independent of DDK's
+  `telemetry` setting. It can record response diagnostics with an `ALWAYS_ON`
+  host sampler. By default DDK refuses outbound A2A calls when SDK tracing is
+  enabled or its state cannot be determined, before registry reads or HTTP.
+  Disable SDK instrumentation before importing it with
+  `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED=false`; this does not disable DDK spans.
+  Alternatively, explicitly set `allow_a2a_sdk_telemetry=True` to accept the
+  SDK's diagnostic-recording risk. DDK's ordinary `telemetry=True` is not that
+  permission, and `telemetry=False` does not disable the SDK's recorder.
+
+To keep both tracing systems enabled:
+
+```python
+donkey = Donkey.from_env(allow_a2a_sdk_telemetry=True)
+```
+
+The equivalent configuration is `DONKEY_ALLOW_A2A_SDK_TELEMETRY=true` or
+`allow_a2a_sdk_telemetry = true` in the `[donkey]` TOML table. It defaults to
+`false`. The check uses the SDK's imported instrumentation state: changing
+`OTEL_INSTRUMENTATION_A2A_SDK_ENABLED` after import is too late; restart the
+process with the opt-out set. DDK never changes the environment or the global
+tracer provider for you. With explicit permission, SDK spans retain their
+normal parentage and may export exception messages and stack traces.
+
+[`donkey.a2a.send()` and `stream()`](https://docs.donkey-kit.dev/tool-access/a2a.md) open one
+`donkey.a2a.call` CLIENT span covering card discovery and delegation. This is
+not a GenAI span: A2A SSE is decoded by the official SDK and never scanned for
+model token usage. The shared transport still observes budget headers,
+`last_call` and typed HTTP refusals.
+
+The span preserves the enclosing run's correlation ID/source or temporarily
+mints one for the operation. It injects W3C `traceparent` and, when present,
+`tracestate`, without baggage. A remote DDK inbound `donkey.a2a.task` span can
+adopt that parent. Team/project/environment cost tags may be recorded, with
+run overrides winning; end-user IDs and raw diagnostics are not recorded on
+this span. No LLM cost headers are
+sent on the scoped A2A plane.
+
+The stream span remains open until the `async with` context exits. Break,
+error and cancellation close local resources; cancellation does not send a
+remote cancel request. Failures record only `error.type`, with no exception
+message or exception event. `telemetry=False` disables the span and W3C
+propagation, but correlation still works.
+
+This behavior is **OFFLINE-VERIFIED**. Successful gateway send and SSE are
+NOT live verified by this implementation yet; refused streaming requests
+before SSE are not successful streaming evidence.
+
+The [A2A policy inventory](https://docs.donkey-kit.dev/a2a-gateway-policies.md#non-blocking-policies) records
+the captured quality headers separately. Successful delegation HTTP responses
+record `donkey.a2a.quality.evaluation="yes"`, a finite numeric
+`donkey.a2a.quality.score`, and `donkey.a2a.quality.status="completed"` when
+present. Missing, malformed or unknown evaluation/status values are omitted;
+no score range is inferred. Agent Card GETs and failed HTTP responses do not
+contribute quality annotations. An annotation never changes the call outcome.
+
+`donkey.a2a.quality.explanation` can repeat request content. It is omitted by
+default and recorded only with `telemetry_capture_content=True`, truncated to
+4096 characters. Opt-in permits sensitive content export; it does not sanitize
+the explanation. This recording is **OFFLINE-VERIFIED** against captured v0.3
+headers and mock send/stream IO, not a live facade or streaming evaluation.
+It is new in 0.2.1.
+
+DDK does not send `X-AGENT-ID` on MCP or A2A calls: its effect on
+`mulesoft_agent_connection_count` attribution has not been verified live.
+No connection-graph or metric guarantee is made. Auth challenge fields, returned task/context IDs and raw refusal
+diagnostics are not recorded on the outbound span, even with content capture on.
 
 ### Zero-config export
 
@@ -391,11 +471,16 @@ donkey = Donkey.from_env(telemetry_capture_content=True)
 `telemetry_capture_content` resolves along the standard
 [precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence) (set in code → env → config
 files → default) and **defaults to `False`**. When
-enabled, content is emitted under the pinned semconv attribute names —
-`gen_ai.prompt` and `gen_ai.completion` — and no others. When off, those
-attributes never reach a span, and the allowlist that builds every span drops
-any content-shaped attribute a call site hands it, so there is no accidental
-path for message text to leak.
+enabled, LLM content is emitted under the pinned semconv attribute names
+`gen_ai.prompt` and `gen_ai.completion`. New in 0.2.1, it also permits outbound
+A2A quality explanations under `donkey.a2a.quality.explanation`, limited to
+4096 characters. Gateway explanations may repeat request text and are exported
+without sanitization; truncation is not redaction. This A2A behavior is new in 0.2.1.
+
+When off, prompt/completion attributes are excluded by the LLM span allowlist
+and A2A quality explanation text is omitted by the outbound recorder. Numeric
+quality scores and the captured evaluation/status values do not require content
+opt-in. See [Outbound A2A spans](#outbound-a2a-spans).
 
 ## Routing & resilience
 
@@ -833,13 +918,20 @@ such as `donkey_kit.core.auth`, instead of the package.
 | The OTLP export bootstrap: inert, kept your `TracerProvider`, or installed (global or DDK-scoped) | `donkey_kit.core.telemetry` |
 | How many tool descriptors a `ToolSet` exposes after its filter, out of the total | `donkey_kit.tools.session` |
 | A rate-limit reset header that was ignored as negative or out of range, naming the budget window (never the value) | `donkey_kit.core._window` |
-| A best-effort step that failed and was skipped (with the traceback), e.g. a refusal translator or recording usage on a span | the module that skipped it |
+| A refusal translator that failed and was skipped, or a refusal capture that could not tag a framework error (type names only, no hook representation or traceback) | `donkey_kit.core.refusals` |
+| Other best-effort steps that failed and were skipped (with the traceback), e.g. recording usage on a span | the module that skipped it |
 
   **A log record never carries a credential.** Records name a request by
   method, scheme, host and path only. They never include a header value,
   token, client secret, query string or request body, and an auth failure is
   logged by exception type, not message. A unit test pins this against every
   credential the SDK sends: the bearer token, client id and client secret.
+
+If every `ChainedAuth` provider fails, the final `AuthError` names only the
+last exception type, not its message, and suppresses exception chaining.
+Refusal-handler failures likewise omit callback messages and tracebacks; the
+`donkey_kit.core.reactions` logger records only the handler label and exception
+type at `WARNING`, and the original refusal still propagates.
 
 The SDK does not use WARNING log records for configuration problems. A one-time
 problem you have to fix is a Python warning instead, raised through

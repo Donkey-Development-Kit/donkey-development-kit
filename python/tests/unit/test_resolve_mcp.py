@@ -255,7 +255,9 @@ class _Governed(ExchangeRegistry):
     """The real ``resolve_mcp()`` with a passing ``explain()``: its reads are
     ``test_explain.py``'s."""
 
-    async def explain(self, ref: AssetRef | str, *, criteria: Any) -> GovernanceReport:
+    async def explain(
+        self, ref: AssetRef | str, *, criteria: Any, fresh: bool = False
+    ) -> GovernanceReport:
         return GovernanceReport(governed=True, checks=[Check("deployed", True, "ok")])
 
 
@@ -308,3 +310,47 @@ async def test_resolution_needs_the_control_plane_settings() -> None:
             REF
         )
     assert fake.requests == []
+
+
+def _agent_listing(*types: str) -> dict[str, Any]:
+    listing = _body("apis.by-asset.json")
+    first = listing["assets"][0]["apis"][0]
+    apis = []
+    for i, kind in enumerate(types):
+        api = copy.deepcopy(first)
+        api.update(
+            id=first["id"] if i == 0 else 900 + i, instanceLabel=f"agent-{i}", endpointType=kind
+        )
+        apis.append(api)
+    listing["assets"][0]["apis"] = apis
+    return listing
+
+
+@pytest.mark.parametrize("kind", ["a2a", "a2a_v1"])
+async def test_an_agent_resolves_from_an_a2a_or_a2a_v1_instance(kind: str) -> None:
+    """#1633: an a2a_v1 asset only gets an a2a_v1 instance."""
+    fake = _Anypoint(**{f"{_APIM}/apis": _agent_listing(kind)})
+
+    handle = await _registry(fake).resolve_agent(REF)
+
+    assert handle.endpoint_url.startswith("https://")
+
+
+async def test_a2a_v1_is_preferred_when_both_kinds_are_deployed() -> None:
+    fake = _Anypoint(
+        **{
+            f"{_APIM}/apis": _agent_listing("a2a", "a2a_v1"),
+            f"{_APIM}/apis/901": _body("api.describe.json"),
+        }
+    )
+
+    await _registry(fake).resolve_agent(REF)
+
+    assert fake.paths[2] == f"{_APIM}/apis/901"
+
+
+async def test_two_a2a_v1_instances_are_still_a_registry_error() -> None:
+    fake = _Anypoint(**{f"{_APIM}/apis": _agent_listing("a2a_v1", "a2a_v1")})
+
+    with pytest.raises(RegistryError, match="2 deployed A2A instances"):
+        await _registry(fake).resolve_agent(REF)

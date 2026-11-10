@@ -62,7 +62,9 @@ from contextvars import ContextVar
 from types import TracebackType
 from typing import Any, ParamSpec, TypeVar, cast
 
+from . import _wire
 from .errors import DonkeyError, ResponseLike, classify
+from .jsonrpc_refusals import binding_refusal, jsonrpc_refusal, rpc_error
 
 __all__ = [
     "RefusalCapture",
@@ -83,17 +85,13 @@ Translator = Callable[[BaseException], "DonkeyError | None"]
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
-# The ``request.extensions`` keys the transport stamps on every request it sends
-# (core/transport.py). Their presence on a response's request is the proof the
-# response came back through the SDK's own transport.
+# Request-extension markers prove the response used the SDK transport.
 _SENT_BY_TRANSPORT = ("donkey_call_id_header", "donkey_correlation_header")
 
 # Bounds the walk; real chains are a handful of links deep.
 _MAX_LINKS = 32
 
-# ``BaseExceptionGroup`` is builtin from Python 3.11. Below it, anyio raises the
-# ``exceptiongroup`` backport's class, which is recognised once something else
-# has imported it; core never imports it (and the SDK does not depend on it).
+# Below 3.11, recognize the backport only if already imported; core never imports it.
 _BUILTIN_GROUP: type[BaseException] | None = getattr(builtins, "BaseExceptionGroup", None)
 
 
@@ -147,17 +145,48 @@ def _translate_one(exc: BaseException, hooks: tuple[Translator, ...]) -> DonkeyE
         for hook in hooks:
             try:
                 typed = hook(link)
-            except Exception:  # noqa: BLE001 — a broken translator must not mask the error
-                # A broken translator (a framework half-imported, a renamed
-                # exception class) must not replace the error leaving the
-                # user's block with its own; skip it and keep walking.
-                _log.debug("refusal translator %r failed; skipped", hook, exc_info=True)
+            except Exception as failure:  # noqa: BLE001 — a broken translator must not mask the error
+                _log.debug(
+                    "refusal translator %s failed (%s); skipped",
+                    type(hook).__name__,
+                    type(failure).__name__,
+                )
                 continue
             if typed is not None:
                 return typed
         response = _status_response(link)
         if response is not None:
-            return classify(cast(ResponseLike, response)) if _sent_by_transport(response) else None
+            if not _sent_by_transport(response):
+                return None
+            governed = cast(ResponseLike, response)
+            extensions = _attr(_attr(response, "request"), "extensions")
+            if isinstance(extensions, dict) and "donkey_mcp_binding" in extensions:
+                if (
+                    governed.status_code not in (401, 429)
+                    and governed.status_code < 500
+                    and (_wire.WWW_AUTHENTICATE_HEADER not in governed.headers)
+                ):
+                    return binding_refusal(governed)
+            return classify(governed)
+        cause = link.__cause__
+        # Probe only this seam: an accessor failure must not replace the error.
+        try:
+            error = getattr(link, "error", None)
+            fields = rpc_error(error)
+            if fields is not None:
+                return jsonrpc_refusal(fields)
+            # Verified in the locked Agent Framework stack; user wrappers stop.
+            if (
+                type(link).__module__ == "agent_framework.exceptions"
+                and type(link).__qualname__ == "ToolExecutionException"
+                and len(link.args) == 2
+                and link.args[1] is cause
+                and rpc_error(getattr(cause, "error", None)) is not None
+            ):
+                link = cause
+                continue
+        except Exception:  # noqa: BLE001 - duck accessors may raise arbitrary exceptions
+            return None
         if not _carries_http(link):
             return None
         link = link.__cause__ or (None if link.__suppress_context__ else link.__context__)
@@ -246,7 +275,9 @@ def _status_response(exc: BaseException) -> object | None:
 def _sent_by_transport(response: object) -> bool:
     """Whether the SDK's transport sent the request behind ``response``."""
     extensions = _attr(_attr(response, "request"), "extensions")
-    return isinstance(extensions, dict) and any(key in extensions for key in _SENT_BY_TRANSPORT)
+    return isinstance(extensions, dict) and any(
+        key in extensions for key in (*_SENT_BY_TRANSPORT, "donkey_mcp_binding")
+    )
 
 
 def _carries_http(exc: BaseException) -> bool:
@@ -255,9 +286,7 @@ def _carries_http(exc: BaseException) -> bool:
     return _attr(exc, "request") is not None or _attr(exc, "response") is not None
 
 
-# The attribute :meth:`RefusalCapture.tag` sets on a framework error. An
-# attribute rather than a weak map: the typed error later holds the framework
-# error on ``framework_error``, and a weak map's value must not refer to its key.
+# An attribute avoids a weak-map value referring back to its own key.
 _TAG = "__donkey_refusal__"
 
 _capture: ContextVar[RefusalCapture | None] = ContextVar("donkey_refusal_capture", default=None)
@@ -289,15 +318,14 @@ class RefusalCapture:
             self.error = error
 
     def tag(self, exc: BaseException) -> None:
-        """Mark ``exc``, the error the framework call raised, as standing for the
-        recorded typed error, so :func:`translate` returns it. Does nothing when
-        no error was recorded, and never raises."""
+        """Tag the framework's ``exc`` with the recorded error for :func:`translate`.
+        Does nothing when no error was recorded, and never raises."""
         if self.error is None or exc is self.error:
             return
         try:
             setattr(exc, _TAG, self.error)
         except (AttributeError, TypeError):  # an exception type without a __dict__
-            _log.debug("cannot tag %r with its refusal", type(exc), exc_info=True)
+            _log.debug("cannot tag %s with its refusal", type(exc).__name__)
 
 
 @contextlib.contextmanager
@@ -378,8 +406,7 @@ class TypedRefusals:
         tb: TracebackType | None,
     ) -> None:
         typed = self.resolve(exc)
-        # Drop this frame's references so the typed error's traceback holds no
-        # frame local pointing at the framework error (see the class docstring).
+        # Keep framework diagnostics out of the typed traceback's frame locals.
         del exc, exc_type, tb
         if typed is not None:
             raise typed from typed.__cause__

@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "headers": {"content-type": "application/json", "server": "Anypoint Flex Gateway"},
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32008,\"message\":\"Unable to access\",\"data\":\"Access denied to: \\\"calculate\\\".\"}}"
+}

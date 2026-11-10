@@ -256,3 +256,79 @@ def test_an_agent_plans_its_declared_protocol_and_endpoint(tmp_path: Path) -> No
 
     assert (agent.protocol, agent.endpoint) == ("a2a_v1", "https://agents.example.invalid/sku/")
     assert agent.digest != before.digest
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        ".env",
+        ".donkey-kit.local.toml",
+        "credentials.json",
+        "config.toml",
+        "credentials.md",
+        "secrets/notes.md",
+        ".ssh/notes.md",
+        ".env.md",
+    ],
+)
+def test_documentation_rejects_non_markdown_and_sensitive_paths(
+    tmp_path: Path, source: str
+) -> None:
+    root = _repo(
+        tmp_path, TABLE + f'[donkey.publication.assets.sku-manager]\ndocumentation = "{source}"\n'
+    )
+    path = root / source
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("PRIVATE_VALUE", encoding="utf-8")
+    plan = _plan(root)
+    assert any(i.kind == "invalid-publication" for i in plan.issues)
+    assert plan.assets[0].documentation_text is None
+    assert "PRIVATE_VALUE" not in plan.to_json()
+
+
+@pytest.mark.parametrize("target", [".env", "config.toml", "credentials.md"])
+def test_documentation_symlink_cannot_publish_config(tmp_path: Path, target: str) -> None:
+    root = _repo(
+        tmp_path, TABLE + '[donkey.publication.assets.sku-manager]\ndocumentation = "README.md"\n'
+    )
+    (root / target).write_text("PRIVATE_VALUE", encoding="utf-8")
+    (root / "README.md").symlink_to(root / target)
+    plan = _plan(root)
+    assert any(i.kind == "invalid-publication" for i in plan.issues)
+    assert plan.assets[0].documentation_text is None
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "README.md",
+        "docs/guide.markdown",
+        "docs/Guide.MD",
+        "config.md",
+        "docs/configuration.md",
+        "configuration/guide.md",
+        "config/guide.markdown",
+    ],
+)
+def test_documentation_allowed_markdown_source_is_visible_in_preview(
+    tmp_path: Path, source: str
+) -> None:
+    root = _repo(
+        tmp_path, TABLE + f'[donkey.publication.assets.sku-manager]\ndocumentation = "{source}"\n'
+    )
+    path = root / source
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("Public documentation.", encoding="utf-8")
+    plan = _plan(root)
+    assert plan.issues == ()
+    assert plan.to_dict()["assets"][0]["documentation"] == source
+    assert plan.assets[0].documentation_text == "Public documentation."
+
+
+def test_documentation_absolute_path_is_not_a_relative_source(tmp_path: Path) -> None:
+    path = tmp_path / "README.md"
+    root = _repo(
+        tmp_path, TABLE + f'[donkey.publication.assets.sku-manager]\ndocumentation = "{path}"\n'
+    )
+    path.write_text("Public documentation.", encoding="utf-8")
+    assert any(i.kind == "invalid-publication" for i in _plan(root).issues)

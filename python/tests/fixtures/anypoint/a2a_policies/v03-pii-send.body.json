@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":1393,"error":{"code":-32602,"message":"Invalid params","data":"Request contains PII data: [\n  {\n    \"pii_type\": \"Email\",\n    \"value\": \"capture@example.com\",\n    \"start\": 6,\n    \"end\": 25\n  }\n]"}}

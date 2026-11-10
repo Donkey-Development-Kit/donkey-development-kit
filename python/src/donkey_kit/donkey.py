@@ -23,8 +23,10 @@ import warnings
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from contextvars import ContextVar
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeVar, cast, overload
 
+from .a2a.client import A2AFacade
 from .core import _verify, spanflush
 from .core.approvals import (
     APPROVAL_TIMEOUT,
@@ -42,6 +44,7 @@ from .core.classifier import classify as _classify
 from .core.config import ConfigOverrides, DonkeyConfig
 from .core.correlation import AttributionScope, attribution_scope
 from .core.cost import CostTags
+from .core.errors import ConfigError
 from .core.identity import UserScope
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.reactions import Duration, OnRefusal
@@ -61,7 +64,8 @@ from .llm.client import LLMClient
 from .registry.criteria import GovernanceCriteria
 from .registry.exchange import ExchangeRegistry
 from .tools.auth import McpAuth, gateway_auth
-from .tools.discovery import Discovery, blocked_lock
+from .tools.discovery import Discovery
+from .tools.lockfile import LOCK_FILE, build_lock, read_lock, write_lock
 from .tools.session import ToolSet
 
 # Imported at runtime: the public API surface check resolves ``Donkey.from_env``'s
@@ -160,6 +164,15 @@ def _adk_approval(tool: str, arguments: Mapping[str, Any], risk: str | None) -> 
 # Strands and ADK hooks only for a call their hook or plugin approved.
 _NATIVES = (_openai_agents_approval, _strands_approval, _adk_approval, _langgraph_interrupt)
 
+
+def _injected_arguments(tool: str) -> Mapping[str, Any]:
+    if "google.adk" not in sys.modules:
+        return {}
+    from .integrations.adk import execution_arguments
+
+    return execution_arguments(tool)
+
+
 # The approvals of the client whose ``donkey.tool`` is running, so a tool gated
 # there records on that client outside any of its scopes (ADR 0018).
 _declaring: ContextVar[Approvals | None] = ContextVar("donkey_declaring_client", default=None)
@@ -216,6 +229,7 @@ class ToolsFacade:
         tags: list[str] | None = None,
         governed: bool | GovernanceCriteria | None = True,
         locked: bool = False,
+        lock_path: str | os.PathLike[str] = LOCK_FILE,
         auth: McpAuth | None = None,
     ) -> ToolSet:
         """Discover the MCP servers in Exchange and return a bindable ``ToolSet``.
@@ -242,22 +256,31 @@ class ToolsFacade:
             governed: ``True`` (the default) keeps the servers the default
                 ``GovernanceCriteria`` passes; a ``GovernanceCriteria`` (such as
                 ``STRICT``) sets the rules; ``None`` keeps every server.
-            locked: Resolve only what ``donkey.lock`` pins. Not supported yet.
+            locked: Resolve only what the lockfile pins (Provisional, ADR 0020).
+                A discovered server the lock does not pin is dropped with a
+                warning. The returned set checks each ``tools/list`` against the
+                lock when it is described or bound, and drops tools the lock does
+                not pin (``ToolSet.excluded``, ``reason="unpinned"``). The lock
+                detects drift; it does not control access. Pass the same ``tags=`` and
+                ``governed=`` as :meth:`lock`, or a pinned server this call does
+                not discover reads as drift.
+            lock_path: The lockfile ``locked=True`` reads.
             auth: The gateway credential bindings send. ``None`` uses the
                 data-plane consumer credential (``llm_proxy_auth``).
 
         Raises:
-            ConfigError: The control-plane settings are missing.
+            ConfigError: The control-plane settings are missing, or ``locked=True``
+                and the lockfile is missing or unreadable.
             RegistryError: Exchange or API Manager refused a read.
-            NotImplementedError: ``domain`` or ``locked=True`` was given; see
-                docs/verified-apis.md §7.
+            ToolLockDrift: ``locked=True`` and a pinned server was not discovered.
+                Tool-level drift raises when the set is described or bound.
+            NotImplementedError: ``domain`` was given; see docs/verified-apis.md §7.
 
         Docs: https://docs.donkey-kit.dev/tool-access/discovery
         """
-        if locked:
-            raise blocked_lock()
+        lock = read_lock(Path(lock_path)) if locked else None
         return await self._discovery.discover(
-            domain=domain, tags=tags, governed=governed, auth=auth
+            domain=domain, tags=tags, governed=governed, auth=auth, lock=lock
         )
 
     async def live_tools(self, ref: str) -> tuple[dict[str, object], ...]:
@@ -355,11 +378,66 @@ class ToolsFacade:
         Exchange and API Manager again."""
         self._discovery.refresh()
 
-    def lock(self) -> None:
-        """Write a ``donkey.lock`` of resolved versions + digests (BG §2.7)."""
-        raise _verify.blocked(
-            "resolution API needed for the lockfile (BG §2.7, the Verification milestone)."
-        )
+    async def lock(
+        self,
+        *,
+        tags: list[str] | None = None,
+        governed: bool | GovernanceCriteria | None = True,
+        auth: McpAuth | None = None,
+        path: str | os.PathLike[str] = LOCK_FILE,
+    ) -> Path:
+        """Write ``donkey.lock``, pinning the tools each discovered server lists now.
+
+        Discovers as :meth:`discover` does, lists every server's tools (a
+        ``tools/list`` per server, with the credential a binding sends) and
+        writes each gateway-visible tool name with the digest of its descriptor.
+        Under Tool Mapping that is the mapped name, and under Progressive
+        Disclosure it is ``search_tools`` and ``invoke_tool``: the lock never
+        records upstream names or search results (docs/verified-apis.md §9).
+        :meth:`discover` with ``locked=True`` later checks the gateway against it.
+        The lock detects drift; it does not control access.
+
+        Run it as the service identity, not inside :meth:`Donkey.as_user`: a
+        caller whose catalog omits a pinned tool is drift. Later, call
+        ``discover(locked=True)`` with the same ``tags=`` and ``governed=``.
+
+        Provisional (ADR 0020): may change in a minor release, with a migration
+        note (ADR 0024 covers its root export). This was a synchronous method that always raised
+        ``NotImplementedError``; it is now a coroutine.
+
+        Args:
+            tags: As for :meth:`discover`.
+            governed: As for :meth:`discover`.
+            auth: As for :meth:`discover`.
+            path: Where to write the lockfile.
+
+        Returns:
+            The path written.
+
+        Raises:
+            UngovernedMcpServer: A server in the set is not governed (``governed=None``).
+            ConfigError: The control-plane settings or gateway credential are missing.
+            RegistryError: Exchange or API Manager refused a read.
+            AuthError: The gateway refused the credential.
+            ToolInvocationError: A server could not list its tools.
+            ValueError: A server lists a tool with no name or two of one name.
+            OSError: The lockfile cannot be written.
+
+        Docs: https://docs.donkey-kit.dev/tool-access/lockfile
+        """
+        tools = await self._discovery.discover(domain=None, tags=tags, governed=governed, auth=auth)
+        if not tools.servers:
+            raise ConfigError(
+                "donkey.tools.lock() found no MCP servers to pin.",
+                remediation=(
+                    "Check the tags= and governed= arguments and that the gateway "
+                    "credential can see the servers in Exchange; no lockfile was written."
+                ),
+            )
+        described = await tools.describe()
+        target = Path(path)
+        write_lock(build_lock(described.servers), target)
+        return target.resolve()
 
 
 class Donkey:
@@ -428,6 +506,7 @@ class Donkey:
         self._control_http: DonkeyAsyncClient = self._runtime.control_http
         self._llm = LLMClient(self._cfg, self._http, self._sync_http_client)
         self._registry = ExchangeRegistry(self._cfg, self._control_http)
+        self._a2a = A2AFacade(self._registry, self._cfg, self._http, self._llm_auth)
         self._approvals = Approvals()
         self._tools = ToolsFacade(self._registry, self._cfg, self._llm_auth, self._approvals)
         self._adapter_cache: dict[str, Adapter] = {}
@@ -647,6 +726,17 @@ class Donkey:
         Docs: https://docs.donkey-kit.dev/tool-access/discovery
         """
         return self._registry
+
+    @property
+    def a2a(self) -> A2AFacade:
+        """Governed outbound A2A sends and context-managed streams (BG §2.9).
+
+        Provisional (ADR 0020): may change in a minor release with a migration
+        note. ADR 0022 also makes its root-exported ``A2AFacade`` provisional.
+
+        Docs: https://docs.donkey-kit.dev/tool-access/a2a
+        """
+        return self._a2a
 
     @property
     def tools(self) -> ToolsFacade:
@@ -1196,7 +1286,14 @@ class Donkey:
 
         def decorate(fn: _Callable) -> _Callable:
             target = (
-                gate(fn, risk=risk, timeout=timeout, natives=_NATIVES, declared_on=declared_on)
+                gate(
+                    fn,
+                    risk=risk,
+                    timeout=timeout,
+                    natives=_NATIVES,
+                    declared_on=declared_on,
+                    injected_arguments=_injected_arguments,
+                )
                 if approval
                 else fn
             )
@@ -1419,6 +1516,97 @@ class Donkey:
 
         clients: list[Any] = [self._http, self._sync_http_client()]
         return _simulate(clients, error, times=times)
+
+    def simulate_mcp(
+        self,
+        capture: str,
+        *,
+        servers: Mapping[str, Sequence[Mapping[str, Any]]],
+        times: int = 1,
+        call_tool: Callable[[str, Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    ) -> AbstractContextManager[None]:
+        """Inject a captured gateway refusal into MCP tool calls, no gateway (#1391, BG §1.5).
+
+        The MCP counterpart of :meth:`simulate`. Inside the block,
+        ``donkey.tools.discover()`` returns the ``servers`` you declare (its
+        filters are not applied) instead of reading Exchange, and the bindings it
+        produces talk to an offline replay. The next ``times`` matching MCP requests
+        get the captured refusal named ``capture``; every other request is answered
+        from the declared tools::
+
+            servers = {"acme/crm-tools/1.0.0": [{"name": "lookup_customer"}]}
+            with donkey.simulate_mcp("pii-request", servers=servers):
+                tools = await (await donkey.tools.discover()).langgraph()
+                await agent.ainvoke(...)  # the tool call is refused as a real PII block
+
+        ``capture`` is one of ``pii-request``, ``pii-response-sse``,
+        ``schema-invalid-args``, ``abac-denied``, ``global-access`` (``tools/call``)
+        or ``poisoning-block-list`` (``tools/list``): the packaged Omni Gateway
+        captures, injected verbatim with ``x-donkey-simulator: true``.
+
+        ``servers`` maps each ``group_id/asset_id/version`` ref to its MCP tool
+        descriptors; a descriptor without ``inputSchema`` gets an empty object
+        schema. Declared servers are marked governed by a ``simulated`` check.
+        ``call_tool(name, arguments)`` answers a ``tools/call`` that is not
+        injected; the default returns one text item. Bind inside the block: after
+        it exits, those bindings refuse every request rather than reach a network.
+        Nesting raises ``RuntimeError``. The model client is untouched; combine
+        with :meth:`simulate` for that.
+
+        Supported bindings and their version floors are those of
+        :func:`donkey_kit.simulator.mcp.simulate_mcp`; ADK and CrewAI are refused.
+
+        Docs: https://docs.donkey-kit.dev/simulator
+        """
+        from .simulator.mcp import simulate_declared
+
+        return simulate_declared(self, capture, servers, times=times, call_tool=call_tool)
+
+    def simulate_a2a(
+        self,
+        capture: str,
+        *,
+        agents: Sequence[str],
+        version: str = "1.0",
+        times: int = 1,
+        reply: Callable[[str], str] | None = None,
+    ) -> AbstractContextManager[None]:
+        """Inject a captured gateway refusal into outbound A2A calls, no gateway (#1652, BG §1.5).
+
+        Provisional (ADR 0020): ``donkey.a2a`` is provisional, and so is this.
+
+        The A2A counterpart of :meth:`simulate` and :meth:`simulate_mcp`. Inside
+        the block, ``donkey.a2a.send()`` and ``stream()`` resolve the ``agents``
+        you declare instead of reading Exchange, and talk to an offline replay.
+        The next ``times`` calls of the capture's method get the captured
+        refusal named ``capture``; every other call gets a simulated reply::
+
+            with donkey.simulate_a2a("pii-send", agents=["acme/triage/1.0.0"]):
+                await donkey.a2a.send("acme/triage/1.0.0", request)  # raises the captured refusal
+
+        ``capture`` is ``<policy>-<send|stream>``: ``pii``, ``azure-block`` or
+        ``rate`` for ``version="1.0"``; ``pii-send`` or ``rate-send`` for
+        ``version="0.3"``. These are the packaged Omni Gateway captures, injected
+        verbatim with ``x-donkey-simulator: true``; the raised error is what the
+        existing classification gives each one. A ``-send`` capture answers
+        ``send()`` only and a ``-stream`` capture ``stream()`` only.
+
+        ``agents`` lists ``group_id/asset_id/version`` refs; any other ref raises
+        ``RegistryError``. ``reply(text)`` answers a call that is not injected;
+        the default returns one text part. After the block exits, the declared
+        refs resolve through Exchange again. Nesting raises ``RuntimeError``.
+        Outbound only: for an agent you serve, use ``donkey mock --scenario``.
+
+        The outbound A2A SDK tracing gate applies offline too: with opentelemetry
+        installed and ``OTEL_INSTRUMENTATION_A2A_SDK_ENABLED`` unset, the first
+        call raises ``ConfigError``. Set that variable to ``false`` before
+        importing ``a2a``, or build with ``allow_a2a_sdk_telemetry=True``.
+
+        Docs: https://docs.donkey-kit.dev/simulator
+        """
+        from .simulator.a2a import simulate_declared
+
+        return simulate_declared(self, capture, agents, version=version, times=times, reply=reply)
 
     @property
     def _sync_http(self) -> DonkeyClient | None:

@@ -775,6 +775,22 @@ def test_missing_routing_headers_report_none_and_do_not_crash() -> None:
     assert record.substituted is False  # can't claim a substitution with no data
 
 
+def test_v2_chain_header_set_reports_no_provider_or_routing_facts() -> None:
+    # #1405: an llm-gw-v2 proxy keeps only `x-llm-proxy-llm-model` (read from the
+    # gateway policy source, not yet captured live). The record must not invent a
+    # provider or report a definitive `fallback=False`, and a `provider/model`
+    # request must not read as a substitution.
+    record = LastCall.from_response(
+        httpx.Response(200, headers={"x-llm-proxy-llm-model": "gpt-5-mini"}),
+        requested_model="openai/gpt-5-mini",
+    )
+    assert record.served_model == "gpt-5-mini"
+    assert record.served_provider is None
+    assert record.routing_type is None
+    assert record.fallback is None
+    assert record.substituted is False
+
+
 def test_substituted_is_true_only_when_both_known_and_differ() -> None:
     def rec(**kw) -> LastCall:
         return LastCall(status=LastCallStatus.OBSERVED, **kw)
@@ -803,9 +819,17 @@ def test_substituted_is_true_only_when_both_known_and_differ() -> None:
         ("OpenAI/gpt-5-mini", "openai", "gpt-5-mini", False),  # provider is case-insensitive
         ("openai/gpt-5-mini", "gemini", "gemini-3.8-flash", True),  # a real substitution
         ("openai/gpt-5-mini", "azureopenai", "gpt-5-mini", True),  # same model, other provider
-        ("openai/gpt-5-mini", None, "gpt-5-mini", True),  # no provider: verbatim, never hidden
+        # No provider header (an llm-gw-v2 proxy, #1405): only the model part is compared.
+        ("openai/gpt-5-mini", None, "gpt-5-mini", False),
+        ("openai/gpt-5-mini", None, "gpt-4o", True),  # a real substitution is still seen
+        ("openai/gpt-5-mini", None, "openai/gpt-5-mini", False),  # served verbatim
         ("gpt-5.1", "openai", "gpt-5.1", False),  # bare names: verbatim, as before
         ("gpt-5.1", "openai", "gpt-4o", True),
+        # A qualified groupId:vendor provider (model-based-routing 1.0.5, live
+        # 2026-11-03, #1405): the vendor suffix is what the prefix names.
+        ("openai/gpt-5-mini", "mulesoft:openai", "gpt-5-mini", False),
+        ("gemini/gemini-3.8-flash", "mulesoft:gemini", "gemini-3.8-flash", False),
+        ("gemini/gemini-3.8-flash", "mulesoft:openai", "gpt-5-mini", True),  # a real fallback
     ],
 )
 def test_substituted_ignores_a_prefix_that_names_the_served_provider(
@@ -923,3 +947,13 @@ def test_no_unverified_warning_on_the_semantic_read_path() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", UnverifiedValueWarning)
         LastCall.from_response(httpx.Response(200, headers={_SEMANTIC_HEADER: _SEMANTIC_SUCCESS}))
+
+
+@pytest.mark.parametrize(
+    ("provider", "vendor"),
+    [("mulesoft:openai", "openai"), ("openai", "openai"), (None, None), ("odd:", "odd:")],
+)
+def test_provider_vendor_takes_the_suffix_of_a_qualified_value(
+    provider: str | None, vendor: str | None
+) -> None:
+    assert lastcall.provider_vendor(provider) == vendor

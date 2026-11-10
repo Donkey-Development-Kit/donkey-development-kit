@@ -27,7 +27,9 @@ FlexSearch). It indexes the built HTML, so the `postbuild` hook runs
 means **search only works against the built export, not `npm run dev`.**
 
 The preview command serves the generated static files from `out/`, matching
-GitHub Pages more closely than the Next.js development server. The deployed site
+GitHub Pages more closely than the Next.js development server. It binds only to
+`127.0.0.1`; resolved files, including symlink targets, must remain inside the
+real `out/` directory. Invalid or unavailable paths are refused. The deployed site
 is served from the domain root, so a plain `npm run build` is what ships. To
 check a build hosted under a project sub-path instead, set the same variable for
 both commands:
@@ -140,6 +142,7 @@ Needs Node >= 22 (CI uses 24). Run after `npm ci`:
 
 ```bash
 npm run typecheck                                  # tsc --noEmit
+npm test                                           # includes local preview containment tests
 npm run lint                                       # syntax-check the .mjs files (scripts/lint.mjs)
 DOCS_BASE_PATH=/donkey-development-kit npm run build
 DOCS_BASE_PATH=/donkey-development-kit npm run check:links   # internal links + #anchors in out/
@@ -200,6 +203,14 @@ pages); when one section of a page stands on a weaker ledger row than the rest,
 that section carries its own inline badge, as the framework card on the
 Feature overview does. A missing or unknown status fails `npm test`, `node scripts/generate-llms.mjs`
 and `npm run build`.
+
+A hand-written inline `<Badge>` that claims a status names the ledger row it
+rests on, as `<Badge tone="live" ledger="§2 Streaming support">Live</Badge>`
+(several rows joined with `;`). `python/scripts/check_doc_badges.py`, run by
+`nox -s typecheck-and-lint` in CI, fails a badge that claims more than its
+row's Status, cites no row, or cites one that does not exist (#1482). Roadmap
+and Not supported badges need no row; legends and in-process surfaces are in
+the script's `ALLOWED`, each with its reason.
 
 The status is also what the Python snippet check reads
 (`python/scripts/check_doc_snippets.py`, run by the unit suite in CI): every

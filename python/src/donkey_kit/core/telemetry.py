@@ -580,18 +580,11 @@ class GenAiSpan:
 def genai_span(*, enabled: bool, capture_content: bool = False) -> Iterator[GenAiSpan]:
     """The GenAI chat span (:data:`SPAN_LLM_CHAT`) for one governed model call.
 
-    Yields a :class:`GenAiSpan` the caller records onto. Both the pinned ``gen_ai.*`` attributes
-    and the stable ``donkey.*`` attributes go on this one span (AC #5). A no-op (yielding an
-    inert handle, never raising) when telemetry is off or OpenTelemetry is not installed.
-
-    ``capture_content`` carries ``telemetry_capture_content`` down to the yielded
-    handle (#306); when ``False`` (default) the handle drops prompt/completion
-    content before it reaches the span.
-
-    The span is opened as a context manager so it closes on the way out even when
-    the wrapped call raises before a response exists — a transport error escapes
-    the transport's ``_finish`` hook, so the span lifecycle cannot rely on it
-    (see ``core.transport.DonkeyAsyncClient._finish``, #179/#192).
+    Yields a :class:`GenAiSpan` for both namespaces (AC #5), inert when telemetry
+    is off or OpenTelemetry is absent. ``capture_content`` carries the opt-in
+    prompt/completion gate to the handle (#306), off by default.
+    Exceptions propagate unchanged and mark ERROR without messages or tracebacks,
+    even with content capture. Closes on pre-response errors too (#179/#192).
     """
     if not enabled:
         yield GenAiSpan(None)
@@ -600,8 +593,15 @@ def genai_span(*, enabled: bool, capture_content: bool = False) -> Iterator[GenA
     if tracer is None:
         yield GenAiSpan(None)
         return
-    with tracer.start_as_current_span(SPAN_LLM_CHAT) as sp:
-        yield GenAiSpan(sp, capture_content=capture_content)
+    with tracer.start_as_current_span(
+        SPAN_LLM_CHAT, record_exception=False, set_status_on_exception=False
+    ) as sp:
+        handle = GenAiSpan(sp, capture_content=capture_content)
+        try:
+            yield handle
+        except BaseException:
+            handle.set_error()
+            raise
 
 
 def start_genai_span(*, enabled: bool, capture_content: bool = False) -> GenAiSpan:

@@ -149,7 +149,10 @@ your own `http_client` instead, use an `httpx2.AsyncClient` on 1.0 and later.
   `/v1/messages` and 404s an OpenAI-shaped `/chat/completions` request. Auth is
   the same `client_id` / `client_secret` header pair as every other proxy.
   To use the native surface, set `DONKEY_LLM_PROXY_URL` (or `llm_proxy_url`)
-  to a `Format=Anthropic` proxy.
+  to a `Format=Anthropic` proxy. On `model-based-routing` 1.0.5 the proxy
+  sends the routing headers, so `served_provider` and `served_model` are
+  filled. A `bedrockanthropic/` route is not reachable behind this ingress
+  (it answers `404`).
 - **What `donkey.last_call` reads.** On a native Anthropic proxy,
   `request_id` is Anthropic's own `request-id` header. `cached_tokens` and
   `cache_write_tokens` come from `cache_read_input_tokens` and

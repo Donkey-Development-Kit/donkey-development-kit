@@ -119,7 +119,54 @@ def _counting(statuses: list[int]) -> tuple[_Handler, list[httpx.Request]]:
     return handler, sent
 
 
+@pytest.mark.parametrize("kind", KINDS)
+def test_200_jsonrpc_error_is_not_automatically_intercepted(kind: str) -> None:
+    """BG §2.2: a matcher registration adds no HTTP-200 binding wiring (#1385)."""
+    from donkey_kit.core.classifier import classify
+
+    class AcmeRpcBlocked(PolicyViolation):
+        policy = "acme_rpc_transport"
+        remediation = "Ask the Acme policy owner for access."
+
+    classify.register(
+        match={"status": 200, "jsonrpc_code": -32099, "body": {"error.data.policy": "acme"}},
+        raises=AcmeRpcBlocked,
+    )
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {"code": -32099, "message": "refused", "data": {"policy": "acme"}},
+    }
+    response, refusals = _send(kind, lambda _request: httpx.Response(200, json=body))
+    assert response.json() == body
+    assert refusals == []
+    assert type(classify(response)) is AcmeRpcBlocked
+
+
 # --- headers ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_403_rpc_registration_reaches_both_refusal_hooks(kind: str) -> None:
+    from donkey_kit.core.classifier import classify
+
+    class AcmeRpcBlocked(PolicyViolation):
+        policy = "acme_rpc_transport"
+        remediation = "Ask the Acme policy owner for access."
+
+    classify.register(
+        match={"status": 403, "jsonrpc_code": -32099, "body": {"error.data.policy": "acme"}},
+        raises=AcmeRpcBlocked,
+    )
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {"code": -32099, "message": "secret@example.com", "data": {"policy": "acme"}},
+    }
+    response, refusals = _send(kind, lambda _request: httpx.Response(403, json=body))
+    assert [type(error) for error in refusals] == [AcmeRpcBlocked]
+    assert refusals[0].response is response
+    assert "secret@example.com" not in str(refusals[0])
 
 
 @pytest.mark.parametrize("kind", KINDS)

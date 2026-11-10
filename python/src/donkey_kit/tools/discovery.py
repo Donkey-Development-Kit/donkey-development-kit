@@ -24,7 +24,7 @@ from typing import Any, Literal
 
 import httpx
 
-from ..core import _verify, telemetry
+from ..core import telemetry
 from ..core.approvals import Approvals, NativePause
 from ..core.cache import TTLCache
 from ..core.config import DonkeyConfig
@@ -34,6 +34,7 @@ from ..registry.criteria import Check, GovernanceCriteria, GovernanceReport
 from ..registry.exchange import ExchangeRegistry
 from ..registry.models import AssetRef, McpServerHandle
 from .auth import McpAuth, check_gateway_endpoint
+from .lockfile import Lockfile, ToolLockDrift, compare_lock, server_key
 from .session import ToolSet
 
 __all__ = ["Discovery"]
@@ -56,6 +57,13 @@ DONKEY_DISCOVER_CACHE = "donkey.discover.cache"
 #: Servers in the returned set, and MCP assets left out as ungoverned.
 DONKEY_DISCOVER_SERVERS = "donkey.discover.servers"
 DONKEY_DISCOVER_LEFT_OUT = "donkey.discover.left_out"
+
+
+@dataclasses.dataclass(frozen=True)
+class _Simulated:
+    servers: tuple[McpServerHandle, ...]
+    auth: McpAuth
+    transport: dict[str, Callable[..., Any]]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -98,6 +106,50 @@ class Discovery:
         self._approvals = approvals
         self._cache: TTLCache[_Found] = TTLCache(ttl_s=cfg.registry_cache_ttl_s)
         self._said_unfiltered = False
+        # Set only inside donkey.simulate_mcp(): the declared servers stand in for
+        # Exchange, and every set built from them shares one offline transport (#1391).
+        self._simulated: _Simulated | None = None
+
+    @contextlib.contextmanager
+    def simulated(
+        self,
+        servers: Sequence[McpServerHandle],
+        *,
+        auth: McpAuth,
+        transport: dict[str, Callable[..., Any]],
+    ) -> Iterator[None]:
+        """Answer :meth:`discover`, :meth:`resolve` and :meth:`warm` from
+        ``servers`` instead of the registry until the block exits (#1391,
+        ADR 0023). Every ``ToolSet`` built inside binds with ``auth`` and shares
+        ``transport``, so the caller decides what its MCP clients reach. No
+        registry read and no endpoint check happens for them. Nesting refuses."""
+        if self._simulated is not None:
+            raise RuntimeError("donkey.simulate_mcp() blocks do not nest")
+        self._simulated = _Simulated(tuple(servers), auth, transport)
+        try:
+            yield
+        finally:
+            self._simulated = None
+
+    def _simulated_set(
+        self, servers: Sequence[McpServerHandle], lock: Lockfile | None = None
+    ) -> ToolSet:
+        """A set of declared ``servers``. A ``lock`` is checked as a live
+        :meth:`discover` checks it (#1671, ADR 0024): a pinned server that is
+        not declared raises ``ToolLockDrift``, an unpinned one is dropped, and
+        the set checks each ``tools/list`` against the lock."""
+        assert self._simulated is not None
+        kept = _pinned(lock, list(servers)) if lock is not None else list(servers)
+        return ToolSet(
+            kept,
+            _lock=lock,
+            _natives=self._natives,
+            _approval_registry=self._approvals,
+            _auth=self._simulated.auth,
+            _limits=(self._cfg.tool_warn_count, self._cfg.tool_warn_tokens),
+            _user_header=user_token_header(self._cfg),
+            _mcp_transport=self._simulated.transport,
+        )
 
     async def discover(
         self,
@@ -106,8 +158,11 @@ class Discovery:
         tags: Sequence[str] | None,
         governed: bool | GovernanceCriteria | None,
         auth: McpAuth | None,
+        lock: Lockfile | None = None,
     ) -> ToolSet:
         """See ``ToolsFacade.discover``."""
+        if self._simulated is not None:
+            return self._simulated_set(self._simulated.servers, lock)
         criteria = governed if isinstance(governed, GovernanceCriteria) else GovernanceCriteria()
         if governed is None and not self._said_unfiltered:
             self._said_unfiltered = True
@@ -121,10 +176,16 @@ class Discovery:
             found = self._cache.get(key)
             hit = found is not None
             if found is None:
-                found = await self._fill(key, domain, tags, governed, criteria)
+                # Read past the registry's own lookups too: they were filled at other
+                # times, so they may outlive this entry by up to one more TTL (#1483).
+                found = await self._fill(key, domain, tags, governed, criteria, fresh=True)
             record(found, hit)
+        servers = list(found.servers)
+        if lock is not None:
+            servers = _pinned(lock, servers)
         return ToolSet(
-            list(found.servers),
+            servers,
+            _lock=lock,
             _natives=self._natives,
             _approval_registry=self._approvals,
             _auth=auth if auth is not None else self._auth,
@@ -155,6 +216,8 @@ class Discovery:
         governed: bool | GovernanceCriteria | None,
     ) -> int:
         """See ``ToolsFacade.warm``."""
+        if self._simulated is not None:
+            return len(self._simulated.servers)
         criteria = governed if isinstance(governed, GovernanceCriteria) else GovernanceCriteria()
         key = self._key(domain, tags, governed, criteria)
         with self._span(SPAN_WARM) as record:
@@ -216,8 +279,10 @@ class Discovery:
         tags: Sequence[str] | None,
         governed: bool | GovernanceCriteria | None,
         criteria: GovernanceCriteria,
+        *,
+        fresh: bool = False,
     ) -> _Found:
-        found = await self._read(domain, tags, criteria, keep_ungoverned=not governed)
+        found = await self._read(domain, tags, criteria, keep_ungoverned=not governed, fresh=fresh)
         self._cache.set(key, found)
         return found
 
@@ -228,7 +293,21 @@ class Discovery:
         lookups are, for ``registry_cache_ttl_s`` seconds (:meth:`refresh` drops
         them). A server that does not resolve is in the set with a failed
         ``resolve_mcp`` check, so listing its tools refuses it."""
-        handle = await self._handle(AssetRef.parse(ref), GovernanceCriteria())
+        asset = AssetRef.parse(ref)
+        if self._simulated is not None:
+            declared = [
+                s for s in self._simulated.servers if s.ref.coordinates == asset.coordinates
+            ]
+            if not declared:
+                raise RegistryError(
+                    f"{asset.coordinates} is not one of the servers this "
+                    "donkey.simulate_mcp() block declares.",
+                    remediation=(
+                        "Add it to simulate_mcp(servers=...), or resolve it outside the block."
+                    ),
+                )
+            return self._simulated_set(declared)
+        handle = await self._handle(asset, GovernanceCriteria())
         return ToolSet(
             [handle],
             _natives=self._natives,
@@ -329,6 +408,7 @@ class Discovery:
         criteria: GovernanceCriteria,
         *,
         keep_ungoverned: bool,
+        fresh: bool = False,
     ) -> _Found:
         at, started = datetime.now(timezone.utc), time.monotonic()
         refs = await self._registry.search(
@@ -336,6 +416,7 @@ class Discovery:
             tags=list(tags) if tags else None,
             domain=domain,
             limit=DISCOVER_LIMIT,
+            fresh=fresh,
         )
         if len(refs) == DISCOVER_LIMIT:
             _log.warning(
@@ -347,7 +428,7 @@ class Discovery:
 
         async def one(ref: AssetRef) -> McpServerHandle:
             async with gate:
-                return await self._handle(ref, criteria)
+                return await self._handle(ref, criteria, fresh=fresh)
 
         handles = await asyncio.gather(*(one(ref) for ref in refs))
         kept: list[McpServerHandle] = []
@@ -373,13 +454,15 @@ class Discovery:
             )
         return _Found(tuple(kept), at, started, left_out=len(handles) - len(kept))
 
-    async def _handle(self, ref: AssetRef, criteria: GovernanceCriteria) -> McpServerHandle:
+    async def _handle(
+        self, ref: AssetRef, criteria: GovernanceCriteria, *, fresh: bool = False
+    ) -> McpServerHandle:
         """``ref``'s endpoint with its verdict. A server that does not resolve to
         exactly one deployed MCP instance is listed with an empty endpoint and a
         failed ``resolve_mcp`` check, so binding refuses it with that reason."""
-        report = await self._registry.explain(ref, criteria=criteria)
+        report = await self._registry.explain(ref, criteria=criteria, fresh=fresh)
         try:
-            handle = await self._registry.resolve_mcp(ref)
+            handle = await self._registry.resolve_mcp(ref, fresh=fresh)
         except RegistryError as exc:
             failed = Check("resolve_mcp", False, str(exc))
             report = GovernanceReport(governed=False, checks=[*report.checks, failed])
@@ -396,9 +479,21 @@ def _no_record(_found: _Found, _hit: bool) -> None:
     """The outcome callback when no span is recorded."""
 
 
-def blocked_lock() -> NotImplementedError:
-    """``discover(locked=True)``: pinned resolution waits on the lockfile."""
-    return _verify.blocked(
-        "discover(locked=True): resolving only what donkey.lock pins needs the lockfile "
-        "(BG §2.7, donkey.tools.lock())."
-    )
+def _pinned(lock: Lockfile, servers: list[McpServerHandle]) -> list[McpServerHandle]:
+    """The servers ``lock`` pins; no connection is made (BG §2.7).
+
+    Raises:
+        ToolLockDrift: A pinned server was not discovered.
+    """
+    drift, _ = compare_lock(lock, servers)
+    if drift:
+        raise ToolLockDrift.of(drift)
+    kept = [s for s in servers if server_key(s) in lock.servers]
+    for dropped in servers:
+        if dropped not in kept:
+            _log.warning(
+                "MCP server %s is not pinned in donkey.lock; dropped. "
+                "Re-run donkey.tools.lock() to pin it.",
+                dropped.ref.coordinates,
+            )
+    return kept

@@ -193,6 +193,8 @@ def _registered_fixture(error: type[DonkeyError]) -> Fixture | None:
     for reg in _registry.registered():
         if reg.raises is not error:
             continue
+        if reg.status == 200:
+            continue  # Successful HTTP responses bypass transport refusal hooks.
         example = reg.example()
         if isinstance(classify(example), error):
             return Fixture(
@@ -207,6 +209,11 @@ def _registered_fixture(error: type[DonkeyError]) -> Fixture | None:
                 content_type=example.headers.get("content-type"),
                 verbatim_headers=True,
             )
+    if any(reg.raises is error and reg.status == 200 for reg in _registry.registered()):
+        raise ValueError(
+            f"simulate() cannot inject {error.__name__}: HTTP 200 JSON-RPC examples "
+            "require explicit jsonrpc_refusal() matching, not transport injection."
+        )
     return None
 
 

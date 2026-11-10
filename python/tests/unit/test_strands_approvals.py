@@ -32,8 +32,9 @@ from donkey_kit import (
     PIIDetected,
     TokenBudgetExceeded,
 )
+from donkey_kit.core import approvals as approvals_mod
 from donkey_kit.core import telemetry
-from donkey_kit.core.approvals import Approval
+from donkey_kit.core.approvals import Approval, record_pending
 from donkey_kit.core.identity import current_user
 from donkey_kit.core.telemetry import current_correlation_id
 
@@ -145,6 +146,8 @@ def recorded(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Approval, str |
     calls: list[tuple[str, Approval, str | None]] = []
 
     def pending(approval: Approval) -> None:
+        # Spy on the pause without removing its requester evidence (ADR 0026).
+        record_pending(approval)
         calls.append(("pending", approval, None))
 
     def decision(approval: Approval, *, approved: bool, by: str) -> None:
@@ -267,13 +270,25 @@ async def test_a_nested_call_of_the_approved_tool_waits_for_its_own_approval(
     assert waiting.id == needed.approval.id
 
 
-def _user_refund_tool(users: list[str | None]) -> Any:
-    @Donkey.tool(approval="required")
-    def issue_refund(ticket_id: str) -> str:
-        """Refund a ticket."""
+def _user_refund_tool(users: list[str | None], *, is_async: bool = False) -> Any:
+    def refund() -> str:
         user = current_user()
         users.append(user.token if user else None)
         return "refunded"
+
+    if is_async:
+
+        @Donkey.tool(approval="required")
+        async def issue_refund(ticket_id: str) -> str:
+            """Refund a ticket."""
+            return refund()
+
+    else:
+
+        @Donkey.tool(approval="required")
+        def issue_refund(ticket_id: str) -> str:
+            """Refund a ticket."""
+            return refund()
 
     return tool(issue_refund)
 
@@ -287,14 +302,73 @@ async def _paused_as_alice(donkey: Donkey, users: list[str | None]) -> tuple[Age
     return agent, approval
 
 
-async def test_an_approved_call_runs_as_the_user_who_paused_it() -> None:
+@pytest.mark.parametrize("is_async", [False, True], ids=["sync", "async"])
+@pytest.mark.parametrize("executor", [ConcurrentToolExecutor, SequentialToolExecutor])
+@pytest.mark.parametrize("fresh_hook", [False, True], ids=["original-hook", "fresh-hook"])
+async def test_an_approved_call_runs_as_the_user_who_paused_it(
+    is_async: bool, executor: type[Any], fresh_hook: bool
+) -> None:
+    """Same-process hook restoration retains requester evidence (ADR 0026)."""
     users: list[str | None] = []
+    agent = _agent(
+        _ScriptedModel(_REFUND),
+        _user_refund_tool(users, is_async=is_async),
+        hooks=(ApprovalHook(),),
+        tool_executor=executor(),
+    )
     async with Donkey(_cfg()) as donkey:
-        agent, approval = await _paused_as_alice(donkey, users)
+        async with donkey.as_user(token="token-alice"):
+            (approval,) = pending_approvals(await _paused(agent, donkey))
+        if fresh_hook:
+            agent.hooks = type(agent.hooks)()
+            agent.hooks.add_hook(ApprovalHook())
         # The approver's handler resumes the agent, outside as_user().
         resumed = await agent.invoke_async([approve(approval, by="m.keller").native])
     assert resumed.stop_reason == "end_turn"
     assert users == ["token-alice"]
+    assert current_user() is None
+
+
+@pytest.mark.parametrize("loss", ["missing", "evicted"])
+@pytest.mark.parametrize("resumer", [None, "token-alice", "token-bob"])
+@pytest.mark.parametrize("fresh_hook", [False, True], ids=["original-hook", "fresh-hook"])
+async def test_requester_loss_refuses_a_real_strands_resume(
+    monkeypatch: pytest.MonkeyPatch, loss: str, resumer: str | None, fresh_hook: bool
+) -> None:
+    """Neither a native interrupt nor a resumer token restores origin evidence."""
+    users: list[str | None] = []
+    events: list[tuple[str, Approval]] = []
+
+    def record(approval: Approval, event: str, extra: Any) -> None:
+        events.append((event, approval))
+
+    monkeypatch.setattr(approvals_mod, "_record", record)
+    async with Donkey(_cfg()) as donkey:
+        agent, approval = await _paused_as_alice(donkey, users)
+        if loss == "missing":
+            approvals_mod._reset_for_tests()
+        else:
+            monkeypatch.setattr(approvals_mod, "_NATIVE_KEPT", 1)
+            record_pending(dataclasses.replace(approval, id="other-pause"))
+        if fresh_hook:
+            agent.hooks = type(agent.hooks)()
+            agent.hooks.add_hook(ApprovalHook())
+        assert approval.id not in approvals_mod._NATIVE_REQUESTERS
+        # Inspection and the decision helper must not register the resumer.
+        (inspected,) = pending_approvals(SimpleNamespace(interrupts=[approval.native]))
+        decided = approve(inspected, by="m.keller")
+        with pytest.raises(AuthError, match="no recorded requester") as caught:
+            if resumer is None:
+                async with donkey.run():
+                    await agent.invoke_async([decided.native])
+            else:
+                async with donkey.as_user(token=resumer), donkey.run():
+                    await agent.invoke_async([decided.native])
+    assert users == []
+    assert approved_call("issue_refund") is None
+    assert approval.id not in approvals_mod._NATIVE_REQUESTERS
+    assert "fresh approval" in caught.value.remediation
+    assert any(e == "donkey.approval.resume_refused" and a.id == approval.id for e, a in events)
 
 
 async def test_resuming_as_another_user_is_refused() -> None:

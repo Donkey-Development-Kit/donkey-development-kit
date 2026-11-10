@@ -32,6 +32,7 @@ from importlib import import_module as _import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .a2a.client import A2AFacade
     from .a2a.types import A2AResult, A2ATask
     from .core.approvals import (
         Approval,
@@ -67,11 +68,17 @@ if TYPE_CHECKING:
         UpstreamRequestError,
     )
     from .core.identity import UserScope
+    from .core.jsonrpc_refusals import jsonrpc_refusal
     from .core.lastcall import LastCall, LastCallStatus
     from .core.reactions import OnRefusal
     from .core.refusals import TypedRefusals
     from .core.runledger import RunLedger, RunRefusal
-    from .core.step_up import GatewayApprovalDenied, GatewayApprovalPending
+    from .core.step_up import (
+        GatewayApprovalDenied,
+        GatewayApprovalPending,
+        GatewayAuthChallenge,
+        GatewayAuthRequired,
+    )
     from .core.telemetry import RunScope
     from .core.tool_access import ToolNotInProfile
     from .core.toolspec import AgentSpec, ToolSpec, registered_agents, registered_tools
@@ -81,6 +88,7 @@ if TYPE_CHECKING:
     from .llm.client import LLMClient
     from .registry import ExchangeRegistry, GovernanceCriteria
     from .tools.auth import McpAuth
+    from .tools.lockfile import ToolLockDrift
     from .tools.session import ToolSet, UngovernedMcpServer
 
 # The public names resolve lazily (PEP 562): ``import donkey_kit`` loads no
@@ -88,6 +96,7 @@ if TYPE_CHECKING:
 # every pytest run via its pytest11 entry point, so an eager import here would
 # pull the whole SDK into every test session in the environment (#746).
 _LAZY = {
+    "A2AFacade": ".a2a.client",
     "A2AResult": ".a2a.types",
     "A2ATask": ".a2a.types",
     "AgentKilled": ".core.errors",
@@ -121,6 +130,8 @@ _LAZY = {
     "ExchangeRegistry": ".registry",
     "GatewayApprovalDenied": ".core.step_up",
     "GatewayApprovalPending": ".core.step_up",
+    "GatewayAuthChallenge": ".core.step_up",
+    "GatewayAuthRequired": ".core.step_up",
     "GatewayUnavailable": ".core.errors",
     "GovernanceCriteria": ".registry",
     "LLMClient": ".llm.client",
@@ -139,6 +150,7 @@ _LAZY = {
     "RequestRateLimitExceeded": ".core.errors",
     "RunScope": ".core.telemetry",
     "TokenBudgetExceeded": ".core.errors",
+    "ToolLockDrift": ".tools.lockfile",
     "ToolNotInProfile": ".core.tool_access",
     "ToolSet": ".tools.session",
     "ToolSpec": ".core.toolspec",
@@ -149,6 +161,7 @@ _LAZY = {
     "UpstreamModelError": ".core.errors",
     "UpstreamRequestError": ".core.errors",
     "classify": ".core.classifier",
+    "jsonrpc_refusal": ".core.jsonrpc_refusals",
     "registered_agents": ".core.toolspec",
     "registered_tools": ".core.toolspec",
     "typed_refusals": ".integrations",
@@ -208,9 +221,10 @@ _logging.getLogger(__name__).addHandler(_logging.NullHandler())
 # The package's one version source (#767): pyproject.toml declares the version
 # dynamic and hatch reads this line, so bump it here and nowhere else. The
 # release workflows fail when a tag disagrees with it (docs/releasing.md).
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
+    "A2AFacade",
     "A2AResult",
     "A2ATask",
     "AgentKilled",
@@ -241,6 +255,8 @@ __all__ = [
     "ExchangeRegistry",
     "GatewayApprovalDenied",
     "GatewayApprovalPending",
+    "GatewayAuthChallenge",
+    "GatewayAuthRequired",
     "GatewayUnavailable",
     "GovernanceCriteria",
     "LLMClient",
@@ -260,6 +276,7 @@ __all__ = [
     "RunRefusal",
     "RunScope",
     "TokenBudgetExceeded",
+    "ToolLockDrift",
     "ToolNotInProfile",
     "ToolSet",
     "ToolSpec",
@@ -273,6 +290,7 @@ __all__ = [
     "UserScope",
     "__version__",
     "classify",
+    "jsonrpc_refusal",
     "registered_agents",
     "registered_tools",
     "typed_refusals",

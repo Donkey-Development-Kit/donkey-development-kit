@@ -57,10 +57,15 @@ _MARKS = {
     "skipped": "-",
 }
 
-_SERVICE = typer.Argument(
-    None, help="The service ID to expose; optional when the project has exactly one."
+_PATH = typer.Argument(Path("."), help="The repository (or one .py file) to scan.")
+_SERVICE = typer.Option(
+    None,
+    "--service",
+    metavar="ID",
+    help="The service ID to expose; optional when the project has exactly one.",
 )
-_PATH = typer.Option(Path("."), "--path", help="The repository (or one .py file) to scan.")
+# 0.2.0 took the path as --path and the service as the argument (#1515).
+_OLD_PATH = typer.Option(None, "--path", hidden=True)
 _ENV = typer.Option(None, "--env", metavar="NAME", help="The Anypoint environment (ANYPOINT_ENV).")
 _TARGET = typer.Option(
     None, "--target", metavar="NAME", help="The gateway's name; overrides the declared target."
@@ -71,8 +76,9 @@ _JSON = typer.Option(False, "--json", help="emit the report as JSON")
 @app.command()
 def expose(
     ctx: typer.Context,
-    service: str | None = _SERVICE,
     path: Path = _PATH,
+    service: str | None = _SERVICE,
+    old_path: Path | None = _OLD_PATH,
     env: str | None = _ENV,
     target: str | None = _TARGET,
     dry_run: bool = typer.Option(
@@ -81,20 +87,59 @@ def expose(
     as_json: bool = _JSON,
 ) -> None:
     """Expose one MCP server or A2A agent through an existing gateway."""
+    path, service = _legacy(path, service, old_path)
     _run(ctx, service, path, env, target, dry_run=dry_run, as_json=as_json)
 
 
 @app.command()
 def preflight(
     ctx: typer.Context,
-    service: str | None = _SERVICE,
     path: Path = _PATH,
+    service: str | None = _SERVICE,
+    old_path: Path | None = _OLD_PATH,
     env: str | None = _ENV,
     target: str | None = _TARGET,
     as_json: bool = _JSON,
 ) -> None:
     """Check, read-only, that a service can be exposed."""
+    path, service = _legacy(path, service, old_path)
     _run(ctx, service, path, env, target, dry_run=True, as_json=as_json)
+
+
+def _legacy(path: Path, service: str | None, old_path: Path | None) -> tuple[Path, str | None]:
+    """Read the 0.2.0 forms with a warning, until 0.3.0 (#1515, #1667).
+
+    ``SERVICE --path PATH`` reads as ``PATH --service SERVICE``. A bare
+    ``SERVICE``, when nothing is at that path and the working directory has a
+    service with that ID, reads as ``--service SERVICE``.
+    """
+    if old_path is None:
+        if service is None and not path.exists() and _is_local_service(path):
+            typer.secho(
+                f"a service ID as the argument is deprecated: pass --service {path}; "
+                "the argument is the path to scan",
+                fg="yellow",
+                err=True,
+            )
+            return Path("."), str(path)
+        return path, service
+    typer.secho(
+        "--path is deprecated: pass the path as the argument, and a service as --service",
+        fg="yellow",
+        err=True,
+    )
+    if service is None and path != Path("."):
+        service = str(path)
+    return old_path, service
+
+
+def _is_local_service(name: Path) -> bool:
+    """Whether scanning the working directory finds a service with ID ``name``."""
+    if len(name.parts) != 1:
+        return False
+    result = scan_repository(Path("."))
+    ids = {s.id for s in result.mcp_servers} | {a.name for a in result.agents}
+    return str(name) in ids
 
 
 def _run(
@@ -119,6 +164,8 @@ def _run(
         )
     except (FileNotFoundError, ConfigError) as exc:
         typer.secho(str(exc), fg="red", err=True)
+        if isinstance(exc, FileNotFoundError) and service is None and len(path.parts) == 1:
+            _hint(path)
         raise typer.Exit(2) from exc
     publication = plan_publication(result, path, default_group_id=cfg.org_id)
     plan = plan_exposure(publication, path, service=service, target=target)
@@ -130,6 +177,9 @@ def _run(
         for i in plan.issues:
             typer.secho(f"  {i.path}:{i.line}  {i.kind}  {i.subject}: {i.detail}", err=True)
         typer.secho("nothing was sent", fg="red", err=True)
+        if file is None and service is None and path.is_dir() and len(path.parts) == 1:
+            # A service ID that is also a directory name scans that directory (#1667).
+            _hint(path)
         raise typer.Exit(1)
     try:
         cfg = cfg.validated(need="control_plane")
@@ -142,6 +192,10 @@ def _run(
     else:
         _print(plan, report)
     raise typer.Exit(0 if report.ok else 1)
+
+
+def _hint(path: Path) -> None:
+    typer.secho(f"to expose the service {path}, pass --service {path}", err=True)
 
 
 def _echo_json(report: ExposeReport) -> None:

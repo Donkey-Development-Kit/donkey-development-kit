@@ -364,7 +364,6 @@ class ReactionRun:
             "the %s handler raised %s; the original refusal propagates",
             step.label,
             type(exc).__name__,
-            exc_info=exc,
         )
 
     @staticmethod

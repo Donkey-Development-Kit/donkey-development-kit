@@ -17,12 +17,16 @@ const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
 
 type Tone = 'live' | 'roadmap' | 'neutral' | 'accent'
 
+// `ledger` names the docs/verified-apis.md row(s) a status badge rests on
+// ("§2 Streaming support"); python/scripts/check_doc_badges.py checks the
+// badge against it (#1482). It is not rendered.
 export function Badge({
   children,
   tone = 'neutral',
 }: {
   children: React.ReactNode
   tone?: Tone
+  ledger?: string
 }) {
   return <span className={`af-badge af-badge-${tone}`}>{children}</span>
 }

@@ -1,0 +1,12 @@
+HTTP/1.1 503 Service Unavailable
+x-flex-azure-guardrails-action: reject
+x-flex-azure-guardrails-phase: request
+x-flex-azure-guardrails-reason: service_unavailable
+content-type: application/json
+content-length: 263
+date: Mon, 02 Nov 2026 17:06:17 GMT
+server: Anypoint Flex Gateway
+x-correlation-id: 00000000-0000-4000-8000-43e733dc57a5
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Close
+

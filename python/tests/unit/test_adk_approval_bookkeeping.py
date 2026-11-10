@@ -63,12 +63,19 @@ def fake_adk(monkeypatch: pytest.MonkeyPatch) -> Any:
     yield
     adk_mod._approval_plugin_class.cache_clear()
     adk_mod._APPROVED.set(None)
+    adk_mod._INJECTED.set(None)
 
 
 @pytest.fixture
 def recorded(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
     events: list[tuple[str, Any]] = []
-    monkeypatch.setattr(adk_mod, "record_pending", lambda a: events.append(("pending", a)))
+    from donkey_kit.core.approvals import record_pending
+
+    def pending(approval: Any) -> None:
+        record_pending(approval)
+        events.append(("pending", approval))
+
+    monkeypatch.setattr(adk_mod, "record_pending", pending)
 
     def decision(approval: Any, *, approved: bool, by: str) -> None:
         events.append(("approved" if approved else "rejected", (approval, by)))
@@ -269,6 +276,63 @@ def test_the_tools_context_parameter_is_not_an_argument(
     assert set(approval.arguments) == {"ticket_id", kept}
 
 
+@pytest.mark.parametrize("context_name", ["tool_context", "ctx"])
+def test_trusted_context_is_injected_only_for_the_approved_call(context_name: str) -> None:
+    import inspect
+
+    from donkey_kit import ConfigError
+
+    seen: list[object] = []
+
+    @Donkey.tool(approval="required")
+    def refund(ticket_id: str, **kw: Any) -> str:
+        """Refund with a trusted ADK execution context."""
+        seen.append(kw[context_name])
+        return ticket_id
+
+    # Use a real named parameter signature, including the alternate ADK name.
+    signature = inspect.Signature(
+        [
+            inspect.Parameter("ticket_id", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+            inspect.Parameter(context_name, inspect.Parameter.KEYWORD_ONLY),
+        ]
+    )
+    raw = refund.__wrapped__
+    raw.__signature__ = signature
+    tool = Donkey.tool(approval="required")(raw)
+    pause_context = _Context()
+    plugin = approval_plugin()
+    _before(plugin, pause_context, tool, context_param=context_name)
+    payload = pause_context.asked[0]["payload"]
+    resumed = _resume(payload)
+    assert _before(plugin, resumed, tool, context_param=context_name) is None
+    assert tool("T-1", **{context_name: resumed}) == "T-1"
+    assert seen == [resumed]
+    # The exemption is one-shot, not a heuristic on parameter names or classes.
+    with pytest.raises(ConfigError, match="snapshot"):
+        tool("T-1", **{context_name: resumed})
+
+
+def test_the_call_cannot_substitute_the_plugins_context() -> None:
+    from donkey_kit import ConfigError
+
+    ran: list[object] = []
+
+    @Donkey.tool(approval="required")
+    def refund(ticket_id: str, tool_context: Any) -> str:
+        """Refund with ADK's context."""
+        ran.append(tool_context)
+        return ticket_id
+
+    plugin = approval_plugin()
+    payload = _pause(plugin, tool=refund)
+    resumed = _resume(payload)
+    assert _before(plugin, resumed, refund) is None
+    with pytest.raises(ConfigError, match="execution context differs"):
+        refund("T-1", _Context())
+    assert ran == []
+
+
 def test_a_gated_call_pauses_and_records_the_pending_approval(
     recorded: list[tuple[str, Any]],
 ) -> None:
@@ -294,8 +358,11 @@ def test_the_approval_id_depends_on_the_call_as_sent() -> None:
     assert one(function_call_id="fc-2") != first
     assert one(args={"ticket_id": "T-2"}) != first
     assert one(args={"ticket_id": "T-1", "amount": 140.0}) != first
-    # A default's repr never reaches the id, so a fresh process matches it.
-    assert one(tool=tag_ticket) == one(tool=tag_ticket)
+    from donkey_kit import ConfigError
+
+    # Custom defaults cannot be safely snapshotted (ADR 0026).
+    with pytest.raises(ConfigError, match="snapshot"):
+        one(tool=tag_ticket)
 
 
 # --- the decision -----------------------------------------------------------------

@@ -265,7 +265,14 @@ packages = ["src/donkey_kit"]
 # with no force-include and `pip install "donkey-kit[local]" && donkey mock`
 # finds them. Their READMEs are capture provenance for reviewers, not runtime
 # data, and stay out of the published (immutable) wheel (#821).
-exclude = ["src/donkey_kit/simulator/_fixtures/**/README.md"]
+# #1391 explicitly preserves the two MCP provenance records with their captures.
+# #1397 likewise preserves the served A2A subset's original provenance record.
+exclude = [
+    "src/donkey_kit/simulator/_fixtures/**/README.md",
+    "!src/donkey_kit/simulator/_fixtures/anypoint/mcp_access/README.md",
+    "!src/donkey_kit/simulator/_fixtures/anypoint/mcp_policies/README.md",
+    "!src/donkey_kit/simulator/_fixtures/anypoint/a2a_policies/README.md",
+]
 
 # An explicit sdist file list, so local caches and scratch files never ship (#746).
 [tool.hatch.build.targets.sdist]
@@ -583,8 +590,12 @@ ignore_imports = [
     # Donkey.simulate() (BG §1.4) is public API on the orchestrator, and its
     # implementation is the simulator's base-path-safe inject module (httpx
     # only). The import is lazy, inside the method, so `import donkey_kit` never
-    # loads the simulator.
+    # loads the simulator. Donkey.simulate_mcp() (#1391, ADR 0023) is the same
+    # shape: a lazy import of the base-path-safe simulator.mcp, and
+    # Donkey.simulate_a2a() (#1652, ADR 0025) of simulator.a2a.
     "donkey_kit.donkey -> donkey_kit.simulator.inject",
+    "donkey_kit.donkey -> donkey_kit.simulator.mcp",
+    "donkey_kit.donkey -> donkey_kit.simulator.a2a",
 ]
 
 [[tool.importlinter.contracts]]
@@ -606,8 +617,11 @@ forbidden_modules = [
     "donkey_kit.simulator.**",
 ]
 ignore_imports = [
-    # The lazy Donkey.simulate() import, as in the layers contract above.
+    # The lazy Donkey.simulate(), simulate_mcp() and simulate_a2a() imports, as
+    # in the layers contract above.
     "donkey_kit.donkey -> donkey_kit.simulator.inject",
+    "donkey_kit.donkey -> donkey_kit.simulator.mcp",
+    "donkey_kit.donkey -> donkey_kit.simulator.a2a",
 ]
 
 [[tool.importlinter.contracts]]
@@ -662,7 +676,7 @@ type = "layers"
 # #210) sits beside cost and the rest, over _policy_spec (its match-spec
 # checks); it fills a hook slot in errors, so errors never imports it. step_up
 # (the CIBA step-up types, #1320) fills another and sits just above errors,
-# beside tool_access (the MCP tool-access denial, #312), which only subclasses
+# beside _tool_access (the MCP tool-access type/rule, #312), which only subclasses
 # errors' PolicyViolation, and runledger (the run ledger, #613), which holds
 # lastcall records and errors' DonkeyErrors and is bound by correlation.
 # approvals (the @donkey.tool approval gate, #211) sits beside transport: it
@@ -677,9 +691,12 @@ type = "layers"
 # verification placeholders name wire headers. A sibling group with `|` is
 # independent: its members never import each other. `exhaustive` makes a new
 # core module fail until it is placed. _response (the structural response
+# JSON-RPC matching sits below _policy_spec and above _tool_access (ADR 0021).
+# tool_access delegates to it; classifier fills its registry hook without a cycle.
 # Protocols, #933) imports nothing from core, so it sits at the bottom, as does
 # _budget_headers (budget's header parsers and receive-time stamp, #311) and
-# _window (the window state every budget window shares, #1025).
+# _window (the window state every budget window shares, #1025), and _scope_entry
+# (the scopes' per-entry reset tokens, #1484).
 containers = ["donkey_kit.core"]
 exhaustive = true
 layers = [
@@ -689,13 +706,15 @@ layers = [
     "auth | correlation | spanflush",
     "config",
     "classifier | cost | endpoints | header_names | reactions | refusals",
+    "tool_access",
     "_policy_spec",
-    "runledger | step_up | tool_access",
+    "jsonrpc_refusals",
+    "runledger | step_up | _tool_access",
     "approval_types",
     "errors",
     "_refusal_body | lastcall | masking",
     "_verify",
-    "_wire | _response | _budget_headers | _window",
+    "_wire | _response | _budget_headers | _window | _policy_sample | _scope_entry",
 ]
 
 [[tool.importlinter.contracts]]

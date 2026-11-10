@@ -36,10 +36,14 @@ _PROXY_VARS = ["HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY"]
 
 
 @pytest.fixture
-def no_sockets(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+def no_sockets(socket_disabled: None, monkeypatch: pytest.MonkeyPatch) -> list[object]:
     """Fail any outbound connection while a fixture transport is swapped in.
     Both the sync (``socket.create_connection``) and async (asyncio
-    ``sock_connect``) paths end in ``socket.connect``/``connect_ex``."""
+    ``sock_connect``) paths end in ``socket.connect``/``connect_ex``.
+
+    Depend on pytest-socket's disposable guarded subclass so monkeypatch's
+    later teardown cannot restore a stale guard onto the real socket (#1551).
+    """
     attempts: list[object] = []
 
     def refuse(self: socket.socket, address: object) -> None:

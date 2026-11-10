@@ -7,6 +7,7 @@ The real clients run in ``scripts/mcp_binding/`` (local servers) and
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 from collections.abc import AsyncIterator, Mapping
@@ -57,6 +58,7 @@ class _Server:
         self.body: bytes = b""
         self.headers: dict[str, str] = {}
         self.initialized = False
+        self.stream: httpx.AsyncByteStream | None = None
 
 
 @pytest.fixture
@@ -71,7 +73,7 @@ def server(monkeypatch: pytest.MonkeyPatch) -> _Server:
             response = httpx.Response(
                 srv.status,
                 headers=srv.reply_headers,
-                content=srv.body,
+                **({"stream": srv.stream} if srv.stream is not None else {"content": srv.body}),
                 request=httpx.Request("POST", url),
             )
             for hook in http_client.event_hooks["response"]:
@@ -128,31 +130,198 @@ async def test_list_tools_follows_the_cursor_with_the_headers(server: _Server) -
     assert server.headers["client_id"] == "c"
 
 
+@pytest.mark.parametrize("injected", [False, True])
 @pytest.mark.parametrize(("status", "error"), [(403, AuthError), (502, ToolInvocationError)])
 async def test_list_tools_maps_the_recorded_status(
-    server: _Server, status: int, error: type[Exception]
+    server: _Server, status: int, error: type[Exception], injected: bool
 ) -> None:
     server.status = status
     with pytest.raises(error, match=f"HTTP {status}"):
-        await mcp_module.list_tools("https://gw.example.test/x/", {}, server="x")
+        await mcp_module.list_tools(
+            "https://gw.example.test/x/",
+            {},
+            server="x",
+            **(
+                {"http_factory": lambda url, headers: httpx.AsyncClient(headers=headers)}
+                if injected
+                else {}
+            ),
+        )
 
 
-async def test_list_tools_raises_a_ciba_pending_answer_typed(server: _Server) -> None:
+@pytest.mark.parametrize("injected", [False, True])
+async def test_list_tools_raises_a_ciba_pending_answer_typed(
+    server: _Server, injected: bool
+) -> None:
     # The OBO policy's CIBA 401 is not a credential failure (docs/verified-apis.md §4, #1320).
     server.status = 401
     server.reply_headers = {"content-type": "application/json", "retry-after": "5"}
     server.body = b'{"error":"authorization_pending","error_description":"in progress"}'
     with pytest.raises(GatewayApprovalPending) as info:
-        await mcp_module.list_tools("https://gw.example.test/x/", {}, server="x")
+        await mcp_module.list_tools(
+            "https://gw.example.test/x/",
+            {},
+            server="x",
+            **(
+                {"http_factory": lambda url, headers: httpx.AsyncClient(headers=headers)}
+                if injected
+                else {}
+            ),
+        )
     assert info.value.retry_after == 5.0
 
 
-async def test_list_tools_raises_a_ciba_denial_typed(server: _Server) -> None:
+@pytest.mark.parametrize("injected", [False, True])
+@pytest.mark.parametrize("mode", ["large", "trickle", "compressed", "broken"])
+async def test_discovery_error_reads_are_bounded_and_close_streams(
+    server: _Server, monkeypatch: pytest.MonkeyPatch, mode: str, injected: bool
+) -> None:
+    monkeypatch.setattr(mcp_module, "_ERROR_BODY_TIMEOUT", 0.02)
+
+    class Stream(httpx.AsyncByteStream):
+        reads = 0
+        closed = False
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            while True:
+                self.reads += 1
+                if self.reads > 10:
+                    raise AssertionError("unbounded error read")
+                if mode == "trickle":
+                    await asyncio.sleep(0.01)
+                if mode == "broken":
+                    raise httpx.ReadError("broken stream")
+                yield b"x" * (128 * 1024 if mode == "large" else 1)
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    stream = Stream()
+    server.status = 403
+    server.stream = stream
+    if mode == "compressed":
+        server.reply_headers = {"content-encoding": "gzip"}
+    with pytest.raises(AuthError, match="HTTP 403"):
+        await mcp_module.list_tools(
+            "https://gw.example.test/x/",
+            {},
+            server="x",
+            **(
+                {"http_factory": lambda url, headers: httpx.AsyncClient(headers=headers)}
+                if injected
+                else {}
+            ),
+        )
+    assert stream.closed
+    assert stream.reads == 0 if mode == "compressed" else stream.reads <= 3
+
+
+async def test_oversized_buffered_step_up_body_is_not_classified(server: _Server) -> None:
+    server.status = 401
+    server.reply_headers = {"content-type": "application/json"}
+    server.body = b'{"error":"authorization_pending","padding":"' + b"x" * (64 * 1024) + b'"}'
+    with pytest.raises(AuthError, match="HTTP 401"):
+        await mcp_module.list_tools("https://gw.example.test/x/", {}, server="x")
+
+
+@pytest.mark.parametrize("mode", ["stall", "compressed", "large", "broken", "complete"])
+@pytest.mark.parametrize("binding", [False, True])
+async def test_error_cleanup_shares_the_deadline_without_task_leaks(
+    server: _Server, monkeypatch: pytest.MonkeyPatch, mode: str, binding: bool
+) -> None:
+    monkeypatch.setattr(mcp_module, "_ERROR_BODY_TIMEOUT", 0.01)
+    before = asyncio.all_tasks()
+
+    class Stream(httpx.AsyncByteStream):
+        closing = False
+        close_cancelled = False
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            if mode == "stall":
+                await asyncio.Event().wait()
+            if mode == "broken":
+                raise httpx.ReadError("broken stream")
+            yield b"x" * (128 * 1024 if mode == "large" else 1)
+
+        async def aclose(self) -> None:
+            self.closing = True
+            try:
+                await asyncio.Event().wait()
+            finally:
+                self.close_cancelled = True
+
+    stream = Stream()
+    headers = {"content-encoding": "gzip"} if mode == "compressed" else {}
+    server.status, server.stream, server.reply_headers = 403, stream, headers
+    started = asyncio.get_running_loop().time()
+    if binding:
+        async with mcp_module.client_factory("https://gw.example.test/x/", {})() as client:
+            response = httpx.Response(
+                403,
+                headers=headers,
+                stream=stream,
+                request=httpx.Request("POST", "https://gw.example.test/x/"),
+            )
+            with pytest.raises(httpx.HTTPStatusError):
+                await asyncio.wait_for(client.event_hooks["response"][0](response), 0.1)
+    else:
+        with pytest.raises(AuthError, match="HTTP 403"):
+            await asyncio.wait_for(
+                mcp_module.list_tools("https://gw.example.test/x/", {}, server="x"), 0.1
+            )
+    assert asyncio.get_running_loop().time() - started < 0.1
+    if mode != "stall":
+        assert stream.closing
+    assert not stream.closing or stream.close_cancelled
+    assert asyncio.all_tasks() <= before
+
+
+@pytest.mark.parametrize("during_close", [False, True])
+async def test_error_read_cancellation_does_not_wait_for_stalled_cleanup(
+    server: _Server, monkeypatch: pytest.MonkeyPatch, during_close: bool
+) -> None:
+    monkeypatch.setattr(mcp_module, "_ERROR_BODY_TIMEOUT", 5.0)
+    reading = asyncio.Event()
+
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            if not during_close:
+                reading.set()
+                await asyncio.Event().wait()
+            yield b"error"
+
+        async def aclose(self) -> None:
+            reading.set()
+            await asyncio.Event().wait()
+
+    response = httpx.Response(
+        403, stream=Stream(), request=httpx.Request("POST", "https://gw.example.test/x/")
+    )
+    before = asyncio.all_tasks()
+    task = asyncio.create_task(mcp_module._read_error(response))
+    await reading.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 0.1)
+    assert asyncio.all_tasks() <= before
+
+
+@pytest.mark.parametrize("injected", [False, True])
+async def test_list_tools_raises_a_ciba_denial_typed(server: _Server, injected: bool) -> None:
     server.status = 403
     server.reply_headers = {"content-type": "application/json"}
     server.body = b'{"error":"access_denied","error_description":"denied"}'
     with pytest.raises(GatewayApprovalDenied):
-        await mcp_module.list_tools("https://gw.example.test/x/", {}, server="x")
+        await mcp_module.list_tools(
+            "https://gw.example.test/x/",
+            {},
+            server="x",
+            **(
+                {"http_factory": lambda url, headers: httpx.AsyncClient(headers=headers)}
+                if injected
+                else {}
+            ),
+        )
 
 
 async def test_without_mcp_listing_says_what_to_install(monkeypatch: pytest.MonkeyPatch) -> None:

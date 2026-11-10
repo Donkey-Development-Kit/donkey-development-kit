@@ -458,6 +458,20 @@ async def published_card(
     return await _Exchange(http, base_url).card(group_id, asset_id, version)
 
 
+async def published_llm_metadata(
+    http: httpx.AsyncClient, group_id: str, asset_id: str, version: str, *, base_url: str
+) -> dict[str, Any] | None:
+    """The ``llm-metadata`` file published with ``group_id:asset_id:version``, as
+    Exchange stores it, or ``None`` when the version has no such file.
+
+    Raises:
+        RegistryError: Exchange has no such version, or refused the query or
+            the download.
+        AuthError: Exchange refused the query with ``401``/``403``.
+    """
+    return await _Exchange(http, base_url).llm_metadata(group_id, asset_id, version)
+
+
 def mcp_metadata(asset: PlannedAsset, result: ScanResult) -> dict[str, Any]:
     """The ``mcp-metadata`` file published with ``asset``: its transport, its
     tools with their descriptions and an input schema derived from the scanned
@@ -644,6 +658,19 @@ class _Exchange:
     async def card(self, group_id: str, asset_id: str, version: str) -> dict[str, Any] | None:
         return await self._file(group_id, asset_id, version, _READ_CARD_CLASSIFIERS)
 
+    async def llm_metadata(
+        self, group_id: str, asset_id: str, version: str
+    ) -> dict[str, Any] | None:
+        coordinates = f"{group_id}:{asset_id}:{version}"
+        data = await self._asset(
+            _FILES_QUERY,
+            {"groupId": group_id, "assetId": asset_id, "version": version},
+            scope=_scopes.EXCHANGE_READ,
+        )
+        if data is None:
+            raise RegistryError(f"Exchange has no asset version {coordinates}.")
+        return await self._download(coordinates, data, ("llm-metadata",), missing_ok=True)
+
     async def _file(
         self,
         group_id: str,
@@ -665,6 +692,18 @@ class _Exchange:
         )
         if data is None:
             return None
+        return await self._download(coordinates, data, classifiers, missing_ok=missing_ok)
+
+    async def _download(
+        self,
+        coordinates: str,
+        data: dict[str, Any],
+        classifiers: tuple[str, ...],
+        *,
+        missing_ok: bool,
+    ) -> dict[str, Any] | None:
+        """The JSON body of the first ``json`` file among ``classifiers`` in a
+        version's ``files``, or ``None`` when, with ``missing_ok``, it has none."""
         links = {
             f.get("classifier"): f["externalLink"]
             for f in data.get("files") or ()

@@ -49,6 +49,14 @@ targets — the first live confirmation of docs/verified-apis.md §§2–4 (prev
   response had no `x-llm-proxy-*` headers. Discriminator for
   `ModelNotRoutable`, and the simulator's `model-not-routable` shape (served by
   `simulate(ModelNotRoutable)` and the `donkey-sim/model-not-routable` sentinel, #891).
+- `reject.model-missing.{headers.txt,body.json}` — HTTP 400 when model-based-routing
+  1.0.5 finds no model where the ingress expects one. Captured live 2026-11-02
+  (#1547), byte-identical across a native Gemini ingress sent an OpenAI
+  `/chat/completions` body and two OpenAI-ingress proxies sent no `model`:
+  `{"error":"Failed to parse model from request: Missing 'model' field in
+  request"}`, `content-type: application/json`, no `x-llm-proxy-*` headers,
+  upstream never called. Also `ModelNotRoutable` (`.model` is `None`), served
+  by the `donkey-sim/model-missing` sentinel.
 - `reject.pii-detected.{body.json,headers.txt}` — HTTP **403** from the
   `llm-pii-detection-policy` (applied with `action: Reject`, `entities:["Email"]`)
   when the prompt contained an email. Body is a **nested** object

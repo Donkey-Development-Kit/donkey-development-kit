@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Error parsing request","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"PARSE_ERROR","domain":"a2a-protocol.org","metadata":{"detail":"Error parsing request: EOF while parsing a value at line 1 column 59"}}]}}

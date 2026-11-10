@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
 from .criteria import GovernanceReport
 
-__all__ = ["AgentHandle", "AssetRef", "AssetType", "McpServerHandle"]
+__all__ = ["AgentHandle", "AssetRef", "AssetType", "LlmMetadata", "McpServerHandle"]
 
-AssetType = Literal["mcp", "a2a-agent", "agent", "api"]
+AssetType = Literal["mcp", "a2a-agent", "agent", "api", "llm"]
 
 
 @dataclass(frozen=True)
@@ -79,3 +80,24 @@ class AgentHandle:
     ref: AssetRef
     endpoint_url: str
     skills: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class LlmMetadata:
+    """What an Exchange ``llm`` asset version's ``llm-metadata`` file declares
+    (docs/verified-apis.md §7, #1533): an LLM proxy's, or a custom LLM
+    provider's.
+
+    Read tolerantly: a field the file leaves out, or sets to a value of the
+    wrong type, is ``None`` or empty, and fields the SDK does not read are
+    ignored. A DDK LLM proxy's file sets only ``platform``.
+    """
+
+    platform: str | None
+    name: str | None = None
+    #: ``openai``, ``anthropic`` or ``gemini``: the wire format the platform takes.
+    input_format: str | None = None
+    #: The model IDs, from the plain-string entries and the ``id`` of the object ones.
+    models: tuple[str, ...] = ()
+    #: The platform's ``capabilities`` object as published, such as ``toolCalling``.
+    capabilities: Mapping[str, object] = field(default_factory=dict)

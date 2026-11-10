@@ -37,6 +37,7 @@ from dataclasses import dataclass, fields
 from typing import Any
 
 from . import _verify
+from ._scope_entry import pop_entry, push_entry
 from .errors import ConfigError
 
 __all__ = ["CacheControls", "CacheScope", "cache_scope", "current_cache_controls"]
@@ -176,20 +177,18 @@ class CacheScope:
     an inert block that leaves any outer scope's controls in place (mirrors
     ``RunScope``'s handling of empty cost tags)."""
 
-    __slots__ = ("_controls", "_token")
+    __slots__ = ("_controls",)
 
     def __init__(self, controls: CacheControls) -> None:
         self._controls = controls if not controls.is_empty else None
-        self._token: Any = None
 
     def _bind(self) -> None:
+        # Per-entry token, so one object entered concurrently restores each (#1484).
         if self._controls is not None:
-            self._token = _cache_controls.set(self._controls)
+            push_entry(self, [_cache_controls.set(self._controls)])
 
     def _unbind(self) -> None:
-        if self._token is not None:
-            _cache_controls.reset(self._token)
-            self._token = None
+        pop_entry(self)
 
     def __enter__(self) -> CacheControls | None:
         self._bind()

@@ -1,0 +1,24 @@
+{
+  "platform": "ddk-custom-openai",
+  "name": "DDK custom provider (test)",
+  "kind": "llm-gw",
+  "inputFormat": "openai",
+  "authentication": [
+    {"kind": "apiKey", "defaultConfiguration": {"headerName": "Authorization", "apiKeyPrefix": "Bearer"}}
+  ],
+  "models": [
+    "gpt-4o-mini",
+    {
+      "id": "gpt-4o",
+      "label": "GPT-4o",
+      "description": "Test entry for the DDK llm-metadata read (#1411, #1533).",
+      "limits": {"maxInputTokens": 128000, "maxOutputTokens": 16384},
+      "capabilities": {"toolCalling": true, "structuredOutput": true, "imageInput": true},
+      "pricing": {"inputPerMillion": 2.5, "outputPerMillion": 10},
+      "lifecycle": {"status": "active", "sunsetAt": null}
+    }
+  ],
+  "defaultUrl": [{"name": "default", "url": "https://api.openai.com/v1"}],
+  "capabilities": {"toolCalling": true, "structuredOutput": true, "embeddings": false, "reasoning": {"supported": false}},
+  "policyRef": {"groupId": "mulesoft", "assetId": "llm-v2-out-azure-openai-adapt-policy", "version": "1.0.0"}
+}

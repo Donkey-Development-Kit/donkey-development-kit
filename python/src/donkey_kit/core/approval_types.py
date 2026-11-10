@@ -17,12 +17,14 @@ The module sits just above ``errors`` so that ``step_up`` can subclass
 
 from __future__ import annotations
 
+import inspect
+import struct
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from .errors import DonkeyError
+from .errors import ConfigError, DonkeyError
 
 __all__ = [
     "Approval",
@@ -50,6 +52,11 @@ class Approval:
     ``native`` is the pause on an approval ``pending_approvals()`` returns, and what
     to resume the framework with on one ``approve()`` / ``reject()`` returns (#1422).
     ``None`` for a raise-and-resume approval. It is left out of equality and the repr.
+
+    ``arguments`` is a detached snapshot of built-in data, not the execution
+    arguments. Changing its nested containers cannot change a pending call.
+    Custom objects and cyclic containers cannot be safely snapshotted and raise
+    ``ConfigError``; pass their built-in data representation instead (ADR 0026).
     """
 
     id: str
@@ -61,10 +68,105 @@ class Approval:
     expires_at: float
     native: Any = field(default=None, compare=False, repr=False)
 
+    def __post_init__(self) -> None:
+        from types import MappingProxyType
+
+        object.__setattr__(self, "arguments", MappingProxyType(_snapshot(dict(self.arguments))))
+
     @property
     def expired(self) -> bool:
         """True once ``expires_at`` has passed: the approval can no longer be resolved."""
         return time.time() >= self.expires_at
+
+
+def _snapshot(value: Any, active: set[int] | None = None) -> Any:  # noqa: ANN401
+    """Copy only exact built-in data types, without invoking user copy hooks."""
+    kind = type(value)
+    if kind in (type(None), bool, int, float, complex, str, bytes, range):
+        return value
+    if active is None:
+        active = set()
+    if len(active) >= 64:
+        raise ConfigError(
+            "tool approval argument nesting exceeds the 64-container snapshot limit",
+            remediation=(
+                "Reduce argument nesting to at most 64 containers, including the parameter "
+                "mapping, before requesting a fresh approval."
+            ),
+        )
+    if kind not in (dict, list, tuple, set, frozenset, bytearray) or id(value) in active:
+        raise ConfigError(
+            "tool approval cannot safely snapshot custom objects or cyclic arguments",
+            remediation=(
+                "Pass acyclic built-in data (dict, list, tuple, set, frozenset, bytearray "
+                "and scalar values) to approval-gated tools. Convert custom objects to "
+                "built-in data before requesting a fresh approval; copy hooks are not trusted."
+            ),
+        )
+    active.add(id(value))
+    try:
+        if kind is dict:
+            return {_snapshot(k, active): _snapshot(v, active) for k, v in value.items()}
+        if kind is bytearray:
+            return bytearray(value)
+        return kind(_snapshot(item, active) for item in value)
+    finally:
+        active.remove(id(value))
+
+
+def _matches(left: Any, right: Any) -> bool:  # noqa: ANN401
+    """Match exact scalar representations; NaNs match only identical binary data."""
+    if type(left) is not type(right):
+        return False
+    if type(left) is range:
+        return (left.start, left.stop, left.step) == (right.start, right.stop, right.step)
+    if type(left) is float:
+        return struct.pack("!d", left) == struct.pack("!d", right)
+    if type(left) is complex:
+        return struct.pack("!dd", left.real, left.imag) == struct.pack(
+            "!dd", right.real, right.imag
+        )
+    if type(left) in (dict, set, frozenset):
+        if len(left) != len(right):
+            return False
+        remaining = list(right.items() if type(right) is dict else right)
+        for item in left.items() if type(left) is dict else left:
+            for index, other in enumerate(remaining):
+                if _matches(item, other):
+                    remaining.pop(index)
+                    break
+            else:
+                return False
+        return True
+    if type(left) in (list, tuple):
+        return len(left) == len(right) and all(
+            _matches(a, b) for a, b in zip(left, right, strict=True)
+        )
+    return bool(left == right)
+
+
+def _bound_snapshots(
+    signature: inspect.Signature,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    injected: Mapping[str, Any],
+    execution_defaults: bool,
+) -> tuple[inspect.BoundArguments, dict[str, Any]]:
+    """Separate trusted framework injections from snapshotted review data."""
+    bound = signature.bind(*args, **kwargs)
+    for name, value in injected.items():
+        if name not in bound.arguments or bound.arguments[name] is not value:
+            raise ConfigError(
+                "tool execution context differs from the framework injection",
+                remediation="Run the approved call with the context supplied by the framework.",
+            )
+    supplied = {k: v for k, v in bound.arguments.items() if k not in injected}
+    bound.apply_defaults()
+    reviewed = _snapshot({k: v for k, v in bound.arguments.items() if k not in injected})
+    call = inspect.BoundArguments(
+        signature, {**_snapshot(reviewed if execution_defaults else supplied), **injected}
+    )
+    return call, reviewed
 
 
 class ApprovalRequired(DonkeyError):

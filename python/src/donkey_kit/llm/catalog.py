@@ -45,6 +45,17 @@ _HEURISTIC_CAPS: dict[str, ModelCapabilities] = {
     "claude-opus-5": ModelCapabilities(function_calling=True, vision=True, json_output=True),
     "claude-sonnet-5": ModelCapabilities(function_calling=True, vision=True, json_output=True),
     "claude-haiku-4-5": ModelCapabilities(function_calling=True, vision=True, json_output=True),
+    # Current ids served by the DDK proxies or in common use (#1413). Lookup is
+    # exact, so a dated id gets its own row.
+    "gpt-5-mini": ModelCapabilities(function_calling=True, vision=True, json_output=True),
+    "gpt-5.1": ModelCapabilities(function_calling=True, vision=True, json_output=True),
+    "claude-opus-5-5": ModelCapabilities(function_calling=True, vision=True, json_output=True),
+    "claude-fable-5-1": ModelCapabilities(function_calling=True, vision=True, json_output=True),
+    "claude-sonnet-5-5": ModelCapabilities(function_calling=True, vision=True, json_output=True),
+    "claude-haiku-4-5-20251001": ModelCapabilities(
+        function_calling=True, vision=True, json_output=True
+    ),
+    "gemini-3.8-flash": ModelCapabilities(function_calling=True, vision=True, json_output=True),
 }
 
 

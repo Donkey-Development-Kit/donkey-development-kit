@@ -12,9 +12,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
-from donkey_kit.core.errors import PolicyViolation, UpstreamModelError
+from donkey_kit.core.errors import AuthError, PIIDetected, PolicyViolation, UpstreamModelError
 from donkey_kit.core.identity import Requester
 from donkey_kit.core.tool_access import ToolNotInProfile, tool_access_denial
 from donkey_kit.registry.models import AssetRef, McpServerHandle
@@ -140,6 +141,137 @@ def test_the_refusing_wrapper_passes_other_errors_and_results_through() -> None:
     result = asyncio.run(_refusing(failed, tool="add", server="s", bound_for=_SERVICE)(a=1))
     assert result == {"isError": True, "content": [], "args": {"a": 1}}
     assert _refusing(failed, tool="add", server="s", bound_for=_SERVICE).__name__ == "failed"
+
+
+@pytest.mark.parametrize("capture", ["pii-request", "pii-response-sse"])
+def test_the_refusing_wrapper_types_captured_pii(capture: str) -> None:
+    fixture = _FIXTURES.parent / "mcp_policies" / f"{capture}.json"
+    error = json.loads(json.loads(fixture.read_text("utf-8"))["body"])["error"]
+
+    async def denied() -> Any:
+        raise _McpError(_ErrorData(error["code"], error["message"], error["data"]))
+
+    with pytest.raises(PIIDetected) as caught:
+        asyncio.run(_refusing(denied, tool="add", server="s", bound_for=_SERVICE)())
+    assert caught.value.phase == ("request" if capture == "pii-request" else "response")
+    assert caught.value.__cause__ is None
+    assert isinstance(caught.value.framework_error, _McpError)
+
+
+@pytest.mark.parametrize("wrapper", ["user", "401", "500"])
+def test_refusing_respects_bridge_chain_boundaries(wrapper: str) -> None:
+    inner = _McpError(_ErrorData(-32008, "Unable to access"))
+    if wrapper == "user":
+        original = RuntimeError("domain failure")
+    else:
+        request = httpx.Request("POST", "https://unrelated.test/")
+        response = httpx.Response(int(wrapper), request=request)
+        original = httpx.HTTPStatusError("unrelated", request=request, response=response)
+    original.__cause__ = inner
+
+    async def denied() -> Any:
+        raise original
+
+    with pytest.raises(type(original)) as caught:
+        asyncio.run(_refusing(denied, tool="add", server="s", bound_for=_SERVICE)())
+    assert caught.value is original
+
+
+@pytest.mark.parametrize("kind", [PIIDetected, ToolNotInProfile])
+def test_refusing_preserves_already_typed_error(kind: type[PolicyViolation]) -> None:
+    original = kind("blocked")
+    cause = ValueError("original cause")
+    framework = RuntimeError("original framework")
+    original.__cause__ = cause
+    original.framework_error = framework
+
+    async def denied() -> Any:
+        raise original
+
+    with pytest.raises(kind) as caught:
+        asyncio.run(_refusing(denied, tool="add", server="s", bound_for=_SERVICE)())
+    assert caught.value is original
+    assert original.__cause__ is cause
+    assert original.framework_error is framework
+
+
+def test_refusing_access_denial_without_named_tool_keeps_binding_coordinates() -> None:
+    async def denied() -> Any:
+        raise _McpError(_ErrorData(-32008, "Unable to access"))
+
+    with pytest.raises(ToolNotInProfile) as caught:
+        asyncio.run(_refusing(denied, tool="add", server="s", bound_for=_SERVICE)())
+    assert caught.value.tool_name == "add"
+    assert caught.value.server == "s"
+
+
+def test_refusing_rejects_wrong_requester_before_invoking() -> None:
+    called = False
+
+    async def invoke() -> Any:
+        nonlocal called
+        called = True
+        return {"ok": True}
+
+    call = _refusing(invoke, tool="add", server="s", bound_for=Requester("user", None, None))
+    with pytest.raises(AuthError):
+        asyncio.run(call())
+    assert not called
+
+
+def test_refusing_keeps_input_validation_error_and_ordinary_result() -> None:
+    original = ValueError("invalid tool arguments")
+
+    async def invalid() -> Any:
+        raise original
+
+    result = {"content": [{"type": "text", "text": "PII detected"}], "isError": False}
+
+    async def ordinary() -> Any:
+        return result
+
+    with pytest.raises(ValueError) as caught:
+        asyncio.run(_refusing(invalid, tool="add", server="s", bound_for=_SERVICE)())
+    assert caught.value is original
+    assert asyncio.run(_refusing(ordinary, tool="add", server="s", bound_for=_SERVICE)()) is result
+
+
+def test_refusing_preserves_recovered_typed_cause() -> None:
+    typed = PIIDetected("blocked")
+    cause = OSError("transport failure")
+    typed.__cause__ = cause
+    wrapper = httpx.ConnectError(
+        "framework failure", request=httpx.Request("POST", "https://proxy/mcp/")
+    )
+    wrapper.__cause__ = typed
+
+    async def denied() -> Any:
+        raise wrapper
+
+    with pytest.raises(PIIDetected) as caught:
+        asyncio.run(_refusing(denied, tool="add", server="s", bound_for=_SERVICE)())
+    assert caught.value is typed
+    assert typed.__cause__ is cause
+    assert typed.framework_error is wrapper
+
+
+@pytest.mark.parametrize("capture", ["schema-invalid-args", "poisoning-block-list"])
+def test_the_refusing_wrapper_does_not_infer_ambiguous_policies(capture: str) -> None:
+    fixture = _FIXTURES.parent / "mcp_policies" / f"{capture}.json"
+    body = json.loads(fixture.read_text("utf-8"))["body"]
+    if body.startswith("event:"):
+        body = next(
+            line.removeprefix("data: ") for line in body.splitlines() if line.startswith("data: ")
+        )
+    error = json.loads(body)["error"]
+    original = _McpError(_ErrorData(error["code"], error["message"], error.get("data")))
+
+    async def denied() -> Any:
+        raise original
+
+    with pytest.raises(_McpError) as caught:
+        asyncio.run(_refusing(denied, tool="add", server="s", bound_for=_SERVICE)())
+    assert caught.value is original
 
 
 def _server(asset_id: str, *names: str) -> McpServerHandle:

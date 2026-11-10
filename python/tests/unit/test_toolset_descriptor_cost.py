@@ -201,7 +201,7 @@ class _Registry:
     async def explain(self, ref: AssetRef, **_: Any) -> GovernanceReport:
         return _GOVERNED
 
-    async def resolve_mcp(self, ref: AssetRef) -> McpServerHandle:
+    async def resolve_mcp(self, ref: AssetRef, *, fresh: bool = False) -> McpServerHandle:
         return McpServerHandle(ref=ref, endpoint_url="https://gw.example.test/hr")
 
 

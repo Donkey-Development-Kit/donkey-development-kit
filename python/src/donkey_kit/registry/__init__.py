@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .criteria import STRICT, Check, GovernanceCriteria, GovernanceReport, evaluate
 from .exchange import ExchangeRegistry
-from .models import AgentHandle, AssetRef, AssetType, McpServerHandle
+from .models import AgentHandle, AssetRef, AssetType, LlmMetadata, McpServerHandle
 from .publication import (
     Contact,
     DescriptionIssue,
@@ -25,6 +25,7 @@ __all__ = [
     "ExchangeRegistry",
     "GovernanceCriteria",
     "GovernanceReport",
+    "LlmMetadata",
     "McpServerHandle",
     "Publication",
     "PublicationAssetType",

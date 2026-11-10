@@ -1,9 +1,11 @@
 # Roadmap
 
-DDK is delivered in five phases. Each phase is a GitHub milestone with a clear
+DDK is delivered in five phases, with consolidation releases between them. Each phase is a GitHub milestone with a clear
 goal; the progress bars and issue lists below are loaded from those milestones
 when you open the page. Phase 1 shipped as `donkey-kit` 0.1.0, and its
-stabilisation releases, 0.1.1, 0.1.2 and 0.1.3, followed. The newest release is
+stabilisation releases, 0.1.1, 0.1.2 and 0.1.3, followed. Phase 2 shipped as
+0.2.0, and the consolidation release 0.2.1 sits on top of it
+before Phase 3. The newest release is
 the one on [PyPI](https://pypi.org/project/donkey-kit/), with its notes on the
 [release notes](https://docs.donkey-kit.dev/release-notes.md) page. The status pill on each phase below shows
 which one is in progress.
@@ -92,6 +94,20 @@ which one is in progress.
   simulator support as LLM calls, plus worked patterns for confidence-gated
   review, tool ranking and budget-aware routing. Now that the package is published,
   the phase also picks up archiving daily PyPI adoption metrics.
+
+## Phase 2.1 — Consolidate Phase 2
+
+  **Version 0.2.1 · Goal:** settle the Phase 2 surface and finish the work
+  that slipped from it, without adding Phase 3 scope.
+
+  A tool lockfile (`donkey.lock`) for governed MCP tools, a governed outbound
+  A2A call path with typed refusals, `simulate_mcp()` and `simulate_a2a()` to
+  inject named refusals offline, and a JSON-RPC refusal matcher shared by MCP
+  and A2A. The gateway's MCP and A2A policy refusals are verified and
+  documented, PII detection and the content-safety blocks are typed, and raw
+  PII echoed in refusal bodies is redacted. Schema-validation and
+  tool-poisoning refusals are captured but stay untyped, because the gateway
+  marks no policy on them.
 
 ## Phase 3 — Platform capabilities
 

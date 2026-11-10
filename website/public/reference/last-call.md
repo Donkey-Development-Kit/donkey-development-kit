@@ -71,11 +71,11 @@ for why a LangGraph message's own `model_provider` field disagrees with these.
 | Field | Type | Meaning |
 |---|---|---|
 | `requested_model` | `str \| None` | The model the caller **asked for** (from the request body). The reference point for `substituted`. |
-| `served_provider` | `str \| None` | The provider the gateway actually routed to (`x-llm-proxy-llm-provider`). |
+| `served_provider` | `str \| None` | The provider the gateway actually routed to (`x-llm-proxy-llm-provider`), verbatim. A proxy configured with qualified vendors reports `groupId:vendor`, e.g. `"mulesoft:openai"`. |
 | `served_model` | `str \| None` | The model the gateway actually served (`x-llm-proxy-llm-model`). May differ from `requested_model` after a fallback. |
 | `routing_type` | `str \| None` | The routing strategy the gateway applied (`x-llm-proxy-routing-type`), e.g. `"ModelBased"` or `"Semantic"`. |
 | `fallback` | `bool \| None` | Whether the gateway performed a routing **fallback**. `None` when the header is absent (non-proxy / simulated response) — distinct from a definitive `False` ("no fallback occurred"). |
-| `substituted` | `bool` | `True` iff the gateway served a *different* model than requested — a silent substitution your cost model and evals are otherwise blind to. A `provider/` prefix on the requested model that names `served_provider` is ignored (`openai/gpt-5-mini` served as `gpt-5-mini` by `openai` is not a substitution). Requires both models known; a missing either side is not a substitution claim. |
+| `substituted` | `bool` | `True` iff the gateway served a *different* model than requested — a silent substitution your cost model and evals are otherwise blind to. A `provider/` prefix on the requested model that names the served vendor is ignored (`openai/gpt-5-mini` served as `gpt-5-mini` by `openai` or `mulesoft:openai` is not a substitution). So is any prefix when the response carries no provider header. Requires both models known; a missing either side is not a substitution claim. |
 | `matched_topic` | `str \| None` | On a **semantic-routing** proxy, the topic the prompt matched (`x-llm-proxy-semantic-routing-success`). `None` on a model-based proxy (the header is semantic-only) or when the message did not parse. |
 | `routing_score` | `float \| None` | On a **semantic-routing** proxy, the similarity score of the matched topic (a bare `0.xx` float). `None` on a model-based proxy or when the score did not parse. |
 

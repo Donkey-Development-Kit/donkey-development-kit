@@ -58,12 +58,12 @@ http2  # unused variable (src/donkey_kit/core/transport/pipeline.py)
 _.discover  # unused method (src/donkey_kit/donkey.py)
 _.attribution  # unused method (src/donkey_kit/donkey.py): public API, #310
 _.as_user  # unused method (src/donkey_kit/donkey.py): public API, #215
+_.a2a  # unused property (src/donkey_kit/donkey.py): outbound public facade, #1395
+_.simulate_a2a  # unused method (src/donkey_kit/donkey.py): public test API, #1652
 _.run_from_headers  # unused method (src/donkey_kit/donkey.py): public API, #308
 _.correlation_headers  # unused method (src/donkey_kit/donkey.py): public API, #308
 _.flush_telemetry  # unused method (src/donkey_kit/donkey.py): public API, #954
 domain  # unused variable (src/donkey_kit/donkey.py)
-locked  # unused variable (src/donkey_kit/donkey.py)
-_.lock  # unused method (src/donkey_kit/donkey.py)
 langgraph  # unused variable (src/donkey_kit/donkey.py)
 adk  # unused variable (src/donkey_kit/donkey.py)
 strands  # unused variable (src/donkey_kit/donkey.py)
@@ -74,6 +74,7 @@ llamaindex  # unused variable (src/donkey_kit/donkey.py)
 _.last_call  # unused property (src/donkey_kit/donkey.py)
 conformance_tested  # unused variable (src/donkey_kit/integrations/__init__.py)
 _.policy_middleware  # unused method (src/donkey_kit/integrations/agent_framework.py)
+_.get_mcp_client  # public transport hook consumed by Agent Framework MCPTool during connect (#1391)
 _.framework_error  # unused attribute (src/donkey_kit/integrations/agent_framework.py)
 _.on_inbound  # unused method (src/donkey_kit/integrations/crewai.py)
 _.aon_outbound  # unused method (src/donkey_kit/integrations/crewai.py)
@@ -159,6 +160,16 @@ _.require_approval  # unused method (src/donkey_kit/tools/session.py)
 # ToolSet.wait_for_gateway_approval (#214) is public API; only user code and
 # tests/unit/test_step_up_wait.py call it.
 _.wait_for_gateway_approval  # unused method (src/donkey_kit/tools/session.py)
+# GatewayAuthChallenge fields are inspected by caller-owned OAuth code (#1396)
+# and tests/conformance/test_a2a_outbound.py; the SDK never runs that flow.
+secondary_auth_provider
+authorization_endpoint
+token_endpoint
+audience
+redirect_uri
+response_type
+code_challenge_method
+body_encoding
 # ToolSet staleness after a cached discover() (#221) is public API; only user
 # code and tests/unit/test_discover.py read it.
 _.discovered_at  # unused property (src/donkey_kit/tools/session.py)
@@ -189,3 +200,7 @@ call_count  # unused variable (src/donkey_kit/core/runledger.py)
 refusal_count  # unused variable (src/donkey_kit/core/runledger.py)
 dropped  # unused variable (src/donkey_kit/core/runledger.py)
 _.is_a  # unused method (src/donkey_kit/core/runledger.py)
+# LlmMetadata fields are read by the caller of ExchangeRegistry.llm_metadata()
+# (#1533, tests/unit/test_llm_metadata.py, website/content/tool-access/discovery.mdx).
+platform  # unused variable (src/donkey_kit/registry/models.py)
+input_format  # unused variable (src/donkey_kit/registry/models.py)

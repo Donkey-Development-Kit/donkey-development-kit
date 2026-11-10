@@ -11,17 +11,22 @@ leg. The real frameworks are bound to a redirecting server in
 
 from __future__ import annotations
 
+import asyncio
+import importlib.util
 import sys
 import threading
 import types
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
+from donkey_kit.core.errors import PIIDetected
+from donkey_kit.core.refusals import translate
 from donkey_kit.registry.criteria import Check, GovernanceReport
 from donkey_kit.registry.models import AssetRef, McpServerHandle
 from donkey_kit.tools import mcp as mcp_module
@@ -107,6 +112,85 @@ def test_the_factory_imports_mcp_only_when_called(monkeypatch: pytest.MonkeyPatc
         factory()
 
 
+@pytest.mark.parametrize("mode", ["large", "infinite", "slow", "offorigin", "compressed"])
+async def test_binding_error_reads_are_bounded_and_keep_status(
+    monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    monkeypatch.setattr(mcp_module, "_ERROR_BODY_TIMEOUT", 0.02, raising=False)
+
+    class Stream(httpx.AsyncByteStream):
+        reads = 0
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            while True:
+                self.reads += 1
+                if self.reads > 10:
+                    raise AssertionError("error body read exceeded test safety bound")
+                if mode == "slow":
+                    await asyncio.sleep(0.01)
+                    yield b" "
+                else:
+                    yield b"x" * (128 * 1024 if mode == "large" else 8192)
+
+    stream = Stream()
+    client = mcp_module.client_factory(_URL, {})()
+    guard = client.event_hooks["request"][0]
+    hook = client.event_hooks["response"][0]
+    request = httpx.Request("POST", _ELSEWHERE if mode == "offorigin" else _URL)
+    await guard(request)
+    response = httpx.Response(
+        403,
+        stream=stream,
+        request=request,
+        headers={"content-encoding": "gzip"} if mode == "compressed" else {},
+    )
+    try:
+        try:
+            await asyncio.wait_for(hook(response), 0.2)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            assert exc.response.status_code == 403
+            assert not isinstance(translate(exc), PIIDetected)
+            assert translate(exc) is None
+        assert stream.reads == 0 if mode in {"offorigin", "compressed"} else stream.reads <= 9
+    finally:
+        await response.aclose()
+        await client.aclose()
+
+
+async def test_buffered_error_body_cannot_bypass_binding_cap() -> None:
+    client = mcp_module.client_factory(_URL, {})()
+    request = httpx.Request("POST", _URL)
+    await client.event_hooks["request"][0](request)
+    response = httpx.Response(500, content=b"x" * (64 * 1024 + 1), request=request)
+    try:
+        with pytest.raises(httpx.HTTPStatusError) as caught:
+            await client.event_hooks["response"][0](response)
+        assert caught.value.response.status_code == 500
+        assert translate(caught.value) is None
+    finally:
+        await client.aclose()
+
+
+async def test_under_cap_malformed_stream_eof_is_not_a_policy() -> None:
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            yield b'{"jsonrpc":"2.0","error":'
+
+    client = mcp_module.client_factory(_URL, {})()
+    request = httpx.Request("POST", _URL)
+    await client.event_hooks["request"][0](request)
+    response = httpx.Response(403, stream=Stream(), request=request)
+    try:
+        await client.event_hooks["response"][0](response)
+        with pytest.raises(httpx.HTTPStatusError) as caught:
+            response.raise_for_status()
+        assert translate(caught.value) is None
+    finally:
+        await response.aclose()
+        await client.aclose()
+
+
 class _Servers:
     """A server that answers with a ``307`` to a second one, on another port."""
 
@@ -132,7 +216,8 @@ class _Servers:
             def do_POST(self) -> None:
                 self.rfile.read(int(self.headers.get("content-length") or 0))
                 self.send_response(307)
-                self.send_header("location", f"{target}{self.path}")
+                path = self.path.replace("\r", "").replace("\n", "")
+                self.send_header("location", f"{target}{path}")
                 self.send_header("content-length", "0")
                 self.end_headers()
 
@@ -157,6 +242,59 @@ def redirecting() -> Iterator[_Servers]:
         yield servers
     finally:
         servers.stop()
+
+
+@pytest.fixture(params=["unit", "harness"])
+def redirect_url(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """Exercise both redirect helpers without starting a real MCP framework."""
+    if request.param == "unit":
+        servers = _Servers()
+        try:
+            yield servers.url
+        finally:
+            servers.stop()
+        return
+    path = Path(__file__).resolve().parents[2] / "scripts" / "mcp_binding" / "_harness.py"
+    spec = importlib.util.spec_from_file_location("ddk_mcp_binding_harness", path)
+    assert spec is not None and spec.loader is not None
+    harness = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, harness)
+    spec.loader.exec_module(harness)
+    with harness.cross_origin_redirect(types.SimpleNamespace(url="http://127.0.0.1:9/mcp/")) as srv:
+        yield srv.url
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/mcp/",
+        "/mcp/a%2Fb?next=%2Ftools&value=one%20two",
+        "/mcp/?value=%0D%0AX-Injected%3Ayes",
+        "/mcp/\rX-Injected:yes",
+        "/mcp/\nX-Injected:yes",
+        "/mcp/\r\nX-Injected:yes\r\n\r\ninjected-body",
+    ],
+)
+def test_redirect_headers_strip_line_breaks_but_preserve_valid_paths(
+    redirect_url: str, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """#1528: enforce header safety even if the HTTP parser supplies raw CR/LF."""
+    parse_request = BaseHTTPRequestHandler.parse_request
+
+    def parse_with_path(handler: BaseHTTPRequestHandler) -> bool:
+        parsed = parse_request(handler)
+        if parsed:
+            handler.path = path
+        return parsed
+
+    monkeypatch.setattr(BaseHTTPRequestHandler, "parse_request", parse_with_path)
+    with httpx.Client(trust_env=False) as client:
+        response = client.post(redirect_url)
+    assert response.status_code == 307
+    assert httpx.URL(response.headers["location"]).path.startswith("/mcp/")
+    assert response.headers["location"].endswith(path.replace("\r", "").replace("\n", ""))
+    assert "x-injected" not in response.headers
+    assert response.content == b""
 
 
 async def test_a_followed_cross_origin_redirect_arrives_without_the_credential(

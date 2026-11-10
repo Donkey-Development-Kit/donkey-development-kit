@@ -36,6 +36,7 @@ _SNAPSHOTTED: tuple[type, ...] = (Donkey, ToolsFacade, ToolSet)
 PROVISIONAL_MARK = "Provisional (ADR 0020)"
 
 ROOT_ALL = [
+    "A2AFacade",
     "A2AResult",
     "A2ATask",
     "AgentKilled",
@@ -66,6 +67,8 @@ ROOT_ALL = [
     "ExchangeRegistry",
     "GatewayApprovalDenied",
     "GatewayApprovalPending",
+    "GatewayAuthChallenge",
+    "GatewayAuthRequired",
     "GatewayUnavailable",
     "GovernanceCriteria",
     "LLMClient",
@@ -85,6 +88,7 @@ ROOT_ALL = [
     "RunRefusal",
     "RunScope",
     "TokenBudgetExceeded",
+    "ToolLockDrift",
     "ToolNotInProfile",
     "ToolSet",
     "ToolSpec",
@@ -98,6 +102,7 @@ ROOT_ALL = [
     "UserScope",
     "__version__",
     "classify",
+    "jsonrpc_refusal",
     "registered_agents",
     "registered_tools",
     "typed_refusals",
@@ -130,6 +135,7 @@ MEMBERS = [
     "Donkey.run_from_headers(headers, *, team=None, project=None, env=None, enduser_id=None, business_group=None, typed_refusals=True, ledger_max_entries=1000)",
     "Donkey.serve(handler, *, host='127.0.0.1', port=8000, url=None, version='0.0.0')",
     "Donkey.simulate(error, *, times=1)",
+    "Donkey.simulate_mcp(capture, *, servers, times=1, call_tool=None)",
     "Donkey.tool(func=None, /, *, approval=None, risk=None, approval_timeout='15m', server=None)",
     "Donkey.tools [property]",
     "ToolSet.adk() [async]",
@@ -150,15 +156,17 @@ MEMBERS = [
     "ToolSet.servers [property]",
     "ToolSet.strands() [async]",
     "ToolSet.wait_for_gateway_approval(timeout='2m')",
-    "ToolsFacade.discover(*, domain=None, tags=None, governed=True, locked=False, auth=None) [async]",
-    "ToolsFacade.lock()",
+    "ToolsFacade.discover(*, domain=None, tags=None, governed=True, locked=False, lock_path='donkey.lock', auth=None) [async]",
     "ToolsFacade.refresh()",
     "ToolsFacade.warm(*, domain=None, tags=None, governed=True) [async]",
 ]
 
 PROVISIONAL_MEMBERS = [
+    "Donkey.a2a [property]",
+    "Donkey.simulate_a2a(capture, *, agents, version='1.0', times=1, reply=None)",
     "ToolsFacade.live_card(ref) [async]",
     "ToolsFacade.live_tools(ref) [async]",
+    "ToolsFacade.lock(*, tags=None, governed=True, auth=None, path='donkey.lock') [async]",
 ]
 
 
@@ -248,6 +256,23 @@ def test_provisional_class_members_match_the_snapshot() -> None:
     assert actual == sorted(PROVISIONAL_MEMBERS), _drift(
         "PROVISIONAL_MEMBERS", PROVISIONAL_MEMBERS, actual
     )
+
+
+def test_a2a_facade_is_the_provisional_root_export_exception() -> None:
+    """ADR 0022: the additive root export does not promise a stable facade."""
+    assert "A2AFacade" in ROOT_ALL
+    assert _is_provisional(donkey_kit.A2AFacade)
+    assert "Donkey.a2a [property]" in PROVISIONAL_MEMBERS
+    assert _is_provisional(Donkey.a2a)
+
+
+def test_tool_lock_drift_is_a_provisional_root_export() -> None:
+    """ADR 0024: the lockfile's error is a provisional root export, like A2AFacade."""
+    assert "ToolLockDrift" in ROOT_ALL
+    assert _is_provisional(donkey_kit.ToolLockDrift)
+    lock = next(m for m in PROVISIONAL_MEMBERS if m.startswith("ToolsFacade.lock("))
+    assert lock
+    assert _is_provisional(ToolsFacade.lock)
 
 
 def test_every_public_member_is_in_exactly_one_tier_list() -> None:

@@ -16,6 +16,7 @@ raises an ``ImportError`` naming the ``pip install`` command.
 from __future__ import annotations
 
 from ._server import build_app, serve
+from .client import A2AFacade
 from .types import A2AResult, A2ATask
 
-__all__ = ["A2AResult", "A2ATask", "build_app", "serve"]
+__all__ = ["A2AFacade", "A2AResult", "A2ATask", "build_app", "serve"]

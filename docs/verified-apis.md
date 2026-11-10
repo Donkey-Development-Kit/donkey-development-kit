@@ -47,9 +47,10 @@
 > unrecognised content-moderation shape (§4, the fall-through;
 > federated-guardrail verdicts are tracked in #305), the business-group
 > attribution header and the inbound correlation id on a served request (§3),
-> and which policies are Connected-Mode-only (§6). The lockfile (BG §2.7) and
-> the governed-state search filters (`search(governed=, environment=,
-> domain=)`, §6, §7) keep their code guards. §11
+> and which policies are Connected-Mode-only (§6). The governed-state search
+> filters (`search(governed=, environment=, domain=)`, §6, §7) keep their code
+> guards. The lockfile (BG §2.7) shipped in #1646 on the §9 contract settled by
+> #1642. §11
 > records A2D shapes
 > (`VERIFIED-SHAPE-ONLY`), used only to validate SDK value types; no blocked
 > code path was wired to them.
@@ -86,6 +87,35 @@
 > or flips an `Unverified(...)` value, and it does not close the shape's
 > live-capture issue, which stays open until a capture replaces the derived
 > fixture and the row moves to `VERIFIED (LIVE)`.
+>
+> **Tested versions.** A `VERIFIED` row about a versioned platform component
+> (a gateway policy, a policy definition or implementation, the gateway
+> runtime) records which version the evidence came from, so a later version
+> bump can be told apart from the version we tested. Three rules:
+>
+> 1. **Name the version in the row's evidence, using these labels.**
+>    `deployed <asset> <version>` is the version actually applied when the
+>    behaviour was observed (read from `policy:list` or API Manager, not from
+>    the docs). `gateway <version>` is the Omni/Flex Gateway runtime. For
+>    `VERIFIED (POLICY SOURCE)` the version is the policy asset version or
+>    commit read (already required by ADR 0016). Where a row carries a
+>    dedicated version column (the §4 policy tables' **Exchange asset
+>    (verified)**), that column holds the `deployed` version.
+> 2. **Never let a docs-page version stand in for a tested one.** A version
+>    taken from the documentation is written `docs <version>` and is
+>    informational only. If the deployed version was not recorded, write
+>    `deployed version not recorded` rather than omitting it or copying the
+>    docs version. A row that says nothing is read as untracked.
+> 3. **A new version is a new observation, not an edit.** When a policy or
+>    gateway version changes and the behaviour is re-checked, add a dated
+>    `Re-verified <date> on <asset> <version>` note (as the §2 Ingress Format
+>    rows do) and keep the earlier version visible; when it is not re-checked,
+>    leave the row as is, because its tested version is then the stale one.
+>    A re-check that finds a different shape moves the row to the new status
+>    and records the version where it changed.
+>
+> Rows written before this convention are not backfilled; they are filled in
+> as each is next re-verified or touched.
 >
 > This is the verification ledger. For any row still `UNVERIFIED`, the
 > implementing engineer must, against a **real Anypoint sandbox**, confirm the
@@ -177,8 +207,8 @@ request against the deployed gateway.
 | Item | Where used | Status | Verified value | Date | Source |
 |---|---|---|---|---|---|
 | Ingress base URL the SDK targets | `llm/client.py` | VERIFIED (LIVE) | `https://<ingress-gw-host>/<instance-path>/` — e.g. `https://agent-network-ingress-gw.example.invalid/openai-sdk/`. **No `/v1` at the ingress**; OpenAI path segment appended directly (`/responses`, and OpenAI-native routes) | 2026-08-28 | live probe |
-| Ingress **Format** — Anthropic-native route (#304) | `integrations/anthropic.py`, `llm/client.py` | VERIFIED (LIVE) | A proxy provisioned `Format=Anthropic` exposes a **native Anthropic Messages ingress** at `POST /<base-path>/v1/messages`. The Anthropic request shape (header `anthropic-version: 2023-06-01`, body `{"model":…,"max_tokens":N,"messages":[{"role":"user","content":…}]}`) → **200** with a native Anthropic body (`type:"message"`, `role:"assistant"`, `content[].text`, `stop_reason:"end_turn"`, `usage.input_tokens`/`output_tokens`/`service_tier`) plus native `anthropic-ratelimit-*` / `request-id` / `anthropic-organization-id` response headers. It is a **passthrough, not a transcode** — gateway headers `x-llm-proxy-llm-provider: anthropic`, `x-llm-proxy-llm-model: <model>`, `x-llm-proxy-request-success` (`routingType` stays `model-based`; enabled by the per-upstream `routing[].upstreams[].llmConfigs.format: anthropic` field). An **OpenAI-shaped** request to `/<base-path>/chat/completions` → **404** (empty body) — the OpenAI route is simply not served on a native-Anthropic ingress (differs from Gemini's 400; both prove the ingress rejects the OpenAI wire format). Same `client_id`/`client_secret` CIE auth (no `client_id` → 401 "Client ID is not present", `www-authenticate: Client-ID-Enforcement`). Native ingress is **single-route only** (no multi-routing/fallback — that stays OpenAI-only); the upstream must speak native Anthropic (`provider: anthropic`/`api.anthropic.com` — **Bedrock is not usable** here). The `donkey.anthropic` adapter targets this route, but the SDK's own DDK proxies are `Format=OpenAI` — point `base_url` at a `Format=Anthropic` proxy to use the native surface. The roadmap "OAuth Client ID/Secret for configuring LLMs" is an **upstream/control-plane credential** concern and does **not** change this verified consumer `client_id`/`client_secret` request-header pair. | 2026-09-24 | live probe against `ddk-anthropic-inbound` (instance `21194086`, DDK/Sandbox) — captured in `python/tests/fixtures/anypoint/anthropic_inbound/` |
-| Ingress **Format** — Gemini-native route (#540, #691) | `integrations/adk.py` (`gemini()`, #691); `core/transport/policy.py` (`_request_model`, model from the URL path) + `core/lastcall.py` (`usageMetadata`) | VERIFIED (LIVE) | A proxy provisioned `Format=Gemini` exposes a **native Gemini ingress** at `POST /<base-path>/models/<model>:generateContent`. The Gemini request shape (`{"contents":[{"role":"user","parts":[{"text":…}]}]}`) → **200** with a native Gemini body (`candidates[].content.parts[].text`, `role:"model"`, `usageMetadata` incl. `thoughtsTokenCount`, `modelVersion`, `responseId`). It is a **passthrough, not a transcode** — response header `x-llm-proxy-model-based-routing-success: "Request passed through without model-based routing."` (`routingType` stays `model-based`; enabled by the per-upstream `routing[].upstreams[].llmConfigs.format: gemini` field). An **OpenAI-shaped** request to `/<base-path>/chat/completions` → **400** with a native-Gemini error envelope (a JSON *array* `[{"error":{"code":400,"status":"INVALID_ARGUMENT",…}}]`), confirming the ingress does not accept the OpenAI wire format. Same `client_id`/`client_secret` CIE auth (no `client_id` → 401 "Client ID is not present"). Native ingress is **single-route only** (no multi-routing/fallback — that stays OpenAI-only). **Re-probed 2026-09-29 for the ADK native adapter (#691):** (a) `google-genai` always sends the API key as `x-goog-api-key`; a non-empty placeholder alongside `client_id`/`client_secret` does not clash → 200; the gateway echoes `x-correlation-id`. (b) `POST /<base-path>/models/<model>:streamGenerateContent?alt=sse` is routed → `text/event-stream`, each event a Gemini chunk with **cumulative** `usageMetadata` (last event is the total). (c) A `functionCall`/`functionResponse` round-trip works. (d) The gateway **ignores a body `model` field** — absent, `gemini-2.5-flash` and `gemini/gemini-2.5-flash` all → 200 with the same passthrough header; the URL path picks the model, so the SDK reads it from there for `last_call`/spans. No `x-llm-proxy-llm-model`/`-provider` header is emitted, so `served_model`/`served_provider` stay `None`. (e) Refusals: bad secret → **401** (`classify` → `AuthError`); unknown model → Google's **404** `NOT_FOUND` passed through (`classify` → `UpstreamRequestError`). `usageMetadata.totalTokenCount` **includes** `thoughtsTokenCount`. Gemini also remains reachable as an *upstream provider* behind an OpenAI ingress (supported-providers row below). | 2026-09-29 | live probes against `ddk-gemini-inbound` (instance `21193369`, DDK/Sandbox) on 2026-09-23 and 2026-09-29 — captured in `python/tests/fixtures/anypoint/gemini_inbound/` |
+| Ingress **Format** — Anthropic-native route (#304) | `integrations/anthropic.py`, `llm/client.py` | VERIFIED (LIVE) | A proxy provisioned `Format=Anthropic` exposes a **native Anthropic Messages ingress** at `POST /<base-path>/v1/messages`. The Anthropic request shape (header `anthropic-version: 2023-06-01`, body `{"model":…,"max_tokens":N,"messages":[{"role":"user","content":…}]}`) → **200** with a native Anthropic body (`type:"message"`, `role:"assistant"`, `content[].text`, `stop_reason:"end_turn"`, `usage.input_tokens`/`output_tokens`/`service_tier`) plus native `anthropic-ratelimit-*` / `request-id` / `anthropic-organization-id` response headers. It is a **passthrough, not a transcode** — gateway headers `x-llm-proxy-llm-provider: anthropic`, `x-llm-proxy-llm-model: <model>`, `x-llm-proxy-request-success` (`routingType` stays `model-based`; enabled by the per-upstream `routing[].upstreams[].llmConfigs.format: anthropic` field). An **OpenAI-shaped** request to `/<base-path>/chat/completions` → **404** (empty body) — the OpenAI route is simply not served on a native-Anthropic ingress (differs from Gemini's 400; both prove the ingress rejects the OpenAI wire format). Same `client_id`/`client_secret` CIE auth (no `client_id` → 401 "Client ID is not present", `www-authenticate: Client-ID-Enforcement`). On `model-based-routing` def 1.0.4 native ingress was **single-route only**. **Re-verified 2026-11-03 on def 1.0.5 / impl 1.0.9 (#1404)** with two routes (`anthropic` + `bedrockanthropic`) and a fallback: a bare or `anthropic/`-prefixed model → 200 on `anthropic`, `x-llm-proxy-routing-fallback: false`; an unresolvable bare model → 200 on the format's own identity (`anthropic`, fallback `false`, so `substituted=True`); an unconfigured `openai/` prefix → the policy fallback (`fallback: true`); a `bedrockanthropic/…` model is matched to the Bedrock route (`x-llm-proxy-llm-provider: bedrockanthropic`) and then answered **404** `text/plain` `/v1/messages:post. Are not valid`, so Bedrock is still **not usable** behind this ingress (`classify` → unconfirmed `PolicyViolation`); invalid JSON → **400** `{"error":"Invalid JSON body: …"}` with no routing headers (unconfirmed `PolicyViolation`); `stream=true` → SSE, usage filled from the terminal event. The `donkey.anthropic` adapter targets this route, but the SDK's own DDK proxies are `Format=OpenAI` — point `base_url` at a `Format=Anthropic` proxy to use the native surface. The roadmap "OAuth Client ID/Secret for configuring LLMs" is an **upstream/control-plane credential** concern and does **not** change this verified consumer `client_id`/`client_secret` request-header pair. | 2026-11-03 | live probe against `ddk-anthropic-inbound` (instance `21194086`, DDK/Sandbox) — captured in `python/tests/fixtures/anypoint/anthropic_inbound/`; def 1.0.5 two-vendor proxy (instance `21271486`) on 2026-11-03 — `python/tests/fixtures/anypoint/anthropic_inbound_multiroute/` |
+| Ingress **Format** — Gemini-native route (#540, #691) | `integrations/adk.py` (`gemini()`, #691); `core/transport/policy.py` (`_request_model`, model from the URL path) + `core/lastcall.py` (`usageMetadata`) | VERIFIED (LIVE) | A proxy provisioned `Format=Gemini` exposes a **native Gemini ingress** at `POST /<base-path>/models/<model>:generateContent`. The Gemini request shape (`{"contents":[{"role":"user","parts":[{"text":…}]}]}`) → **200** with a native Gemini body (`candidates[].content.parts[].text`, `role:"model"`, `usageMetadata` incl. `thoughtsTokenCount`, `modelVersion`, `responseId`). It is a **passthrough, not a transcode** — response header `x-llm-proxy-model-based-routing-success: "Request passed through without model-based routing."` (`routingType` stays `model-based`; enabled by the per-upstream `routing[].upstreams[].llmConfigs.format: gemini` field). An **OpenAI-shaped** request to `/<base-path>/chat/completions` → **400** with a native-Gemini error envelope (a JSON *array* `[{"error":{"code":400,"status":"INVALID_ARGUMENT",…}}]`), confirming the ingress does not accept the OpenAI wire format. Same `client_id`/`client_secret` CIE auth (no `client_id` → 401 "Client ID is not present"). On def 1.0.4 native ingress was **single-route only**; see the def 1.0.5 note at the end of this row. **Re-probed 2026-09-29 for the ADK native adapter (#691):** (a) `google-genai` always sends the API key as `x-goog-api-key`; a non-empty placeholder alongside `client_id`/`client_secret` does not clash → 200; the gateway echoes `x-correlation-id`. (b) `POST /<base-path>/models/<model>:streamGenerateContent?alt=sse` is routed → `text/event-stream`, each event a Gemini chunk with **cumulative** `usageMetadata` (last event is the total). (c) A `functionCall`/`functionResponse` round-trip works. (d) The gateway **ignores a body `model` field** — absent, `gemini-2.5-flash` and `gemini/gemini-2.5-flash` all → 200 with the same passthrough header; the URL path picks the model, so the SDK reads it from there for `last_call`/spans. On def 1.0.4 no `x-llm-proxy-llm-model`/`-provider` header is emitted, so `served_model`/`served_provider` stay `None`. (e) Refusals: bad secret → **401** (`classify` → `AuthError`); unknown model → Google's **404** `NOT_FOUND` passed through (`classify` → `UpstreamRequestError`). `usageMetadata.totalTokenCount` **includes** `thoughtsTokenCount`. Gemini also remains reachable as an *upstream provider* behind an OpenAI ingress (supported-providers row below). **Re-verified 2026-11-03 on def 1.0.5 / impl 1.0.9 (#1404)** with two routes (`gemini` + `openai`) and a fallback: the gateway now returns `x-llm-proxy-routing-type: ModelBased`, `-routing-fallback`, `-llm-provider: gemini` and `-llm-model`, so `served_provider`/`served_model` are filled. Every path model was served by `gemini` with fallback `false`, including a configured second vendor (`models/openai/gpt-5-mini:generateContent`) and an unresolvable model (both `substituted=True`); the SDK reads a `provider/`-prefixed path model whole. Streaming is unchanged. Invalid JSON → **400** `{"error":"Invalid JSON body: …"}` with no routing headers (unconfirmed `PolicyViolation`). | 2026-11-03 | live probes against `ddk-gemini-inbound` (instance `21193369`, DDK/Sandbox) on 2026-09-23 and 2026-09-29 — captured in `python/tests/fixtures/anypoint/gemini_inbound/`; def 1.0.5 two-vendor proxy (instance `21271488`) on 2026-11-03 — `python/tests/fixtures/anypoint/gemini_inbound_multiroute/` |
 | Endpoint/API surface | `llm/client.py`; opt-in on `integrations/langgraph.py` (`use_responses_api=True`) and `integrations/agent_framework.py` (`api="responses"`: `OpenAIChatClient`, agent-framework's Responses client); both adapters default to Chat Completions since #1043 (row below) | VERIFIED (LIVE) | OpenAI **Responses API** works (`POST /openai-sdk/responses`, body `{model, input}`). Upstream registered as `https://api.openai.com/v1/`; `proxyUri http://0.0.0.0:8081/openai-sdk`. The LangGraph and agent-framework adapters target it only on opt-in; both default to `/chat/completions` (#1043). The local simulator serves it and `/chat/completions` (#895) | 2026-08-28 | `api:describe`, live probe |
 | Endpoint/API surface — Chat Completions (#793) | `integrations/adk.py` (`model()`: LiteLLM `openai/…`), `integrations/openai_agents.py` (`OpenAIChatCompletionsModel`), `integrations/crewai.py` (`OpenAICompletion`, `api="completions"` default), `integrations/llamaindex.py` (`OpenAILike`, `is_chat_model=True`), `integrations/strands.py` (`OpenAIModel`), `integrations/agent_framework.py` (`chat_client()` default, `api="chat_completions"`: `OpenAIChatCompletionClient`); `integrations/langgraph.py` (default `use_responses_api=False`), both since #1043 | VERIFIED (LIVE) | An OpenAI-format proxy also serves the OpenAI **Chat Completions API**: `POST /<base-path>/chat/completions`, body `{model, messages}` → **200** with a verbatim `object: "chat.completion"` body (incl. `usage`) and the same `x-llm-proxy-*` governance headers. Observed on four proxies: model-wallet (JWT ingress), semantic caching, semantic routing, and Azure OpenAI model-based routing (`ddk-azure-openai-model-routing`, 2026-10-07, #896), whose upstream answers **`/responses` with 404** `Resource not found` after the proxy routed the model (`x-llm-proxy-model-based-routing-success` present, `x-llm-proxy-request-success` absent) and `/chat/completions` with 200. A base path no proxy serves answers an empty 404 with no `x-llm-proxy-*` header; `donkey doctor` reads both 404 shapes. Streaming is now captured per upstream (per-upstream route matrix below, #894); the simulator serves the Azure capture as its `/chat/completions` 200 and OpenAI's public chunk shape, labelled as not a capture, for a stream (#895). The `Format=Anthropic` (404) and `Format=Gemini` (400) ingresses reject this route (rows above) | 2026-10-07 | live probes — `tests/fixtures/anypoint/model_wallet/` (2026-09-21), `semantic_cache/` and `semantic_routing/` (2026-09-24), each `request.success.http` + its 200 body; `src/donkey_kit/simulator/_fixtures/anypoint/azure_openai_routing/` (2026-10-07, moved there in #895) |
 | Auth: header name / model | `core/transport/headers.py`, `core/config.py` | VERIFIED (LIVE) | **`client_id` + `client_secret` request headers** (NOT bearer) — enforced by `client-id-enforcement` 1.3.3. A consumer **credential pair**, mapped to an Anypoint client application | 2026-08-28 | live probe + `policy:list` |
@@ -193,7 +223,7 @@ request against the deployed gateway.
 | Streaming support | `llm/client.py` | VERIFIED (LIVE) | `"stream": true` → `200`, `content-type: text/event-stream`, chunked SSE (`event: response.created` / `response.in_progress` / …); same `x-llm-proxy-*` headers | 2026-08-28 | live probe (`responses.stream.*`) |
 | Chat-completions streaming over a Gemini upstream (#830) | `llm/client.py` (`donkey.llm.client()` callers), `integrations/strands.py`; `core/transport/streaming.py` (`_SseUsageScanner`) is unaffected | VERIFIED (LIVE) — **non-conformant** (upstream gap) | An OpenAI-format proxy that routes `chat/completions` with `"stream": true` to a **Gemini** upstream answers `200`, `content-type: text/event-stream`, chunked, but each `data:` event is a whole **`chat.completion`** carrying the next piece of text in `choices[0].message`; there is **no `delta`**. `finish_reason` is `"stop"` on **every** event (a tool call too, not `"tool_calls"`), there is **no `data: [DONE]`**, and `usage` sits on every event and is **cumulative** (`stream_options.include_usage` adds no usage-only chunk). Tool calls arrive whole in `message.tool_calls`. The openai SDK builds `ChatCompletionChunk`s without validating them, so `choices[0].delta` is `None` (openai 2.54.0 and 3.22.1), and `chat.completions.stream(...)` raises `AssertionError`. Strands streams by default and fails on every turn (strands-agents 1.57.1); `stream=False` works. `donkey.strands.model()` therefore builds its `OpenAIModel` with `stream=False` (#852); pass `stream=True` only on a route that sends deltas. The SSE usage scanner keeps the latest counts, so `donkey.last_call` and the span still get the terminal totals. Same on all three Gemini routes probed (`ddk-model-wallet`, `ddk-request-compression`, `ddk-multi-route-fallback`); an OpenAI route on the same host (`ddk-openai-model-routing`) streams conformant `chat.completion.chunk` deltas and `[DONE]`. The native Gemini ingress (row above) streams correctly. | 2026-10-01 | live probe — `python/tests/fixtures/anypoint/openai_gemini_stream/`, pinned by `tests/unit/test_openai_gemini_stream_contract.py` |
 | `/models` endpoint | `llm/catalog.py` | VERIFIED (LIVE) | **Does not exist** — `GET /openai-sdk/models` → `404`, `x-llm-proxy-model-based-routing-success: Request passed through without model-based routing`. The proxy only routes requests carrying `model` in the body; no catalog endpoint. `llm/catalog.py` must source models elsewhere | 2026-08-28 | live probe (`models.notfound.headers.txt`) |
-| Supported providers | `llm/catalog.py` | VERIFIED (CLI) | openai, azureopenai, gemini, **bedrock**, **anthropic** (each a `*-llm-provider-policy-flex` in org `68ef9520…`) | 2026-08-28 | `exchange:asset:list llm` |
+| Supported providers | `llm/catalog.py` | VERIFIED (CLI) | openai, azureopenai, gemini, **bedrock**, **anthropic** (each a `*-llm-provider-policy-flex` in org `68ef9520…`). From `model-based-routing` 1.0.5 a routing policy may name a vendor in the qualified `groupId:vendor` form (`mulesoft:openai`); see *Qualified vendor in the provider header (#1405)* | 2026-08-28; qualified form 2026-11-03 | `exchange:asset:list llm`; live probes for the qualified form |
 
 ### Per-upstream route matrix (#894) — **LIVE-VERIFIED 2026-10-08**
 
@@ -218,7 +248,7 @@ fixtures are in `python/tests/fixtures/anypoint/routes/` (the README there lists
 | `/chat/completions` × Gemini | same | VERIFIED (LIVE) — stream **non-conformant** | **200**, gateway-transcoded `chat.completion`. Stream: whole `chat.completion` objects (`message`, no `delta`, no `[DONE]`), the #830 shape; a one-token reply is a single event. Reject: **400**, Google's JSON error string-wrapped in `message`, with `type: ""` and `code: "400"` | 2026-10-08 | live capture — `python/tests/fixtures/anypoint/routes/``gemini.chat_completions.*` |
 | `/responses` × OpenAI | `llm/client.py`, LangGraph (`use_responses_api=True`), `agent_framework.chat_client()` default | VERIFIED (LIVE) | **200**, verbatim Response (`status: "completed"`). Stream: the full named-event sequence (`response.created` → `in_progress` → `output_item.*` / `content_part.*` / `output_text.delta` + `.done` → `response.completed`). Reject: **400**, native OpenAI envelope | 2026-10-08 | live capture — `python/tests/fixtures/anypoint/routes/``openai.responses.*` |
 | `/responses` × Azure OpenAI | same | VERIFIED (LIVE) — **not served** | **404** `{"error":{"code":"404","message": "Resource not found"}}` on all three shapes, after the proxy routed the model. The body is never validated, so the `temperature: 99` request 404s too. This confirms the #826 / 2026-10-07 probe | 2026-10-08 | live capture — `python/tests/fixtures/anypoint/routes/``azureopenai.responses.*` |
-| `/responses` × Bedrock-Anthropic | same | VERIFIED (LIVE) — stream **partial** | **200**, gateway-transcoded Response (`object: "response"`, per-item `status: "completed"`, top-level `status: null`). Stream: named events `response.created`, `output_item.added`, `content_part.added`, `output_text.delta`, `output_item.done`, `response.completed`. There is **no** `response.in_progress`, `output_text.done` or `content_part.done`. Reject: **400**, Bedrock envelope as on chat | 2026-10-08 | live capture — `python/tests/fixtures/anypoint/routes/``bedrockanthropic.responses.*` |
+| `/responses` × Bedrock-Anthropic | same | VERIFIED (LIVE) — stream **partial** | **200**, gateway-transcoded Response (`object: "response"`, per-item `status: "completed"`, top-level `status: null`). Stream: named events `response.created`, `output_item.added`, `content_part.added`, `output_text.delta`, `output_item.done`, `response.completed`. There is **no** `response.in_progress`, `output_text.done` or `content_part.done`; no `output_item.done` carries an `item` and `response.completed` has no `output`, so the `openai` client's `responses.stream()` helper raises `AttributeError` (offline replay, `openai` 3.26.1) while `responses.create(stream=True)` iterates. Reject: **400**, Bedrock envelope as on chat. **Message-typed input re-checked 2026-11-03 (#1409, transcoder impl 1.0.4):** role-only `developer`/`user` messages with string content, a prior assistant output message and list content → **200**. Streamed, it opens with an `output_item.done` for index 0 that no `output_item.added` announced, then streams the text at index 1 | 2026-11-03 | live capture — `python/tests/fixtures/anypoint/routes/``bedrockanthropic.responses.*` (message input: `bedrockanthropic.responses.message_input.*`) |
 | `/responses` × Gemini | same | VERIFIED (LIVE) — stream **non-conformant** | **200**, gateway-transcoded Response (top-level `status: null`). Stream: **one** `data:` event holding the whole Response, with **no `event:` lines**, so a Responses-stream client sees no named events. Reject: **400**, Gemini envelope as on chat | 2026-10-08 | live capture — `python/tests/fixtures/anypoint/routes/``gemini.responses.*` |
 | Reject → SDK error | `core/errors.py` (`classify()`) | VERIFIED (LIVE) | All seven 400 envelopes and the Azure 404 map to `UpstreamRequestError`, never a gateway `PolicyViolation`. `code` is the native OpenAI code or the stringified HTTP status. `error_type` is the provider `type`, or `None` for Gemini's empty `type` | 2026-10-08 | pinned by `tests/unit/test_route_upstream_contract.py` |
 
@@ -352,6 +382,8 @@ no `UnverifiedValueWarning`.
 | Per-agent attribution unit (direct proxy) | `core/config.py`, transport | VERIFIED (LIVE) | the `client_id`/`client_secret` credential pair = the agent identity; issued per client application | 2026-08-28 | live probe + `policy:list` |
 | Per-agent attribution unit (model-wallet ingress, #372) | `core/config.py`, transport — SDK wiring landed in #509 | VERIFIED (LIVE) | under a **model wallet**, the caller is identified by the JWT `client_id` claim (`ddk-model-wallet-client`) **and** the wallet's `X-Client-Id` request header (`ddk-model-wallet`), matched against the wallet's `predicates` (`group=ddk` AND `client_id=…`) — not the `client_id`/`client_secret` pair. Requires an org IdP. Budget counts against the matched wallet's `modelId` (`openai:gpt-5-mini`); see the §2 "model-wallet ingress" row for the full auth shape. | 2026-09-21 | live probe — `tests/fixtures/anypoint/model_wallet/` (`wallet.definition.json`, `jwt.claims.json`, `responses.success.headers.txt` → `x-model-wallet-selected`) |
 | Gateway identity on response | `core/transport/observe.py` (`x-llm-proxy-llm-provider` → `gen_ai.system`, #192); `core/lastcall.py` **parses** `x-envoy-decorator-operation` and the upstream request id (#362) | VERIFIED (LIVE) | `x-envoy-decorator-operation: api-instance-21133858.00000000-…svc`; `x-correlation-id`; `x-llm-proxy-llm-provider/-llm-model/-routing-type`. **`x-correlation-id` echo semantics (#300):** the gateway returns a client-sent `X-Correlation-Id` **verbatim** (any format: `test-12345`, a dashless `uuid4().hex`, a lowercase header name), and **mints** a dashed UUID only when the request carries none — so a dashed UUID in a capture means no id was sent, not that the gateway replaced one. Holds on gateway-generated responses too (401 bad credentials, 400) and with a client `X-Request-Id` alongside; the response `x-request-id` is the upstream's own id (row below), never an echo. See the run-correlation-id request-header row. | 2026-10-08 | `responses.success.headers.txt`; live probes 2026-10-08 (#300) against `ddk-openai-model-routing` (21177134) and `ddk-bedrock-anthropic-model-routing` (21192625) on shared-omni-gateway, `ddk-azure-openai-model-routing` (21188199) on private-space-omni-gateway |
+| Qualified vendor in the provider header (#1405) | `core/lastcall.py` (`provider_vendor`, `is_substitution`), `core/transport/observe.py` (`gen_ai.system`) | VERIFIED (LIVE) | `model-based-routing` def 1.0.5 / impl 1.0.9 accepts `supportedVendors[].vendor` as `groupId:vendor`. It routes on the suffix and returns the **complete** value: `x-llm-proxy-llm-provider: mulesoft:openai`, `x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: mulesoft:openai, Model: gpt-5-mini.` The same holds for `mulesoft:gemini` and on the fallback path (`mistral/…` → `x-llm-proxy-routing-fallback: true`, provider `mulesoft:openai`). A bare model with two vendors configured is still `400` (`ModelNotRoutable`). The SDK keeps `last_call.served_provider` verbatim (`mulesoft:openai`), records the vendor suffix as the span's `gen_ai.system` (`openai`, OTel expects a bare system name), and `is_substitution()` matches the request's `provider/` prefix against the suffix, so `openai/gpt-5-mini` served as `gpt-5-mini` by `mulesoft:openai` is not a substitution. | 2026-11-03 | live probes against a qualified-vendor model-based proxy (instance `21271481`, DDK/Sandbox, shared-omni-gateway) — captured in `python/tests/fixtures/anypoint/model_routing_qualified_vendor/` |
+| Gateway identity on an `llm-gw-v2` proxy (#1405) | `core/lastcall.py` (`is_substitution`), `core/transport/observe.py`, `core/transport/policy.py` | UNVERIFIED | Expected, not yet captured: on the composable `llm-gw-v2` chain, `x-llm-proxy-routing-type` and `x-llm-proxy-routing-fallback` become internal stream properties (`llm_gw.routing.{type,fallback}`) and are no longer returned. **`x-llm-proxy-llm-provider` is still returned** when `model-based-routing` runs in v2 chain mode (its README "v2 Chain Mode": it returns only `x-llm-proxy-llm-provider` and `x-llm-proxy-model-based-routing-success`); a chain without it emits only `x-llm-proxy-llm-model`. The SDK fails open on any missing header: `served_provider`, `routing_type` and `fallback` stay `None`, the span omits `gen_ai.system` and the routing attributes, and `is_substitution()` compares only the model part of a `provider/model` request when the provider header is absent. The row stays `UNVERIFIED` until a live capture from a v2-chain proxy lands in `python/tests/fixtures/anypoint/` (#1405); the upstream ask for a client-visible signal is #1410. | — | read from `microgateway-hybrid-policies` `99b6ccc1` (2026-11-02): `llm-gw/model-based-routing/README.md` "v2 Chain Mode", `llm-gw-v2/llm-v2-model-router-policy`, `llm-gw-v2/llm-v2-out-model-policy`, ADR-0001 (not a live capture) |
 | Upstream request id on response (per provider, #542) | `core/lastcall.py:request_id` (shared by `LastCall` + `classify()`) | VERIFIED (LIVE) | provider's own id, passed through — header name varies: OpenAI `x-request-id` (`req_…`); Azure OpenAI `x-request-id` (UUID) + `apim-request-id`; Bedrock **only** `x-amzn-requestid` (no `x-request-id`); native `Format=Anthropic` ingress **only** `request-id` (`req_…`, #827). Resolved in that order, failing open to `None`. | 2026-09-24 | live probe (DDK/Sandbox): `openai-`/`azure-openai-`/`bedrock-anthropic-model-routing`; `anthropic_inbound/responses.success.headers.txt` |
 | Agent→agent egress attribution header | `core/_verify.py` → transport | VERIFIED (build) | `x-anypoint-api-instance-id` → `agent-connection-telemetry` policy `sourceAgentId`; `tracing` labels `mulesoft.api.instance.id`, `mulesoft.api.type=llm` | 2026-08-28 | built `connection.json` (§12.6) |
 | Business-group attribution header name | `core/_verify.py` → transport | UNVERIFIED | not surfaced as a request header in the direct-proxy path | — | — |
@@ -452,6 +484,15 @@ headers.
    gateway text kept in the message). VERIFIED (LIVE) 2026-10-01 on
    `ddk-multi-route-fallback` and `ddk-azure-openai-model-routing`, byte-identical
    on both (#825); fixture `reject.model-not-routable.{headers.txt,body.json}`.
+   The same envelope with `Missing 'model' field in request` after the colon is
+   returned when the router finds no model where the ingress format expects one:
+   no `model` body field on OpenAI ingress, or an OpenAI `/chat/completions` body
+   sent to a native Gemini ingress (that router reads the model from the URL
+   path). `classify()` returns `ModelNotRoutable` with `.model` `None` and a
+   missing-model remediation. VERIFIED (LIVE) 2026-11-02 on model-based-routing
+   1.0.5 / impl 1.0.9, byte-identical on a native Gemini ingress, a
+   single-provider and a multi-provider OpenAI ingress (#1547); fixture
+   `reject.model-missing.{headers.txt,body.json}`.
 7. **Request rate limit** — `429` from the stock `rate-limiting` policy (it
    counts requests, not tokens): body `{"error":"Too Many Requests"}`
    (`content-type: application/json; charset=UTF-8`), the unsuffixed
@@ -513,7 +554,8 @@ in either an OpenAI-style object envelope or a Gemini-style **list** envelope
 (`[{"error":{…}}]`, #548) — → `UpstreamRequestError` (carries provider
 `code`/`type`/`param`, with Gemini's `status` standing in for `type`); a non-auth
 4xx whose flat-string `error` says the model "is not in the known unique model
-map" → `ModelNotRoutable` (item 6, #825); `5xx` →
+map", or "Missing 'model' field in request", → `ModelNotRoutable` (item 6,
+#825, #1547); `5xx` →
 `UpstreamModelError`. Auth is then the verified client-id-enforcement shape: a
 `401`, **or** a `403` carrying a `www-authenticate` header → `AuthError`. A `403`
 **without** `www-authenticate` that matched none of the discriminators above is
@@ -540,7 +582,12 @@ provisioning proxies (`ddk-injection-guard`, `ddk-azure-content-safety`), not
 only typed from the policy pages; the CrowdStrike AIDR row is the exception, at
 `VERIFIED (POLICY SOURCE)`. They have **no `_verify.py` constant** —
 `classify()` reads them straight from the response — so the verification record
-is these rows, not an `Unverified(...)` flip:
+is these rows, not an `Unverified(...)` flip. The version in parentheses after
+each policy link below is the **docs page version** (`docs <version>`), not a
+tested one; the version the live capture ran against is recorded in the
+**Exchange asset (verified)** column of the table at the end of this section
+(see *Tested versions* in the legend). Rows there that predate that rule are
+filled in on their next re-verification:
 
 | Shape | HTTP | Discriminator | Maps to | Source |
 |---|---|---|---|---|
@@ -705,6 +752,7 @@ driving `ddk-model-wallet` (2000 tokens/day on `openai:gpt-5-mini`) on instance
 | client-id-enforcement | `client-id-enforcement` `1.3.3` | VERIFIED (LIVE) | `401` + `www-authenticate: Client-ID-Enforcement`, `{"error":"Client ID is not present"}` | 2026-08-28 | live probe |
 | model-based-routing / upstream | `model-based-routing` `1.0.3` | VERIFIED (LIVE) | passthrough of provider error (OpenAI `400 model_not_found` object) | 2026-08-28 | live probe |
 | model-based-routing, bare model name, more than one provider | applied to `ddk-multi-route-fallback`, `ddk-azure-openai-model-routing` | VERIFIED (LIVE) | gateway's own `400`, flat-string `{"error":"Failed to parse model from request: Model '…' is not in the known unique model map and multiple providers are configured. Use 'provider/model' format."}`, no `x-llm-proxy-*` headers, upstream not called → `ModelNotRoutable` (item 6 above) | 2026-10-01 | live probe (#825) |
+| model-based-routing, no model where the ingress expects one | native Gemini ingress sent an OpenAI body; OpenAI ingress (single- and multi-provider) sent no `model` | VERIFIED (LIVE) | gateway's own `400`, flat-string `{"error":"Failed to parse model from request: Missing 'model' field in request"}`, no `x-llm-proxy-*` headers, upstream not called → `ModelNotRoutable` with `.model` `None` (item 6 above) | 2026-11-02 | live probe on model-based-routing 1.0.5 / impl 1.0.9 (#1547) |
 | LLM proxy core | `llm-proxy-core` `1.0.5` | applied VERIFIED (LIVE) | on `openai-sdk`; rejection body not yet triggered | 2026-08-28 | `policy:list` |
 | Request rate limiting | `rate-limiting` `1.5.1` (impl `rate-limiting-flex` `1.2.2`), `exposeHeaders: true` | VERIFIED (LIVE) | `429`, body `{"error":"Too Many Requests"}`, the unsuffixed `x-ratelimit-limit`/`-remaining`/`-reset`(ms) trio, no `retry-after`, no `x-token-*`; the same trio on every `200` → `RequestRateLimitExceeded` (item 7 above). See "Request window emission" above. | 2026-10-07 | live probe, `ddk-request-rate-limit` instance 21188400 (#974) |
 | Token rate limiting | interface `llm-token-rate-limit` `1.0.2` (impl `-policy-flex` `1.0.4`) | VERIFIED (LIVE) | Two emission forms: `429` limit-exceeded → **empty body**, numeric trio `x-token-limit`/`x-token-remaining`/`x-token-reset`(ms), no `retry-after`; `200`/`403` under the same policy → the window as prose in a single `x-llm-proxy-ratelimit` header (ms reset). See "Budget window emission" above. | 2026-08-28; re-confirmed 2026-10-07 | applied + live probe; re-probe on `ddk-token-rate-limit` (instance 21188394, #253) |
@@ -731,6 +779,79 @@ names (from `api-mgr:policy:describe <interface> --policyVersion <v> -o json`,
 `action` (enum: `Reject`, `Log`, `Log and mask`; default `Log` — only `Reject`
 blocks). Both were applied to `21133858` for capture, then removed.
 
+### A2A instance policy captures (#1393)
+
+The shared `core/jsonrpc_refusals.jsonrpc_refusal` matcher (#1385, BG §2.2)
+types the captured HTTP 403 Azure reject headers as `ContentSafetyBlocked`
+(#1394), including its provider and header-derived categories. HTTP `classify`
+also types the captured bare 429 as `TokenBudgetExceeded` with a 60-second reset;
+captured fail-closed 503 responses remain `UpstreamModelError`, never
+`GatewayUnavailable` (which requires no HTTP response). Generic JSON-RPC
+codes and ErrorInfo FORBIDDEN / INVALID_PARAMS reasons remain ambiguous; raw
+diagnostics are not used to infer PII/schema types. No verification status or
+guard is changed by this classification. PII/schema captures remain safe
+`ToolInvocationError`s through HTTP `classify` and return `None` from the explicit
+RPC helper; structured identity is an upstream gap (#1401). Bedrock content-block
+typing remains gated on its missing capture. `A2AFacade.send` / `stream` (#1395)
+apply this classification offline; framework `AgentHandle.as_tool()` binding
+remains planned. `donkey dev` (#1397, #1601) defaults to protocol `1.0` and
+replays selected method-specific v1 Azure block, PII and token-rate refusals.
+Protocol `0.3.0` replays existing v0.3 PII/rate `message/send` captures only,
+not all rows below. This adds no new captures or live verification. #1398 keeps raw
+RPC diagnostics out of rendered exceptions and DDK spans; original responses
+remain sensitive. The developer inventory is `a2a-gateway-policies.mdx` (#1400).
+
+The table records response-shape facts, not a claim that every policy is typed
+or simulated. Classification contracts are pinned in
+`test_a2a_policy_refusals.py`. Captured 2026-11-02 on `ddk-langgraph-agent`, instance
+`21206128`, Sandbox, managed `shared-omni-gateway` **1.14.4**. Test-only fixture
+pairs, selected quality headers and exact triggers:
+`python/tests/fixtures/anypoint/a2a_policies/README.md`.
+Each temporary policy was removed and the original policy chain restored;
+Quality Evaluation was later intentionally retained on the existing instance.
+
+| Policy | Status | Verified response shape | Date | Source |
+|---|---|---|---|---|
+| A2A v0.3 PII Detector, `a-two-a-pii-detector` 1.0.2 | VERIFIED (LIVE) | `message/send`, synthetic email, `Reject`: HTTP 403, JSON-RPC `-32602`, `Invalid params`; `error.data` is a string prefixed `Request contains PII data: ` carrying a JSON findings list (`pii_type`, **raw synthetic `value`**, `start`, `end`), not v1 `ErrorInfo`. No `www-authenticate`. Safe generic classification with diagnostics withheld (#1394/#1398), not PII-specific typing | 2026-11-02 | instance 21206128, gateway 1.14.4; `a2a_policies/v03-pii-send.*` |
+| A2A v0.3 Schema Validation, `a-two-a-schema-validation` 1.0.2 | VERIFIED (LIVE) | Missing `parts`: HTTP 400 / `-32602`; unknown method: HTTP **400** / `-32601`; malformed JSON: HTTP 400 / `-32700` with response ID **1**. `error.data` is a string describing the schema error, not an `ErrorInfo` list | 2026-11-02 | same instance/gateway; `a2a_policies/v03-schema-{params,method,parse}.*` |
+| A2A v0.3 Token Based Rate Limit, `a-two-a-token-rate-limit` 1.0.1 | VERIFIED (LIVE) | Request exceeds a one-token window: bare HTTP 429, empty body, `x-token-limit: 1`, `x-token-remaining: 1`, `x-token-reset: 60000` (ms), no `retry-after`. Positive remaining does not imply the request fits the window | 2026-11-02 | same instance/gateway; `a2a_policies/v03-rate-send.headers.txt` |
+| A2A v0.3 accepted-call rate headers, `a-two-a-token-rate-limit` 1.0.1 | VERIFIED (LIVE) | `message/send`, synthetic `Reply with PONG.`: HTTP 200 agent message; selected `x-token-limit: 1000`, `x-token-remaining: 995`, `x-token-reset: 55454` (ms). One observed window, not deterministic accounting, streaming, accepted v1 headers or SDK A2A budget updates. Body and unrelated headers intentionally omitted | 2026-11-04 | LangGraph instance 21206128; temporary policy 9739904, 1000-token/60000ms window; `a2a_policies/v03-rate-accepted-send.headers.txt`. Rate policy removed, original credential/quality policy records compared equal and instance redeployed |
+| A2A v1 PII Detector, `a2a-v1-pii-detector` 1.0.0 | VERIFIED (LIVE) | `SendMessage` and `SendStreamingMessage`, synthetic email, `Reject`: HTTP 403 / `-32600`, response ID string `"1393"` for numeric request ID 1393. `error.data` is an `ErrorInfo` list with `domain: a2a-protocol.org`, `reason: FORBIDDEN`. Both `error.message` and `metadata.detail` echo raw synthetic findings; neither is safe to log. No `www-authenticate` | 2026-11-02 | temporary v1 instance 21269788, gateway 1.14.4; `a2a_policies/v1-pii-{send,stream}.*` |
+| A2A v1 Schema Validation, `a-two-a-v1-schema-validation` 1.0.1 | VERIFIED (LIVE) | Missing `messageId`: 400 / `-32602` / `INVALID_PARAMS`; unknown method: **404** / `-32601` / `METHOD_NOT_FOUND`; malformed JSON: 400 / `-32700` / `PARSE_ERROR`. All carry `ErrorInfo` (`type.googleapis.com/google.rpc.ErrorInfo`, domain above), diagnostic in `metadata.detail`. IDs are string `"1393"` for params/method, **null** for parse | 2026-11-02 | same temporary instance/gateway; `a2a_policies/v1-schema-{params,method,parse}.*` |
+| A2A v1 Token Based Rate Limit, `a-two-a-v1-token-rate-limit` 1.0.1 | VERIFIED (LIVE) | Oversized `SendMessage` and `SendStreamingMessage`: bare 429, empty body, `x-token-limit: 1`, `x-token-remaining: 1`, `x-token-reset: 60000` (ms), no `retry-after`. These are refusals before upstream/SSE, not accepted-call headers | 2026-11-02 | same temporary instance/gateway; `a2a_policies/v1-rate-{send,stream}.headers.txt` |
+| A2A v1 accepted-call rate headers, `a-two-a-v1-token-rate-limit` 1.0.1 | VERIFIED (LIVE) | `SendMessage`, synthetic `Reply with PONG.`: HTTP 200 v1 `result.message`, `ROLE_AGENT`, text `PONG`; selected `x-token-limit: 1000`, `x-token-remaining: 995`, `x-token-reset: 56893` (ms). One observed window, not deterministic accounting, streaming, SDK facade success or SDK A2A budget updates. Body and unrelated headers deliberately omitted | 2026-11-05 | Isolated instance 21276773, `ddk-capture1393v1-rate-agent` 1.0.0, shared gateway; rate policy 9746203 (1000-token/60000ms window), outbound credential 9746204; `a2a_policies/v1-rate-accepted-send.headers.txt`. Instance deleted, asset hard-deleted, GETs confirmed 404 and original LangGraph policy records compared equal. Prior attempt 21276757 disconnected before an HTTP response and was fully cleaned up |
+| A2A v1 capture registration prerequisite | VERIFIED (LIVE) | Shipping Exchange CLI published a separate `agent` with metadata/property protocol `a2a_v1` and classifier `a2a-v1-card`; API Manager accepted `endpoint.type: a2a_v1`, deployment and all three v1 policies above. The old `a2a` instance rejects v1 attachment with `PolicyValidationError`. New instance deleted and asset version hard-deleted; old instance/policy unchanged. Does not verify SDK publication/expose or dual-card publication | 2026-11-02 | #1393 receipts, temporary `ddk-capture1393v1-agent` 1.0.0; response fixture provenance above |
+| A2A v1 Azure Content Guardrails, `a2a-v1-azure-guardrails` 0.1.0 | VERIFIED (LIVE) | Both send methods: request-phase Prompt Shield block 403 / `-32600` / `FORBIDDEN`, detail `prompt_shield`; synthetic invalid key, fail-closed 503 / `-32603` / `UNAVAILABLE`, detail `service_unavailable`. `x-flex-azure-guardrails-{action,phase,reason}`: `reject`, `request`, corresponding reason. `ErrorInfo` domain above, response ID string `"1393"`, not the docs' null. No `www-authenticate`; no successful SSE or response moderation claim | 2026-11-02 | temporary instance 21269937, private-space gateway 1.14.4; `a2a_policies/v1-azure-{block,unavailable}-{send,stream}.*`; instance deleted, asset hard-deleted |
+| A2A v1 Bedrock Guardrails fail-closed, `a2a-v1-bedrock-guardrails` 1.0.0 | VERIFIED (LIVE) | Both send methods, deliberately nonexistent guardrail version: 503 / `-32603` / `UNAVAILABLE`, `ErrorInfo` detail `Amazon Bedrock Guardrails service unavailable`. `x-flex-bedrock-guardrails-{action,phase,reason}`: `reject`, `request`, `service_unavailable`; response ID string `"1393"`, no `www-authenticate`. Configured version 1 also failed; direct AWS check reports guardrail ID/version does not exist. This is not a content-block verdict | 2026-11-02 | temporary instance 21269936, shared gateway 1.14.4; `a2a_policies/v1-bedrock-unavailable-{send,stream}.*`; instance deleted, asset hard-deleted |
+| A2A v0.3 In-Task Authorization Code challenge, `intask-authorization-code-policy` 1.0.1 | VERIFIED (LIVE) | Missing secondary token, `message/send` and `message/stream`: HTTP 200 JSON task, `status.state: auth-required`, message data `authChallenge` with configured OAuth metadata, scopes list and `audience`. Numeric request ID 1393 becomes string `"1393"`; new task/context UUIDs despite supplied params IDs, internally consistent message references. No `www-authenticate`, no SSE. Synthetic OAuth metadata only; no OAuth completion, token forwarding/removal, caching or 401 claim | 2026-11-02 | isolated v0.3 instance 21270026, outbound policy 9713117, shared gateway 1.14.4; `a2a_policies/v03-auth-challenge-{send,stream}.*`; instance deleted, asset hard-deleted, original chain unchanged |
+| A2A Quality Evaluation, `a2a-quality-evaluation-policy` 1.0.0 | VERIFIED (LIVE) | v0.3 `message/send`, synthetic `Reply with PONG.`: HTTP 200 JSON agent reply `PONG`; selected response headers `x-quality-evaluation: yes`, `x-quality-score: 3`, `x-quality-status: completed`, `x-quality-explanation` describing fulfillment of the request. Header-only fixture deliberately omits body/model metadata and signed reporting URLs. One evaluated response, not a score-range, failure, v1 or streaming claim; #1399 records these headers on outbound spans with offline tests, not a live facade round-trip | 2026-11-02 | existing LangGraph instance 21206128, inbound policy 9714700, shared gateway 1.14.4; `a2a_policies/v03-quality-send.headers.txt`; evaluator OpenAI base URL, gpt-4o-mini, 10000ms; outbound credential injection unchanged, quality policy intentionally retained |
+| A2A v0.3 Quality Evaluation pending headers, `a2a-quality-evaluation-policy` 1.0.0 | VERIFIED (LIVE) | One `message/send`, numeric request ID 1393, synthetic `Reply with PONG.` under deliberately invalid synthetic evaluator-key configuration: HTTP 200 JSON agent message containing `PONG`, not a completed task. Only `x-quality-status: pending`; no score, evaluation or explanation headers. Selected-header fixture omits body and unrelated headers, including signed reporting URLs. No internal evaluator cause or failure semantics inferred from `pending`; no v1, SSE or live SDK facade success claim | 2026-11-05 | Isolated `a2a` instance 21277325, `ddk-capture1393v03-quality-failure-agent` 1.0.0, shared gateway; quality policy 9748586 (OpenAI base URL, gpt-4o-mini, 10000ms), outbound credential 9748587; `a2a_policies/v03-quality-pending-send.headers.txt`. One attempt, no retries, 90-second propagation wait/deadline. Instance deleted, asset hard-deleted, independent GETs 404; baseline LangGraph 21206128, upstreams and full records 9682382/9714700 unchanged |
+| A2A v1 Bedrock content block, `a2a-v1-bedrock-guardrails` 1.0.0 | VERIFIED (LIVE) | 2026-11-06, synthetic investment-advice prompt, guardrail `6q7y92mbhqzj` v1 (us-west-2, dedicated ApplyGuardrail credentials), `moderateRequest: true`, `failOpen: false`. Both `SendMessage` and `SendStreamingMessage`: HTTP 403 / `-32600` / `FORBIDDEN`, `ErrorInfo` detail `Request blocked by Amazon Bedrock Guardrails: content_filter,denied_topic`; `x-flex-bedrock-guardrails-{action,phase,reason}`: `reject`, `request`, `content_filter,denied_topic`; response ID string `"1393"`, no `www-authenticate`. The stream request is refused before any stream starts. `classify`/`jsonrpc_refusal` type it `ContentSafetyBlocked` (`provider="bedrock-guardrails"`, #1630). `moderateResponse` and benign pass-through not exercised | 2026-11-06 | temporary instance 21279653, shared gateway 1.14.4; `a2a_policies/v1-bedrock-block-{send,stream}.*`; instance deleted, asset hard-deleted, original policy chain unchanged | #1393 |
+| A2A v0.3 In-Task Authorization Code, authentication failure (`401`) | UNVERIFIED (accepted boundary) | Two bounded 2026-11-06 probes, one `message/send` each, with the same synthetic Okta-example OAuth metadata and a synthetic invalid `parts[].data.auth_credentials.accessToken`. Without upstream credential injection the hosted agent itself returned `401` (`{"detail":"Authentication required"}`, Heroku headers, no `www-authenticate`): not a policy response. With the `X-DDK-Access-Key` injection attached the request reached the agent and returned HTTP 200 with a normal agent message, so no policy-generated `401` or `auth-required` task was observed for an unvalidatable token. The documented `401` is not reproduced; a real issuer is needed and is out of scope. No fixture: the 200 body echoes upstream internals. Instances and assets deleted (independent 404s); LangGraph chain unchanged | — | #1393 |
+| A2A v1 to v0.3 Transcoder, unsupported-method codes, `a-two-a-v1-to-v03-transcoder` 1.0.0 | VERIFIED (LIVE) | 2026-11-06, temporary `a2a_v1` instance, one request each: `ListTasks` HTTP `400` / `-32004` / `UNSUPPORTED_OPERATION`; `CreateTaskPushNotificationConfig` HTTP `400` / `-32003` / `PUSH_NOTIFICATION_NOT_SUPPORTED`; both `google.rpc.ErrorInfo`, string ID `"1393"`. Matches the policy source; the docs' `-32601` for `ListTasks` was **not** observed. Supported-method transcoding and SSE not exercised. Instance and asset deleted (independent 404s); LangGraph chain unchanged | `v1-transcoder-{list-tasks,push-config}` | #1393 |
+| A2A v1 Prompt Decorator, `a2a-v1-prompt-decorator` 1.0.0 | VERIFIED (LIVE) | 2026-11-06, `SendMessage` (`A2A-Version: 1.0`) with `Reply with PONG.` and one `textDecorators` entry `#['DDK-1393 decorator marker']`: HTTP 200, agent text `PONG`. The user message the upstream LLM received (echoed in the hosted agent's reply metadata) was `DDK-1393 decorator marker\nReply with PONG.`: the decorator text is **prepended** to the original text with a newline. One text decorator, one JSON-RPC `SendMessage`; `fileDecorators`, `condition`, `SendStreamingMessage` and HTTP+JSON/gRPC not exercised. Fixture keeps only the sent request, the response status/text and the observed user message (the raw reply carries gateway headers and upstream internals). Catalog lists 1.0.0 and 0.1.0; the definition in the policy source says 1.0.1, which the API rejected as a non-existent asset | 2026-11-06 | temporary attach on the existing `ddk-adk-agent` (instance 21209093, shared gateway 1.14.4), Message Logging 2.1.0 `#[payload]` attached alongside (accepted on `a2a_v1`; log output not read); `a2a_policies/v1-decorator-send.selected.json`. Both policies removed, instance redeployed, policies and upstreams equal to the pre-run baseline | #1393 |
+| Successful live SSE through the gateway (`SendStreamingMessage` / `message/stream`) | UNVERIFIED (accepted boundary) | The hosted LangGraph card advertises `streaming: false`, so an accepted stream cannot be captured against it. Refusals before the stream are captured live (v1 PII, schema, rate, Azure, Bedrock fail-closed); successful streaming is OFFLINE-VERIFIED only (`tests/conformance/test_a2a_outbound.py`). Not worth a streaming agent for this epic | 2026-11-06 | #1383 scope decision |
+| Successful governed facade send on the v0.3 transport (`CompatJsonRpcTransport`) | UNVERIFIED (accepted boundary) | The facade picks the first supported JSON-RPC interface from the served card (`a2a/client.py`). Every live card seen lists `1.0` first: the hosted LangGraph card advertised `1.0` then `0.3.0` from 2026-11-05 (provisioning #129) and `1.0` only after a 2026-11-06 hosted-agent redeploy, and the v1 Agent Card policy keeps that order. A live facade send therefore selects the v1 `JsonRpcTransport`; reaching `CompatJsonRpcTransport` would need a v0.3-only card from the hosted agent, not worth it for this epic. The v0.3 transport is OFFLINE-VERIFIED (`tests/conformance/test_a2a_outbound.py`); v0.3 wire shapes are captured live by direct calls (PII, quality, auth challenge) | 2026-11-06 | #1383 scope decision |
+| A2A v1 In-Task Authorization Code; v1 Quality Evaluation | UNSUPPORTED (accepted boundary) | Omni Gateway 1.14 docs limit both policies to A2A v0.3.0 ([quality](https://docs.mulesoft.com/gateway/latest/policies-included-a2a-quality-evaluation), [authorization code](https://docs.mulesoft.com/gateway/latest/policies-outbound-a2a-intask-authorization-code)). A v1 `SendMessage` through the Quality policy returned HTTP 200 with no `x-quality-*` headers (2026-11-05); the policy source (`microgateway-hybrid-policies` 30b20d28) imports the v0.3 constants and bypasses methods other than `message/send` / `tasks/get`, which is the likely cause but not a proven live root cause. DDK does not convert a v1 challenge or expect v1 quality headers | 2026-11-05 | probe receipt on #1393; docs; policy source |
+| Response-phase guardrails; evaluator failure taxonomy and internal causes; OAuth completion, token forwarding/removal and caching | UNVERIFIED (out of scope) | Excluded from #1383 by maintainer decision (2026-11-05 audit). `x-quality-status: pending` above is the only evaluator-failure observation and implies no cause | — | #1383 audit |
+
+Agent Card rewrite (#1393), **VERIFIED (LIVE), 2026-11-05**: isolated `a2a_v1`
+instance `21278723`, shared gateway 1.14.4, definition `a-two-a-v1-agent-card`
+1.0.1 / implementation `a-two-a-v1-agent-card-flex` 1.0.2, policy `9756361`.
+Explicit `consumerUrl` rewrites both hosted JSONRPC `supportedInterfaces[].url`
+values to the public gateway base, preserving versions `1.0` / `0.3.0` and all
+non-URL interface fields. Both upstream/gateway card GETs returned 200 JSON.
+Default configuration previously rewrote to `https://localhost/<base-path>/`.
+Other top-level fields changed; no whole-card preservation, other transport,
+extended-card, SSE or metric claim. Definition 1.0.0 attachments were rejected;
+target assignment alone is not established as the cause. Selected-field fixture:
+`a2a_policies/v1-card-rewrite.selected.json`, pinned by
+`test_captured_card_rewrites_urls_and_preserves_interface_fields`.
+The shared instance/policies/upstreams baseline stayed unchanged. The isolated
+instance and asset version were deleted after the capture was merged (2026-11-06;
+independent GETs returned 404).
+Source: [live receipt](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1393#issuecomment-6670434829).
+
 ## 5. MCP Bridge / Agent Network provisioning — **gates whether §5 is viable at all**
 
 FINDING (CLI, 2026-08-28): provisioning is delivered as a **Maven-project + CLI**
@@ -755,6 +876,20 @@ deleted in #730 (ADR 0008 in `docs/adr/`); the findings below stay as the record
 
 ## 6. Governance / local-mode (the Verification milestone)
 
+A2A policy-response captures and their bounded SDK classification are recorded
+in §4 above; outbound facade verification is in §8.5. `donkey dev` ingress replay
+is offline handling evidence, not execution of real gateway policies in Local
+Mode. #1399 adds offline-tested quality-header recording on the outbound span:
+known evaluation/status values, finite numeric scores, and explanation text only
+with content opt-in (4096-character limit). Agent Card GETs and failed HTTP
+responses are excluded. This does not establish live facade/streaming evaluation.
+
+`X-AGENT-ID` decision (#1399): do not inject it on MCP/A2A requests without live
+evidence of its effect on `mulesoft_agent_connection_count` attribution. Neither
+the header-only quality capture nor the outbound W3C span contract establishes
+that behavior. No new request header, config setting or platform metric is added;
+connection attribution remains UNVERIFIED.
+
 | Item | Gates | Status | Finding | Source |
 |---|---|---|---|---|
 | Can Local Mode run the LLM Proxy? | the Verification milestone | UNSUPPORTED | No. MuleSoft documents Model Proxy as "supported on Managed Omni Gateway and Self-Managed Omni Gateway running in Connected Mode". This matches the stock Flex Gateway 1.14.0 Local Mode image rejecting `llm-proxy-core`, `model-based-routing`, and `openai-transcoding-policy` as missing extensions (#651, #661, #258) | 2026-10-27: docs.mulesoft.com `general/model-proxy`; 2026-09-27: 1.14.0 image |
@@ -772,7 +907,7 @@ deleted in #730 (ADR 0008 in `docs/adr/`); the findings below stay as the record
 | Governed MCP endpoint URL shape | `McpServerHandle.endpoint_url` | VERIFIED (CLI) | ingress gw: `https://agent-network-ingress-gw-<id>.<region>.cloudhub.io/mcp/<name>/` | 2026-08-28 |
 | How does an Exchange MCP asset resolve to its gateway endpoint? (#1297) | `resolve_mcp()` | VERIFIED (LIVE) 2026-10-28 | Three documented reads. (1) The environment id, by name: `GET /accounts/api/organizations/{org}/environments` → `data[{id, name}]` (Access Management API). (2) The asset version's instances: `GET /apimanager/api/v1/organizations/{org}/environments/{env}/apis?assetId=&groupId=&assetVersion=` (API Manager API `listApiInstances`) → `assets[].apis[]`, `total` counting assets, not instances; then `GET …/apis/{id}` for `endpoint.proxyUri` and `deployment.targetId`. (3) The gateway: `GET /gatewaymanager/api/v1/organizations/{org}/environments/{env}/gateways/{targetId}` (Omni Gateway Manager API) → `configuration.ingress.publicUrl`. The endpoint is `publicUrl` + the `proxyUri` path + `/`. The instance's own `endpointUri` stays `null` on a managed-gateway MCP instance, deployed or not, so it is not read | 2026-10-28 sandbox, shared-omni-gateway; `tests/fixtures/anypoint/mcp_resolve/` |
 | Are the instance-list filters server-side? (#1297) | `resolve_mcp()` | VERIFIED (LIVE) 2026-10-28 | Yes. `assetId` matches exactly (`ddk-anthropic-inbound` does not return `ddk-anthropic-inbound-bearer`) and `assetVersion` filters (a version with no instance returns `total: 0`). A version can have several instances: one undeployed and one deployed came back together; an undeployed one has `deployment: null` in the list and `status: unregistered`. `resolve_mcp()` takes the one with `deployment.expectedStatus: deployed` and refuses several. A `deployment` sent inline on `POST …/apis` was ignored: the instance stayed unregistered until `POST /proxies/xapi/v1/…/apis/{id}/deployments` | 2026-10-28 sandbox; `mcp_resolve/apis.by-asset*.json` |
-| Does an A2A agent resolve the same way? (#1354) | `resolve_agent()` | VERIFIED (LIVE) 2026-10-29 | Yes. The agent's instance row has `endpointType: "a2a"` (an MCP server's has `mcp`), and its describe has the same `endpoint.proxyUri` and `deployment.targetId`, so `resolve_agent()` makes `resolve_mcp()`'s three reads and keeps the one deployed `a2a` instance. `ddk-langgraph-agent` `0.1.0` resolves to `<publicUrl>/ddk-langgraph-agent/` | 2026-10-29 sandbox; `tests/fixtures/anypoint/a2a_card/apis.by-asset.json`, `api.describe.json` |
+| Does an A2A agent resolve the same way? (#1354) | `resolve_agent()` | VERIFIED (LIVE) 2026-10-29 | Yes. The agent's instance row has `endpointType: "a2a"` (an MCP server's has `mcp`), and its describe has the same `endpoint.proxyUri` and `deployment.targetId`, so `resolve_agent()` makes `resolve_mcp()`'s three reads and keeps the one deployed `a2a` instance. `ddk-langgraph-agent` `0.1.0` resolves to `<publicUrl>/ddk-langgraph-agent/`. Since #1633 an `a2a_v1` instance (an asset published with Exchange protocol `a2a_v1`, which API Manager will not give an `a2a` instance) resolves the same way, and `a2a_v1` is preferred when a version has both kinds; covered by unit tests on the listing shape, not re-captured live | 2026-10-29 sandbox; `tests/fixtures/anypoint/a2a_card/apis.by-asset.json`, `api.describe.json` |
 | Does the gateway route the resolved MCP path? (#1297) | `McpServerHandle.endpoint_url` | VERIFIED (LIVE) 2026-10-28 | Only with a trailing slash. An MCP `initialize` with no credentials to `<publicUrl>/<label>/` got `401 {"error":"Client ID is not present"}`, `WWW-Authenticate: Client-ID-Enforcement` (the instance's policy); `<publicUrl>/<label>` got an empty `404` from `Anypoint Flex Gateway`, the same as an unrouted path, on every one of the alternating calls. No call carried credentials or reached the upstream | 2026-10-28 sandbox; `mcp_resolve/traffic.*.json` |
 | Governed **LLM proxy** policy stack (live) | governed-state join, the Verification milestone | VERIFIED (LIVE) | on `openai-sdk`: `cors 1.3.2`, `dataweave-headers-transformation 1.0.0`, `client-id-enforcement 1.3.3`, `llm-proxy-core 1.0.5`, `model-based-routing 1.0.3`, `openai-transcoding-policy 1.0.3` — all Enabled | 2026-08-28 |
 
@@ -798,7 +933,7 @@ decision resolves as out of scope rather than answered.
 | Item | Gates | Status | Finding | Source |
 |---|---|---|---|---|
 | First-class Exchange asset types for MCP servers & AI agents? | BG §2.5 + `asset_types` filter (governed-only discovery) | VERIFIED (LIVE) 2026-10-27 | Yes — Exchange assets named "… MCP Server" and "… Agent Network"/agent, managed as API Manager instances. 2026-10-27 (#53): `type` is a field Exchange filters on, not a naming convention: the Graph API search with `types: ["mcp"]` returns only `mcp` assets and `types: ["mcp", "agent"]` only those two, so `asset_types` is a server-side filter | 2026-08-28: `api-mgr:api:list`; 2026-10-27: `tests/fixtures/anypoint/exchange_search/search.{types-mcp,page1,page2}.json` |
-| Exact publication / discovery asset-type tokens (`mcp`, `a2a-agent`, `agent`, `api`) | `PublicationAssetType`, `AssetRef.type`, `ExchangeRegistry.search(asset_types=)` | PARTIAL: `mcp` VERIFIED (LIVE) 2026-10-26; `agent` VERIFIED (LIVE) 2026-10-27 | `mcp` is confirmed by a live publish: the asset comes back with `"type":"mcp"` and `donkey publish` publishes MCP servers with it (#218). `agent` is confirmed the same way: a live publish with `type=agent` comes back as `"type":"agent"`, and `donkey publish` publishes each `@donkey.agent` with it (#1260). `a2a-agent` is not an Exchange type: an A2A agent publishes as `agent`, so `search(asset_types=["a2a-agent"])` stays blocked. Discovery searches by the same tokens; `api` is `rest-api`, `http-api` and `soap-api`, the types MuleSoft's Graph API page lists (#53) | 2026-10-26 and 2026-10-27 sandbox publishes, `tests/fixtures/anypoint/exchange_publish/{publish,agent.publish}.201.json`; Exchange Experience API spec; plugin `asset-facet.js`; `tests/fixtures/anypoint/exchange_search/` |
+| Exact publication / discovery asset-type tokens (`mcp`, `a2a-agent`, `agent`, `api`, `llm`) | `PublicationAssetType`, `AssetRef.type`, `ExchangeRegistry.search(asset_types=)` | PARTIAL: `mcp` VERIFIED (LIVE) 2026-10-26; `agent` VERIFIED (LIVE) 2026-10-27; `llm` (discovery only) VERIFIED (LIVE) 2026-11-02 | `mcp` is confirmed by a live publish: the asset comes back with `"type":"mcp"` and `donkey publish` publishes MCP servers with it (#218). `agent` is confirmed the same way: a live publish with `type=agent` comes back as `"type":"agent"`, and `donkey publish` publishes each `@donkey.agent` with it (#1260). `a2a-agent` is not an Exchange type: an A2A agent publishes as `agent`, so `search(asset_types=["a2a-agent"])` stays blocked. Discovery searches by the same tokens; `api` is `rest-api`, `http-api` and `soap-api`, the types MuleSoft's Graph API page lists (#53). `llm` is confirmed by a live search (#1408): `search(asset_types=["llm"])` sends `types: ["llm"]` and returned the business group's 25 LLM proxies (`ddk-openai-model-routing`, `ddk-anthropic-inbound`, …), each `"type":"llm"`. So `llm` covers LLM proxies as well as custom LLM providers (published with an `llm-metadata` file, [docs](https://docs.mulesoft.com/general/model-proxy-publish-custom-llm-metadata)). The SDK discovers `llm` assets and reads their `llm-metadata` file with `ExchangeRegistry.llm_metadata()` (#1533); it does not publish them | 2026-10-26 and 2026-10-27 sandbox publishes, `tests/fixtures/anypoint/exchange_publish/{publish,agent.publish}.201.json`; Exchange Experience API spec; plugin `asset-facet.js`; `tests/fixtures/anypoint/exchange_search/`; 2026-11-02 live `search(asset_types=["llm"])` (#1408) |
 | Exchange asset search endpoint, auth, paging (#53) | `ExchangeRegistry.search()` | VERIFIED (LIVE) 2026-10-27 | `POST /graph/api/v1/graphql` with the control-plane bearer token: `assets(query: $query, latestVersionsOnly: true)`, `$query` a `SearchAsset`. `organizationIds` takes the business group. `searchTerm`, `organizationIds`, `tags` and `latestVersionsOnly` are on MuleSoft's page; `types`, `limit` and `offset` are `SearchAsset` fields it does not list, observed live. Paged by `limit`/`offset` with no total; a short page is the last. Without `latestVersionsOnly` an asset comes back once per version (790 rows for 371 assets across the root organisation); the v2 `assets` query that `anypoint-cli-v4 exchange asset list` sends returns every version too, so the SDK uses v1. The documented REST `GET /exchange/api/v2/assets/search` needs the root organisation's ID and documents no text filter | 2026-10-27 sandbox; [Searching the Graph API](https://docs.mulesoft.com/exchange/to-search-with-graph-api); `tests/fixtures/anypoint/exchange_search/`; plugin `lib/helpers/queries.js` |
 | Wildcard/substring `query` server-side? (#53) | `search(query=)` | VERIFIED (LIVE) 2026-10-27 | No. `searchTerm` matches whole words and word prefixes of the asset ID, name and description, ignoring case (`sku`, `SKU`, `lookup`, `ddk-demo` and `keycloak`, a description word, match). It does not match inside words (`ku-loo` matches nothing), and `*` is not a wildcard (`*sku*` matches what `sku` does). So a plain `query` is sent as `searchTerm`, and a `query` with `*`, `?` or `[` is matched by the SDK over the asset ID, name and description, reading 250-asset pages with the other filters applied | 2026-10-27 sandbox probes; `exchange_search/search.term.json`, `search.description-term.json` |
 | Which search filters are server-side? (#53) | `search(asset_types=, tags=, domain=)` | VERIFIED (LIVE) 2026-10-27 | `types` and `tags` are. Several types are ORed; several tags are ANDed, ignoring case (`crewai` + `langgraph` matches nothing). A tag filter also matches the keyed tags Exchange derives (`v0.3` matches every agent), so the SDK keeps an asset only when every tag is a keyless one, the kind set in Exchange or at publish. `domain` has no Exchange equivalent and stays blocked. Lifecycle is a v2 `assets(status: [...])` argument (`published`, `deprecated` and, per the page, `development`), not used by search yet | 2026-10-27 sandbox; `exchange_search/search.tags*.json`, `search.page{1,2}.json` |
@@ -809,6 +944,7 @@ decision resolves as out of scope rather than answered.
 | Asset lifecycle states (draft/published/deprecated) via API? | `require_lifecycle`, BG §2.5 | PARTIAL | `Deprecated` + `Public` flags on instances; A2D showed `status: draft\|published`. 2026-10-27 (#53): every asset has a `status`, and the v2 GraphQL `assets` query filters by the `Status` enum (`status: published` and `status: deprecated` were accepted live; the group has no deprecated asset). [Searching the Graph API](https://docs.mulesoft.com/exchange/to-search-with-graph-api) documents `development`, `published` and `deprecated` | 2026-08-28; 2026-10-27 |
 | Native descriptor formats (MCP manifest, A2A card) vs file attach? | BG §2.5 output | VERIFIED (plugin) | typed Exchange files w/ fixed classifiers (`agent-metadata`, `mcp-metadata`, `llm-metadata`, `a2a-card`, `schema`, `mule-application`) attached to `agent-network` root asset. VERIFIED (LIVE) 2026-10-27 for a standalone `agent` asset (#1260): `files.agent-metadata.json` (`{protocol, platform, kind, name, description, connections, provenance}`) and, for protocol `a2a_v1`, `files.a2a-v1-card.json` (an A2A 1.0 card) are stored as sent, each under its classifier as `json`, `zip`, `fat-*` and `original-*`. 2026-10-28 (#226): the agent-metadata `protocol` of an `a2a_v1` agent is `a2a`, with the version carried by the `a2a-v1-card` file; Exchange then records `protocol: a2a, protocol-version: v1`. Stored as `protocol: a2a_v1`, the asset publishes, but API Manager refuses it an `a2a` instance (§12.5) | 2026-08-28; 2026-10-27; 2026-10-28 | §12.7; `tests/fixtures/anypoint/exchange_publish/agent.*` |
 | Read back a published version's `mcp-metadata` tools (#991) | `ExchangeRegistry.published_tools()`, `Publication.verify()`; `donkey publish`, for the latest version's tools on a new version's "Changes since" section (#1271), and for the version before it when a rerun writes a version's page (#1481) | VERIFIED (LIVE) 2026-10-29 | Yes. The GraphQL `asset(groupId, assetId, version)` query on `/graph/api/v2/graphql` returns the version's `files { classifier packaging externalLink }`; the `mcp-metadata` `json` file's pre-signed https `externalLink` downloads, without credentials, the file as `donkey publish` sent it: `{transport, tools, capabilities, provenance, protocolVersion, provider}`, each tool `{name, description, inputSchema}`. A version Exchange does not have is a `200` whose error carries `extensions.status` `404`, as for the latest-version query. Read-only, with a `client_credentials` app holding `read:exchange`, on the two published MCP assets of the sandbox group. `donkey publish` makes the same two calls before it sends a new version, and before a rerun writes a missing page; those uses were tested offline against these fixtures only, not run live (#1271, #1481) | 2026-10-29 sandbox; `tests/fixtures/anypoint/exchange_publish/graphql.files.json`, `mcp-metadata.stored.json` |
+| Read back an `llm` asset's `llm-metadata` file (#1411) | `ExchangeRegistry.llm_metadata()` (#1533) | VERIFIED (LIVE) 2026-11-04 | Yes, by the same `asset(groupId, assetId, version) { files { classifier packaging externalLink } }` query: the `llm-metadata` file with `packaging` `json`, downloaded from its pre-signed `externalLink` without credentials. A custom provider asset, `ddk-custom-llm-provider:1.0.0`, published as `type=llm` with one `files.llm-metadata.json` field setting every field of the agent-fabric `llm_metadata.json` schema (`platform`, `name`, `kind`, `inputFormat`, `authentication`, `models` as a string and as an object, `defaultUrl`, `capabilities`, `policyRef`), comes back byte for byte as sent. Exchange also stores it as `llm-metadata` `zip`, `fat-llm-metadata` and `original-llm-metadata`. A DDK LLM proxy's file holds only `{"platform": …}`, which is all provisioning publishes. Whether Exchange validates the file against the schema on publish was not tested. Routing a proxy to a custom provider needs the `llm-gw-v2` chain and is not verified (#1595) | 2026-11-04 sandbox publish and read-back; `tests/fixtures/anypoint/llm_metadata/` |
 | Read back a published version's agent card (#1354) | `ExchangeRegistry.published_card()`, `Publication.verify()` | VERIFIED (LIVE) 2026-10-29 | Yes, by the same `asset(groupId, assetId, version)` files query as the MCP tools above. An A2A agent's version carries its card as a `json` file: `a2a-v1-card` for one `donkey publish` publishes now, `a2a-card` (A2A 0.3) for one published before #1212, as `ddk-langgraph-agent` `0.1.0` is. The pre-signed https link downloads it without credentials, as stored. `published_card()` reads `a2a-v1-card`, else `a2a-card`. Read-only, `read:exchange` | 2026-10-29 sandbox; `tests/fixtures/anypoint/a2a_card/graphql.files.json`, `a2a-card.stored.json` |
 | The live card through the agent's gateway instance (#1354) | `Discovery.agent_card()`, `Publication.verify()`, `donkey verify` | VERIFIED (LIVE) 2026-10-29 | `GET <endpoint>.well-known/agent-card.json`, `<endpoint>` from `resolve_agent()`. With no policy the gateway returns the upstream's card unchanged, `url` included. Under Client ID Enforcement 1.3.3: no credentials is `401` `Client ID is not present` (`WWW-Authenticate: Client-ID-Enforcement`), an uncontracted client id `401` `Authentication Attempt Failed`, a contracted app's `client_id`/`client_secret` headers `200`. The SDK reads it with the gateway credential, only once `explain()` finds the instance governed. The live card differs from the published one in fields that describe the deployment, not the agent: `url`, `supportedInterfaces`, `preferredTransport`, `protocolVersion`, `version` (the agent's code: `0.2.0` live against the asset's `0.1.0`) and the upstream's `securitySchemes`/`security`/`securityRequirements`. `card_drift()` ignores those and compares the description, the default input/output modes and the skills by id (each one's description). A throwaway instance, `ddk-verify1354-agent` on the shared gateway, deleted afterwards | 2026-10-29 sandbox, shared-omni-gateway; `tests/fixtures/anypoint/a2a_card/traffic.card.*.json` |
 
@@ -935,6 +1071,127 @@ Neither version has a public getter for the effective state, so the adapter
 does not check or log it. It does not change the setting either (ADR 0010).
 This is an offline source read; no live export was observed.
 
+#### Anthropic release lock re-check (2026-11-03, #1554)
+
+The Anthropic adapter-contract lock now pins `anthropic==2.4.0` with
+`httpx2==2.16.0`, `mcp==2.3.0` and `openai==3.42.1`. On Python 3.12,
+`verify_frameworks.py --only anthropic --require-installed --emit-verified`
+confirms construction and the expected `anthropic.AsyncAnthropic` class.
+`nox -s 'adapter-contract(anthropic)'` passes (4,888 passed, 539 skipped,
+27 deselected), including the strict example smoke and conformance kit.
+The pinned-version descriptor fixture comparison is skipped because its capture
+is from 2.3.0; the descriptor shape tests still run. The release adds analytics,
+spend-limit and RBAC methods and fixes parameter validation; the existing adapter
+needs no constructor or transport changes. These are offline checks, not a new
+live Messages API round-trip or a re-capture of the MCP binding fixture.
+The historical live and local-capture evidence above remains unchanged.
+
+#### LangChain Core release lock re-check (2026-11-03, #1555)
+
+Both LangGraph locks now pin `langchain-core==1.7.4`, alongside
+`langgraph==1.2.19`, `langchain-openai==1.7.3` and `openai==3.42.1`.
+On Python 3.12,
+`verify_frameworks.py --only langgraph --require-installed --emit-verified`
+confirms construction and the expected `langchain_openai.ChatOpenAI` class.
+`nox -s 'adapter-contract(langgraph)'` passes (4,925 passed, 535 skipped,
+27 deselected), including the strict example smoke and conformance kit.
+The pinned-version descriptor fixture comparison is skipped because no capture
+exists at 1.7.4; the descriptor shape tests still run. `nox -s langgraph-demo`
+also passes on Python 3.11, with conformance 4/4 in both in-process and server
+modes. The release fixes mutation of message content in the Anthropic translator;
+it does not require changes to the adapter's constructor kwargs. These are
+offline checks, not a new live gateway round-trip or MCP fixture capture.
+The historical live and local-capture evidence above remains unchanged.
+
+#### Framework-release lock re-check (2026-11-02, #1523)
+
+The coordinated refresh covers #1517 and #1523-#1526. On Python 3.12,
+`verify_frameworks.py --require-installed --emit-verified --only <framework>`
+confirmed construction and the expected native class for each of these locked
+stacks:
+
+| Framework | Installed packages | Offline evidence |
+|---|---|---|
+| LangGraph | `langgraph==1.2.19`, `langchain-core==1.7.3`, `langchain-openai==1.7.3`, `openai==3.42.1` | `adapter-contract(langgraph)` and its strict example smoke pass; `langgraph-demo` passes on Python 3.11, including conformance 4/4 in both modes |
+| OpenAI Agents SDK | `openai-agents==0.24.0`, `openai==3.42.1` | `adapter-contract(openai-agents)` and its strict example smoke pass; `openai-agents-demo` passes on Python 3.11, including conformance 4/4 in both modes |
+| Strands | `strands-agents==1.63.0`, `openai==3.42.1`, `mcp==2.3.0` | `adapter-contract(strands)` and its strict example smoke pass; `agents-strands-last-call` passes |
+| MS Agent Framework | `agent-framework==1.24.0`, `agent-framework-core==1.24.0`, `agent-framework-openai==1.18.0`, `openai==3.42.1` | Both Chat Completions and Responses constructors pass the signature check; `adapter-contract(agent_framework)`, its strict example smoke, and `agent-framework-middleware` pass |
+
+Strands now resolves naturally with OpenAI 3.x and exercises the reusable
+`httpx2` bridge described in section 8.1; the earlier `openai<3` observations
+above describe the older Strands releases, not this lock. The other four
+adapter-contract legs (ADK, Anthropic, CrewAI, LlamaIndex) also pass after the
+refresh. These are offline checks against the local simulator and mock
+transports, not new live captures. The historical live evidence and the
+signature-only approval/middleware statuses above are unchanged.
+
+#### CrewAI release re-check (2026-11-04, #1582)
+
+The CrewAI contract lock now selects `crewai==1.15.35` with `crewai-cli`,
+`crewai-core`, and `crewai-tools` at the same version. On Python 3.12,
+`verify_frameworks.py --only crewai --require-installed --emit-verified`
+confirms construction and the expected native `OpenAICompletion` class.
+`nox -s 'adapter-contract(crewai)'` passes (5,234 passed, 631 skipped,
+28 deselected), including the strict example smoke. The pinned-version
+descriptor fixture comparison is skipped because no capture exists at 1.15.35;
+the descriptor shape tests still run. These are offline checks, not a new live
+gateway round-trip or fixture capture. Historical evidence and verification
+statuses remain unchanged.
+
+#### LiteLLM release re-check (2026-11-04, #1581)
+
+The ADK contract lock now selects `litellm==1.108.0`. On Python 3.12,
+`verify_frameworks.py --only adk --require-installed --emit-verified` confirms
+both the LiteLLM and Gemini constructors and their expected native classes.
+`nox -s 'adapter-contract(adk)'` passes (5,299 passed, 546 skipped,
+28 deselected), including the strict example smoke. These are offline checks
+against the local simulator and mock transports, not a new live gateway
+round-trip. Historical live evidence and verification statuses remain unchanged.
+
+#### OpenAI release re-check (2026-11-04, #1583)
+
+The 17 contract and CI locks previously selecting `openai==3.42.1` now select
+`openai==3.45.0`; stacks requiring OpenAI 1.x or 2.x remain unchanged. On
+Python 3.12, `verify_frameworks.py --only openai_agents --require-installed
+--emit-verified` confirms construction and the expected native
+`OpenAIChatCompletionsModel` class. `nox -s 'adapter-contract(openai-agents)'`
+passes (5,185 passed, 690 skipped, 27 deselected), including the strict example
+smoke. `openai-agents-demo` passes on Python 3.11, including conformance 4/4 in
+both in-process and server modes. The LangGraph, Strands, MS Agent Framework,
+and Anthropic adapter-contract legs and their strict example smokes also pass,
+as do `agents-strands-last-call`, `agent-framework-middleware`, and
+`langgraph-demo` (conformance 4/4 in both modes). These are offline checks against the local
+simulator and mock transports, not a new live gateway round-trip. Historical
+live evidence and verification statuses remain unchanged.
+
+#### MS Agent Framework release re-check (2026-11-08, #1659)
+
+The MS Agent Framework contract lock now selects `agent-framework==1.25.0`,
+`agent-framework-core==1.25.0` and `agent-framework-openai==1.18.1`, with
+`openai==3.46.0` (the lock moved in #1664 together with its co-bumped
+`agent-framework-*` packages). On Python 3.12, `verify_frameworks.py --only
+agent_framework agent_framework.responses --require-installed --emit-verified`
+confirms construction and the expected native class for both
+`OpenAIChatCompletionClient` and `OpenAIChatClient`. `nox -s
+'adapter-contract(agent_framework)'` passes (5,967 passed, 400 skipped,
+28 deselected), including the strict example smoke, and `nox -s
+agent-framework-middleware` passes (97 passed, 69 skipped). The 1.25.0 release
+notes were not otherwise inspected. These are offline checks against the local
+simulator and mock transports, not a new live gateway round-trip. Historical
+live evidence and verification statuses remain unchanged.
+
+#### LiteLLM release re-check (2026-11-08, #1658)
+
+The ADK contract lock now selects `litellm==1.108.3` (patch bump from 1.108.2),
+with `google-adk==2.14.0` and `openai==3.46.0`. On Python 3.12,
+`verify_frameworks.py --only adk --require-installed --emit-verified` confirms
+both the LiteLLM and Gemini constructors and their expected native classes
+(`GovernedLiteLlm`, `GovernedGemini`). `nox -s 'adapter-contract(adk)'` passes
+(5,563 passed, 674 skipped, 28 deselected), including the strict example smoke.
+The 1.108.3 release notes were not otherwise inspected. These are offline checks
+against the local simulator and mock transports, not a new live gateway
+round-trip. Historical live evidence and verification statuses remain unchanged.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
@@ -944,7 +1201,7 @@ run is diagnosable instead of surprising.
 
 | Dependency | Breaks at | Symptom | Status | Date |
 |---|---|---|---|---|
-| `openai` | `>=3.0` | The SDK passes its shared `DonkeyAsyncClient` (an `httpx.AsyncClient` subclass) into `AsyncOpenAI(http_client=…)`. openai 3.x retyped that parameter to `httpx2.AsyncClient`, a distinct class from a separate distribution, so `mypy --strict` flagged `llm/client.py` and `integrations/openai_agents.py`. **Type-annotation-only** — when an `http_client` is injected, openai builds and sends every request *through that client*, so `httpx2` never touches our path. Since #728, where the SDK builds the `OpenAI`/`AsyncOpenAI` itself it no longer relies on openai accepting an `httpx` client: when `openai.DefaultAsyncHttpxClient` is built on `httpx2` (openai 3.x), `donkey.llm.client()` (async and sync) and the adapters that pre-build an `AsyncOpenAI` (`_proxy_openai_client`: OpenAI Agents SDK, MS Agent Framework, ADK `client`) pass the same core `httpx2` bridge the `anthropic` row below uses (`core/transport/httpx2.py`, chosen by `built_on_httpx2()`); openai `<3` keeps the non-owning view. The adapters whose framework builds the OpenAI client from an `http_client` kwarg (LangGraph `http_async_client`/`http_client`, LlamaIndex `async_http_client`/`http_client`, Strands `client_args["http_client"]`) hand it a *reusable* variant of the same bridge on openai 3.x (its close is a no-op, because Strands closes its client after every request), and the view on openai `<3`; one helper (`llm.client.openai_http_client` / `openai_sync_http_client`) makes the choice for all of them, pinned by `test_adapter_openai3_bridge.py` (#728). llama-index-llms-openai and `strands-agents[openai]` still pin `openai<3`, so today only LangGraph reaches the bridge in a natural resolve. **Mitigated** with a `cast(Any, …)` on the argument at the three version-conditional `http_client` sites (`llm/client.py` ×2 and `_proxy_openai_client` in `integrations/_base.py`) — `cast(Any, …)` erases the type on both majors, so `mypy --strict` passes under **both** openai `<3` and `>=3` (was a targeted `# type: ignore[arg-type]` / `cast("httpx.Response", …)` that passed only under openai `>=3` and became `unused-ignore` / `redundant-cast` under openai `<3`, #597; original guards #137). The `exc.response` side needs no guard: `classify()` and `DonkeyError.response` take the structural `ResponseLike` Protocol (`core/_response.py`), which `httpx.Response` and `httpx2.Response` both satisfy, so the documented `classify(exc.response)` type-checks on both majors; pinned by `tests/typecheck/classify_response_contract.py` (#933). **Runtime re-verified and test-pinned** against openai 3.x (async + sync): `test_llm_client_openai3_injection.py` drives `donkey.llm.client()` through a mock transport and asserts the `client_id`/`client_secret` pair is injected and the base URL carries no `/v1` (#18). | MITIGATED | 2026-10-07 |
+| `openai` | `>=3.0` | The SDK passes its shared `DonkeyAsyncClient` (an `httpx.AsyncClient` subclass) into `AsyncOpenAI(http_client=…)`. openai 3.x retyped that parameter to `httpx2.AsyncClient`, a distinct class from a separate distribution, so `mypy --strict` flagged `llm/client.py` and `integrations/openai_agents.py`. **Type-annotation-only** — when an `http_client` is injected, openai builds and sends every request *through that client*, so `httpx2` never touches our path. Since #728, where the SDK builds the `OpenAI`/`AsyncOpenAI` itself it no longer relies on openai accepting an `httpx` client: when `openai.DefaultAsyncHttpxClient` is built on `httpx2` (openai 3.x), `donkey.llm.client()` (async and sync) and the adapters that pre-build an `AsyncOpenAI` (`_proxy_openai_client`: OpenAI Agents SDK, MS Agent Framework, ADK `client`) pass the same core `httpx2` bridge the `anthropic` row below uses (`core/transport/httpx2.py`, chosen by `built_on_httpx2()`); openai `<3` keeps the non-owning view. The adapters whose framework builds the OpenAI client from an `http_client` kwarg (LangGraph `http_async_client`/`http_client`, LlamaIndex `async_http_client`/`http_client`, Strands `client_args["http_client"]`) hand it a *reusable* variant of the same bridge on openai 3.x (its close is a no-op, because Strands closes its client after every request), and the view on openai `<3`; one helper (`llm.client.openai_http_client` / `openai_sync_http_client`) makes the choice for all of them, pinned by `test_adapter_openai3_bridge.py` (#728). The LlamaIndex lock still selects `openai==2.54.0`; older `strands-agents[openai]` releases also pinned `openai<3`, but `strands-agents==1.63.0` now resolves naturally with `openai==3.42.1` and exercises the reusable bridge alongside LangGraph (offline re-check 2026-11-02, #1523, above). **Mitigated** with a `cast(Any, …)` on the argument at the three version-conditional `http_client` sites (`llm/client.py` ×2 and `_proxy_openai_client` in `integrations/_base.py`) — `cast(Any, …)` erases the type on both majors, so `mypy --strict` passes under **both** openai `<3` and `>=3` (was a targeted `# type: ignore[arg-type]` / `cast("httpx.Response", …)` that passed only under openai `>=3` and became `unused-ignore` / `redundant-cast` under openai `<3`, #597; original guards #137). The `exc.response` side needs no guard: `classify()` and `DonkeyError.response` take the structural `ResponseLike` Protocol (`core/_response.py`), which `httpx.Response` and `httpx2.Response` both satisfy, so the documented `classify(exc.response)` type-checks on both majors; pinned by `tests/typecheck/classify_response_contract.py` (#933). **Runtime re-verified and test-pinned** against openai 3.x (async + sync): `test_llm_client_openai3_injection.py` drives `donkey.llm.client()` through a mock transport and asserts the `client_id`/`client_secret` pair is injected and the base URL carries no `/v1` (#18). | MITIGATED | 2026-10-07 |
 | The framework extras together (`adk`, `agent_framework`, `anthropic`, `crewai`, …) | `anthropic>=1.0`, `google-adk>=2.10`, `agent-framework>=1.19` | On 2026-09-30 the framework extras were not co-installable at their releases of the day. `agent-framework-anthropic` (pulled in by every `agent-framework`) requires `anthropic<1`, while the `anthropic` extra resolves to 1.x; `google-adk>=2.10` requires `opentelemetry-api`/`-sdk<=1.42.1`, while `agent-framework>=1.19` needs OpenTelemetry `>=1.43`. With all of them in one resolve, pip backtracks for minutes and exits `resolution-too-deep`; raising the floors to the §8-verified versions makes the set unsatisfiable, so no floor fixes it. **Mitigated** by scoping `all` to the extras that install together (`llm`, `langgraph`, `otel`, `cli`, `local`, since joined by `a2a` and `mcp`, #1436); each framework extra resolves on its own and alongside `all`, at its newest release. CI dry-runs `.[all]` on every PR and nightly so a new upstream conflict fails there first (#697). Since #769 the nightly `co-installability` job regenerates the pairwise table in [`co-installability.md`](co-installability.md) with uv and fails when it changes. On 2026-10-10 every framework extra resolved on its own, in every pair, and all eight together with `[all]` (uv, and `pip install --dry-run` on Python 3.12). `all` stays scoped: no floor can keep a co-install true. Re-read 2026-10-14 (#1126): `agent-framework-anthropic` 1.0.0b261008 (with `agent-framework` 1.21.0) now requires `anthropic>=1.11.0,<2` (b261002 required `>=0.80.0,<0.117.0`), so the `anthropic<1` half of this conflict no longer applies to `agent_framework`; the `google-adk` / OpenTelemetry half is unchanged and is not re-checked here, and `scripts/coinstall_matrix.py` was not re-run. | MITIGATED | 2026-10-10 |
 | `anthropic` | `>=1.0` | `anthropic` 1.0 moved from `httpx` to `httpx2` (Pydantic's continuation of `httpx`: same API, separate distribution and classes) and, unlike openai 3.x above, **rejects** an `httpx` object at runtime: `AsyncAnthropic(http_client=<DonkeyAsyncClient>)` raised `TypeError: Invalid 'http_client' argument; 'httpx.AsyncClient' is from the 'httpx' package, but this SDK uses 'httpx2'`, so `donkey.anthropic.client()` failed on every 1.x release. The old `[all]` hid it, because `agent-framework-anthropic` held `anthropic<1` there. **Mitigated** without a ceiling: on `anthropic>=1.0` the adapter passes an `httpx2.AsyncClient` whose transport forwards each request through the shared `DonkeyAsyncClient` (the core bridge `core/transport/httpx2.py`, #728), so header injection, retries and the 401 refresh, the GenAI span, budget and `donkey.last_call` still run in one HTTP stack; `anthropic<1` gets the shared client's non-owning view (#733). The stack is chosen from `anthropic.DefaultAsyncHttpxClient` (an `httpx.AsyncClient` subclass before 1.0). The transport cannot see `send(stream=…)`, so the bridge streams when the JSON body carries `"stream": true` or the `X-Stainless-Raw-Response: stream` header is set; only these Stainless-style signals are recognised. The bridge has a blocking twin over the shared `DonkeyClient` (#728). The ids the shared client sends are copied back onto the framework's request, so `classify(exc.response)` carries the run's correlation id and the sent call id on both stacks (#738). Pinned by `test_anthropic_httpx2_bridge.py` and `test_anthropic_client_stacks.py` (a real client end to end, run on `anthropic==1.9.0` and `0.125.0`) (#701, #738). | MITIGATED | 2026-10-01 |
 | `langgraph` × `langchain-core` | `langgraph==0.5.0` with `langchain-core>=1.0` | `langgraph` 0.5.0 declares `langchain-core>=0.1` but fails at import against langchain-core 1.x (`TypeError: Cannot create a consistent method resolution order (MRO) for bases ABC, Generic`). A single upstream point release: 0.4.0, 0.4.10, 0.5.4 and 0.6.0 all pass the LangGraph tests and the conformance suite against langchain-core 1.x. No resolve picks it unless `langgraph==0.5.0` is pinned (a fresh resolve takes the newest; lowest-direct takes 0.4.0). Recorded, not excluded: excluding it would be a ceiling-style exclusion (#743). | OPEN (upstream) | 2026-10-01 |
@@ -1056,7 +1313,7 @@ Conformance-tested.
 | LlamaIndex | `donkey.llamaindex.llm()` | LlamaIndex | `/frameworks/llamaindex` |
 <!-- END ROSTER: framework-status -->
 
-### 8.5 A2A server classes (BG §2.9.1)
+### 8.5 A2A server and outbound client classes (BG §2.9)
 
 `donkey.serve()` wraps these `a2a-sdk` names and reimplements none of them
 (#224). Each name below was read from the installed `a2a-sdk` 1.2.3, and the
@@ -1083,13 +1340,238 @@ local; no gateway fronted the agent.
 
 Fronting an agent with an Omni Gateway A2A instance is `donkey expose` (#226);
 the control-plane calls it makes are recorded in §12.5 (#254, and #1278 for an
-MCP instance). `donkey dev`'s
-simulated ingress (#1284) answers inbound rejections with the LLM-proxy fixtures
-of §4. Of the gateway's own policy rejections on an A2A agent instance, only
-`client-id-enforcement`'s with no client id was seen (`401`
-`{"error":"Client ID is not present"}`, #226); none is captured as a fixture.
+MCP instance). `donkey dev`'s simulated ingress originally used LLM-proxy
+fixtures (#1284); #1397 replaced them with selected method-specific A2A v1
+captures from §4. #1601 adds explicit local protocol selection and reuses
+the existing v0.3 PII/rate send captures. These are offline replay changes,
+not proof of a successful SDK gateway send or SSE stream.
+`client-id-enforcement`'s rejection with no client id was also seen (`401`
+`{"error":"Client ID is not present"}`, #226). V1 policy captures still need a
+compatible API Manager asset/instance; the old `a2a` registration rejects the
+v1 PII policy before attachment.
+
+#### Local protocol selection and ingress replay (#1601)
+
+**OFFLINE-VERIFIED scope only.** `build_app(..., protocol_version="1.0")`
+and `build_ingress(..., protocol_version="1.0")` accept `1.0` (default) or
+`0.3.0`. `donkey dev --protocol-version` selects both; `--agent-version`
+(default `0.0.0`) remains the independent application version. `Donkey.serve()`
+still uses v1 and gains no protocol-selection kwarg. Unknown protocol values
+raise `ValueError` in `build_app`, `ScenarioError` in the ingress helpers,
+or CLI exit `2` before target loading.
+
+`build_app` uses the official SDK's `create_agent_card_routes` and
+`create_jsonrpc_routes(..., enable_v0_3_compat=True, context_builder=...)`
+for legacy routing/card conversion, not a DDK protocol implementation. The
+legacy card at `/.well-known/agent-card.json` has `protocolVersion: "0.3.0"`,
+`url` and a legacy `supportedInterfaces` entry; JSON-RPC remains at `/`.
+`message/send` yields a legacy task (`kind: "task"`, state `completed`,
+text parts with `kind: "text"`); task reads use `tasks/get`. The context
+builder rejects an explicit v1 header rather than opting into another
+interface. Both cards advertise `streaming: false`. Local evidence:
+`test_legacy_card_and_handler_use_official_sdk_compatibility` in
+`tests/unit/test_a2a_serve.py` and the version-specific tests in
+`tests/unit/test_simulator_ingress.py` / `test_cli_dev.py`.
+
+| Protocol | Method | Supported replay scenarios | Boundary |
+|---|---|---|---|
+| `1.0` (default) | `SendMessage`, `SendStreamingMessage` | `injection`, `pii_block`, `request_limit` | Matching v1 send/stream captures |
+| `0.3.0` | `message/send` | `pii_block`, `request_limit` | Existing `v03-pii-send.*` / `v03-rate-send.headers.txt` bytes, not converted v1 envelopes |
+| `0.3.0` | `message/stream` | None | Any configured scenarios cause local HTTP `400` before dispatch/state advance, even if no rule would reject; no scenarios passes through |
+
+Legacy `injection`, and either version's `budget` / `ciba`, fail at
+construction/startup. Known wrong-version call methods or explicit mismatched
+`A2A-Version` headers on calls return **local plain-text HTTP 400**, not
+fabricated gateway refusals or JSON-RPC schema-policy envelopes, including
+when no scenarios are configured. Config values remain exactly `1.0` or
+`0.3.0`; explicit headers instead use `a2a.protocol.matches_protocol_version`
+to match the SDK's PEP 440 normalization and **major-only** comparison.
+For example, header `1.0.0` matches selected `1.0`, and `0.3.1` matches
+selected `0.3.0`; other parseable same-major values also match. Malformed
+versions and different majors do not. Missing headers preserve replay behavior; the SDK validates
+passing calls. Unknown methods, malformed JSON and non-call requests pass
+through for SDK handling. All responses carry `x-donkey-simulator: true`.
+
+Captured IDs stay unchanged (v1 string `"1393"`, v0.3 PII numeric `1393`),
+and captured PII findings remain sensitive. `request_limit` is a request-count
+replay trigger, not token accounting: captured `x-token-*` values are unchanged
+and passing calls receive no synthesized rate headers. No new capture,
+outbound injection, OAuth simulation, live facade send/SSE verification,
+publication/expose verification or accepted-call rate behavior is established.
+
+#### Scoped outbound client (#1395)
+
+**OFFLINE-VERIFIED, 2026-11-03.** These exact symbols and signatures were read
+from installed `a2a-sdk` **1.3.0** on Python 3.11.16. The public imports under
+`a2a.types` are protobuf classes whose runtime module is `a2a_pb2`, not the
+v0.3 pydantic models. `A2AFacade` wraps the official transports; DDK does not
+implement the A2A wire protocol. Successful gateway send and SSE are **NOT live
+verified by this implementation yet**. §4's refused streaming requests before
+SSE and the earlier quality-evaluation response are not evidence that this
+facade successfully sends or streams through a gateway.
+
+| Installed SDK symbol / signature | Used for | Status | Local evidence |
+|---|---|---|---|
+| `a2a.types.SendMessageRequest`, `Message`, `Part`, `Role.ROLE_USER`; `SendMessageResponse`, `StreamResponse` | `await donkey.a2a.send(ref, message, *, auth=None, criteria=None)` returns `SendMessageResponse`; `async with donkey.a2a.stream(...) as events` yields an async iterator of `StreamResponse`. Responses/events must have a protobuf `WhichOneof("payload")` value | OFFLINE-VERIFIED | `tests/conformance/test_a2a_outbound.py`: `test_send_official_response_pinned_gateway`, `test_stream_official_events_early_exit_and_reuse`, `test_empty_payload_is_not_success`, v1 and v0.3 mock HTTP |
+| `a2a.client.card_resolver.parse_agent_card(agent_card_data: dict[str, Any]) -> AgentCard`; `a2a.utils.constants.AGENT_CARD_WELL_KNOWN_PATH == "/.well-known/agent-card.json"`, `TransportProtocol.JSONRPC` | Read the card at the pinned gateway URL; select JSON-RPC, never its advertised destination | OFFLINE-VERIFIED | Same send test supplies a hostile card URL; `test_unsupported_transport_has_no_send` rejects `GRPC` and `HTTP+JSON` |
+| `a2a.client.transports.jsonrpc.JsonRpcTransport(httpx_client, agent_card, url, is_shared_httpx=False)` | v1 `SendMessage` / `SendStreamingMessage`; `url` is the registry endpoint | OFFLINE-VERIFIED | v1 branches of the official-response/send and stream tests |
+| `a2a.compat.v0_3.jsonrpc_transport.CompatJsonRpcTransport(httpx_client, agent_card, url, *, is_shared_httpx=False)`; `a2a.compat.v0_3.versions.is_legacy_version(version: str \| None) -> bool` | v0.3 `message/send` / `message/stream`, converted to the same current SDK response types | OFFLINE-VERIFIED | v0.3 branches of the same tests; `test_captured_auth_required_is_typed_without_oauth_completion` replays both exact challenge captures |
+| `TaskState.TASK_STATE_AUTH_REQUIRED`, `Task.status.message.parts`, `Part.WhichOneof("content")`, `Part.data.struct_value` and protobuf `Value.WhichOneof("kind")` | #1396 types the complete captured v0.3 task/challenge as `GatewayAuthRequired` with frozen `GatewayAuthChallenge` and returned task/context IDs; not CIBA polling or a refusal | OFFLINE-VERIFIED | a2a-sdk 1.3.0 source and both exact #1393 send/stream JSON captures, 2026-11-04; `test_captured_auth_required_is_typed_without_oauth_completion`, `test_unrecognized_auth_challenges_remain_sdk_tasks`. Unknown/incomplete layouts and v1 tasks pass through; conversion is not a v1 gateway capture |
+| `ClientTransport.send_message(request, *, context=None) -> SendMessageResponse`, `send_message_streaming(request, *, context=None) -> AsyncGenerator[StreamResponse]`, `close()` (async methods, implemented by both transports) | Official send, stream iteration and local transport close | OFFLINE-VERIFIED | `test_stream_cancellation_closes_response_without_remote_cancel`, `test_stream_exhaustion_and_span_lifetime`, `test_sse_protocol_error_is_safe` |
+| `a2a.utils.errors.A2AError`; `google.protobuf.json_format.Error`; `pydantic.ValidationError` | Safe conversion of SDK protocol/parser failures to `ToolInvocationError` without rendered diagnostics | OFFLINE-VERIFIED | `test_malformed_protocol_is_safely_rendered`, `test_sse_protocol_error_is_safe` |
+
+`A2AFacade` stamps the selected interface's version on each POST using the
+official SDK's `a2a.utils.constants.VERSION_HEADER` (`A2A-Version`, #1611).
+This is **OFFLINE-VERIFIED** by v1/v0.3 sends against the official server routes
+and send/stream wire assertions in `test_a2a_outbound.py`. Without the header,
+the official v1 server interprets the request as v0.3 and returns HTTP 200 with
+`-32009`; the versioned local call succeeds. This does not establish the cause
+of the earlier live failure or promote live facade/SSE verification.
+
+The local suite also includes `tests/unit/test_a2a_facade.py` (base-only and
+curated missing-extra failure), `test_a2a_transport.py` (exact URL confinement,
+auth per request, no redirects, retries, refresh or refusal replay, captured
+refusals and unread successful streams) and `test_a2a_outbound_spans.py`
+(`donkey.a2a.call`, run restoration, W3C propagation without baggage, safe
+failure/cancellation and concurrency). These use mock HTTP/in-memory tracing,
+not a live gateway. Reproduce from `python/` with the `[a2a,otel]` extras:
+
+```bash
+python -m pytest -q tests/unit/test_a2a_facade.py tests/unit/test_a2a_transport.py tests/unit/test_a2a_outbound_spans.py tests/conformance/test_a2a_outbound.py
+```
+
+Default `GovernanceCriteria()` or explicit `criteria=` is evaluated before
+resolution/card traffic. Per-request `McpAuth` and current-user headers pass
+derived-endpoint checks before acquisition. No OAuth completion, automatic
+replay/resubscription or remote cancellation is implemented. `AgentHandle`
+stays immutable and resolution-only; native-framework `as_tool()` stays
+planned. ADR 0022 records the scoped plane and proposed provisional API tier.
 
 ## 9. MCP tool binding classes (BG §2.7) — verify each name
+
+### MCP Gateway Policy Captures (#1384)
+
+The consumer-facing inventory is `website/content/tool-access/gateway-policies.mdx`
+(partial #1392, BG §2.7 / BG §1.2). It separates these live wire captures from
+local binding replay and unverified configurations; no evidence status changes.
+
+The shared matcher (#1385) recognizes the existing tool-access denial. For
+#1386 it also types MCP PII as `PIIDetected` only with both exact markers
+(`policy=mcp-pii-detector`, `reason=policy_pii_detected`) and the capture-backed
+phase/code pair (`request` / `-32602`, `response` / `-32603`). Other explicit
+structured policy markers remain generic unknown-policy refusals; captures
+without explicit markers remain ambiguous. No new framework binding coverage
+or verification guard is introduced; the evidence statuses below stand.
+
+Captured 2026-11-02 on `ddk-langgraph-mcp` instance `21261437`, DDK / Sandbox,
+Omni Gateway `1.14.4`, MCP Support `1.1.1`, protocol `2025-06-18`.
+Source for every live row below: `python/tests/fixtures/anypoint/mcp_policies/`
+(its README records the requests, policy configurations and restoration).
+These rows verify gateway response shapes only. Local replay tests in
+`tests/unit/test_mcp_pii_refusals.py` establish SDK classification of the two PII
+JSON refusals, not a new live SDK/framework round trip. Framework surfacing
+remains #1388; schema typing remains #1387; website documentation is #1392.
+
+The MCP projection adds `phase` and `findings` to `PIIDetected`. Findings retain
+only canonical `pii_type` identifiers and fully star-masked `masked_value`
+strings (length capped at 256); custom labels and unknown/malformed findings
+are discarded. `entities` derives from that projection, `gateway_message` is
+None, and `.response` remains raw/sensitive. The existing LLM contract keeps
+its entities/message behavior and gains only defaults `phase=None`, `findings=[]`.
+The legacy tool-access built-in and HTTP auth/429/5xx/policy precedence remain;
+MCP PII wins over custom registrations. HTTP 403 remains terminal, and HTTP 200
+matching requires explicit `classify`/`jsonrpc_refusal`, not transport interception.
+`pii-response-sse.json` records an HTTP 403 **JSON** rejection: no PII SSE
+error event is captured. SSE errors and elicitation remain #1384/#1236.
+
+| Policy / surface | Status | Verified value | Date | Source |
+| --- | --- | --- | --- | --- |
+| MCP PII Detector `1.0.1`, request Reject | VERIFIED (LIVE) | HTTP 403 JSON, `-32602`, `data.reason=policy_pii_detected`, `data.policy=mcp-pii-detector`, `phase=request`, masked findings | 2026-11-02 | `pii-request.json` |
+| MCP PII Detector `1.0.1`, response Reject on SSE upstream | VERIFIED (LIVE) | **HTTP 403 application/json**, `-32603`, `phase=response`, masked findings; not an error event in HTTP 200 | 2026-11-02 | `pii-response-sse.json`; baseline upstream returned HTTP 200 SSE text `42` |
+| MCP PII Detector `1.0.1`, Log and mask on SSE | VERIFIED (LIVE) | HTTP 200 SSE, text `42` replaced by `**` using a synthetic custom pattern | 2026-11-02 | `pii-mask-sse.json` |
+| MCP PII Detector definition `1.0.1` / implementation `1.0.2`, response Reject on JSON-only upstream | VERIFIED (LIVE) | **HTTP 403 application/json**, JSON-RPC `-32603`, `data.policy=mcp-pii-detector`, `data.reason=policy_pii_detected`, `phase=response`, masked Email finding; `capture_contact(sample="synthetic")` has no PII input | 2026-11-05 | `pii-response-json.json`, `pii-response-json.provenance.json`; Anypoint sandbox, JSON-only Mule app `1.0.2` (runtime `4.13.0`), Omni Gateway `1.14.4`, MCP Support definition `1.1.3` / implementation `1.1.1`; capture-only, no live SDK/framework round-trip |
+| MCP PII Detector, elicitation decline | UNVERIFIED | — | — | — |
+| MCP Schema Validation `1.3.0`, invalid tool arguments | VERIFIED (LIVE) | **HTTP 200**, `-32602`; string `data` names the tool and echoes rejected values, with no structured policy discriminator | 2026-11-02 | `schema-invalid-args.json` |
+| MCP Schema Validation `1.3.0`, missing request id | VERIFIED (LIVE) | **HTTP 200**, `-32600`, `Invalid JSON-RPC Request`; response id `1` | 2026-11-02 | `schema-missing-id.json` |
+| MCP Schema Validation `1.3.0`, poisoning BlockResponse | VERIFIED (LIVE) | HTTP 200 SSE, `-32603`, `tools/list response blocked by tool poisoning detection`, `data.findings` with four `inputSchema` drift findings | 2026-11-02 | `poisoning-block-list.json`; descriptor drift, not a malicious-server claim |
+| MCP Schema Validation `1.3.0`, poisoning RemoveTool | VERIFIED (LIVE) | HTTP 200 SSE, empty `result.tools` after removing the four drifted descriptors | 2026-11-02 | `poisoning-remove-list.json` |
+| MCP ABAC `1.0.2`, denied tool call | VERIFIED (LIVE) | **HTTP 200**, `-32008`, `Unable to access`, quoted tool name in string `data`; denied tool omitted from list | 2026-11-02 | `abac-denied.json`; confirms #303, not the docs' 400 token-error description |
+| MCP Progressive Disclosure `1.0.1`, default catalog | VERIFIED (LIVE) | HTTP 200 SSE; only `search_tools` and `invoke_tool` | 2026-11-02 | `progressive-list.json` |
+| MCP Progressive Disclosure `1.0.1`, invalid invoke parameters | VERIFIED (LIVE) | HTTP 200 JSON, `-32602`, `data.reason=invalid_params`; no `data.policy` | 2026-11-02 | `progressive-invalid-params.json` |
+| MCP Tool Mapping `1.0.2` | VERIFIED (LIVE) | SSE catalog renames `calculate` to `arithmetic`; calling `arithmetic` returns text `42` | 2026-11-02 | `mapping-list.json`, `mapping-call.json` |
+| MCP Payload Optimization `1.2.1`, HTML / whitespace | VERIFIED (LIVE) | HTTP 200 SSE; HTML echoed by an upstream tool error converted to Markdown, whitespace collapsed; remains `isError: true`, not a refusal | 2026-11-02 | `optimization-html.json` |
+| MCP Payload Optimization `1.2.1`, base64 | VERIFIED (LIVE) | HTTP 200 SSE; a `data:image/png;base64,…` string echoed by a tool error became `[base64 data removed]` (control: untouched). A bare base64 string of the same length was **not** stripped. Still `isError: true`, not a refusal | 2026-11-07 | `optimization-base64.json`, `optimization-base64-control.json`, `optimization-base64-bare.json`; DDK / Sandbox, `shared-omni-gateway`, instances `ddk-langgraph-mcp-sanitize-nulls` (`21281859`) and `-sanitize-toon` (`21281860`), deployed `mcp-tool-response-sanitization 1.2.1`, gateway version not recorded; the control is `ddk-langgraph-mcp-global` (`21281858`, no payload policy); capture-only, no live SDK/framework round-trip |
+| MCP Payload Optimization `1.2.1`, remove nulls | VERIFIED (LIVE) | HTTP 200 SSE; with `remove_nulls`, null-valued keys were dropped at every depth and the JSON text came back compact (`{"id":1,…}`, no spaces); the control kept the nulls and Python-style spacing. `isError: false` | 2026-11-07 | `optimization-nulls.json`, `optimization-nulls-control.json`; DDK / Sandbox, `shared-omni-gateway`, instances `ddk-langgraph-mcp-sanitize-nulls` (`21281859`) and `-sanitize-toon` (`21281860`), deployed `mcp-tool-response-sanitization 1.2.1`, gateway version not recorded; the control is `ddk-langgraph-mcp-global` (`21281858`, no payload policy); capture-only, no live SDK/framework round-trip; synthetic result of the provisioning-repo `capture_records(sample="nulls")` tool |
+| MCP Payload Optimization `1.2.1`, TOON encoding | VERIFIED (LIVE) | HTTP 200 SSE; with `enable_toon_encoding` and `min_response_bytes: 0`, a uniform array of 20 objects arrived as text starting `TOON: [20]{id,name,status,score}:` (shorter than the JSON control; not valid JSON). A JSON object with nulls was not TOON-encoded (returned as the control). Content type unchanged (`text/event-stream`) | 2026-11-07 | `optimization-toon.json`, `optimization-toon-control.json`, `optimization-toon-ineligible.json`; DDK / Sandbox, `shared-omni-gateway`, instances `ddk-langgraph-mcp-sanitize-nulls` (`21281859`) and `-sanitize-toon` (`21281860`), deployed `mcp-tool-response-sanitization 1.2.1`, gateway version not recorded; the control is `ddk-langgraph-mcp-global` (`21281858`, no payload policy); capture-only, no live SDK/framework round-trip; synthetic `capture_records(sample="uniform")` |
+| MCP Payload Optimization `1.2.1`, Smart Response Trimming via `expected_info` | VERIFIED (LIVE) | HTTP 200 SSE; with `extractEnabled`, a model proxy (`ddk-openai-model-routing`, `openai/gpt-5-mini`) and `thresholdBytes: 200`, a 1.6 KB JSON result sent with `expected_info` (a sibling of the tool arguments in `tools/call`) came back as `[2,4,6,8,10,12,14,16,18,20]`; the same call without `expected_info`, and the same call on an instance without the policy, returned the result untouched. With an unresolvable model proxy host the call still returned HTTP 200 with the untrimmed result (fail-open). Not explored: results over the default 8000-byte threshold, non-2xx or slow proxies, `tool_overrides` | 2026-11-07 | `optimization-trim.json`, `optimization-trim-control.json`, `optimization-trim-no-policy.json`, `optimization-trim-unreachable.json`; DDK / Sandbox, `shared-omni-gateway`, instances `ddk-langgraph-mcp-sanitize-trim` (`21282559`) and `-sanitize-trim-down` (`21282560`), deployed `mcp-tool-response-sanitization 1.2.1`, gateway version not recorded; capture-only, no live SDK/framework round-trip; the model's output is non-deterministic |
+
+Policies were attached one at a time and the instance redeployed individually;
+API Manager attachment alone did not activate the policy. Every temporary
+policy was removed and the original chain redeployed. Final discovery returned
+four tools and `calculate("6*7")` returned `42`. The 2026-11-05 JSON-only
+follow-up used a separate Mule upstream returning a fixed synthetic email;
+its selected headers and body are unchanged from the raw wire capture, including
+numeric response id `3`. Read-only verification confirmed the exact original
+chain restored, no temporary policies, active instance, `APPLIED/RUNNING`
+deployment and successful direct/gateway JSON calls. The fixture remains
+test-only; packaged MCP captures and all SDK behavior are unchanged.
+#1384 remains open for elicitation; #1390 tracks detailed optimization.
+No verification guard is lifted by these rows.
+
+For #1389, `tests/unit/test_gateway_catalogs.py` replays the captured mapped and
+progressive catalogs at `tools.session.list_tools`. `ToolSet.describe` preserves
+the gateway-visible descriptors; filters and approval rules use those names,
+and a rule for a hidden upstream name raises `ConfigError`. Approval invocation
+uses a stand-in, not a live policy-and-framework round trip. A gate on
+`invoke_tool` covers every invocation of that meta-tool, not one nested tool
+name. `describe` reports the presence of `search_tools` / `invoke_tool` at info
+level without asserting which policy is installed. Discovery stays
+connection-free; the lockfile (#1646) pins the gateway-visible names, below.
+`tests/conformance/test_mcp_gateway_catalog_binding.py` declares the same two
+captured catalogs through `donkey.simulate_mcp()` and binds them with the real
+LangGraph adapter: the bound tools carry exactly the gateway-visible names and
+descriptions (`arithmetic`, not `calculate`; `search_tools` and `invoke_tool`
+only). That is an offline replay of the captured catalogs, not a live
+round trip through a framework.
+
+#### Lockfile contract under Progressive Disclosure and Tool Mapping (#1642, BG §2.7)
+
+Probed live 2026-11-07 on the provisioned `ddk-langgraph-mcp-mapping`
+(`21279563`, `mcp-tool-mapping` 1.0.2) and `ddk-langgraph-mcp-progressive`
+(`21279564`, `mcp-tools-progressive-disclosure` 1.0.1) instances, DDK / Sandbox,
+`shared-omni-gateway`, three fresh sessions each. Read-only: no policy was changed.
+
+| Observation | Status | Value |
+| --- | --- | --- |
+| `tools/list` key order | VERIFIED (LIVE) | The serialised `inputSchema` property order differs between sessions of the same instance, so a hash of the raw bytes or of an unsorted dump is unstable. A hash of the sorted-key canonical JSON of the tool list was identical across three sessions on both instances |
+| Tool Mapping, listed names | VERIFIED (LIVE) | `tools/list` shows `arithmetic` (mapped description `Arithmetic tool.`) and no `calculate` |
+| Tool Mapping, upstream name still callable | VERIFIED (LIVE) | `tools/call calculate` returns `42` as well as `tools/call arithmetic`: the mapping renames the listing but does not hide the upstream tool. An unknown name returns an `isError: true` text result `unknown tool 'nope'` |
+| Progressive Disclosure, listed names | VERIFIED (LIVE) | `tools/list` is exactly `search_tools` and `invoke_tool`; the catalog is identical in every session |
+| Progressive Disclosure, real tools | VERIFIED (LIVE) | Reachable only through `search_tools` (`query` is a case-insensitive regex over name and description; optional `limit` and `cursor`; result `structuredContent.matches[]` of `name`, `description`, `inputSchema`, plus `nextCursor` when `limit` truncates). `invoke_tool` takes `name` and `arguments`; `tool_name` is rejected with `-32602` / `invalid_params`. A direct `tools/call calculate` also succeeds |
+
+**Contract.** The lock pins what `tools/list` returns, keyed by the
+gateway-visible name, because that is the only name a caller can rely on under
+both policies (the filter and approval rules already use it, #1389). Each entry
+records the name and a digest of the canonical (sorted-key) JSON of the whole
+descriptor. Drift is a gateway-visible name added, removed or renamed, or a
+digest change. Under Progressive Disclosure the lock pins the two meta-tools
+only. It does not pin the `search_tools` results: they depend on the query, and
+pinning them would be a second discovery protocol, which the client-side tool
+search exclusion rules out. A Tool Mapping rename is drift by this rule, and the
+upstream name is never recorded, because the gateway does not expose the mapping
+table.
+
+**Decision.** The wire contract above is settled, and nothing further needs an
+Anypoint sandbox. The SDK side shipped in #1646, which removed the
+`blocked_lock()` guard: `donkey.tools.lock()` writes `./donkey.lock` (JSON,
+`"version": 1`, `"digest": "sha256"`, servers keyed `group_id/asset_id`, each
+tool's digest over its contract fields), and
+`discover(locked=True)` raises `ToolLockDrift` on a removed or changed pinned
+tool or a missing pinned server, and drops unpinned tools (`reason="unpinned"`).
+Its tests replay recorded `tools/list` catalogs; a full live `lock()` then
+`discover(locked=True)` round trip is not recorded yet. The raw upstream
+name staying callable means a lock is a drift detector, not an access control:
+enforcement stays with the gateway's own policies.
 
 Each row marked `VERIFIED (local round-trip)` was produced by a probe in
 `python/scripts/mcp_binding/` (harness, reference server and how to run one:
@@ -1322,6 +1804,165 @@ only the message text, which is not a discriminator, so the SDK does not
 classify it. `tests/conformance/test_tool_binding.py::test_tool_access_denied_typed`
 holds each binding to this in the venvs above.
 
+**Binding refusal recovery: `VERIFIED (local capture replay)`, 2026-11-03,
+partial #1388.** `test_policy_refusal_typed` replays the captured HTTP 403 JSON
+responses `mcp_policies/pii-request.json` and `pii-response-sse.json` through
+each locked framework tool object. The latter capture is JSON despite its
+filename; no SSE error was captured. `tools/call` IDs are rebound to the local
+request; error fields, status and headers are retained. No model API call is made.
+
+| Binding | PII request / response | Access denial |
+|---|---|---|
+| LangGraph, LlamaIndex, Anthropic | `PIIDetected` from the per-tool wrapper | `ToolNotInProfile`, tool and server known |
+| OpenAI Agents | `PIIDetected` through `typed_refusals()` from the structured MCP error | `ToolNotInProfile` through the bridge, server unknown |
+| Agent Framework | Same, from the MCP cause retained in `ToolExecutionException` | Same, server unknown |
+| ADK, Strands | Asserted exemption: error text returned, policy metadata lost | Asserted exemption: denial text returned |
+| CrewAI | Asserted exemption: MCP 1.x background tool future does not settle on HTTP 403; bounded subprocess reproduction | `ToolNotInProfile` through the bridge, server unknown |
+
+`core.refusals.translate` recognizes structured JSON-RPC error ducks and the
+verified `agent_framework.exceptions.ToolExecutionException` cause/argument
+shape without framework imports; arbitrary user wrappers stop traversal.
+Binding HTTP clients mark same-origin requests and read HTTP error bodies for
+the bridge, bounded at 64 KiB and a five-second total deadline. Incomplete or
+encoded streaming bodies retain the HTTP status without policy inference;
+off-origin responses are not read. Malformed or unmarked MCP 403 responses
+retain their original HTTP errors; HTTP authentication, rate-limit and server
+errors keep precedence. Already-typed exceptions retain their identity,
+existing cause and framework metadata. No HTTP 200 response hook intercepts
+tool results. The legacy `tool_access_denial` API remains.
+Schema/poisoning captures lack policy markers and remain ambiguous (#1401,
+#1387); discovery typing is outside this slice. This does not close #1388.
+
+**Agent Framework scoped offline replay: VERIFIED (local round-trip), 2026-11-05,
+#1391.** `simulate_mcp` uses the native instance's public `get_mcp_client`
+transport context, with one owned HTTP client per connection, on
+`agent-framework-core==1.24.0` / `mcp==2.3.0`. Socket-disabled tests in
+`tests/conformance/test_mcp_simulation.py` exercise both HTTP403 PII phases,
+HTTP200 access denial, ambiguous schema/catalog-poisoning errors, reconnection,
+retained-function/suspended-auth expiry, and normal/failed/cancelled-caller cleanup.
+Cancellation of `connect()` does not cancel the framework-owned attempt. Once
+the offline response completes, the framework cleans up a successful connection
+whose caller was cancelled; `tool.close()` can await cleanup deterministically
+before exiting the scope. Immediate cleanup is not guaranteed. The
+caller-owned baseline is never closed. Only simulation requires stable
+`agent-framework-core>=1.24.0` and `mcp>=2.3.0`; older/prerelease stacks fail
+before credentials are read. The production `static_headers` path and package
+floors are unchanged. Floor probes at core 1.13.0 hang on captured HTTP403 with
+MCP1.24.0 and fail initialize (`protocolVersion` missing) with MCP2.3.0; no
+compatibility workaround is claimed. Replay adapts RPC IDs, leaves packaged
+captures immutable, and establishes no new live gateway evidence.
+
+**OpenAI Agents SDK scoped offline replay: VERIFIED (local round-trip), 2026-11-05,
+#1391.** The public `MCPServerStreamableHttp` `httpx_client_factory` parameter
+owns and closes each replay client. Native probes on `openai-agents==0.20.0`
+and `0.24.0`, both with `mcp==2.3.0`, reproduce all six capture selectors,
+existing PII/access typing through `typed_refusals`, ambiguous schema/catalog
+errors, subsequent success, reconnect, client closure and expired reconnect.
+Floor probes also verify failed initialize and cancelled-connect cleanup.
+Socket-disabled `tests/conformance/test_mcp_simulation.py` pins native binding,
+scope expiry (active call and suspended auth), cleanup, filtering, unrelated-owner
+isolation and whole-server approval/collision guards. Simulation alone requires
+stable `openai-agents>=0.20.0` and `mcp>=2.3.0`, before authentication:
+the 0.20.0 / MCP1.24.0 probe cancels the parent task on captured HTTP403.
+Production package floors, factory, zero retries and refusal classification
+remain unchanged. No global patches or new live gateway evidence.
+
+**Strands scoped offline replay: VERIFIED (local round-trip), 2026-11-05,
+#1391.** `ToolSet.strands` snapshots its replay owner before authentication and
+passes its scoped HTTP factory to `tools.mcp.open_transport` through the native
+`MCPClient(transport_callable=..., tool_filters=...)`. Only simulation requires
+stable `strands-agents>=1.64.0` and `mcp>=2.3.0`; older and prerelease packages
+raise `ConfigError` before auth or discovery. Production dependency floors,
+captures, classifier and conformance exemptions are unchanged.
+
+The supplied pre-implementation `strands-locked-evidence.jsonl` probe used
+Strands 1.64.0, MCP 2.3.0, OpenAI 3.45.0, httpx 0.28.1, httpx2 2.16.0 and
+Python 3.12.16. It ran all six selectors, success/restart, expiry, failed
+initialize, cancelled connect and the then-present binding guard in 11 bounded
+subprocesses, all exit 0. The supplied `strands-floor-evidence.jsonl` contains
+the same 11 cases at Strands **1.57.1**, MCP 2.3.0 and OpenAI 2.54.0, but that
+combination is outside Strands 1.57.1's declared `mcp<2.2,>=1.23.0` range and
+is **not a supported simulation floor**. Strands 1.64.0 declares
+`mcp<2.4,>=1.23.0`; the approved stable simulation floor is 1.64.0 / 2.3.0.
+
+`tests/conformance/test_strands_mcp_simulation.py` exercises the implemented
+binding in socket-disabled, 25-second-bounded subprocesses: captured error
+payload/status/content-type and request-ID adaptation, cached and uncached
+discovery, sync/async success, native restart, retained-tool/session expiry,
+suspended auth with and without cached descriptors, owned client closure,
+caller-owned baseline reuse, owner isolation and native thread termination.
+In-process tests pin version rejection before auth, production version-check
+exemption, filtering exclusion and whole-server approval/collision guards.
+
+Native tool calls return generic `status: error` with `Tool execution failed:`
+text for HTTP403 PII and HTTP200 access/schema failures. The structured
+exception is gone, including under `typed_refusals()`; no text classification
+or typed-recovery claim is made. Catalog poisoning raises native `MCPError`
+(`-32603`) from `list_tools_sync`, and remains ambiguous. Subsequent success
+and in-scope restart work. Expired calls fail without reaching the baseline;
+cached descriptors are not revoked. A scope disables traffic, not the native
+session's lifecycle: callers still stop it.
+
+**Upstream cleanup warning:** on failed initialize, cancelled connect and
+expired-session stop, Strands `MCPClient.stop` can emit
+`RuntimeWarning: coroutine 'MCPClient.stop.<locals>._set_close_event' was never awaited`.
+The observed HTTP clients close and background threads terminate nonetheless.
+No runtime patch or warning suppression is added. This is offline handling
+evidence only, not a new live gateway round-trip, capture or policy-enforcement
+claim.
+
+**ADK and CrewAI scoped offline replay: UNSUPPORTED (verified negative), 2026-11-07,
+#1643 (split from #1391).** Neither `ToolSet.adk()` nor `ToolSet.crewai()` is wired
+to `simulate_mcp`; the `ConfigError` guard in `ToolSet._plan` stays. Probes were
+local and socket-free (no live requests, global patches or production changes).
+
+*CrewAI.* Every `crewai>=1.15.3` and `crewai-tools[mcp]>=1.15.32` release
+(tested up to 1.15.37) pins `mcp<2`, while simulation needs `mcp>=2.3.0` (the
+baseline's negotiated protocol and the response-id adaptation). uv reports the
+pair unsatisfiable; the only resolution downgrades `crewai` to 1.6.1, below the
+package floor. No resolver-compatible stack exists. The earlier HTTP 403 stall
+exemption is separate and unchanged.
+
+*ADK.* On `google-adk` 2.9.0 and 2.14.0 with `mcp` 2.3.0, `McpToolset` accepts
+`httpx_client_factory=replay.client` and the replay works: native
+`initialize` → `tools/list` → `tools/call`, success after the single capture,
+reconnect after `close()`, failed initialize raising `ConnectionError`, expiry
+sending nothing to the baseline, and every replay client closed. Releases
+2.4.0–2.8.0 (including the `[adk]` floor, 2.4.0) fail to import `McpToolset`
+against `mcp` 2.3.0 (`mcp.shared.session` is missing); 2.9.0 is the first that
+imports. Blocking limitations:
+
+- **Not fail-closed.** `MCPSessionManager._get_mtls_transport` builds Google's
+  own mTLS transport when `GOOGLE_API_USE_CLIENT_CERTIFICATE` is not `false`
+  and credentials resolve, and uses it *instead of* the supplied
+  `httpx_client_factory`. With that transport substituted, the request reached it
+  and no replay client was built. Closing this needs a process-environment
+  change or an ADK patch, both out of scope.
+- **Error identity is lost.** A captured refusal comes back as
+  `{'error': 'MCP tool execution failed: …'}`, not an exception, so
+  `typed_refusals()` cannot recover it (the existing ADK exemption).
+- `retry_on_errors` retries any exception once, and ADK logs
+  `Error on session runner task` on failed initialize.
+
+`tests/conformance/test_adk_mcp_simulation.py` pins both facts (replay lifecycle with
+mTLS off, and the mTLS bypass as a canary that fails once ADK closes the gap); it
+skips unless `google-adk>=2.9` imports on `mcp>=2.3.0`.
+
+Revisit when ADK exposes an injection seam that cannot be bypassed and the
+`[adk]` floor reaches a release that imports on `mcp` 2.3.0, or when CrewAI
+admits `mcp>=2.3.0`. This establishes no live gateway evidence.
+
+**Reusable offline MCP baseline: VERIFIED (local round-trip), 2026-11-05, #1391.**
+`simulator.mcp.mcp_baseline` returns an endpoint-scoped, stateless
+`httpx.MockTransport` with supplied descriptors and a synchronous call handler.
+Its `server_protocol_version` sets only the initialize response. Socket-disabled
+`tests/conformance/test_mcp_simulation.py` proves MCP2.3.0 accepts `2024-11-05`
+and `2025-06-18` and rejects an unsupported version; this is native negotiation
+evidence, not full-server protocol conformance. Framework-free
+`tests/unit/test_mcp_baseline.py` pins endpoint isolation, descriptor snapshots,
+request IDs, dispatch and malformed/unknown request errors. No schema/policy
+enforcement, SSE, session state, capture translation or live evidence is added.
+
 Collision renaming and the approval gate run in the SDK before any call. They
 were not repeated through the gateway.
 
@@ -1362,10 +2003,24 @@ The `CIBA` body (`authorization_pending` / `access_denied`) was not visible in a
 a plain `401` looks identical, so a framework's `tools/call` error cannot tell a pending user
 approval from a bad credential. So:
 
-- **The bindings do not retry or type a `tools/call` step-up.** A wrapper in `_invoker` would be
-  guessing from a bare status. It would need the SDK to read the response body itself, which
-  needs its own HTTP hook per framework, or a live capture showing the gateway sends a
-  discriminating header (it sends none: no `www-authenticate`, §4 item 8).
+- **The bindings never retry a `tools/call` step-up, and type it only on `mcp` 1.x.** The
+  fixtures above predate the binding's own HTTP client: since #1557 the client
+  `tools/mcp.py` `client_factory` builds reads a bounded error body and marks the request
+  `donkey_mcp_binding`, so on `mcp` 1.x the `HTTPStatusError` carries the gateway's body.
+  `core/refusals.py` `translate()` types such a response with
+  `core/jsonrpc_refusals.py` `binding_refusal()`: a 401, a 429, a 5xx or an auth challenge goes
+  to `classify()` (so the `401` `authorization_pending` is `GatewayApprovalPending`), a valid
+  JSON-RPC envelope goes to `jsonrpc_refusal()`, and any other 4xx body is typed only by a
+  built-in discriminator: `403` `access_denied` is `GatewayApprovalDenied`, `403`
+  `{"error":{"code":"agent_killed"}}` is `AgentKilled` (#1670). A 4xx body matching none of them
+  stays the framework's error, never the generic unconfirmed `PolicyViolation`. The per-tool
+  bindings' `tools/session.py` `_refusing` wrapper, `donkey.run()` and `typed_refusals()` all go
+  through `translate()`. On `mcp` 2.x the client raises `MCPError` `-32603` with no status and
+  no body, so nothing there is typed. Offline only: unit tests
+  (`tests/unit/test_refusal_bridge.py`
+  `test_mcp_binding_types_the_gateways_own_http_refusals`) replay the captured §4 bodies
+  (`simulator/_fixtures/rejections/reject.ciba-*`, `reject.agent-killed`) on a binding-marked
+  response; no framework was rerun through the binding client against a step-up server.
 - **`tools/list` is typed.** `open_session`'s response hook reads the body, so
   `GatewayApprovalPending` / `GatewayApprovalDenied` arrive there. `ToolSet.wait_for_gateway_approval()`
   waits on that path (#214). Both are offline only: `tests/unit/test_mcp_client.py`

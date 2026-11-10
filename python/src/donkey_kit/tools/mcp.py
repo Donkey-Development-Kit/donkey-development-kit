@@ -15,6 +15,7 @@ clients do (``core/transport/headers.py``).
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
@@ -31,6 +32,8 @@ MCP_INSTALL = "pip install 'donkey-kit[mcp]'"
 #: the read timeout is long because a server may hold a response stream open.
 _TIMEOUT = 30.0
 _READ_TIMEOUT = 300.0
+_ERROR_BODY_CAP = 64 * 1024
+_ERROR_BODY_TIMEOUT = 5.0
 
 
 def _streamable() -> Any:  # noqa: ANN401
@@ -60,24 +63,96 @@ def _status(exc: BaseException) -> int | None:
     return _status(cause) if cause is not None and cause is not exc else None
 
 
+async def _read_error(response: Any) -> None:  # noqa: ANN401
+    """Buffer only complete, identity-encoded errors within the byte/time bounds."""
+    if response.status_code < 400:
+        return
+    streamable = _streamable()
+    http_lib = getattr(streamable, "httpx2", None) or streamable.httpx
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _ERROR_BODY_TIMEOUT
+    cleanup_budget = min(_ERROR_BODY_TIMEOUT / 5, 0.05)
+    refused = response.headers.get("content-encoding", "identity").lower() != "identity"
+
+    async def read() -> bytes:
+        head: list[bytes] = []
+        size = 0
+        async for chunk in response.stream:
+            size += len(chunk)
+            if size > _ERROR_BODY_CAP:
+                response.raise_for_status()
+            head.append(chunk)
+        return b"".join(head)
+
+    content: bytes | None = None
+    try:
+        if not refused:
+            if response.is_stream_consumed:
+                refused = len(response.content) > _ERROR_BODY_CAP
+                if not refused:
+                    return
+            else:
+                content = await asyncio.wait_for(
+                    read(), max(0.0, deadline - loop.time() - cleanup_budget)
+                )
+    except (asyncio.TimeoutError, http_lib.TransportError, http_lib.HTTPStatusError):
+        refused = True
+
+    # Cleanup shares the total deadline, including compressed/oversized refusals.
+    # Cancellation is not caught: never delay it behind a stalled close operation.
+    try:
+        close = response.stream.aclose if content is not None and not refused else response.aclose
+        await asyncio.wait_for(close(), max(0.0, deadline - loop.time()))
+    except Exception:  # noqa: BLE001 -- best-effort cleanup must retain the HTTP status
+        refused = True
+    if refused:
+        response.request.extensions.pop("donkey_mcp_binding", None)
+        response.raise_for_status()
+    if content is not None:
+        response.stream = http_lib.ByteStream(content)
+        await response.aread()
+
+
 @asynccontextmanager
 async def open_session(
-    url: str, headers: Mapping[str, str], *, errors: list[Any] | None = None
+    url: str,
+    headers: Mapping[str, str],
+    *,
+    errors: list[Any] | None = None,
+    http_factory: Callable[..., Any] | None = None,
 ) -> AsyncIterator[Any]:
     """An initialized ``mcp.ClientSession`` to ``url``, sending ``headers`` on
     every request. Each HTTP error response the server answers with is appended
-    to ``errors``, its body read, so the caller can classify it."""
+    to ``errors``. Only complete identity-encoded bodies within 64 KiB and a
+    five-second deadline are retained for classification; otherwise only the
+    status and headers are retained."""
     streamable = _streamable()
     from mcp import ClientSession
 
     async def record(response: Any) -> None:  # noqa: ANN401
+        index = len(errors) if errors is not None else 0
         if errors is not None and response.status_code >= 400:
-            await response.aread()
-            errors.append(response)
+            # Retain the status even when buffering fails, but never classify a
+            # partial, compressed or oversized envelope as a typed step-up answer.
+            errors.append(
+                http_lib.Response(
+                    response.status_code,
+                    headers=response.headers,
+                    request=response.request,
+                    content=b"",
+                )
+            )
+        await _read_error(response)
+        if errors is not None and response.status_code >= 400:
+            errors[index] = response
 
     http_lib = getattr(streamable, "httpx2", None) or streamable.httpx
+    http = (
+        http_factory(url, headers) if http_factory else http_lib.AsyncClient(headers=dict(headers))
+    )
+    http.event_hooks.setdefault("response", []).append(record)
     async with (
-        http_lib.AsyncClient(headers=dict(headers), event_hooks={"response": [record]}) as http,
+        http,
         streamable.streamable_http_client(url, http_client=http) as streams,
         ClientSession(streams[0], streams[1]) as session,
     ):
@@ -105,6 +180,14 @@ def client_factory(url: str, credentials: Mapping[str, str]) -> Callable[..., An
     async def guard(request: Any) -> None:  # noqa: ANN401
         if origin_of(str(request.url)) != origin:
             strip_credential_headers(request, names)
+            request.extensions.pop("donkey_mcp_binding", None)
+        else:
+            request.extensions["donkey_mcp_binding"] = True
+
+    async def read_error(response: Any) -> None:  # noqa: ANN401
+        if response.status_code < 400 or origin_of(str(response.request.url)) != origin:
+            return
+        await _read_error(response)
 
     def build(
         headers: Mapping[str, str] | None = None,
@@ -118,27 +201,38 @@ def client_factory(url: str, credentials: Mapping[str, str]) -> Callable[..., An
             timeout=timeout or http_lib.Timeout(_TIMEOUT, read=_READ_TIMEOUT),
             auth=auth,
             follow_redirects=False,
-            event_hooks={"request": [guard]},
+            event_hooks={"request": [guard], "response": [read_error]},
         )
 
     return build
 
 
 @asynccontextmanager
-async def open_transport(url: str, headers: Mapping[str, str]) -> AsyncIterator[Any]:
+async def open_transport(
+    url: str,
+    headers: Mapping[str, str],
+    *,
+    http_factory: Callable[..., Any] | None = None,
+) -> AsyncIterator[Any]:
     """The streamable-HTTP streams to ``url`` over a :func:`client_factory`
     client sending ``headers``, closed with the transport, for a framework that
-    takes a transport rather than a client (Strands)."""
+    takes a transport rather than a client (Strands). An injected factory's
+    client is also owned here, including failed entry and cancellation."""
     streamable = _streamable()
+    factory = http_factory or client_factory(url, headers)
     async with (
-        client_factory(url, headers)(headers=headers) as http,
+        factory(headers=headers) as http,
         streamable.streamable_http_client(url, http_client=http) as streams,
     ):
         yield streams
 
 
 async def list_tools(
-    url: str, headers: Mapping[str, str], *, server: str
+    url: str,
+    headers: Mapping[str, str],
+    *,
+    server: str,
+    http_factory: Callable[..., Any] | None = None,
 ) -> tuple[dict[str, object], ...]:
     """Every tool ``url`` lists, as ``tools/list`` JSON (``name``, ``description``,
     ``inputSchema``), following ``nextCursor``.
@@ -155,7 +249,9 @@ async def list_tools(
     from mcp.types import PaginatedRequestParams
 
     try:
-        async with open_session(url, headers, errors=errors) as session:
+        async with open_session(
+            url, headers, errors=errors, **({"http_factory": http_factory} if http_factory else {})
+        ) as session:
             cursor: str | None = None
             while True:
                 params = PaginatedRequestParams(cursor=cursor) if cursor else None

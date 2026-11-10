@@ -992,6 +992,34 @@ def _kind(obj: object) -> str:
     return "type alias"
 
 
+PROVISIONAL_MARK = "Provisional (ADR 0020)"
+
+
+def provisional_root_exports() -> list[str]:
+    """Root exports whose docstring carries ``PROVISIONAL_MARK``, in ``__all__`` order."""
+    import donkey_kit
+
+    return [
+        name
+        for name in donkey_kit.__all__
+        if PROVISIONAL_MARK in (inspect.getdoc(getattr(donkey_kit, name)) or "")
+    ]
+
+
+def _provisional_root_exports() -> list[str]:
+    """Stability lines for provisional root exports other than ``A2AFacade``."""
+    names = [n for n in provisional_root_exports() if n != "A2AFacade"]
+    if not names:
+        return []
+    listed = ", ".join(f"`{n}`" for n in names)
+    return [
+        f"{listed} {'is' if len(names) == 1 else 'are'} also **provisional** (ADR 0020):",
+        "a root export by exception, not covered by the stable deprecation guarantee,",
+        "and may change in a minor release with a migration note.",
+        "",
+    ]
+
+
 def api_reference() -> str:
     """The whole ``reference/api.mdx`` page."""
     import donkey_kit
@@ -1046,12 +1074,20 @@ def api_reference() -> str:
         "",
         "## Stability",
         "",
-        "Every name on this page is **stable**: the names in `donkey_kit.__all__`,",
-        "and the public methods and properties of `Donkey`. During 0.x a stable name",
+        "Except for the provisional APIs described below, the names in",
+        "`donkey_kit.__all__` and the public methods and properties of `Donkey`",
+        "are **stable**. During 0.x a stable name",
         "is removed or renamed only in a minor release, and only after an earlier",
         "minor release shipped it as a working alias that emits a",
         "`DeprecationWarning`. A patch release never breaks one.",
         "",
+        "`A2AFacade` and `Donkey.a2a` (`donkey.a2a`) are **provisional** (ADR 0022).",
+        "`A2AFacade` is an explicit exception to the stable-root-export rule,",
+        "even though it is importable from `donkey_kit` and listed in",
+        "`donkey_kit.__all__`. The facade's send/stream signatures and the accessor",
+        "may change in a minor release with a migration note.",
+        "",
+        *_provisional_root_exports(),
         "`donkey_kit.core` and the other public submodules are **provisional**: they",
         "are documented and may change in a minor release, with a migration note.",
         "Some types you meet through a stable object live there, such as",

@@ -27,7 +27,7 @@ from ..core.errors import AuthError, ConfigError, RegistryError
 from ..core.transport import DonkeyAsyncClient
 from . import _scopes
 from .criteria import Check, GovernanceCriteria, GovernanceReport, evaluate
-from .models import AgentHandle, AssetRef, AssetType, McpServerHandle
+from .models import AgentHandle, AssetRef, AssetType, LlmMetadata, McpServerHandle
 
 __all__ = ["ExchangeRegistry"]
 
@@ -45,15 +45,18 @@ _GLOB = re.compile(r"[*?\[]")
 # API Governance's conformance stats for one asset version (docs/verified-apis.md §6, #1298).
 _GOVERNANCE_TARGETS = "/governance/xapi/api/v1/stats/organization/targets"
 # The SDK's discovery types → Exchange's ``type`` values. ``a2a-agent`` has no
-# Exchange type of its own: an A2A agent publishes as ``agent`` (#1260).
+# Exchange type of its own: an A2A agent publishes as ``agent`` (#1260). ``llm``
+# is a custom LLM provider, published with an ``llm-metadata`` file (#1408).
 _EXCHANGE_TYPES: dict[str, tuple[str, ...]] = {
     "mcp": ("mcp",),
     "agent": ("agent",),
     "api": ("rest-api", "http-api", "soap-api"),
+    "llm": ("llm",),
 }
 _SDK_TYPES: dict[str, AssetType] = {
     "mcp": "mcp",
     "agent": "agent",
+    "llm": "llm",
     "rest-api": "api",
     "http-api": "api",
     "soap-api": "api",
@@ -92,6 +95,7 @@ class ExchangeRegistry:
         environment: str | None = None,
         governed: bool | GovernanceCriteria | None = None,
         limit: int = 50,
+        fresh: bool = False,
     ) -> list[AssetRef]:
         """Search Exchange for assets matching the given filters.
 
@@ -102,7 +106,8 @@ class ExchangeRegistry:
         Exchange filters; an asset matches when it has every tag, ignoring case.
         A tag is one set in Exchange or at publish, not one Exchange derives
         (those have a key). Each asset comes back at its latest version.
-        Results are cached for ``registry_cache_ttl_s`` seconds.
+        Results are cached for ``registry_cache_ttl_s`` seconds; ``fresh=True``
+        reads past the cache and refills it (#1483).
 
         A connected app without the ``read:exchange`` scope gets no assets, not
         an error: Exchange answers the search with an empty list (docs/scopes.md).
@@ -143,7 +148,7 @@ class ExchangeRegistry:
             search["tags"] = [{"value": tag} for tag in tags]
         wanted = {tag.lower() for tag in tags or ()}
         key = "search:" + json.dumps([search, glob, limit], sort_keys=True)
-        cached = self._index_cache.get(key)
+        cached = None if fresh else self._index_cache.get(key)
         if isinstance(cached, tuple):
             return list(cached)
 
@@ -251,14 +256,15 @@ class ExchangeRegistry:
         assets = (body.get("data") or {}).get("assets") or ()
         return [a for a in assets if isinstance(a, dict)]
 
-    async def resolve_mcp(self, ref: AssetRef | str) -> McpServerHandle:
+    async def resolve_mcp(self, ref: AssetRef | str, *, fresh: bool = False) -> McpServerHandle:
         """Resolve an MCP server asset to its governed gateway endpoint.
 
         Finds the asset version's API Manager instance in the configured
         ``environment`` that is deployed to a gateway, and joins the gateway's
         public URL with the instance's path. The handle does not open a
         connection, and ``governance`` is left for ``explain()`` to fill.
-        Results are cached for ``registry_cache_ttl_s`` seconds.
+        Results are cached for ``registry_cache_ttl_s`` seconds; ``fresh=True``
+        reads past the cache and refills it (#1483).
 
         Raises:
             ConfigError: The control-plane settings are missing.
@@ -274,16 +280,19 @@ class ExchangeRegistry:
         cfg = self._cfg.validated(need="control_plane")
         asset = AssetRef.parse(ref)
         key = f"resolve_mcp:{cfg.environment}:{asset.coordinates}"
-        cached = self._index_cache.get(key)
+        cached = None if fresh else self._index_cache.get(key)
         if isinstance(cached, McpServerHandle):
             return cached
-        url = await self._endpoint(asset, "mcp", "MCP", "resolve_mcp()")
+        url = await self._endpoint(asset, ("mcp",), "MCP", "resolve_mcp()")
         handle = McpServerHandle(ref=asset, endpoint_url=url)
         self._index_cache.set(key, handle)
         return handle
 
-    async def _endpoint(self, asset: AssetRef, endpoint_type: str, kind: str, verb: str) -> str:
-        """The gateway URL of ``asset``'s one deployed ``endpoint_type`` instance in
+    async def _endpoint(
+        self, asset: AssetRef, endpoint_types: tuple[str, ...], kind: str, verb: str
+    ) -> str:
+        """The gateway URL of ``asset``'s one deployed instance of the first of
+        ``endpoint_types`` (in preference order) that has any, in
         the configured environment: the gateway's public URL joined with the
         instance's path, with a trailing slash (docs/verified-apis.md §6). The
         gateway credential is sent to it, so it must pass the https rule of the
@@ -291,11 +300,15 @@ class ExchangeRegistry:
         cfg = self._cfg
         env_id = await self._environment_id()
         base = f"/apimanager/api/v1/organizations/{cfg.org_id}/environments/{env_id}"
-        instances = [
-            api
-            for api in await self._instances(base, asset)
-            if api.get("endpointType") == endpoint_type and _deployed(api)
-        ]
+        deployed = [api for api in await self._instances(base, asset) if _deployed(api)]
+        instances = next(
+            (
+                found
+                for endpoint_type in endpoint_types
+                if (found := [a for a in deployed if a.get("endpointType") == endpoint_type])
+            ),
+            [],
+        )
         where = f"environment {cfg.environment!r}"
         if not instances:
             raise RegistryError(
@@ -385,11 +398,43 @@ class ExchangeRegistry:
             raise RegistryError(f"Exchange has no asset version {asset.coordinates}.")
         return card
 
+    async def llm_metadata(self, ref: AssetRef | str) -> LlmMetadata | None:
+        """What an ``llm`` asset version's ``llm-metadata`` file declares: an
+        LLM proxy's, or a custom LLM provider's (docs/verified-apis.md §7,
+        #1533). Read-only and not cached.
+
+        Tolerant: fields the SDK does not read are ignored, and a field the
+        file leaves out or sets to the wrong type is ``None`` or empty, never
+        a guess.
+
+        Returns:
+            The metadata, or ``None`` when the version has no ``llm-metadata``
+            file.
+
+        Raises:
+            ConfigError: The control-plane settings are missing.
+            ValueError: ``ref`` is not ``group_id/asset_id/version``.
+            RegistryError: Exchange has no such version, or a read failed.
+            AuthError: Exchange refused the read (``401``/``403``).
+        """
+        from .exchange_publish import published_llm_metadata
+
+        cfg = self._cfg.validated(need="control_plane")
+        asset = AssetRef.parse(ref)
+        body = await published_llm_metadata(
+            self._http,
+            asset.group_id,
+            asset.asset_id,
+            asset.version,
+            base_url=cfg.control_plane_url,
+        )
+        return None if body is None else _llm_metadata(body)
+
     async def resolve_agent(self, ref: AssetRef | str) -> AgentHandle:
         """Resolve an A2A agent asset to its governed gateway endpoint (#1354).
 
         The reads ``resolve_mcp()`` makes, for the asset version's deployed
-        ``a2a`` instance: the agent card is at
+        ``a2a_v1`` instance (A2A 1.0), else its ``a2a`` one (A2A 0.3): the agent card is at
         ``endpoint_url + ".well-known/agent-card.json"``. The handle opens no
         connection and has no ``skills``: those are on the card. Results are
         cached for ``registry_cache_ttl_s`` seconds.
@@ -410,13 +455,13 @@ class ExchangeRegistry:
         cached = self._index_cache.get(key)
         if isinstance(cached, AgentHandle):
             return cached
-        url = await self._endpoint(asset, "a2a", "A2A", "resolve_agent()")
+        url = await self._endpoint(asset, ("a2a_v1", "a2a"), "A2A", "resolve_agent()")
         handle = AgentHandle(ref=asset, endpoint_url=url)
         self._index_cache.set(key, handle)
         return handle
 
     async def explain(
-        self, ref: AssetRef | str, *, criteria: GovernanceCriteria
+        self, ref: AssetRef | str, *, criteria: GovernanceCriteria, fresh: bool = False
     ) -> GovernanceReport:
         """Explain why an asset version is, or is not, governed in the configured ``environment``.
 
@@ -424,7 +469,8 @@ class ExchangeRegistry:
         gateway checks judge the asset version's deployed API Manager instances, every
         one of them: a deployed instance without a required policy is an ungoverned
         route. A check whose source refused the read is ``None`` (UNKNOWN), with the
-        refusal as its detail. Results are cached for ``registry_cache_ttl_s`` seconds.
+        refusal as its detail. Results are cached for ``registry_cache_ttl_s`` seconds;
+        ``fresh=True`` reads past the cache and refills it (#1483).
 
         Raises:
             ConfigError: The control-plane settings are missing.
@@ -439,7 +485,7 @@ class ExchangeRegistry:
         key = "explain:" + json.dumps(
             [cfg.environment, asset.coordinates, asdict(criteria)], sort_keys=True
         )
-        cached = self._index_cache.get(key)
+        cached = None if fresh else self._index_cache.get(key)
         if isinstance(cached, GovernanceReport):
             return cached
 
@@ -634,13 +680,14 @@ class ExchangeRegistry:
                 f"UNKNOWN: no governance profile has evaluated {asset.coordinates}",
             )
         # One report per ruleset of the profiles that govern the asset's minor version.
-        statuses = {
-            str((r.get("ruleset") or {}).get("label")): str(r.get("summaryStatus")) for r in reports
-        }
-        detail = "; ".join(f"{label}: {status}" for label, status in sorted(statuses.items()))
-        if "NonConformant" in statuses.values():
+        statuses = sorted(
+            (str((r.get("ruleset") or {}).get("label")), str(r.get("summaryStatus")))
+            for r in reports
+        )
+        detail = "; ".join(f"{label}: {status}" for label, status in statuses)
+        if any(status == "NonConformant" for _, status in statuses):
             return Check("governance_pass", False, detail)
-        if set(statuses.values()) == {"Conformant"}:
+        if all(status == "Conformant" for _, status in statuses):
             return Check("governance_pass", True, detail)
         # ``Pending`` (not evaluated yet) or ``Failed`` (the evaluation did not run).
         return Check("governance_pass", None, f"UNKNOWN: {detail}")
@@ -750,3 +797,26 @@ def _globbed(ref: AssetRef, glob: str | None) -> bool:
         return True
     fields = (ref.asset_id, ref.name or "", ref.description or "")
     return any(fnmatchcase(value.lower(), glob) for value in fields)
+
+
+def _llm_metadata(body: dict[str, Any]) -> LlmMetadata:
+    """The fields of an ``llm-metadata`` file the SDK reads, typed or dropped."""
+
+    def text(key: str) -> str | None:
+        value = body.get(key)
+        return value if isinstance(value, str) else None
+
+    entries = body.get("models")
+    models: list[str] = []
+    for entry in entries if isinstance(entries, list) else ():
+        model = entry.get("id") if isinstance(entry, dict) else entry
+        if isinstance(model, str):
+            models.append(model)
+    capabilities = body.get("capabilities")
+    return LlmMetadata(
+        platform=text("platform"),
+        name=text("name"),
+        input_format=text("inputFormat"),
+        models=tuple(models),
+        capabilities=dict(capabilities) if isinstance(capabilities, dict) else {},
+    )

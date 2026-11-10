@@ -1,0 +1,8 @@
+HTTP/1.1 200 OK
+content-type: application/json
+date: Mon, 02 Nov 2026 20:44:58 GMT
+server: Anypoint Flex Gateway
+x-quality-evaluation: yes
+x-quality-score: 3
+x-quality-explanation: The agent fully addressed the user's request by responding with 'PONG' as required, successfully fulfilling the user intent.
+x-quality-status: completed

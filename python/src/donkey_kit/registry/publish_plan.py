@@ -30,8 +30,10 @@ the ``.donkey-kit.local.toml`` beside it overriding key by key, sets them::
 ``provider`` who provides it; both go in the asset's ``mcp-metadata`` file
 (#1269), so they apply to MCP servers only: an agent's table may not set them.
 An agent's protocol is declared with the scan, in ``[donkey.agents]`` (#1260).
-``documentation`` is a Markdown file, relative to the scanned root and inside
-it, that opens the asset's Exchange page. Each is part of the digest when it
+``documentation`` is a UTF-8 ``.md`` or ``.markdown`` file, relative to the scanned
+root and inside it. Hidden paths and credential/secret paths are refused,
+including symlink targets. The source path is shown in the dry-run JSON. It
+opens the asset's Exchange page. Each is part of the digest when it
 is set, so changing one needs a new version.
 
 Everything wrong with a declaration is a :class:`~donkey_kit.registry.scan.ScanIssue`,
@@ -455,9 +457,22 @@ class _Declaration:
 
     def _documentation(self, value: object, subject: str, name: str) -> str | None:
         root = self._directory.resolve()
-        path = (root / value).resolve() if isinstance(value, str) and value.strip() else None
-        if path is None or not path.is_relative_to(root):
+        source = Path(value) if isinstance(value, str) and value.strip() else None
+        path = (root / source).resolve() if source is not None else None
+        if path is None or source is None or source.is_absolute() or not path.is_relative_to(root):
             problem = f"documentation must be a path inside the scanned root, not {value!r}"
+        elif any(
+            candidate.suffix.lower() not in {".md", ".markdown"}
+            or any(part.startswith(".") for part in candidate.parts if part != ".")
+            or any(
+                part.lower().split(".")[0] in {"credentials", "secrets"} for part in candidate.parts
+            )
+            for candidate in (source, path.relative_to(root))
+        ):
+            problem = (
+                f"documentation {value!r} must be a public .md or .markdown file; "
+                "hidden, credential and secret paths are not publication sources"
+            )
         else:
             try:
                 return path.read_text(encoding="utf-8")

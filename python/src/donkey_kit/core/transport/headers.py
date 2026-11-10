@@ -10,9 +10,13 @@ config; no I/O (#728).
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
+from typing import cast
+
 import httpx
 
-from .. import _verify
+from .. import _verify, _wire
 from ..cachecontrol import current_cache_controls
 from ..config import TOKEN_AUTH_MODES, DonkeyConfig
 from ..correlation import (
@@ -24,7 +28,8 @@ from ..correlation import (
 )
 from ..cost import CostTags
 from ..endpoints import require_secure_url
-from ..identity import user_token_header
+from ..errors import ConfigError
+from ..identity import check_user_token_endpoint, user_token_header
 from ..masking import SENSITIVE_NAMES, Secret, masked
 
 __all__ = [
@@ -33,6 +38,7 @@ __all__ = [
     "CREDENTIAL_HEADERS",
     "PROXY_API_KEY_SENTINEL",
     "Origin",
+    "a2a_scope",
     "attribution_headers",
     "cost_headers",
     "credential_headers",
@@ -218,8 +224,58 @@ def strip_credential_headers(
 ) -> None:
     """Remove every header in ``names`` (lower-cased) from ``request``: by
     default :data:`CREDENTIAL_HEADERS`, or a config's :func:`credential_headers`."""
+    names |= cast("frozenset[str]", request.extensions.get("donkey_user_header_names", frozenset()))
     for name in [n for n in request.headers if n.lower() in names]:
         del request.headers[name]
+
+
+@dataclass(frozen=True)
+class _A2AScope:
+    """Exact destinations and per-request credentials for one A2A view (#1395)."""
+
+    endpoint: httpx.URL
+    card: httpx.URL
+    headers: Callable[[httpx.Request], Awaitable[Mapping[str, str]]]
+
+    def validate(self, request: httpx.Request) -> None:
+        if request.url == self.endpoint or (request.url == self.card and request.method == "GET"):
+            return
+        # Do not echo an untrusted URL: its query or userinfo may contain secrets.
+        raise ConfigError(
+            "A2A requests must target the exact endpoint or GET its pinned agent-card URL."
+        )
+
+
+def a2a_scope(request: httpx.Request) -> _A2AScope | None:
+    """Validate and return a request's A2A scope; malformed markers fail closed."""
+    if "donkey_a2a" not in request.extensions:
+        return None
+    scope = request.extensions["donkey_a2a"]
+    if not isinstance(scope, _A2AScope):
+        raise ConfigError("Invalid A2A request scope; build requests through a2a_view().")
+    scope.validate(request)
+    return scope
+
+
+def _strip_a2a_headers(cfg: DonkeyConfig, request: httpx.Request) -> None:
+    names = (
+        credential_headers(cfg)
+        | {
+            _wire.ATTRIBUTION_APP_HEADER_PLACEHOLDER.lower(),
+            _wire.ATTRIBUTION_BUSINESS_GROUP_HEADER_PLACEHOLDER.lower(),
+            _wire.CACHE_SKIP_HEADER,
+            _wire.CACHE_NO_STORE_HEADER,
+            _wire.CACHE_TTL_HEADER,
+            _wire.CACHE_THRESHOLD_HEADER,
+            _wire.CACHE_PRINCIPAL_ID_HEADER,
+        }
+        | {
+            str(getattr(cfg, attr) or default).lower()
+            for _field, attr, default in _COST_HEADER_SOURCES
+        }
+        | {default.lower() for _field, _attr, default in _COST_HEADER_SOURCES}
+    )
+    strip_credential_headers(request, frozenset(names))
 
 
 class _CheckedEndpoints:
@@ -267,6 +323,8 @@ class _CheckedEndpoints:
 
     def _guard(self, request: httpx.Request) -> bool:
         """Whether ``request`` may carry credentials. When not, strip any it has."""
+        if a2a_scope(request) is not None:
+            return True
         if origin_of(request.url) in self._origins:
             return True
         strip_credential_headers(request, self._credential_names)
@@ -318,7 +376,7 @@ def _apply_base_headers(
     # header-name override without core/errors importing DonkeyConfig (#363).
     # Idempotent across retries — same name each send.
     request.extensions["donkey_correlation_header"] = correlation_header
-    if control_plane:
+    if control_plane or a2a_scope(request) is not None:
         return
     for name, value in attribution_headers(cfg).items():
         request.headers[name] = value
@@ -382,20 +440,8 @@ def _apply_auth(
     """Stamp the per-send credential on a request already cleared by the
     checked-endpoint guard. Shared by both clients so they cannot drift (#728).
 
-    In ``jwt`` mode (model-wallet ingress, #509/#372) a data-plane send carries
-    the durable wallet-selector ``X-Client-Id``, on every send rather than only
-    in the ``default_headers`` snapshot, so adapters routed through the shared
-    client carry it too; a control-plane send never does. The name is VERIFIED
-    (docs/verified-apis.md §2/§3).
-
-    ``token`` is the attached provider's token, or ``None`` when there is none
-    (client-id mode, and always on the blocking client, whose token modes are
-    refused before a request is built). Three token-bearing ingresses ride here,
-    each on its own client and all as ``Authorization: Bearer`` (VERIFIED): the
-    control-plane OAuth2 client_credentials token (docs/verified-apis.md §12.1),
-    the data-plane model-wallet JWT in jwt mode (docs/verified-apis.md §2/§3,
-    #372), and the data-plane token in bearer mode, the same JWT Validation
-    bearer header with no wallet selector (#836)."""
+    Tokens ride as Authorization bearers (docs/verified-apis.md §2/§3/§12.1).
+    The blocking client has no provider and refuses token modes before send."""
     if cfg.llm_proxy_auth == "jwt" and not control_plane and cfg.llm_proxy_wallet_client_id:
         request.headers.setdefault(
             _verify.LLM_PROXY_WALLET_CLIENT_ID_HEADER, cfg.llm_proxy_wallet_client_id
@@ -417,15 +463,37 @@ def _apply_auth(
 
 
 def _apply_user_token(cfg: DonkeyConfig, request: httpx.Request, token: str) -> None:
-    """Stamp the ``donkey.as_user(...)`` token (BG §2.4, #215) on a data-plane
-    request already cleared by the checked-endpoint guard, after :func:`_apply_auth`.
-
-    In ``Authorization`` (the default, docs/verified-apis.md §13) it
-    rides as a bearer and OVERRIDES what is there: in client-id mode that is the
-    OpenAI SDK's ``api_key`` sentinel, and yielding to it would send the call as
-    the service identity. A ``user_token_header`` override carries the raw token."""
+    """Stamp a checked user bearer or raw custom header (BG §2.4, docs/verified-apis.md §13)."""
     header = user_token_header(cfg)
+    check_user_token_endpoint(cfg, need="llm")
+    if (
+        cfg.llm_proxy_auth in TOKEN_AUTH_MODES
+        and header.lower() == _verify.LLM_PROXY_WALLET_JWT_HEADER.lower()
+    ):
+        raise ConfigError("user_token_header must not replace the data-plane token in token modes.")
+    previous = request.headers.get_list(header)
+    # Classification survives restoration and cross-client reuse; never stores values.
+    request.extensions["donkey_user_header_names"] = cast(
+        "frozenset[str]", request.extensions.get("donkey_user_header_names", frozenset())
+    ) | {header.lower()}
     if header.lower() == _verify.LLM_PROXY_WALLET_JWT_HEADER.lower():
         request.headers[header] = f"{_verify.LLM_PROXY_WALLET_JWT_SCHEME} {token}"
     else:
         request.headers[header] = token
+    request.extensions["donkey_user_header"] = (
+        header,
+        Secret(request.headers[header]),
+        [Secret(value) for value in previous],
+    )
+
+
+def _restore_user_token(request: httpx.Request) -> None:
+    """Undo only our last user-header write, before auth and origin stripping."""
+    state = request.extensions.pop("donkey_user_header", None)
+    if state is None:
+        return
+    header, injected, previous = cast("tuple[str, str, list[str]]", state)
+    if request.headers.get_list(header) == [injected]:
+        del request.headers[header]
+        if previous:
+            request.headers.update([(header, value) for value in previous])

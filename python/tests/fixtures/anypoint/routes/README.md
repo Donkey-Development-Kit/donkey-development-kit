@@ -35,6 +35,15 @@ Each file is named `<upstream>.<route>.<shape>`, where:
     choices) and an extra `latency_checkpoint` key on the usage chunk.
   - Bedrock's `/responses` stream has no `response.in_progress`, `output_text.done` or
     `content_part.done` events.
+  - No Bedrock `output_item.done` carries an `item`, and `response.completed` has no
+    `output`. The `openai` client's `responses.stream()` helper fails on them with
+    `AttributeError` (replayed offline with `openai` 3.26.1); `responses.create(stream=True)`
+    iterates them.
+- **Message-typed `/responses` input works on Bedrock** (#1409, bedrock-anthropic impl
+  1.0.4, 2026-11-03). Role-only `developer`/`user` messages with string content, a prior
+  assistant output message and list content all return 200. Streamed, the reply opens
+  with an `output_item.done` for index 0 that was never added, then streams the text at
+  index 1 (`*.message_input.*`).
   - Gemini **fake-streams** both routes: one `data:` event holding the whole
     non-chunk object, with no `[DONE]` and no `event:` lines.
 - **Reject envelopes differ by upstream.**
@@ -69,3 +78,5 @@ Each file is named `<upstream>.<route>.<shape>`, where:
 - `gemini.responses.success`: Captured 2026-10-08 by hand against `ddk-azure-openai-model-routing` (DDK/Sandbox), model `gemini/gemini-2.5-flash`, POST /responses, success (#894).
 - `gemini.responses.stream`: Captured 2026-10-08 by hand against `ddk-azure-openai-model-routing` (DDK/Sandbox), model `gemini/gemini-2.5-flash`, POST /responses, stream (#894).
 - `gemini.responses.reject`: Captured 2026-10-08 by hand against `ddk-azure-openai-model-routing` (DDK/Sandbox), model `gemini/gemini-2.5-flash`, POST /responses, reject (#894).
+- `bedrockanthropic.responses.message_input.success`: Captured 2026-11-03 by hand against `ddk-bedrock-anthropic-model-routing` (DDK/Sandbox, bedrock-anthropic transcoder impl 1.0.4), model `bedrockanthropic/us.anthropic.claude-sonnet-5`, POST /responses with developer/user EasyInputMessage, a prior assistant output message and list content, success (#1409).
+- `bedrockanthropic.responses.message_input.stream`: Captured 2026-11-03 by hand against `ddk-bedrock-anthropic-model-routing` (DDK/Sandbox, bedrock-anthropic transcoder impl 1.0.4), model `bedrockanthropic/us.anthropic.claude-sonnet-5`, POST /responses with developer/user EasyInputMessage, a prior assistant output message and list content, stream (#1409).

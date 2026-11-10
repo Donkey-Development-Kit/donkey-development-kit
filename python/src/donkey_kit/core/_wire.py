@@ -113,10 +113,24 @@ SEMANTIC_ROUTING_SUCCESS_HEADER = "x-llm-proxy-semantic-routing-success"
 SEMANTIC_CACHE_STATUS_HEADER = "x-semantic-cache-status"
 SEMANTIC_CACHE_SCORE_HEADER = "x-semantic-cache-score"
 
+# A2A quality response capture (docs/verified-apis.md section 6, #1393).
+A2A_QUALITY_EVALUATION_HEADER = "x-quality-evaluation"
+A2A_QUALITY_SCORE_HEADER = "x-quality-score"
+A2A_QUALITY_STATUS_HEADER = "x-quality-status"
+A2A_QUALITY_EXPLANATION_HEADER = "x-quality-explanation"
+
 # Content-safety verdicts, an ``-action`` and a ``-reason`` per vendor
 # (docs/verified-apis.md §4).
 AZURE_CONTENT_SAFETY_ACTION_HEADER = "x-llm-proxy-azure-content-safety-action"
 AZURE_CONTENT_SAFETY_REASON_HEADER = "x-llm-proxy-azure-content-safety-reason"
+# A2A Azure verdict captured on v1 send/stream (docs/verified-apis.md section 4, #1393).
+A2A_AZURE_GUARDRAIL_ACTION_HEADER = "x-flex-azure-guardrails-action"
+A2A_AZURE_GUARDRAIL_PHASE_HEADER = "x-flex-azure-guardrails-phase"
+A2A_AZURE_GUARDRAIL_REASON_HEADER = "x-flex-azure-guardrails-reason"
+# A2A Bedrock verdict captured on v1 send/stream (docs/verified-apis.md section 4, #1630).
+A2A_BEDROCK_GUARDRAIL_ACTION_HEADER = "x-flex-bedrock-guardrails-action"
+A2A_BEDROCK_GUARDRAIL_PHASE_HEADER = "x-flex-bedrock-guardrails-phase"
+A2A_BEDROCK_GUARDRAIL_REASON_HEADER = "x-flex-bedrock-guardrails-reason"
 BEDROCK_GUARDRAIL_ACTION_HEADER = "x-llm-proxy-bedrock-guardrail-action"
 BEDROCK_GUARDRAIL_REASON_HEADER = "x-llm-proxy-bedrock-guardrail-reason"
 MODEL_ARMOR_ACTION_HEADER = "x-llm-proxy-model-armor-action"

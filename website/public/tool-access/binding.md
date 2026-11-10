@@ -2,6 +2,24 @@
 
 Status: Live. Shipped, and verified against a real governed gateway.
 
+For offline failure tests of newly bound LangGraph, LlamaIndex, Anthropic,
+Microsoft Agent Framework, OpenAI Agents SDK and Strands
+tools, see [MCP tool fault injection](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection).
+It requires an explicit offline backend and does not intercept existing bindings
+or bypass governance checks. Agent Framework simulation requires stable
+`agent-framework-core>=1.24.0` and `mcp>=2.3.0`; OpenAI Agents SDK simulation
+requires stable `openai-agents>=0.20.0` and `mcp>=2.3.0`; Strands simulation requires
+stable `strands-agents>=1.64.0` and `mcp>=2.3.0`. These do not change normal
+production binding requirements.
+
+Strands replay preserves its native generic error tool results, not typed PII
+or access refusals; `typed_refusals()` cannot recover structured fields from
+those results. Its native catalog errors still raise `MCPError`. Keep the native
+client context inside the simulation scope. Failed, cancelled or expired Strands
+sessions can emit an upstream unawaited-coroutine warning during `stop()` even
+though their HTTP clients close. See the simulator page for ownership, restart
+and bounded-test guidance.
+
   Every binding below was run through the governed gateway with the
   framework's current release: discovered from Exchange, then bound and called
   through an MCP instance behind JWT Validation and one behind Client ID
@@ -158,6 +176,40 @@ async with donkey.as_user(token=user_token):
   one user and reuse it for the next, and its tool calls go as the first user.
   Bind a whole-server binding inside the `as_user()` block that uses it, and
   don't reuse it outside that block.
+
+## Gateway-visible catalogs
+
+Bindings use the names, descriptions and schemas returned by the gateway's
+`tools/list`, not the upstream server's original catalog. `ToolSet.name_map`
+explains the SDK's collision prefixes; it does not reverse a gateway rename.
+
+With **MCP Tool Mapping**, use the mapped name in filters and approval rules.
+For example, if the gateway exposes `calculate` as `arithmetic`:
+
+```python
+tools = await (await donkey.tools.discover()).describe()
+tools = tools.filter(allow=["arithmetic"]).require_approval(tools=["arithmetic"])
+```
+
+A rule naming the hidden `calculate` raises `ConfigError` when the tools are
+listed. The SDK does not translate that rule back to an upstream name.
+
+With **MCP Tools Progressive Disclosure**, the default catalog contains
+`search_tools` and `invoke_tool`. Bind those meta-tools as-is: the gateway owns
+search and invocation. The SDK reports a catalog containing both names at info
+level when `describe()` runs, before filtering; those names alone do not prove
+which policy is installed. Additional listed tools remain ordinary tools.
+
+  A filter on a hidden upstream tool does not restrict what `invoke_tool` can
+  invoke. An approval rule on `invoke_tool` gates every call to that meta-tool,
+  not just a particular value of its `name` argument. Use gateway access
+  policies for enforcement. Client-side approval remains advisory, and
+  whole-server bindings still cannot apply `require_approval()` rules.
+
+The mapped catalog and call, and the default progressive-disclosure catalog,
+were observed through the gateway. Filter and approval naming are covered by
+offline replay of those catalogs, not a live policy-and-approval round trip.
+No client-side search, TOON decoding or policy enforcement is added.
 
 ## Filtering
 
@@ -338,6 +390,17 @@ credential, `ToolInvocationError` when a server cannot list its tools, and
 no tool to bind, because `filter()` removed them all or the set is empty, logs
 why at info level and returns an empty list.
 
+During MCP listing and binding, HTTP error bodies are buffered only when they
+are complete, identity-encoded and at most 64 KiB. The five-second total
+deadline covers both reading and best-effort cleanup; a stalled close does not
+add another timeout. Cancellation propagates without waiting for cleanup.
+Oversized, compressed, interrupted or slow bodies are not classified from
+partial bytes. Status and headers remain available: an authentication status
+can still raise `AuthError`, while an unclassifiable listing failure raises
+`ToolInvocationError`. A partial body never becomes an approval response.
+For locked per-tool metadata guarantees and whole-server limitations, see
+[Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md#check-against-the-lock).
+
 ### Tools outside your access profile
 
 The gateway's MCP access policies (MCP Global Access and Attribute-Based
@@ -359,7 +422,10 @@ The LangGraph, LlamaIndex and Anthropic bindings raise `ToolNotInProfile` (a
 problem, so it is never retried. The whole-server bindings leave the call to
 the framework. The OpenAI Agents SDK and CrewAI raise the `mcp` package's
 `McpError`, and Agent Framework wraps it in its `ToolExecutionException`.
-`tool_access_denial()` turns any of them into the typed error:
+[`typed_refusals()`](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary), also
+applied by `donkey.run()`, recovers the typed error from these raised errors.
+Unlike a per-tool binding, the recovered error has no server coordinates.
+The existing `tool_access_denial()` helper remains available for manual conversion:
 
 ```python
 from donkey_kit import ToolNotInProfile
@@ -378,6 +444,33 @@ ADK and Strands hand the agent an error result whose text is
 it, because the text alone could be any tool's failure. In the same way, a
 tool that ran and failed returns a result with `isError: true`, never
 `ToolNotInProfile`.
+
+### MCP policy refusals
+
+See [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) for the policy inventory,
+gateway-visible catalog changes and the limits of each captured behavior.
+
+Captured MCP PII Detector refusals on tool requests and responses raise
+`PIIDetected` through LangGraph, LlamaIndex and Anthropic bindings. With
+OpenAI Agents and Agent Framework, wrap the framework call in
+`typed_refusals()` (or `donkey.run()`) to recover the same type. Its `.phase`,
+`.entities` and `.findings` contain safe metadata, not blocked values.
+The original framework exception is available as `.framework_error`; it may
+contain gateway diagnostics, so do not log it as safe metadata.
+Already-typed exceptions retain their identity, existing cause and framework
+metadata. Malformed or unmarked MCP HTTP 403 responses remain HTTP errors,
+not inferred policy refusals.
+
+ADK and Strands instead return error text and lose the structured policy
+fields. The SDK never infers a policy from that text. With the locked CrewAI
+MCP 1.x stack, replaying the captured HTTP 403 PII refusal leaves the tool call
+unresolved; this path is not supported as a typed refusal. All these binding
+results were checked locally against captured responses, not through live
+framework calls to the gateway.
+
+Schema-validation and tool-poisoning errors without explicit policy markers
+remain ambiguous, not typed policy refusals. Successful results and
+`isError: true` tool results keep their framework-native behavior.
 
 ## Related
 

@@ -12,7 +12,9 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from donkey_kit import Donkey
 from donkey_kit.conformance.gateway import start_gateway
+from donkey_kit.core.config import DonkeyConfig
 from donkey_kit.simulator.app import SIM_MODEL_PREFIX, SIMULATOR_HEADER
 
 pytestmark = pytest.mark.local_gateway
@@ -21,6 +23,43 @@ pytestmark = pytest.mark.local_gateway
 # under `pytest -m local_gateway`.
 pytest.importorskip("uvicorn")
 pytest.importorskip("starlette")
+
+
+@pytest.mark.parametrize("credential", ["provider-key", "user-token"])
+async def test_default_fixture_redacts_secret_in_repurposed_attribution_header(
+    gateway: object, credential: str
+) -> None:
+    url = gateway.url  # type: ignore[attr-defined]
+    common = {
+        "llm_proxy_url": url,
+        "llm_proxy_client_id": "public-client",
+        "llm_proxy_client_secret": "synthetic-client-secret",
+        "correlation_header": "X-Run",
+    }
+    if credential == "provider-key":
+        cfg = DonkeyConfig(
+            **common,
+            llm_proxy_key_header="X-Correlation-Id",
+            llm_proxy_key="synthetic-provider-key",
+        )
+    else:
+        cfg = DonkeyConfig(**common, user_token_header="X-Correlation-Id")
+    headers = {"client_id": "public-client"}
+    if cfg.llm_proxy_key_header is not None and cfg.llm_proxy_key is not None:
+        headers[cfg.llm_proxy_key_header] = cfg.llm_proxy_key
+    async with Donkey(cfg) as donkey:
+        async with donkey.as_user(token="synthetic-user-token"):
+            response = await donkey.http_client().post(
+                f"{url}/responses",
+                json={"model": "gpt-5.1"},
+                headers=headers,
+            )
+    assert response.status_code == 200
+    recorded = gateway.requests  # type: ignore[attr-defined]
+    assert recorded[-1].headers["x-correlation-id"] == "***"
+    assert recorded[-1].headers["client_id"] == "public-client"
+    assert "synthetic-provider-key" not in repr(recorded)
+    assert "synthetic-user-token" not in repr(recorded)
 
 
 def test_url_is_reachable_by_a_stock_client_and_is_honesty_stamped(gateway: object) -> None:
@@ -108,3 +147,23 @@ def test_two_gateways_bind_distinct_ephemeral_ports() -> None:
     finally:
         a.close()
         b.close()
+
+
+def test_custom_secret_names_remain_redacted_after_reconfiguration() -> None:
+    cfg = DonkeyConfig(correlation_header="X-Run", user_token_header="X-Correlation-Id")
+    gw = start_gateway(recording_config=cfg)
+    try:
+        for reconfigure in (gw.configure, lambda: gw.set_scenarios("pii_block:every=1")):
+            reconfigure()
+            response = httpx.post(
+                f"{gw.url}/responses",
+                json={"model": "gpt-5.1"},
+                headers={"x-correlation-id": "synthetic-token", "x-custom-key": "synthetic-key"},
+            )
+            assert response.status_code in {200, 403}
+            assert gw.requests[-1].headers["x-correlation-id"] == "***"
+            assert gw.requests[-1].headers["x-custom-key"] == "***"
+        assert "synthetic-token" not in repr(gw.requests)
+        assert "synthetic-key" not in repr(gw.requests)
+    finally:
+        gw.close()

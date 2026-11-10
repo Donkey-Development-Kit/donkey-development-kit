@@ -15,11 +15,22 @@ importable from `donkey_kit`.
 
 ## Stability
 
-Every name on this page is **stable**: the names in `donkey_kit.__all__`,
-and the public methods and properties of `Donkey`. During 0.x a stable name
+Except for the provisional APIs described below, the names in
+`donkey_kit.__all__` and the public methods and properties of `Donkey`
+are **stable**. During 0.x a stable name
 is removed or renamed only in a minor release, and only after an earlier
 minor release shipped it as a working alias that emits a
 `DeprecationWarning`. A patch release never breaks one.
+
+`A2AFacade` and `Donkey.a2a` (`donkey.a2a`) are **provisional** (ADR 0022).
+`A2AFacade` is an explicit exception to the stable-root-export rule,
+even though it is importable from `donkey_kit` and listed in
+`donkey_kit.__all__`. The facade's send/stream signatures and the accessor
+may change in a minor release with a migration note.
+
+`ToolLockDrift` is also **provisional** (ADR 0020):
+a root export by exception, not covered by the stable deprecation guarantee,
+and may change in a minor release with a migration note.
 
 `donkey_kit.core` and the other public submodules are **provisional**: they
 are documented and may change in a minor release, with a migration note.
@@ -138,6 +149,16 @@ donkey.registry: ExchangeRegistry
 The Exchange registry client used for tool discovery and resolution.
 
 Guide: [`/tool-access/discovery`](/tool-access/discovery)
+
+### `donkey.a2a`
+
+```python nocheck
+donkey.a2a: A2AFacade
+```
+
+Governed outbound A2A sends and context-managed streams.
+
+Guide: [`/tool-access/a2a`](/tool-access/a2a)
 
 ### `donkey.tools`
 
@@ -344,6 +365,39 @@ donkey.simulate(
 ```
 
 Inject a real gateway refusal in-process, no server.
+
+### `donkey.simulate_mcp()`
+
+```python nocheck
+donkey.simulate_mcp(
+    capture: str,
+    *,
+    servers: Mapping[str, Sequence[Mapping[str, Any]]],
+    times: int = 1,
+    call_tool: Callable[[str, Mapping[str, Any]], Mapping[str, Any]] | None = None,
+) -> AbstractContextManager[None]
+```
+
+Inject a captured gateway refusal into MCP tool calls, no gateway.
+
+Guide: [`/simulator`](/simulator)
+
+### `donkey.simulate_a2a()`
+
+```python nocheck
+donkey.simulate_a2a(
+    capture: str,
+    *,
+    agents: Sequence[str],
+    version: str = '1.0',
+    times: int = 1,
+    reply: Callable[[str], str] | None = None,
+) -> AbstractContextManager[None]
+```
+
+Inject a captured gateway refusal into outbound A2A calls, no gateway.
+
+Guide: [`/simulator`](/simulator)
 
 ### `donkey.flush_telemetry()`
 
@@ -628,14 +682,16 @@ is raised.
 | `DonkeyError` | `Exception` | Base for all SDK errors. Carries correlation/call/request IDs and the raw response so callers can inspect what actually happened. |
 | `GatewayApprovalDenied` | `PolicyViolation` | The user denied the out-of-band (CIBA) approval the gateway requested. |
 | `GatewayApprovalPending` | `DonkeyError` | The gateway is waiting for the user to approve this call out of band (CIBA). |
+| `GatewayAuthRequired` | `DonkeyError` | An A2A task needs authorization, not CIBA polling or a local approval. |
 | `GatewayUnavailable` | `DonkeyError` | The gateway could not be reached at all — a transport-level failure (DNS, refused connection, TLS error, timeout) with NO HTTP response behind it. |
 | `ModelNotRoutable` | `DonkeyError` | The gateway could not pick a provider for the requested model, so it rejected the request before any upstream call. |
 | `ModelSubstituted` | `DonkeyError` | The gateway served a *different* model than the one requested — a routing fallback substituted the model, and `on_model_substitution="raise"` opted the caller into treating that as an error. |
-| `PIIDetected` | `PolicyViolation` | The PII-detection policy blocked the request or response. |
+| `PIIDetected` | `PolicyViolation` | PII policy refusal; MCP adds safe `phase` / `findings` metadata. |
 | `PolicyViolation` | `DonkeyError` | Base for gateway-enforced refusals. NEVER retried. |
 | `PromptInjectionBlocked` | `PolicyViolation` | The prompt-injection-protection policy flagged the request as an injection attempt. |
 | `RequestRateLimitExceeded` | `PolicyViolation` | A request-rate-limit policy refused the request: the window's request count is spent. |
 | `TokenBudgetExceeded` | `PolicyViolation` | A token-rate-limit policy refused the request: the budget window is spent. |
+| `ToolLockDrift` | `DonkeyError` | The gateway's tools no longer match `donkey.lock`. |
 | `ToolNotInProfile` | `PolicyViolation` | The gateway refused an MCP tool call: the tool is outside this consumer's access profile. |
 | `UngovernedMcpServer` | `DonkeyError` | A `ToolSet` binding was refused because a server in it is not governed. |
 | `UpstreamModelError` | `DonkeyError` | Provider-side failure (5xx). Retryable. |
@@ -645,6 +701,7 @@ is raised.
 
 | Name | Kind | Meaning |
 |---|---|---|
+| `A2AFacade` | class | `donkey.a2a`: send official SDK requests through a governed gateway. |
 | `A2AResult` | class | What a handler returns when a plain string is not enough. |
 | `A2ATask` | class | One A2A task handed to a `donkey.serve()` handler. |
 | `AgentSpec` | class | An introspectable record of a `@donkey.agent`-marked entry point. |
@@ -662,6 +719,7 @@ is raised.
 | `DonkeyClientView` | class | The blocking twin of `DonkeyAsyncClientView`, over a shared `DonkeyClient`. Get one from `DonkeyClient.view`. |
 | `DonkeyConfig` | class | Everything the SDK needs to reach Agent Fabric, resolved once and immutable. |
 | `ExchangeRegistry` | class | The Exchange client behind `donkey.registry`: search, resolve and explain assets. |
+| `GatewayAuthChallenge` | class | OAuth metadata from the captured A2A v0.3 authorization-code challenge. |
 | `GovernanceCriteria` | class | Definition of 'governed'. Every field is a separate, independently checkable condition. Defaults are deliberately moderate; orgs override. |
 | `LLMClient` | class | The framework-free proxy client factory. |
 | `LastCall` | class | What the gateway said about the most recent governed model call. |
@@ -681,6 +739,7 @@ is raised.
 | `UpstreamWindow` | class | One window of the upstream provider's own quota, as the gateway passes it through: `donkey.budget.upstream.requests` or `.tokens`. |
 | `UserScope` | class | The **dual sync/async** context manager `donkey.as_user(...)` returns. |
 | `classify` | callable object | `classify`: call it to map an error response to a typed `DonkeyError`; register a custom policy's refusal shape on it. |
+| `jsonrpc_refusal` | function | Recover a JSON-RPC policy refusal from mappings or exception.error ducks. |
 | `registered_agents` | function | Every entry point marked with `@donkey.agent` in this process, in decoration order. |
 | `registered_tools` | function | Every callable marked with `@donkey.tool` in this process, in decoration order. The introspection entry point for the scanner / card generator. |
 | `typed_refusals` | function | Re-raise a governance refusal from the block as its typed `DonkeyError`. |

@@ -42,18 +42,20 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import AsyncExitStack, ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
 from suite import CONFORMANCE_SCENARIOS, KNOWN_LIMITATIONS, SCENARIO_BODIES
 
-from donkey_kit.core.errors import ConfigError
+from donkey_kit import typed_refusals
+from donkey_kit.core.errors import ConfigError, PIIDetected
 from donkey_kit.core.tool_access import ToolNotInProfile, tool_access_denial
 from donkey_kit.integrations import ADAPTERS
 from donkey_kit.registry.criteria import Check, GovernanceReport
@@ -165,6 +167,7 @@ class _Servers:
         self._pair: tuple[Any, Any] | None = None
         self._denying: Any = None
         self._target: Any = None
+        self._refusing: dict[str, Any] = {}
         self.harness: ModuleType | None = None
 
     def pair(self) -> tuple[Any, Any]:
@@ -189,6 +192,16 @@ class _Servers:
             self.harness = _harness()
             self._target = self._stack.enter_context(self.harness.local_mcp_server())
         return self._target
+
+    def refusing(self, capture: str) -> Any:
+        """A tools/call refusal with the captured status, headers and error body."""
+        if capture not in self._refusing:
+            self.harness = _harness()
+            fixture = _PYTHON_ROOT / "tests/fixtures/anypoint/mcp_policies" / f"{capture}.json"
+            self._refusing[capture] = self._stack.enter_context(
+                self.harness.local_mcp_server(deny="add", refusal=fixture)
+            )
+        return self._refusing[capture]
 
     def requests(self, server: Any) -> int:
         assert self.harness is not None
@@ -401,6 +414,19 @@ async def test_single_tool_call(binding: Binding, servers: _Servers) -> None:
     assert servers.headers(a) == _PAIR
 
 
+async def test_expected_info_is_forwarded_unchanged(binding: Binding, servers: _Servers) -> None:
+    """A declared extraction intent reaches the real local MCP tool unchanged (#1390).
+
+    This checks native argument forwarding (BG §2.7), not gateway optimization.
+    """
+    a, _ = servers.pair()
+    expected_info = "  Return ONLY sku and price; keep  internal spacing.  "
+    async with _bound(binding, _toolset(("inv-a", a))) as bound:
+        result = await bound.call("lookup_sku", {"sku": "SKU-1390", "expected_info": expected_info})
+    assert expected_info in result, result
+    assert "SKU-1390" in result, result
+
+
 # --- tool_filtering ---------------------------------------------------------------
 
 
@@ -482,23 +508,125 @@ async def _assert_routed(
         assert servers.requests(not_to) == before_other, f"{name} reached the other server"
 
 
-# --- tool_access_denied_typed ------------------------------------------------------
+# --- policy_refusal_typed / tool_access_denied_typed -------------------------------
+
+
+@pytest.mark.parametrize("capture", ["pii-request", "pii-response-sse"])
+async def test_policy_refusal_typed(binding: Binding, servers: _Servers, capture: str) -> None:
+    """Captured PII refusals through each real binding, without a model API call."""
+    refusing = servers.refusing(capture)
+    if binding.method == "crewai":
+        # Its MCP 1.x background loop loses the HTTP failure and never settles
+        # the tool future. Bound the reproduction in a disposable process.
+        code = """
+import asyncio, json, sys
+import httpx
+from types import SimpleNamespace
+from test_tool_binding import BINDINGS, _bound, _toolset
+from donkey_kit.tools import mcp as mcp_module
+from donkey_kit.tools import session as session_module
+original_factory = mcp_module.client_factory
+captured = json.loads(open(sys.argv[2]).read())
+def factory(url, credentials):
+    build = original_factory(url, credentials)
+    def guarded(*args, **kwargs):
+        client = build(*args, **kwargs)
+        original_transport = client._transport
+        async def handle(request):
+            body = json.loads(request.content) if request.method == 'POST' else {}
+            if body.get('method') == 'tools/call' and body.get('params', {}).get('name') == 'add':
+                payload = json.loads(captured['body'])
+                payload['id'] = body.get('id')
+                print('CALL_REFUSED', flush=True)
+                return httpx.Response(captured['status'], headers=captured['headers'], json=payload)
+            return await original_transport.handle_async_request(request)
+        client._transport = httpx.MockTransport(handle)
+        return client
+    return guarded
+mcp_module.client_factory = factory
+session_module.client_factory = factory
+async def run():
+    tools = _toolset(('inv-p', SimpleNamespace(url=sys.argv[1])))
+    async with _bound(BINDINGS['crewai'], tools) as bound:
+        print('CALL_READY', flush=True)
+        await bound.call('add', {'a': 2, 'b': 3})
+        print('CALL_RETURNED', flush=True)
+asyncio.run(run())
+"""
+        with pytest.raises(subprocess.TimeoutExpired) as timed_out:
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    code,
+                    refusing.url,
+                    str(_PYTHON_ROOT / "tests/fixtures/anypoint/mcp_policies" / f"{capture}.json"),
+                ],
+                cwd=_PYTHON_ROOT / "tests/conformance",
+                capture_output=True,
+                timeout=15,
+                check=False,
+            )
+        markers = set((timed_out.value.stdout or b"").splitlines()) & {
+            b"CALL_READY",
+            b"CALL_REFUSED",
+            b"CALL_RETURNED",
+        }
+        # Report only safe marker presence, never subprocess diagnostics.
+        assert b"CALL_READY" in markers, "tool binding did not become ready"
+        assert b"CALL_REFUSED" in markers, "captured tools/call refusal was not served"
+        assert b"CALL_RETURNED" not in markers, "timeout was teardown, not the tool call"
+        assert "policy_refusal_typed" in KNOWN_LIMITATIONS[binding.adapter]
+        return
+    async with _bound(binding, _toolset(("inv-p", refusing))) as bound:
+        if binding.method in _RETURNS_AN_ERROR_RESULT:
+            with typed_refusals():
+                text = await bound.call("add", {"a": 2, "b": 3})
+            assert "error" in text.lower()
+            message = (
+                "Request payload validation error" if capture == "pii-request" else "Internal error"
+            )
+            assert message in text
+            assert "policy_refusal_typed" in KNOWN_LIMITATIONS[binding.adapter]
+            return
+        with pytest.raises(PIIDetected) as caught, typed_refusals():
+            await bound.call("add", {"a": 2, "b": 3})
+        assert caught.value.phase == ("request" if capture == "pii-request" else "response")
+        assert caught.value.entities == (["Email"] if capture == "pii-request" else ["Custom"])
+        assert [len(finding["masked_value"]) for finding in caught.value.findings] == (
+            [19] if capture == "pii-request" else [2]
+        )
+        assert caught.value.__cause__ is None
+        assert caught.value.framework_error is not None
+
+
+@pytest.mark.parametrize("markers", [b"CALL_READY\n", b"CALL_READY\nCALL_REFUSED\nCALL_RETURNED\n"])
+async def test_crewai_exemption_rejects_unproven_or_teardown_timeouts(
+    monkeypatch: pytest.MonkeyPatch, markers: bytes
+) -> None:
+    def timeout(*args: Any, **kwargs: Any) -> None:
+        raise subprocess.TimeoutExpired("probe", 15, output=markers)
+
+    monkeypatch.setattr(subprocess, "run", timeout)
+    servers = SimpleNamespace(refusing=lambda _: SimpleNamespace(url="http://local/mcp/"))
+    with pytest.raises(AssertionError):
+        await test_policy_refusal_typed(BINDINGS["crewai"], servers, "pii-request")
 
 
 async def test_tool_access_denied_typed(binding: Binding, servers: _Servers) -> None:
     """The gateway's tool-access denial (JSON-RPC ``-32008``, docs/verified-apis.md
     §9, #303) on a tool the set still lists. A per-tool binding raises
     ``ToolNotInProfile`` naming the tool and server, and the other tool still
-    works. A whole-server binding is exempt (``KNOWN_LIMITATIONS``): the framework
-    makes the call, and what it does with the denial is asserted as recorded."""
+    works. Whole-server bindings recover it through ``typed_refusals()`` unless
+    the framework converts it to a result (asserted in ``KNOWN_LIMITATIONS``)."""
     denying = servers.denying()
     async with _bound(binding, _toolset(("inv-d", denying))) as bound:
         assert sorted(bound.names) == _TOOLS
         if _DENIED not in KNOWN_LIMITATIONS.get(binding.adapter, {}):
-            with pytest.raises(ToolNotInProfile) as caught:
+            with pytest.raises(ToolNotInProfile) as caught, typed_refusals():
                 await bound.call("add", {"a": 2, "b": 3})
             assert caught.value.tool_name == "add"
-            assert caught.value.server == "com.example/inv-d/1.0.0"
+            assert caught.value.server == ("com.example/inv-d/1.0.0" if binding.per_tool else None)
             assert caught.value.profile is None
             assert "API Manager" in caught.value.remediation
             assert "SKU-9" in await bound.call("lookup_sku", {"sku": "SKU-9"})
@@ -560,7 +688,7 @@ async def test_cross_origin_redirect_never_forwards_the_credential(
 
 def test_every_adapter_has_a_binding() -> None:
     assert set(BINDINGS) == set(ADAPTERS)
-    for scenario in ("single_tool_call", _MULTI, "tool_filtering", _DENIED):
+    for scenario in ("single_tool_call", _MULTI, "tool_filtering", _DENIED, "policy_refusal_typed"):
         assert scenario in CONFORMANCE_SCENARIOS
         assert any("test_tool_binding.py" in node for node in SCENARIO_BODIES[scenario])
 
@@ -575,13 +703,11 @@ def test_the_whole_server_bindings_are_exactly_the_exempt_ones() -> None:
         assert "cannot rename" in reason and "filter(deny=" in reason, reason
 
 
-def test_the_denial_exemptions_are_exactly_the_whole_server_bindings() -> None:
-    """``tool_access_denied_typed`` is exempt for exactly the whole-server
-    bindings, each one's recorded behaviour is asserted above, and its reason
-    names the helper that converts the denial."""
+def test_the_denial_exemptions_are_exactly_the_result_bindings() -> None:
+    """Only frameworks returning denial text have no exception for the bridge."""
     exempt = {adapter for adapter, limits in KNOWN_LIMITATIONS.items() if _DENIED in limits}
     whole = {b.adapter for b in BINDINGS.values() if not b.per_tool}
-    assert exempt == whole
+    assert exempt == _RETURNS_AN_ERROR_RESULT
     assert _RAISES_THE_MCP_ERROR | _RETURNS_AN_ERROR_RESULT == {BINDINGS[a].method for a in whole}
     assert not _RAISES_THE_MCP_ERROR & _RETURNS_AN_ERROR_RESULT
     for adapter in exempt:
@@ -593,6 +719,11 @@ def test_the_denial_exemptions_are_exactly_the_whole_server_bindings() -> None:
 def test_no_other_tool_binding_scenario_is_exempt() -> None:
     for scenario in ("single_tool_call", "tool_filtering"):
         assert not [a for a, limits in KNOWN_LIMITATIONS.items() if scenario in limits]
+
+
+def test_policy_exemptions_match_the_asserted_framework_paths() -> None:
+    exempt = {a for a, limits in KNOWN_LIMITATIONS.items() if "policy_refusal_typed" in limits}
+    assert exempt == {"adk", "strands", "crewai"}
 
 
 def test_ci_requires_the_bindings_its_locks_pin() -> None:

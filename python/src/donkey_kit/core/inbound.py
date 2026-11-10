@@ -26,26 +26,58 @@ an inbound MCP or HTTP surface can be another.
 from __future__ import annotations
 
 import contextlib
+import math
 import re
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from . import _verify
-from .correlation import CorrelationSource, new_correlation_id, run_scope
-from .telemetry import DONKEY_CORRELATION_ID, DONKEY_CORRELATION_SOURCE
+from . import _verify, _wire
+from .correlation import (
+    CorrelationSource,
+    current_correlation_id,
+    current_correlation_source,
+    current_cost_tags,
+    new_correlation_id,
+    run_scope,
+)
+from .telemetry import (
+    DONKEY_CORRELATION_ID,
+    DONKEY_CORRELATION_SOURCE,
+    DONKEY_COST_ENV,
+    DONKEY_COST_PROJECT,
+    DONKEY_COST_TEAM,
+)
 
 if TYPE_CHECKING:
+    from .cost import CostTags
     from .refusals import TypedRefusals
 
 __all__ = [
+    "DONKEY_A2A_QUALITY_EVALUATION",
+    "DONKEY_A2A_QUALITY_EXPLANATION",
+    "DONKEY_A2A_QUALITY_SCORE",
+    "DONKEY_A2A_QUALITY_STATUS",
     "DONKEY_CORRELATION_SOURCE",
+    "SPAN_A2A_CALL",
     "SPAN_A2A_TASK",
     "CorrelationSource",
     "InboundRun",
+    "OutboundRun",
     "correlation_id_from_headers",
     "inbound_task",
+    "outbound_call",
 ]
+
+#: The span one outbound A2A call opens around card discovery and sending.
+SPAN_A2A_CALL = "donkey.a2a.call"
+
+# Stable DDK annotation keys; these describe the gateway verdict, not an eval framework.
+DONKEY_A2A_QUALITY_EVALUATION = "donkey.a2a.quality.evaluation"
+DONKEY_A2A_QUALITY_SCORE = "donkey.a2a.quality.score"
+DONKEY_A2A_QUALITY_STATUS = "donkey.a2a.quality.status"
+DONKEY_A2A_QUALITY_EXPLANATION = "donkey.a2a.quality.explanation"
 
 #: The span one inbound A2A task opens around its handler.
 SPAN_A2A_TASK = "donkey.a2a.task"
@@ -67,6 +99,126 @@ class InboundRun:
 
     correlation_id: str
     source: CorrelationSource
+
+
+@dataclass(frozen=True)
+class OutboundRun:
+    """The run and W3C headers for an outbound A2A call (#1395).
+
+    Attributes:
+        correlation_id: The shared run id for card discovery and sending.
+        trace_headers: Immutable W3C trace-context headers, without baggage.
+    """
+
+    correlation_id: str
+    trace_headers: Mapping[str, str]
+    _span: Any = field(default=None, repr=False, compare=False)
+    _capture_content: bool = field(default=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "trace_headers", MappingProxyType(dict(self.trace_headers)))
+
+    def record_quality(self, headers: Mapping[str, str]) -> None:
+        """Record captured quality annotations; explanation text requires opt-in (#1399).
+
+        Missing or malformed values are omitted, never treated as call failures.
+        Only captured evaluation/status values are exported without content opt-in.
+        No score range is inferred from the single captured verdict.
+        """
+        if self._span is None:
+            return
+        values = {key.lower(): value for key, value in headers.items()}
+        for header, attribute, expected in (
+            (_wire.A2A_QUALITY_EVALUATION_HEADER, DONKEY_A2A_QUALITY_EVALUATION, "yes"),
+            (_wire.A2A_QUALITY_STATUS_HEADER, DONKEY_A2A_QUALITY_STATUS, "completed"),
+        ):
+            if values.get(header) == expected:
+                self._span.set_attribute(attribute, expected)
+        score = values.get(_wire.A2A_QUALITY_SCORE_HEADER, "")
+        if score and len(score) <= 64:
+            try:
+                number = float(score)
+            except ValueError:
+                pass
+            else:
+                if math.isfinite(number):
+                    self._span.set_attribute(DONKEY_A2A_QUALITY_SCORE, number)
+        explanation = values.get(_wire.A2A_QUALITY_EXPLANATION_HEADER)
+        if self._capture_content and explanation:
+            self._span.set_attribute(DONKEY_A2A_QUALITY_EXPLANATION, explanation[:4096])
+
+
+@contextlib.contextmanager
+def outbound_call(
+    *, telemetry: bool, cost: CostTags | None = None, capture_content: bool = False
+) -> Iterator[OutboundRun]:
+    """Bind one outbound A2A call and open a DDK CLIENT span (#1395).
+
+    Keep card discovery and sending inside this block to share a correlation id.
+    An enclosing run's id and source are preserved; otherwise a fresh id is bound
+    for this call only. The tracer is resolved per call, with no global setup.
+    W3C headers describe this span, so the remote inbound task becomes its child.
+    Telemetry off or absent yields an empty header mapping but still binds a run.
+
+    A streaming client generator must hold this context across its yields and
+    callers must exhaust it or explicitly await its ``aclose()`` in the same
+    task/context on early exit. Merely breaking an async iteration does not close
+    it. Cancellation and errors end the span, recording only the exception type,
+    never its message. Explicit generator closure ends the span without an error.
+
+    Args:
+        telemetry: Whether to open the span and inject W3C trace context.
+        capture_content: Opt in to quality explanation text, limited to 4096 characters.
+        cost: Configured cost tags; current run overrides win per dimension.
+            Only team, project and environment are recorded, never end-user ids.
+            This does not change the cost state bound by the enclosing run.
+    """
+    from .telemetry import _tracer
+
+    existing_id = current_correlation_id()
+    run_id = existing_id or new_correlation_id()
+    source = current_correlation_source() if existing_id is not None else "minted"
+    tracer = _tracer() if telemetry else None
+    with run_scope(run_id, source=source):
+        if tracer is None:
+            yield OutboundRun(run_id, {})
+            return
+        from opentelemetry.trace import SpanKind
+        from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+        attributes = {DONKEY_CORRELATION_ID: run_id}
+        if source is not None:
+            attributes[DONKEY_CORRELATION_SOURCE] = source
+        overrides = current_cost_tags()
+        tags = (
+            cost.merge(overrides)
+            if cost is not None and overrides is not None
+            else cost or overrides
+        )
+        if tags is not None:
+            for key, value in (
+                (DONKEY_COST_TEAM, tags.team),
+                (DONKEY_COST_PROJECT, tags.project),
+                (DONKEY_COST_ENV, tags.env),
+            ):
+                if value is not None:
+                    attributes[key] = value
+        with tracer.start_as_current_span(
+            SPAN_A2A_CALL,
+            kind=SpanKind.CLIENT,
+            attributes=attributes,
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                headers: dict[str, str] = {}
+                TraceContextTextMapPropagator().inject(headers)
+                yield OutboundRun(run_id, headers, span, capture_content)
+            except GeneratorExit:
+                raise
+            except BaseException as exc:
+                _mark_failed(span, exc)
+                raise
 
 
 def correlation_id_from_headers(
@@ -147,7 +299,7 @@ def _parent(headers: Mapping[str, str]) -> Any:
     return extract({name.lower(): value for name, value in headers.items()})
 
 
-def _mark_failed(span: Any, exc: Exception) -> None:
+def _mark_failed(span: Any, exc: BaseException) -> None:
     from opentelemetry.trace import Status, StatusCode
 
     span.set_attribute("error.type", type(exc).__name__)

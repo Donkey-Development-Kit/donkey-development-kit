@@ -126,7 +126,8 @@ gateway does not allow is refused too.
 ## When a handler fails
 
 - **A handler that raises does not mask the refusal.** The exception is logged
-  at `WARNING` with its traceback, and the original refusal propagates.
+  at `WARNING` by handler label and exception type only, without the callback's
+  message or traceback, and the original refusal propagates.
 - **An `async def` handler** is awaited on the async client. The blocking
   client cannot await it, so there the refusal propagates with a `WARNING`;
   use a plain function if you make blocking calls.
@@ -167,6 +168,12 @@ async def enrich(record: dict[str, str]) -> None:
 ```
 
 ## Framework support
+
+JSON-RPC [custom registrations](https://docs.donkey-kit.dev/custom-policies.md#json-rpc-errors) share the
+classifier registry, not an additional handler interception path. The standalone
+`jsonrpc_refusal()` returns a typed refusal for your code to handle; it does not
+invoke `donkey.on(...)`. Registering an HTTP-200 JSON-RPC shape does not make the
+transport inspect successful responses or add MCP/A2A binding coverage.
 
 Handlers run at the SDK's transport, so they apply to every adapter whose calls
 go through the SDK's HTTP client. CrewAI's provider owns its own transport, so

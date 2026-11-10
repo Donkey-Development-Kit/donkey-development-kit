@@ -92,3 +92,9 @@ is not rewritten.
 | [0018](0018-per-client-approvals.md) | Each Donkey owns its pending approvals; a gated call records on the client that runs it, else the one it was declared on | Accepted | #1423 |
 | [0019](0019-derived-endpoint-trust.md) | A URL read from a configured endpoint follows that endpoint's trust rule, for every credential sent to it | Accepted | #1479 |
 | [0020](0020-provisional-members-of-stable-classes.md) | A public member of a stable class may be provisional, when its docstring and the snapshot both say so | Accepted | #1499 |
+| [0021](0021-jsonrpc-refusal-matching.md) | JSON-RPC refusals share the custom-policy registry through an explicit opt-in | Accepted | #1385 |
+| [0022](0022-scoped-a2a-outbound-plane.md) | Outbound A2A uses a scoped credential plane and a provisional facade over the official SDK | Proposed (implementation and API tier enforcement present; user acceptance pending) | #1395 |
+| [0023](0023-simulate-mcp-declared-discovery.md) | `Donkey.simulate_mcp()` answers discovery from declared servers and lazily imports the simulator | Accepted | #1391 |
+| [0024](0024-tool-lockfile-drift-detection.md) | The tool lockfile pins gateway-visible tool descriptors and detects drift; it never controls access | Accepted | #1646 |
+| [0025](0025-simulate-a2a-declared-agents.md) | `Donkey.simulate_a2a()` resolves declared agents offline and lazily imports the simulator | Accepted | #1652 |
+| [0026](0026-approval-snapshots-and-requester-loss.md) | Approval snapshots are isolated; missing native requesters fail closed (supersedes ADR 0018 decision 4's fallback) | Accepted | #1693 |

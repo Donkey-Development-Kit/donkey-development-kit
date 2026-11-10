@@ -213,10 +213,14 @@ always sends it as `x-goog-api-key`; the gateway authenticates on the
 `total_tokens`, `cached_tokens`, `reasoning_tokens`) is read from Gemini's
 `usageMetadata`, and `requested_model` from the URL path. Gemini's
 `total_tokens` includes the thinking tokens it also reports as
-`reasoning_tokens`. A `Format=Gemini` proxy is a passthrough, so it sends no
-routing headers: `served_provider`, `served_model` and `routing_type` stay
-`None`, and `substituted` is `False`. `request_id` and `api_instance_id` are
-populated.
+`reasoning_tokens`. On `model-based-routing` 1.0.5 a `Format=Gemini` proxy
+sends the routing headers, so `served_provider` (`gemini`), `served_model` and
+`routing_type` are filled. Every model in the path is served by `gemini`, so a
+path model the proxy resolves to another model sets `substituted` to `True`.
+Older versions pass the request through with no routing headers:
+`served_provider`, `served_model` and `routing_type` stay `None`, and
+`substituted` is `False`. `request_id` and `api_instance_id` are populated on
+both.
 
 `last_call` is contextvar-scoped, and ADK's `Runner` makes the model call in a
 task of its own, so the caller of `runner.run_async(...)` reads `UNOBSERVED`.
@@ -297,7 +301,15 @@ run in `asyncio.run(...)` can build the `Donkey` (or call the module-level
   confirmation. `pending_approvals(events)` returns each paused call as an
   `Approval`; resume the run on a user message whose parts are
   `approve(...).native` or `reject(...).native`, the `types.Part` each helper
-  returns on the `Approval`. See [Human-in-the-loop](/hitl#in-a-google-adk-app).
+  returns on the `Approval`. DDK's requester evidence remains in process
+  memory, not the session events: missing evidence on native resume raises
+  `AuthError` without running the tool, and changed arguments raise `ConfigError`.
+  Request a fresh approval after losing that state. See
+  [Human-in-the-loop](/hitl#in-a-google-adk-app).
+- **The plugin's injected `ToolContext` is execution-only.** It is excluded
+  from approval review and snapshots, and execution must receive that exact
+  framework-supplied object. Reviewed arguments and defaults still require
+  acyclic exact built-in data; this is not an exemption for custom user values.
 - **`gemini()` needs the `adk` extra's minimum `google-adk`** (see
   [Version compatibility](/frameworks/compatibility)), the first release whose
   `Gemini` accepts `client_kwargs`. On an older

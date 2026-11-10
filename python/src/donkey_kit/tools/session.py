@@ -51,6 +51,7 @@ in code, so it has no such check.
 from __future__ import annotations
 
 import asyncio
+import copy
 import dataclasses
 import functools
 import logging
@@ -60,6 +61,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequenc
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from fnmatch import fnmatchcase
+from types import SimpleNamespace
 from typing import Any, TypeVar
 
 from ..core import _verify
@@ -68,8 +70,9 @@ from ..core.config import DonkeyConfig
 from ..core.errors import AuthError, ConfigError, ConfigWarning, DonkeyError
 from ..core.identity import Requester, capture_requester, current_user
 from ..core.reactions import Duration
+from ..core.refusals import translate
 from ..core.step_up import wait_for_approval
-from ..core.tool_access import tool_access_denial
+from ..core.tool_access import ToolNotInProfile
 from ..registry.models import McpServerHandle
 from .approval import ApprovalRule, check_rules, gated_tool, rule_for
 from .auth import McpAuth
@@ -81,6 +84,7 @@ from .filter import (
     descriptor_tokens,
     resolve_collisions,
 )
+from .lockfile import Lockfile, ToolLockDrift, compare_lock, server_key
 from .mcp import client_factory, list_tools, open_session, open_transport
 
 __all__ = ["ToolSet", "UngovernedMcpServer"]
@@ -168,6 +172,9 @@ class ToolSet:
         _user_header: str | None = None,
         _endpoint_check: Callable[[bool, bool], None] | None = None,
         _step_up_wait: float = 0.0,
+        _mcp_transport: dict[str, Callable[..., Any]] | None = None,
+        _lock: Lockfile | None = None,
+        _unpinned: tuple[ToolExclusion, ...] = (),
     ) -> None:
         self._servers = list(servers)
         # Every filter() call so far: a tool is exposed only if all accept it,
@@ -196,6 +203,11 @@ class ToolSet:
         self._endpoint_check = _endpoint_check
         # How long listing waits for a gateway step-up (CIBA) approval; 0 raises at once (#214).
         self._step_up_wait = _step_up_wait
+        self._mcp_transport = _mcp_transport if _mcp_transport is not None else {}
+        # The donkey.lock discover(locked=True) read (BG §2.7): describe() checks the
+        # listing against it, and drops the tools it does not pin (kept in _unpinned).
+        self._lock = _lock
+        self._unpinned = _unpinned
 
     def _with(
         self,
@@ -204,6 +216,8 @@ class ToolSet:
         _filters: tuple[ToolFilter, ...] | None = None,
         _approvals: tuple[ApprovalRule, ...] | None = None,
         _step_up_wait: float | None = None,
+        _mcp_transport: dict[str, Callable[..., Any]] | None = None,
+        _unpinned: tuple[ToolExclusion, ...] | None = None,
     ) -> ToolSet:
         return ToolSet(
             _servers if _servers is not None else self._servers,
@@ -217,6 +231,9 @@ class ToolSet:
             _user_header=self._user_header,
             _endpoint_check=self._endpoint_check,
             _step_up_wait=self._step_up_wait if _step_up_wait is None else _step_up_wait,
+            _mcp_transport=self._mcp_transport if _mcp_transport is None else _mcp_transport,
+            _lock=self._lock,
+            _unpinned=self._unpinned if _unpinned is None else _unpinned,
         )
 
     @property
@@ -291,7 +308,9 @@ class ToolSet:
         kept = self._servers if servers is None else _select(self._servers, servers)
         if all(s.tool_descriptors is not None for s in kept):
             check_patterns(new, [d for _, d in _index(kept, None)])
-        return self._with(_servers=kept, _filters=(*self._filters, new))
+        names = {s.ref.asset_id for s in kept}
+        unpinned = tuple(e for e in self._unpinned if e.server in names)
+        return self._with(_servers=kept, _filters=(*self._filters, new), _unpinned=unpinned)
 
     def descriptor_tokens(self) -> int:
         """Estimate the prompt tokens this set's tool descriptors cost on every
@@ -422,6 +441,9 @@ class ToolSet:
         """``exposed_name -> original_name`` so a developer can debug why the
         model called ``hr__get_employee`` (BG §2.7).
 
+        ``original_name`` is the gateway-visible name from ``tools/list``, not
+        a name hidden by Tool Mapping or Progressive Disclosure (#1389).
+
         Raises:
             ConfigError: Two tools would still be exposed under one name, such
                 as two servers that share a short name.
@@ -433,16 +455,20 @@ class ToolSet:
     def excluded(self) -> tuple[ToolExclusion, ...]:
         """The tools the servers list that this set does not expose, and why (#312).
 
-        Today every entry is a tool a :meth:`filter` call removed
-        (``reason="filter"``). A tool outside the consumer's MCP access profile is
+        An entry is a tool a :meth:`filter` call removed (``reason="filter"``) or,
+        on a set from ``discover(locked=True)``, a tool ``donkey.lock`` does not
+        pin (``reason="unpinned"``). A tool outside the consumer's MCP access profile is
         not here: the gateway leaves it out of ``tools/list`` for that caller
         (docs/verified-apis.md §9, #303), so the SDK never sees it. A server
         whose descriptors are not known yet (see :meth:`describe`) adds nothing.
         """
-        return tuple(
-            ToolExclusion(name=d.name, server=d.server, reason="filter")
-            for _, d in _index(self._servers, None)
-            if not all(f.accepts(d) for f in self._filters)
+        return (
+            tuple(
+                ToolExclusion(name=d.name, server=d.server, reason="filter")
+                for _, d in _index(self._servers, None)
+                if not all(f.accepts(d) for f in self._filters)
+            )
+            + self._unpinned
         )
 
     def _descriptors(self, *, filtered: bool = True) -> list[ToolDescriptor]:
@@ -487,6 +513,10 @@ class ToolSet:
         (#1320), which is raised as it is, or the call ran inside
         ``donkey.as_user(...)``, where it was the user's token that was refused.
 
+        A catalog exposing both ``search_tools`` and ``invoke_tool`` is reported
+        at info level before filtering (#1389). It is bound as-is; names alone
+        do not prove which gateway policy produced it.
+
         Raises:
             UngovernedMcpServer: A server in the set is not governed (ADR 0017).
             ConfigError: No gateway credential is configured outside a
@@ -500,6 +530,15 @@ class ToolSet:
             GatewayApprovalDenied: The user denied that approval.
             AuthError: The gateway refused the credential or the user's token.
             ToolInvocationError: A server could not list its tools.
+            ToolLockDrift: The set is locked and a pinned tool of a server in the
+                set is missing or changed. A tool the lock does not pin is dropped
+                with a warning and listed in :attr:`excluded`.
+
+        The lock is checked here, when the set lists its tools, which is bind
+        time for every binding. Per-tool bindings convert this validated snapshot,
+        not a second listing. A whole-server binding (ADK, Strands, CrewAI,
+        Agent Framework, OpenAI Agents) then binds the framework's own later
+        listing, narrowed by tool name, so that listing is not re-checked.
         """
         self._require_governed()
         missing = [i for i, s in enumerate(self._servers) if s.tool_descriptors is None]
@@ -508,13 +547,62 @@ class ToolSet:
             listed = await self._list(missing)
             for index, tools in zip(missing, listed, strict=True):
                 servers[index] = dataclasses.replace(servers[index], tool_descriptors=tools)
+        for server in servers:
+            names = [tool.get("name") for tool in server.tool_descriptors or ()]
+            if "search_tools" in names and "invoke_tool" in names:
+                _log.info(
+                    "MCP server %s exposes search_tools / invoke_tool: bind the "
+                    "gateway-visible catalog as-is. Filters and approvals name these "
+                    "meta-tools (or other listed tools), not hidden upstream tools. "
+                    "Tool names alone do not identify an installed gateway policy.",
+                    server.ref.coordinates,
+                )
+        unpinned = self._unpinned
+        if self._lock is not None:
+            servers, unpinned = self._enforce_lock(self._lock, servers)
         every = [d for _, d in _index(servers, None)]
         for each in self._filters:
             check_patterns(each, every)
         check_rules(self._approvals, every)
-        return self._with(_servers=servers) if missing else self
+        if missing or unpinned is not self._unpinned:
+            return self._with(_servers=servers, _unpinned=unpinned)
+        return self
+
+    def _enforce_lock(
+        self, lock: Lockfile, servers: list[McpServerHandle]
+    ) -> tuple[list[McpServerHandle], tuple[ToolExclusion, ...]]:
+        """Raise on drift from ``lock``; drop the tools it does not pin (BG §2.7)."""
+        # Presence was checked once, at discover(); filter(servers=...) may have
+        # narrowed the set since.
+        drift, unpinned = compare_lock(lock, servers, check_presence=False)
+        if drift:
+            raise ToolLockDrift.of(drift)
+        if not unpinned:
+            return servers, self._unpinned
+        kept: list[McpServerHandle] = []
+        found: list[ToolExclusion] = []
+        for server in servers:
+            key = server_key(server)
+            names = sorted(n for k, n in unpinned if k == key)
+            if names:
+                _log.warning(
+                    "MCP server %s lists tools donkey.lock does not pin; dropped: %s. "
+                    "Re-run donkey.tools.lock() to pin them.",
+                    server.ref.coordinates,
+                    ", ".join(names),
+                )
+                found.extend(ToolExclusion(n, server.ref.asset_id, "unpinned") for n in names)
+                server = dataclasses.replace(
+                    server,
+                    tool_descriptors=tuple(
+                        t for t in server.tool_descriptors or () if str(t.get("name")) not in names
+                    ),
+                )
+            kept.append(server)
+        return kept, self._unpinned + tuple(found)
 
     async def _list(self, indexes: list[int]) -> list[tuple[dict[str, object], ...]]:
+        factory = self._mcp_transport.get("factory")
         user = current_user() is not None
         for attempt in (1, 2):
             headers = await self._headers()
@@ -527,6 +615,7 @@ class ToolSet:
                                 self._servers[i].endpoint_url,
                                 headers,
                                 server=self._servers[i].ref.coordinates,
+                                **({"http_factory": factory} if factory else {}),
                             ),
                             timeout=self._step_up_wait,
                         )
@@ -598,8 +687,24 @@ class ToolSet:
         Each tool records who it is bound for, read with the headers' user
         token, so a per-tool call under another user is refused (#1418).
         """
+        if (
+            self._mcp_transport
+            and not per_tool
+            and binding not in {"agent_framework()", "openai_agents()", "strands()"}
+        ):
+            raise ConfigError(
+                "Offline MCP transport injection supports only LangGraph, "
+                "LlamaIndex, Anthropic, Agent Framework, OpenAI Agents SDK and Strands bindings."
+            )
         described = await self.describe()
         servers = described.servers
+        if self._lock is not None:
+            # Own the checked catalog across the authentication await and native
+            # conversion, independent of the caller's mutable descriptor dictionaries.
+            servers = tuple(
+                dataclasses.replace(s, tool_descriptors=copy.deepcopy(s.tool_descriptors))
+                for s in servers
+            )
         indexed = _index(servers, self._filters)
         exposed, _ = resolve_collisions([d for _, d in indexed])
         exposed_as = {id(d): name for name, d in exposed.items()}
@@ -676,6 +781,7 @@ class ToolSet:
             ImportError: ``langchain-mcp-adapters`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from langchain_mcp_adapters.client import MultiServerMCPClient
         except ImportError as exc:
@@ -687,14 +793,28 @@ class ToolSet:
                     "transport": "streamable_http",
                     "url": server.endpoint_url,
                     "headers": dict(headers),
-                    "httpx_client_factory": client_factory(server.endpoint_url, headers),
+                    "httpx_client_factory": self._client_factory(server.endpoint_url, headers),
                 }
                 for server, _ in plan
             }
         )
         bound: list[Any] = []
         for server, names in plan:
-            for tool in await client.get_tools(server_name=server.ref.coordinates):
+            if self._lock is not None:
+                from langchain_mcp_adapters.tools import convert_mcp_tool_to_langchain_tool
+
+                native = [
+                    convert_mcp_tool_to_langchain_tool(
+                        None,
+                        descriptor,
+                        connection=client.connections[server.ref.coordinates],
+                        server_name=server.ref.coordinates,
+                    )
+                    for descriptor in _locked_descriptors(server, names)
+                ]
+            else:
+                native = await client.get_tools(server_name=server.ref.coordinates)
+            for tool in native:
                 plan_tool = names.get(tool.name)
                 if plan_tool is None:
                     continue
@@ -715,18 +835,45 @@ class ToolSet:
             ImportError: ``llama-index-tools-mcp`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from llama_index.core.tools import FunctionTool
             from llama_index.tools.mcp import BasicMCPClient, McpToolSpec
         except ImportError as exc:
             raise ImportError(_install("llamaindex", "llama-index-tools-mcp")) from exc
+        if self._mcp_transport:
+            from llama_index.tools.mcp.client import enable_sse
+
+            if any(enable_sse(server.endpoint_url) for server in self.servers):
+                raise ConfigError(
+                    "Offline MCP injection requires LlamaIndex streamable-HTTP endpoints; "
+                    "its legacy SSE transport ignores the injected client."
+                )
         plan, headers = await self._plan("llamaindex()", per_tool=True)
         bound: list[Any] = []
         for server, names in plan:
             # BasicMCPClient sends through a passed client and ignores headers= then.
-            http = client_factory(server.endpoint_url, headers)(headers=headers)
+            http = self._client_factory(server.endpoint_url, headers)(headers=headers)
             client = BasicMCPClient(server.endpoint_url, http_client=http)
             spec = McpToolSpec(client, allowed_tools=sorted(names))
+            if self._lock is not None:
+                # McpToolSpec 0.6 consumes MCP 2's snake-case schema attribute.
+                # Supply its conversion input from the canonical wire snapshot,
+                # regardless of the installed MCP model's Python field spelling.
+                snapshot = [
+                    SimpleNamespace(
+                        name=d["name"],
+                        description=d.get("description") or "",
+                        input_schema=copy.deepcopy(d.get("inputSchema") or {}),
+                    )
+                    for d in server.tool_descriptors or ()
+                    if d.get("name") in names
+                ]
+
+                async def fetch_tools(snapshot: list[Any] = snapshot) -> list[Any]:
+                    return snapshot
+
+                spec.fetch_tools = fetch_tools
             for tool in await spec.to_tool_list_async():
                 plan_tool = names[tool.metadata.name]
                 tool.metadata.name = plan_tool.exposed
@@ -756,6 +903,7 @@ class ToolSet:
             ImportError: ``anthropic`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from anthropic.lib.tools import BetaAsyncFunctionTool
             from anthropic.lib.tools.mcp import async_mcp_tool
@@ -766,9 +914,18 @@ class ToolSet:
             bound: list[Any] = []
             for server, names in plan:
                 session = await stack.enter_async_context(
-                    open_session(server.endpoint_url, headers)
+                    open_session(
+                        server.endpoint_url,
+                        headers,
+                        http_factory=self._mcp_transport.get("factory"),
+                    )
                 )
-                for mcp_tool in (await session.list_tools()).tools:
+                native = (
+                    _locked_descriptors(server, names)
+                    if self._lock is not None
+                    else (await session.list_tools()).tools
+                )
+                for mcp_tool in native:
                     plan_tool = names.get(mcp_tool.name)
                     if plan_tool is None:
                         continue
@@ -781,6 +938,17 @@ class ToolSet:
                     )
                     bound.append(tool)
             yield bound
+
+    def _binding_owner(self) -> ToolSet:
+        # A binding suspended during auth must retain its scope, even after exit.
+        if not self._mcp_transport:
+            return self
+        return self._with(_mcp_transport=dict(self._mcp_transport))
+
+    def _client_factory(self, url: str, headers: Mapping[str, str]) -> Callable[..., Any]:
+        if self._mcp_transport:
+            return functools.partial(self._mcp_transport["factory"], url, headers)
+        return client_factory(url, headers)
 
     async def adk(self) -> list[Any]:  # -> list[McpToolset]
         """Bind the tool set as Google ADK ``McpToolset`` objects, one per
@@ -825,16 +993,22 @@ class ToolSet:
             ImportError: ``strands-agents`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from strands.tools.mcp import MCPClient
         except ImportError as exc:
             raise ImportError(_install("strands", None)) from exc
+        if self._mcp_transport:
+            _require_replay_versions("Strands", {"strands-agents": (1, 64, 0), "mcp": (2, 3, 0)})
         plan, headers = await self._plan("strands()", per_tool=False)
         return [
             MCPClient(
                 # The url= form builds its own client; the transport form takes ours.
                 transport_callable=functools.partial(
-                    open_transport, server.endpoint_url, dict(headers)
+                    open_transport,
+                    server.endpoint_url,
+                    dict(headers),
+                    http_factory=self._client_factory(server.endpoint_url, headers),
                 ),
                 tool_filters={"allowed": sorted(names)},
             )
@@ -854,17 +1028,22 @@ class ToolSet:
             ImportError: ``openai-agents`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from agents.mcp import MCPServerStreamableHttp, create_static_tool_filter
         except ImportError as exc:
             raise ImportError(_install("openai-agents", None)) from exc
+        if self._mcp_transport:
+            _require_replay_versions(
+                "OpenAI Agents SDK", {"openai-agents": (0, 20, 0), "mcp": (2, 3, 0)}
+            )
         plan, headers = await self._plan("openai_agents()", per_tool=False)
         return [
             MCPServerStreamableHttp(
                 params={
                     "url": server.endpoint_url,
                     "headers": dict(headers),
-                    "httpx_client_factory": client_factory(server.endpoint_url, headers),
+                    "httpx_client_factory": self._client_factory(server.endpoint_url, headers),
                 },
                 name=server.ref.asset_id,
                 tool_filter=create_static_tool_filter(allowed_tool_names=sorted(names)),
@@ -887,20 +1066,35 @@ class ToolSet:
             ImportError: ``agent-framework`` is not installed.
         """
         self._require_governed()
+        self = self._binding_owner()
         try:
             from agent_framework import MCPStreamableHTTPTool
         except ImportError as exc:
             raise ImportError(_install("agent_framework", None)) from exc
+        if self._mcp_transport:
+            _require_replay_versions(
+                "Agent Framework", {"agent-framework-core": (1, 24, 0), "mcp": (2, 3, 0)}
+            )
         plan, headers = await self._plan("agent_framework()", per_tool=False)
-        return [
-            MCPStreamableHTTPTool(
+        bound = []
+        for server, names in plan:
+            tool = MCPStreamableHTTPTool(
                 server.ref.asset_id,
                 server.endpoint_url,
                 static_headers=dict(headers),
                 allowed_tools=sorted(names),
             )
-            for server, names in plan
-        ]
+            if self._mcp_transport:
+                # The public transport context owns a fresh client per connection;
+                # http_client= alone is borrowed and would never be closed by MAF.
+                tool.get_mcp_client = functools.partial(
+                    open_transport,
+                    server.endpoint_url,
+                    headers,
+                    http_factory=self._client_factory(server.endpoint_url, headers),
+                )
+            bound.append(tool)
+        return bound
 
     @asynccontextmanager
     async def crewai(self) -> AsyncIterator[list[Any]]:  # -> list[crewai BaseTool]
@@ -946,12 +1140,36 @@ class ToolSet:
                 await asyncio.to_thread(adapter.stop)
 
 
+def _require_replay_versions(binding: str, packages: Mapping[str, tuple[int, int, int]]) -> None:
+    import re
+    from importlib.metadata import version
+
+    requirements = " and ".join(
+        f"{package}>={'.'.join(map(str, minimum))}" for package, minimum in packages.items()
+    )
+    for package, minimum in packages.items():
+        installed = version(package)
+        release = (
+            tuple(int(part) for part in installed.split("."))
+            if re.fullmatch(r"\d+(?:\.\d+)+", installed)
+            else ()
+        )
+        if (*release, 0, 0)[:3] < minimum:
+            raise ConfigError(
+                f"Offline {binding} MCP injection requires stable {requirements}; "
+                f"found {package}=={installed}.",
+                remediation=(
+                    "Upgrade the test environment; production binding requirements are unchanged."
+                ),
+            )
+
+
 def _refusing(
     invoke: Callable[..., Any], *, tool: str, server: str, bound_for: Requester
 ) -> Callable[..., Any]:
-    """``invoke``, an async MCP tool call, re-raising the gateway's tool-access
-    denial as :class:`~donkey_kit.core.tool_access.ToolNotInProfile` (#312). Every
-    other exception, and every result (an ``isError`` one too), passes through.
+    """``invoke``, re-raising verified JSON-RPC policy refusals as typed errors
+    (#1388), including the gateway's tool-access denial (#312). Other errors
+    and every result (an ``isError`` one too) pass through.
 
     The call carries the headers of the user it was bound for, so a call under
     any other user raises :class:`~donkey_kit.core.errors.AuthError` and is not
@@ -965,10 +1183,18 @@ def _refusing(
         try:
             return await invoke(*args, **kwargs)
         except Exception as exc:
-            denied = tool_access_denial(exc, tool=tool, server=server)
-            if denied is None:
+            denied = translate(exc)
+            if denied is None or denied is exc:
                 raise
-            raise denied from exc
+            # Only the access-denial compatibility API retains its legacy cause.
+            if isinstance(denied, ToolNotInProfile):
+                denied.server = server
+                if denied.tool_name is None:
+                    denied.tool_name = tool
+                raise denied from exc
+            if denied.framework_error is None:
+                denied.framework_error = exc
+            raise denied from denied.__cause__
 
     return call
 
@@ -990,6 +1216,17 @@ def _wrong_user(tool: str, server: str, bound_for: Requester) -> AuthError:
             "the service. A binding sends the identity it was bound for (BG §2.4)."
         ),
     )
+
+
+def _locked_descriptors(server: McpServerHandle, names: Mapping[str, _Tool]) -> list[Any]:
+    """Native MCP models from the snapshot already checked by compare_lock (ADR 0024)."""
+    from mcp.types import Tool
+
+    return [
+        Tool.model_validate(copy.deepcopy(descriptor))
+        for descriptor in server.tool_descriptors or ()
+        if descriptor.get("name") in names
+    ]
 
 
 def _select(servers: list[McpServerHandle], patterns: list[str]) -> list[McpServerHandle]:

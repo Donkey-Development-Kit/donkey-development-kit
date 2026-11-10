@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 import pytest
 
-from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit import DonkeyConfig
 from donkey_kit.core import telemetry
 from donkey_kit.core.auth import StaticToken
 from donkey_kit.core.errors import AuthError, ConfigError, RegistryError, ToolInvocationError
@@ -77,11 +77,13 @@ class _Registry:
         self.searches.append(kw)
         return [_ref(a) for a in self.catalog]
 
-    async def explain(self, ref: AssetRef, *, criteria: GovernanceCriteria) -> GovernanceReport:
+    async def explain(
+        self, ref: AssetRef, *, criteria: GovernanceCriteria, fresh: bool = False
+    ) -> GovernanceReport:
         self.explained.append(ref.asset_id)
         return self.catalog[ref.asset_id]
 
-    async def resolve_mcp(self, ref: AssetRef) -> McpServerHandle:
+    async def resolve_mcp(self, ref: AssetRef, *, fresh: bool = False) -> McpServerHandle:
         if ref.asset_id in self.unresolved:
             raise RegistryError(f"{ref.asset_id} has no deployed MCP instance")
         return McpServerHandle(ref=ref, endpoint_url=f"https://gw.example.test/{ref.asset_id}")
@@ -109,7 +111,13 @@ async def test_discover_reads_mcp_assets_and_opens_no_connection(
     registry = _Registry({"inventory": _GOVERNED})
     ts = await _discover(_discovery(registry), tags=["retail"])
     assert registry.searches == [
-        {"asset_types": ["mcp"], "tags": ["retail"], "domain": None, "limit": DISCOVER_LIMIT}
+        {
+            "asset_types": ["mcp"],
+            "tags": ["retail"],
+            "domain": None,
+            "limit": DISCOVER_LIMIT,
+            "fresh": True,
+        }
     ]
     (server,) = ts.servers
     assert server.endpoint_url == "https://gw.example.test/inventory"
@@ -217,7 +225,9 @@ async def test_warm_is_one_search_and_one_explain_per_asset_eight_at_a_time() ->
     class _Slow(_Registry):
         live = peak = 0
 
-        async def explain(self, ref: AssetRef, *, criteria: GovernanceCriteria) -> GovernanceReport:
+        async def explain(
+            self, ref: AssetRef, *, criteria: GovernanceCriteria, fresh: bool = False
+        ) -> GovernanceReport:
             _Slow.live += 1
             _Slow.peak = max(_Slow.peak, _Slow.live)
             await asyncio.sleep(0)
@@ -328,12 +338,6 @@ async def test_discover_auth_overrides_the_default(monkeypatch: pytest.MonkeyPat
         {"client_id": "cid", "client_secret": "secret"},
         {"Authorization": "Bearer tok"},
     ]
-
-
-async def test_discover_locked_is_blocked() -> None:
-    async with Donkey(_CFG, auth=StaticToken("unused")) as donkey:
-        with pytest.raises(NotImplementedError, match=r"^blocked on verification:"):
-            await donkey.tools.discover(locked=True)
 
 
 # ---- describe() and the bind plan ----------------------------------------------

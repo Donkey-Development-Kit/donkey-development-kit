@@ -52,6 +52,65 @@ def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=build_app()), base_url="http://sim")
 
 
+@pytest.mark.parametrize(
+    "path", ["/responses", "/chat/completions", "/v1/messages", "/models/test:generateContent"]
+)
+@pytest.mark.parametrize("framing", ["declared", "chunked", "underdeclared"])
+async def test_model_body_limit(path: str, framing: str) -> None:
+    body = b" " * (4 * 1024 * 1024 + 1)
+    reads = 0
+
+    async def chunks():
+        nonlocal reads
+        for part in (body[:32], body[32:], b"not-read"):
+            reads += 1
+            yield part
+
+    headers = {"content-length": str(len(body))} if framing == "declared" else {}
+    if framing == "underdeclared":
+        headers["content-length"] = "1"
+    async with _client() as client:
+        response = await client.post(path, content=chunks(), headers=headers)
+    assert response.status_code == 413
+    assert response.headers[SIMULATOR_HEADER] == "true"
+    assert reads == (0 if framing == "declared" else 2)
+
+
+@pytest.mark.parametrize("chunked", [False, True])
+async def test_model_body_at_limit_remains_valid(chunked: bool) -> None:
+    body = b'{"model":"gpt-5.1"}'
+    body += b" " * (4 * 1024 * 1024 - len(body))
+
+    async def chunks():
+        yield body[:32]
+        yield body[32:]
+
+    async with _client() as client:
+        response = await client.post("/responses", content=chunks() if chunked else body)
+    assert response.status_code == 200
+    assert response.content == fx.load("success").body
+
+
+@pytest.mark.parametrize(
+    ("path", "status"),
+    [
+        ("/responses", 200),
+        ("/chat/completions", 200),
+        ("/v1/messages", 400),
+        ("/models/test:generateContent", 400),
+    ],
+)
+async def test_deeply_nested_json_uses_invalid_body_behavior(path: str, status: int) -> None:
+    # Only 400 KB: exercise decoder recursion, not the 4 MiB body limit.
+    body = b"[" * 200_000 + b"]" * 200_000
+    async with _client() as client:
+        response = await client.post(path, content=body)
+        later = await client.post(path, json={"model": "gpt-5.1"})
+    assert response.status_code == status
+    assert response.headers[SIMULATOR_HEADER] == "true"
+    assert later.status_code == 200
+
+
 async def test_happy_path_replays_success_verbatim_and_stamps_honesty() -> None:
     async with _client() as client:
         resp = await client.post("/v1/responses", json={"model": "gpt-5.1"})
@@ -170,6 +229,7 @@ _CLASSIFY = [
     ("ciba-denied", GatewayApprovalDenied),
     ("model-not-found", UpstreamRequestError),
     ("model-not-routable", ModelNotRoutable),
+    ("model-missing", ModelNotRoutable),
     ("upstream-5xx", UpstreamModelError),
     ("client-id-missing", AuthError),
 ]
@@ -216,6 +276,29 @@ async def test_unknown_sentinel_suffix_falls_through_to_happy_path() -> None:
     assert resp.content == fx.load("success").body
 
 
+@pytest.mark.parametrize(
+    "shape",
+    [
+        f"a2a-v1-{policy}-{method}"
+        for policy in ("azure-block", "pii", "rate")
+        for method in ("send", "stream")
+    ],
+)
+async def test_a2a_ingress_shapes_are_not_model_route_sentinels(shape: str) -> None:
+    """BG section 2.9.3: packaged A2A evidence must not leak into model-call protocols."""
+    async with _client() as client:
+        for route, success in (
+            ("/responses", "success"),
+            ("/chat/completions", "chat-success"),
+            ("/v1/messages", "anthropic-success"),
+            (f"/models/{SIM_MODEL_PREFIX}{shape}:generateContent", "gemini-success"),
+        ):
+            response = await client.post(route, json={"model": SIM_MODEL_PREFIX + shape})
+            assert response.status_code == 200
+            assert response.content == fx.load(success).body
+            assert response.headers[SIMULATOR_HEADER] == "true"
+
+
 async def test_semantic_success_sentinel_replays_the_semantic_routing_200() -> None:
     # The happy-path sentinel forces the Semantic-routing 200 (#601): a byte-faithful
     # replay of the live 'Finance' capture, honesty-stamped, carrying routing_type
@@ -251,6 +334,40 @@ async def test_semantic_success_sentinel_populates_matched_topic_and_score() -> 
     assert record.matched_topic == "Finance"
     assert record.routing_score == 0.62
     assert record.fallback is False
+
+
+@pytest.mark.parametrize(
+    ("shape", "fallback", "substituted"),
+    [
+        ("success-qualified-vendor", False, False),
+        ("fallback-qualified-vendor", True, True),
+    ],
+)
+async def test_qualified_vendor_sentinel_replays_the_live_capture(
+    shape: str, fallback: bool, substituted: bool
+) -> None:
+    # #1412: the model-based-routing 1.0.5 qualified-vendor 200s, byte-identical,
+    # so the `groupId:vendor` provider and the fallback path work offline.
+    from donkey_kit.core.lastcall import LastCall
+
+    async with _client() as client:
+        resp = await client.post(
+            "/v1/chat/completions",
+            json={
+                "model": SIM_MODEL_PREFIX + shape,
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+    assert resp.status_code == 200
+    assert resp.content == fx.load(shape).body
+    assert resp.headers[SIMULATOR_HEADER] == "true"
+    assert resp.headers["x-llm-proxy-llm-provider"] == "mulesoft:openai"
+    assert "set-cookie" not in resp.headers
+    requested = "openai/gpt-5-mini" if not fallback else "mistral/mistral-small-latest"
+    record = LastCall.from_response(resp, requested_model=requested)
+    assert record.served_provider == "mulesoft:openai"
+    assert record.served_model == "gpt-5-mini"
+    assert (record.fallback, record.substituted) == (fallback, substituted)
 
 
 # --- POST /chat/completions (#895) -------------------------------------------

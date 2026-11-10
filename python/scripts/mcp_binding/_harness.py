@@ -59,7 +59,9 @@ def stop_server(process: subprocess.Popen[str]) -> None:
 
 
 @contextmanager
-def local_mcp_server(*, deny: str | None = None, ciba: str | None = None) -> Iterator[LocalServer]:
+def local_mcp_server(
+    *, deny: str | None = None, ciba: str | None = None, refusal: Path | None = None
+) -> Iterator[LocalServer]:
     """Start server.py on a free port, wait for READY, yield it, stop it on exit.
     ``deny`` names a tool whose ``tools/call`` gets the gateway's access denial;
     ``ciba`` (``TOOL=MODE``) gives it the OBO policy's CIBA step-up answer instead."""
@@ -78,6 +80,7 @@ def local_mcp_server(*, deny: str | None = None, ciba: str | None = None) -> Ite
                     str(record),
                     *(["--deny", deny] if deny else []),
                     *(["--ciba", ciba] if ciba else []),
+                    *(["--refusal", str(refusal)] if refusal else []),
                 ],
                 stdout=subprocess.PIPE,
                 stderr=log_fh,
@@ -118,7 +121,8 @@ def cross_origin_redirect(target: LocalServer) -> Iterator[Redirect]:
             redirect.seen.append({k: self.headers.get(k) for k in ("client_id", "client_secret")})
             self.rfile.read(int(self.headers.get("content-length") or 0))
             self.send_response(307)
-            self.send_header("location", f"{target_origin}{self.path}")
+            path = self.path.replace("\r", "").replace("\n", "")
+            self.send_header("location", f"{target_origin}{path}")
             self.send_header("content-length", "0")
             self.end_headers()
 

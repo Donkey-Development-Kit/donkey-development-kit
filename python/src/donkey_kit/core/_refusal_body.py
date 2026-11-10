@@ -9,15 +9,19 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from . import _verify, _wire
 from ._response import ResponseLike
 
 __all__ = [
+    "MODEL_MISSING_REMEDIATION",
     "MODEL_NOT_ROUTABLE_RE",
+    "PII_TYPES",
     "PiiSpan",
     "code_str",
+    "content_safety_headers",
     "content_safety_reject",
     "json_body",
     "nested_error",
@@ -31,6 +35,9 @@ __all__ = [
 
 _PII_TYPE_RE = re.compile(r'"pii_type"\s*:\s*"([^"]+)"')
 
+# pii-core's canonical PiiType names; custom labels are untrusted diagnostics.
+PII_TYPES = frozenset({"SSN", "Email", "CreditCard", "PhoneNumber", "Custom"})
+
 #: One flagged PII entity: ``(entity type, start offset, end offset)``.
 PiiSpan = tuple[str, int | None, int | None]
 
@@ -39,8 +46,8 @@ def pii_spans(message: str | None) -> list[PiiSpan]:
     """Best-effort ``(entity type, start, end)`` for each entity the PII policy
     flagged, parsed from its rejection message (a JSON list of ``{"pii_type",
     "value", "start", "end"}`` objects; docs/verified-apis.md §4). The ``value``
-    is never read. Offsets are ``None`` when the list does not parse; an empty
-    list means no ``pii_type`` markers were found.
+    is never read. Unknown type labels become ``Custom``. Offsets are ``None``
+    when the list does not parse; an empty list means no ``pii_type`` markers were found.
 
     Deliberately best-effort (#289): the LLM PII Detection policy documents only
     the ``{"error":{"message","type":"pii_detected"}}`` envelope, not a structured
@@ -58,24 +65,32 @@ def pii_spans(message: str | None) -> list[PiiSpan]:
             parsed = None
         if isinstance(parsed, list):
             spans = [
-                (item["pii_type"], _int_or_none(item.get("start")), _int_or_none(item.get("end")))
+                (
+                    item["pii_type"] if item["pii_type"] in PII_TYPES else "Custom",
+                    _int_or_none(item.get("start")),
+                    _int_or_none(item.get("end")),
+                )
                 for item in parsed
                 if isinstance(item, dict) and isinstance(item.get("pii_type"), str)
             ]
             if spans:
                 return spans
-    return [(entity, None, None) for entity in _PII_TYPE_RE.findall(message)]
+    return [
+        (entity if entity in PII_TYPES else "Custom", None, None)
+        for entity in _PII_TYPE_RE.findall(message)
+    ]
 
 
 def pii_summary(status: int, spans: list[PiiSpan]) -> str:
     """The :class:`~donkey_kit.core.errors.PIIDetected` message: the entity types, their count and
-    offsets — never the flagged values the gateway echoes back."""
+    offsets — never the flagged values or untrusted type labels the gateway echoes back."""
     base = f"Request blocked: personally identifiable information detected ({status})"
     if not spans:
         return f"{base}."
     parts = [
-        entity if start is None or end is None else f"{entity} at chars {start}-{end}"
+        kind if start is None or end is None else f"{kind} at chars {start}-{end}"
         for entity, start, end in spans
+        for kind in (entity if entity in PII_TYPES else "Custom",)
     ]
     noun = "entity" if len(spans) == 1 else "entities"
     return (
@@ -215,8 +230,23 @@ def parse_retry_after(raw: str | None) -> float | None:
 # The model-based-routing rejection for a bare model name on a multi-provider
 # proxy (docs/verified-apis.md §4, #825). Live text: "Failed to parse model from
 # request: Model 'gpt-5-mini' is not in the known unique model map and multiple
-# providers are configured. Use 'provider/model' format."
-MODEL_NOT_ROUTABLE_RE = re.compile(r"Model '(?P<model>[^']*)' is not in the known unique model map")
+# providers are configured. Use 'provider/model' format." The ``missing`` branch
+# is the same rejection when the router finds no model where the ingress expects
+# one (#1547): no ``model`` body field on OpenAI ingress, or an OpenAI body on a
+# native Gemini ingress, whose router reads the model from the URL path. Live
+# text, model-based-routing 1.0.5: "Failed to parse model from request: Missing
+# 'model' field in request".
+MODEL_NOT_ROUTABLE_RE = re.compile(
+    r"Model '(?P<model>[^']*)' is not in the known unique model map"
+    r"|(?P<missing>Missing 'model' field in request)"
+)
+# ModelNotRoutable's next step for the missing-model variant (#1547), kept here
+# with the sentence it answers.
+MODEL_MISSING_REMEDIATION = (
+    "The gateway found no model where this proxy's ingress format expects one: the "
+    "'model' body field for OpenAI ingress, or the URL path for native Gemini ingress. "
+    "Send the model, and use the client that matches the proxy's format."
+)
 
 # Content-safety / guardrails policies report their verdict in a pair of vendor
 # headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
@@ -227,10 +257,22 @@ MODEL_NOT_ROUTABLE_RE = re.compile(r"Model '(?P<model>[^']*)' is not in the know
 # from a live gateway (ADR 0016, #1429; the capture is #1184).
 _CONTENT_SAFETY_VENDORS: tuple[tuple[str, str, str, str], ...] = (
     (
+        _wire.A2A_AZURE_GUARDRAIL_ACTION_HEADER,
+        _wire.A2A_AZURE_GUARDRAIL_REASON_HEADER,
+        "azure-content-safety",
+        "Azure Content Safety",
+    ),
+    (
         _wire.AZURE_CONTENT_SAFETY_ACTION_HEADER,
         _wire.AZURE_CONTENT_SAFETY_REASON_HEADER,
         "azure-content-safety",
         "Azure Content Safety",
+    ),
+    (
+        _wire.A2A_BEDROCK_GUARDRAIL_ACTION_HEADER,
+        _wire.A2A_BEDROCK_GUARDRAIL_REASON_HEADER,
+        "bedrock-guardrails",
+        "Amazon Bedrock Guardrails",
     ),
     (
         _wire.BEDROCK_GUARDRAIL_ACTION_HEADER,
@@ -260,11 +302,22 @@ def content_safety_reject(response: ResponseLike) -> tuple[str, str, list[str]] 
     ``ContentSafetyBlocked.provider`` and ``donkey.policy.provider`` carry (#1183);
     ``vendor`` is the display name. Categories are the comma-separated flagged
     reasons from the sibling ``...-reason`` header (empty list if absent)."""
-    if response.status_code != 403:
+    return content_safety_headers(response.status_code, response.headers)
+
+
+def content_safety_headers(
+    status: int | None, headers: Mapping[str, str]
+) -> tuple[str, str, list[str]] | None:
+    """Read captured vendor verdicts with HTTP context, never from RPC diagnostic text.
+
+    Header names must be lowercase (as in RpcShape and HTTP response headers).
+    The A2A Azure and Bedrock families are captured live (#1393, #1630).
+    """
+    if status != 403:
         return None
     for action_h, reason_h, provider, vendor in _CONTENT_SAFETY_VENDORS:
-        if response.headers.get(action_h) == "reject":
-            reason = response.headers.get(reason_h, "")
+        if headers.get(action_h) == "reject":
+            reason = headers.get(reason_h, "")
             categories = [c.strip() for c in reason.split(",") if c.strip()]
             return provider, vendor, categories
     return None

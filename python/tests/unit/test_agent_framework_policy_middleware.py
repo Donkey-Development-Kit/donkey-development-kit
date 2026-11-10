@@ -46,7 +46,7 @@ def _pii_proxy(sent: list[httpx.Request]) -> httpx.MockTransport:
             json={
                 "error": {
                     "type": "pii_detected",
-                    "message": 'blocked: [{"pii_type": "EMAIL"}]',
+                    "message": 'blocked: [{"pii_type": "Email"}]',
                 }
             },
         )
@@ -167,7 +167,7 @@ async def test_pii_refusal_ends_the_run_typed_after_one_send(api: str) -> None:
     assert len(sent) == 1  # no SDK, transport or framework retry
     assert err.correlation_id == "run-maf"
     assert err.call_id is not None
-    assert "EMAIL" in err.entities
+    assert "Email" in err.entities
     # The MAF error is kept on .framework_error, not chained: its message
     # repeats the gateway text, which tracebacks would render.
     assert isinstance(err.framework_error, ChatClientException)

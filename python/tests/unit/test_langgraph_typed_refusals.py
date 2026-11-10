@@ -75,7 +75,7 @@ def _pii_response() -> httpx.Response:
     )
     return httpx.Response(
         403,
-        json={"error": {"type": "pii_detected", "message": 'blocked: [{"pii_type": "EMAIL"}]'}},
+        json={"error": {"type": "pii_detected", "message": 'blocked: [{"pii_type": "Email"}]'}},
         request=request,
     )
 
@@ -92,7 +92,7 @@ def test_typed_refusals_converts_openai_status_error_to_typed() -> None:
     # repeats the gateway text, which tracebacks would render.
     assert excinfo.value.framework_error is err
     assert excinfo.value.__cause__ is None
-    assert "EMAIL" in excinfo.value.entities
+    assert "Email" in excinfo.value.entities
     assert excinfo.value.call_id == "call-1"
 
 

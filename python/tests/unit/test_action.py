@@ -447,3 +447,15 @@ def test_the_client_secret_is_masked_before_any_other_step() -> None:
     assert 'echo "::add-mask::$CLIENT_SECRET"' in first["run"]
     readers = [s.get("id") for s in rest if "inputs.client-secret" in yaml.safe_dump(s)]
     assert readers == ["publish"]
+
+
+def test_the_constraints_input_reaches_pip_only_through_the_environment() -> None:
+    """#1516: the lock is opt-in. An empty input adds no ``-c``, and the value
+    is never expanded into the script itself."""
+    action = yaml.safe_load((ACTION / "action.yml").read_text(encoding="utf-8"))
+    assert action["inputs"]["constraints"]["default"] == ""
+    (install,) = [s for s in action["runs"]["steps"] if s.get("id") == "install"]
+    assert install["env"]["CONSTRAINTS"] == "${{ inputs.constraints }}"
+    assert "${{" not in install["run"]
+    assert 'if [ -n "$CONSTRAINTS" ]; then\n  lock=(-c "$CONSTRAINTS")' in install["run"]
+    assert '"${lock[@]}"' in install["run"]

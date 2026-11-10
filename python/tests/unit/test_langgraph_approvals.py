@@ -189,6 +189,69 @@ def test_resume_records_the_approver_and_runs_the_tool_once(spans: Any) -> None:
     assert approved["donkey.correlation_id"] == "run-9"
 
 
+@pytest.mark.parametrize(
+    ("original", "changed"),
+    [
+        (range(0, 1, 1), range(0, 1, 2)),
+        (-0.0, 0.0),
+        (complex(-0.0, 1.0), complex(0.0, 1.0)),
+        (complex(1.0, -0.0), complex(1.0, 0.0)),
+        (float("nan"), float("nan")),
+    ],
+)
+@pytest.mark.parametrize("change", [False, True])
+def test_real_native_resume_checks_scalar_representation(
+    original: object, changed: object, change: bool
+) -> None:
+    import math
+
+    from donkey_kit import ConfigError
+    from donkey_kit.core.approvals import gate
+
+    ran: list[object] = []
+    current = [original]
+
+    def transfer(payload: object) -> str:
+        ran.append(payload)
+        return "transferred"
+
+    # Keep the actual native pause's identity stable so the gate, rather than a
+    # changed framework id, decides whether the resumed call matches its review.
+    def native(tool: str, arguments: Any, risk: str | None) -> Approval | None:
+        return approval_interrupt(tool, {"payload": original}, risk)
+
+    tool = gate(transfer, risk=None, timeout=60, natives=[native])
+
+    def node(state: dict) -> dict:
+        return {"result": tool(current[0])}
+
+    builder = StateGraph(dict)
+    builder.add_node("transfer", node)
+    builder.add_edge(START, "transfer")
+    builder.add_edge("transfer", END)
+    # The default serializer does not support range/complex. This fixture-only
+    # serializer round-trips trusted test data, not application checkpoints.
+    serializer = SimpleNamespace(
+        dumps_typed=lambda value: ("pickle", pickle.dumps(value)),
+        loads_typed=lambda typed: pickle.loads(typed[1]),
+    )
+    graph = builder.compile(checkpointer=MemorySaver(serde=serializer))
+    thread = _thread("scalar-representation")
+    paused = graph.invoke({}, thread)
+    assert paused["__interrupt__"] and ran == []
+    if change:
+        current[0] = changed
+    # Separately constructed ordinary NaNs have the same binary representation.
+    same_nan = isinstance(original, float) and math.isnan(original)
+    if change and not same_nan:
+        with pytest.raises(ConfigError, match="arguments differ"):
+            graph.invoke(Command(resume=_APPROVE), thread)
+        assert ran == []
+    else:
+        assert graph.invoke(Command(resume=_APPROVE), thread)["result"] == "transferred"
+        assert len(ran) == 1
+
+
 def _identity_graph(seen: list[tuple[str | None, str | None]]) -> StateGraph:
     """A one-node graph whose gated tool records the user and business group it runs as."""
 
@@ -254,7 +317,7 @@ def test_outside_a_run_the_pause_and_the_tool_share_a_correlation_id() -> None:
     assert ran == [("T-1", 140.0, correlation)]
 
 
-def test_the_pause_survives_a_process_restart(spans: Any) -> None:
+def test_a_restart_preserves_the_pause_but_refuses_execution_without_requester(spans: Any) -> None:
     """Everything DDK held in memory is gone after the pause: the tool, the
     graph, the approval registry. Only the checkpoint, round-tripped through
     bytes as a durable saver would store it, carries the pause."""
@@ -268,15 +331,18 @@ def test_the_pause_survives_a_process_restart(spans: Any) -> None:
 
     second: list[tuple[str, float, str | None]] = []
     graph = _refund_graph(second).compile(checkpointer=restored)
-    done = graph.invoke(Command(resume=_APPROVE), _thread("t-restart"))
+    from donkey_kit import AuthError
 
-    assert done["result"] == "refunded T-1"
-    assert (first, [r[:2] for r in second]) == ([], [("T-1", 140.0)])
-    pending, approved = _events(spans)
+    with pytest.raises(AuthError, match="no recorded requester"):
+        graph.invoke(Command(resume=_APPROVE), _thread("t-restart"))
+
+    assert (first, second) == ([], [])
+    pending, approved, refused = _events(spans)
     assert pending[0] == "donkey.approval.pending"
     assert approved[0] == "donkey.approval.approved"
     # The id is derived from the thread, tool and arguments, so it joins the two.
     assert pending[1]["donkey.approval.id"] == approved[1]["donkey.approval.id"]
+    assert refused[0] == "donkey.approval.resume_refused"
 
 
 # --- rejection and bad resume values ----------------------------------------
@@ -544,9 +610,12 @@ async def test_an_async_gated_tool_pauses_and_resumes_under_ainvoke() -> None:
 
 @pytest.mark.skipif(sys.version_info >= (3, 11), reason="the 3.10 fallback (#865)")
 async def test_on_3_10_an_async_graph_falls_back_to_approval_required() -> None:
+    ran: list[str] = []
+
     @Donkey.tool(approval="required")
     async def issue_refund(ticket_id: str) -> str:
         """Refund a support ticket."""
+        ran.append(ticket_id)
         return ticket_id
 
     async def refund(state: dict) -> dict:
@@ -558,8 +627,11 @@ async def test_on_3_10_an_async_graph_falls_back_to_approval_required() -> None:
     builder.add_edge("refund", END)
     graph = builder.compile(checkpointer=MemorySaver())
 
-    with pytest.raises(ApprovalRequired):
-        await graph.ainvoke({"ticket_id": "T-1"}, _thread("t-310"))
+    with Donkey(_cfg()) as donkey:
+        with donkey.run(), pytest.raises(ApprovalRequired) as info:
+            await graph.ainvoke({"ticket_id": "T-1"}, _thread("t-310"))
+        assert donkey.approvals.pending() == (info.value.approval,)
+    assert ran == []
 
 
 # --- a refusal and the pause compose ----------------------------------------

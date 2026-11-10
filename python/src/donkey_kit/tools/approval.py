@@ -146,5 +146,10 @@ def gated_tool(
     call.__name__ = call.__qualname__ = name
     call.__signature__ = _signature(schema)  # type: ignore[attr-defined]
     return gate(
-        call, risk=rule.risk, timeout=rule.timeout, natives=natives, declared_on=declared_on
+        call,
+        risk=rule.risk,
+        timeout=rule.timeout,
+        natives=natives,
+        declared_on=declared_on,
+        execution_defaults=False,
     )

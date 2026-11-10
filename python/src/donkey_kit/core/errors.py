@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from . import _wire
 from ._refusal_body import (
+    MODEL_MISSING_REMEDIATION,
     MODEL_NOT_ROUTABLE_RE,
     code_str,
     content_safety_reject,
@@ -393,9 +394,9 @@ class ContentSafetyBlocked(PolicyViolation):
 
     ``provider`` is the vendor's stable slug (``azure-content-safety``, ``bedrock-guardrails``,
     ``google-model-armor``, ``crowdstrike-aidr``); ``categories`` the flagged reasons from its
-    ``x-llm-proxy-<vendor>-...-reason`` header (e.g. ``severity_hate``, ``denied_topic``), the
-    moderation analog of :attr:`PIIDetected.entities`, empty when none was reported. Both ride
-    the span as ``donkey.policy.provider`` / ``donkey.policy.categories`` (#1183)."""
+    ``x-llm-proxy-<vendor>-...-reason`` or A2A ``x-flex-{azure,bedrock}-guardrails-reason``
+    header, the moderation analog of :attr:`PIIDetected.entities`, empty when none was reported.
+    Both ride the span as ``donkey.policy.provider`` / ``donkey.policy.categories`` (#1183)."""
 
     policy = "content-safety"
     remediation: str = (
@@ -419,19 +420,15 @@ class ContentSafetyBlocked(PolicyViolation):
 
 
 class PIIDetected(PolicyViolation):
-    """The PII-detection policy blocked the request or response.
+    """PII policy refusal; MCP adds safe ``phase`` / ``findings`` metadata.
 
-    ``entities`` lists the flagged entity types (e.g. ``["Email"]``). The message
-    (``str(exc)``, ``exc.args``, ``repr(exc)``) names those types with their count
-    and character offsets but never the flagged values, so logging the exception
-    or printing it in ``donkey doctor`` does not re-emit what the policy blocked.
-
-    ``gateway_message`` is the gateway's own rejection text, which echoes every
-    flagged value verbatim; it is kept for callers that need it and is not
-    rendered by ``str()`` or ``repr()``. The raw body is also on ``.response``.
-    Treat both as carrying the blocked content.
-
-    Terminal and never retried by the SDK, like every :class:`PolicyViolation`.
+    LLM ``entities`` and safe messages retain entity types/counts/offsets;
+    ``gateway_message`` retains sensitive gateway text without rendering it.
+    MCP ``phase`` is ``request`` / ``response``; ``findings`` is a safe projection:
+    canonical ``pii_type`` identifiers only (custom labels become ``Custom``),
+    ``masked_value`` replaced entirely by asterisks, length capped at 256.
+    Unknown/malformed findings are omitted; MCP ``entities`` derives from them.
+    Defaults: phase None, findings [], MCP gateway_message None. Raw .response stays sensitive.
 
     Docs: https://docs.donkey-kit.dev/errors
     """
@@ -450,11 +447,15 @@ class PIIDetected(PolicyViolation):
         *,
         entities: list[str] | None = None,
         gateway_message: str | None = None,
+        phase: str | None = None,
+        findings: list[dict[str, str]] | None = None,
         **kw: Any,
     ) -> None:
         super().__init__(message, **kw)
         self.entities = entities or []
         self.gateway_message = gateway_message
+        self.phase = phase
+        self.findings = findings or []
 
 
 class AgentKilled(PolicyViolation):
@@ -529,15 +530,13 @@ class ModelNotRoutable(DonkeyError):
 
     Seen on a model-based-routing proxy with more than one provider configured:
     a bare model name (``gpt-5-mini``) is ambiguous unless the gateway knows it
-    from exactly one provider, so it answers ``400`` with a flat-string
-    ``error`` asking for ``provider/model`` (docs/verified-apis.md §4). This is a
-    client configuration mistake, NOT a gateway policy refusal (so it is not a
-    :class:`PolicyViolation`) and NOT an upstream rejection (the provider was
-    never called, so it is not an :class:`UpstreamRequestError`). Terminal,
-    never retried.
+    from exactly one provider, so it answers ``400`` with a flat-string ``error`` asking for
+    ``provider/model`` (docs/verified-apis.md §4), or saying the model is missing where the
+    ingress expects one (#1547). A client configuration mistake, NOT a gateway policy refusal
+    (not a :class:`PolicyViolation`) and NOT an upstream rejection (the provider was never
+    called, not an :class:`UpstreamRequestError`). Terminal, never retried.
 
-    ``model`` is the name the gateway echoed back, or ``None`` when it could not
-    be read from the message."""
+    ``model`` is the name the gateway echoed back, else ``None`` (always for #1547)."""
 
     #: Single source of next-step wording for the bare-model-name rejection.
     remediation: str = (
@@ -545,6 +544,7 @@ class ModelNotRoutable(DonkeyError):
         "model name. Use the 'provider/model' form for the model, e.g. "
         "openai/gpt-5-mini instead of gpt-5-mini."
     )
+    missing_model_remediation: str = MODEL_MISSING_REMEDIATION  #: the #1547 variant's wording
 
     def __init__(self, message: str, *, model: str | None = None, **kw: Any) -> None:
         super().__init__(message, **kw)
@@ -692,7 +692,7 @@ def classify(
     * **Bare model name on a multi-provider proxy** rejects with **400** and a
       *flat-string* ``error`` saying the model "is not in the known unique model
       map" → :class:`ModelNotRoutable` (a client mistake, not a policy refusal;
-      #825). Keyed on that gateway sentence.
+      #825). Keyed on that gateway sentence, or its missing-model twin (#1547).
     * **Injection protection** rejects with the ``x-injection-protection:
       blocked`` header (the header, not the status, is the discriminator; #181)
       → :class:`PromptInjectionBlocked`.
@@ -710,21 +710,20 @@ def classify(
       ``GatewayApprovalPending`` / ``GatewayApprovalDenied`` (``core/step_up``, #1320). Also
       checked before the auth rule: the credential was accepted.
 
-    These shapes have no ``_verify.py`` constant — ``classify()`` reads them straight from the
-    response — so their verification record is the docs/verified-apis.md §4 rows. Any other
-    content-moderation / federated-guardrail shape falls through to a generic
+    Other content-moderation / federated-guardrail shapes fall through to a generic
     :class:`PolicyViolation` whose message names what was observed and says the shape is
     unconfirmed (#184). Because auth is the verified 401 / ``www-authenticate`` shape, a **403
     carrying no ``www-authenticate`` header** and matching none of the policy discriminators
     above is treated as one of these unconfirmed refusals, not mis-typed as an :class:`AuthError`.
 
-    A shape a customer registered with ``classify.register()`` (BG §2.2, #210,
-    ``core/classifier``) is matched after every built-in above and before the upstream-envelope
-    rule, so a verified shape always wins and a custom policy's nested-envelope 403 is not
-    mis-typed as an :class:`UpstreamRequestError`.
+    Registered shapes follow built-ins and precede upstream rules (BG §2.2).
+    JSON-RPC envelopes use the shared hook, never upstream diagnostic rendering.
     """
 
     shape = _shape(response, correlation_id=correlation_id, call_id=call_id)
+    if shape.body is not None and "jsonrpc" in shape.body and "error" in shape.body:
+        if _JSONRPC_MATCHER:
+            return _JSONRPC_MATCHER[0](shape)
     for matcher in _MATCHERS:
         error = matcher(shape)
         if error is not None:
@@ -933,9 +932,8 @@ def _match_upstream_request(s: _Shape) -> DonkeyError | None:
 
 
 def _match_model_not_routable(s: _Shape) -> DonkeyError | None:
-    """A bare model name on a multi-provider proxy: a 4xx flat-string ``error`` naming the model
-    and asking for ``provider/model`` (docs/verified-apis.md §4, #825). Keyed on the gateway's
-    own sentence, since the status and envelope match the unconfirmed fall-through."""
+    """A bare model name on a multi-provider proxy (#825) or a missing model (#1547): a 4xx flat
+    ``error`` keyed on the gateway's own sentences, as the envelope matches the fall-through."""
     if not 400 <= s.status < 500:
         return None
     flat_error = str_or_none(s.body.get("error")) if s.body is not None else None
@@ -945,6 +943,7 @@ def _match_model_not_routable(s: _Shape) -> DonkeyError | None:
     return ModelNotRoutable(
         f"The gateway could not route the requested model ({s.status}): {flat_error}",
         model=unroutable.group("model"),
+        remediation=ModelNotRoutable.missing_model_remediation if unroutable["missing"] else None,
         **s.kw,
     )
 
@@ -983,6 +982,7 @@ def _match_upstream_failure(s: _Shape) -> DonkeyError | None:
 #: it is imported. A hook slot, not an import: this module sits below the registry in the core
 #: layers, and with no registry imported there is nothing registered to match.
 _REGISTERED_MATCHER: list[Callable[[_Shape], DonkeyError | None]] = []
+_JSONRPC_MATCHER: list[Callable[[_Shape], DonkeyError]] = []
 
 #: The OBO policy's CIBA pending/denied rules (#1320), installed by ``core/step_up``, whose
 #: types subclass this module's. ``core`` imports it, so the slot is always filled.

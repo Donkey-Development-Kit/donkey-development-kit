@@ -296,15 +296,15 @@ class ChainedAuth(AuthProvider):
         """Return the first token any provider yields, trying them in order.
 
         Raises:
-            AuthError: Every provider failed; the message carries the last error.
+            AuthError: Every provider failed; the message names the last error type.
         """
-        last: Exception | None = None
+        last: str | None = None
         for provider in self._providers:
             try:
                 return await provider.token()
             # Blind on purpose: a custom provider (e.g. a vault plugin) may raise
-            # anything, and the chain's contract is to try the next one. The last
-            # error is surfaced in the AuthError below, so nothing is lost.
+            # anything, and the chain's contract is to try the next one. Only
+            # the error type is safe to surface; messages may contain credentials.
             except Exception as exc:  # noqa: BLE001 - any provider failure falls through
                 # Type only: a provider's message is not ours to vet for secrets.
                 _log.debug(
@@ -312,11 +312,11 @@ class ChainedAuth(AuthProvider):
                     type(provider).__name__,
                     type(exc).__name__,
                 )
-                last = exc
+                last = type(exc).__name__
         raise AuthError(
             f"No auth provider yielded a token. Last error: {last}",
             remediation=AuthError.provider_chain_remediation,
-        )
+        ) from None
 
     async def invalidate(self) -> None:
         """Invalidate every provider in the chain."""

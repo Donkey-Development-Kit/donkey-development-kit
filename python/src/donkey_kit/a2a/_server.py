@@ -28,6 +28,7 @@ from ..core.errors import ConfigWarning, DonkeyError, PolicyViolation
 from ..core.inbound import InboundRun, inbound_task
 from ..core.refusals import TypedRefusals
 from ..core.toolspec import AgentSpec, agent_spec
+from .protocol import matches_protocol_version
 from .types import A2AResult, A2ATask
 
 if TYPE_CHECKING:
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
     from a2a.server.events import EventQueue
     from a2a.types import Message, Task
+    from starlette.requests import Request
 
 __all__ = ["build_app", "serve"]
 
@@ -84,14 +86,16 @@ def _spec_of(handler: Callable[..., Any]) -> AgentSpec:
     return spec
 
 
-def _card_fields(spec: AgentSpec, *, url: str, version: str) -> dict[str, Any]:
+def _card_fields(
+    spec: AgentSpec, *, url: str, version: str, protocol_version: str = "1.0"
+) -> dict[str, Any]:
     """The agent card, from the ``@donkey.agent`` record and nothing else."""
     return {
         "name": spec.name,
         "description": spec.docstring,
         "version": version,
         "supported_interfaces": [
-            {"url": url, "protocol_binding": "JSONRPC", "protocol_version": "1.0"}
+            {"url": url, "protocol_binding": "JSONRPC", "protocol_version": protocol_version}
         ],
         "capabilities": {"streaming": False},
         "default_input_modes": list(_MODES),
@@ -128,8 +132,8 @@ def _headers(context: RequestContext) -> dict[str, str]:
 def _failure(exc: Exception, run: InboundRun | None) -> tuple[str, dict[str, Any]]:
     """The text and the structured ``error`` part a failed task carries.
 
-    The exception's type name and the ids only: its message and a refusal's
-    remediation are for the agent's operator and go to the log, since either may
+    The exception's type name and the ids only. Neither the failed parts nor the
+    executor's log includes messages, remediation or tracebacks, since they may
     repeat request content or name internal configuration.
     """
     name = type(exc).__name__
@@ -152,6 +156,7 @@ def build_app(
     *,
     url: str = "http://127.0.0.1:8000/",
     version: str = "0.0.0",
+    protocol_version: str = "1.0",
     telemetry: bool = True,
     correlation_header: str | None = None,
     refusals: TypedRefusals | None = None,
@@ -175,7 +180,8 @@ def build_app(
     (``type``, ``refusal``, ``correlation_id``, and the failed call's ``call_id``
     for a ``DonkeyError``); a governance refusal is re-raised as its typed
     ``DonkeyError`` first, so ``type`` is ``PIIDetected``, not the framework's
-    wrapper. The message and stack trace go to this module's logger only.
+    wrapper. This module's logger records the type and ids only, never the
+    exception message or stack trace, which may contain raw gateway diagnostics.
 
     Tasks live in memory, in the ``a2a-sdk``'s ``InMemoryTaskStore``. The 1000
     most recently finished ones (completed, failed, canceled or rejected) stay
@@ -189,6 +195,8 @@ def build_app(
         url: The URL the card advertises for the JSON-RPC endpoint. When a
             gateway fronts the agent, pass the gateway's URL.
         version: The agent version the card advertises.
+        protocol_version: ``1.0`` (default) or ``0.3.0``. Legacy routing and
+            card conversion use the official SDK's compatibility support.
         telemetry: Open the per-task span; ``Donkey.serve()`` passes the
             ``telemetry`` setting.
         correlation_header: The inbound correlation header's name;
@@ -207,9 +215,12 @@ def build_app(
     Raises:
         TypeError: ``handler`` is not marked with ``@donkey.agent``.
         ImportError: The ``[a2a]`` extra is not installed.
+        ValueError: The protocol version is unsupported.
 
     Docs: https://docs.donkey-kit.dev/a2a
     """
+    if protocol_version not in {"0.3.0", "1.0"}:
+        raise ValueError(f"unsupported A2A protocol version {protocol_version!r}; use 0.3.0 or 1.0")
     spec = _spec_of(handler)
     try:
         from a2a.helpers import (
@@ -223,8 +234,10 @@ def build_app(
         from a2a.server.agent_execution import AgentExecutor
         from a2a.server.request_handlers import DefaultRequestHandler
         from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+        from a2a.server.routes.common import DefaultServerCallContextBuilder
         from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
         from a2a.types import AgentCard, TaskState
+        from a2a.utils.errors import VersionNotSupportedError
         from starlette.applications import Starlette
     except ImportError as exc:
         raise _missing_extra(exc) from exc
@@ -299,11 +312,12 @@ def build_app(
                     )
                     result = await _run(spec, task)
             except Exception as exc:  # noqa: BLE001 — any handler failure fails the task, never the server
-                _log.exception(
-                    "A2A agent %r failed task %s (correlation id %s)",
+                _log.error(
+                    "A2A agent %r failed task %s (correlation id %s): %s",
                     spec.name,
                     context.task_id,
                     run.correlation_id if run is not None else None,
+                    type(exc).__name__,
                 )
                 await updater.failed(_failed_message(exc, run, context))
                 return
@@ -317,11 +331,30 @@ def build_app(
             updater = TaskUpdater(event_queue, context.task_id, context.context_id)
             await updater.cancel()
 
-    card = AgentCard(**_card_fields(spec, url=url, version=version))
+    class _LegacyContextBuilder(DefaultServerCallContextBuilder):
+        def build(self, request: Request) -> ServerCallContext:
+            # SDK compatibility enables both dispatchers. Do not let a v1 header
+            # opt into an interface the selected legacy-only card does not advertise.
+            actual = request.headers.get("A2A-Version", "")
+            if actual and not matches_protocol_version(actual, "0.3.0"):
+                raise VersionNotSupportedError(message="This agent serves A2A 0.3.0 only")
+            return super().build(request)
+
+    card = AgentCard(
+        **_card_fields(spec, url=url, version=version, protocol_version=protocol_version)
+    )
     handler_ = DefaultRequestHandler(
         agent_executor=_Executor(), task_store=_BoundedTaskStore(), agent_card=card
     )
-    routes = [*create_agent_card_routes(card), *create_jsonrpc_routes(handler_, "/")]
+    routes = [
+        *create_agent_card_routes(card),
+        *create_jsonrpc_routes(
+            handler_,
+            "/",
+            enable_v0_3_compat=protocol_version == "0.3.0",
+            context_builder=_LegacyContextBuilder() if protocol_version == "0.3.0" else None,
+        ),
+    ]
 
     @asynccontextmanager
     async def lifespan(_app: object) -> AsyncIterator[None]:

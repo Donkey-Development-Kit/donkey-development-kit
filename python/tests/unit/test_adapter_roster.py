@@ -122,6 +122,7 @@ def test_no_internal_hook_is_in_an_adapter_all() -> None:
     assert {name for _, name in hooks} == {
         "approval_interrupt",
         "approved_call",
+        "execution_arguments",
         "refusal_translator",
     }
     for module_name, name in hooks:

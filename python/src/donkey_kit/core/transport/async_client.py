@@ -6,6 +6,7 @@ import asyncio
 import functools
 import inspect
 import logging
+from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -20,12 +21,20 @@ from ..reactions import Invoke, ReactionRun, RefusalHandlers
 from ..telemetry import GenAiSpan, genai_span, start_genai_span
 from .failures import _no_attempts
 from .governed import GovernedTransport, _AsyncMountRouter, _LoopLocalTransport
-from .headers import Origin, _apply_auth, _apply_call_id_header, _apply_user_token
+from .headers import (
+    Origin,
+    _apply_auth,
+    _apply_call_id_header,
+    _apply_user_token,
+    _restore_user_token,
+    _strip_a2a_headers,
+    a2a_scope,
+)
 from .observe import _log_target, _observe_final
 from .pipeline import AsyncClientOptions, SendOptions, _GovernedPipeline
 from .policy import Finish, Retry, _request_model
 from .streaming import _aread_error_body, _is_streaming_success, _SpanClosingAsyncStream
-from .views import DonkeyAsyncClientView
+from .views import A2AAsyncClientView, DonkeyAsyncClientView
 
 if TYPE_CHECKING:
     from httpx._client import UseClientDefault
@@ -140,6 +149,20 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
             self._view = DonkeyAsyncClientView(self)
         return self._view
 
+    def a2a_view(
+        self,
+        endpoint_url: str,
+        *,
+        headers: Callable[[httpx.Request], Awaitable[Mapping[str, str]]],
+    ) -> A2AAsyncClientView:
+        """Create a distinct non-owning A2A view with isolated credentials (#1395).
+
+        The async callback checks provenance and supplies auth per request.
+        Only the exact endpoint and GET of its agent card are allowed; no
+        shared LLM credentials, redirects, 5xx retries or 401 refresh apply.
+        """
+        return A2AAsyncClientView(self, endpoint_url, headers=headers)
+
     @property
     def token_provider(self) -> AuthProvider | None:
         """The attached :class:`AuthProvider`, if any. Read by ``LLMClient`` to
@@ -148,6 +171,19 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
         return self._token_provider
 
     async def _inject_headers(self, request: httpx.Request) -> None:
+        _restore_user_token(request)
+        scope = a2a_scope(request)
+        if scope is not None:
+            # Correlation remains shared, but the A2A callback owns all auth.
+            _strip_a2a_headers(self._cfg, request)
+            self._stamp(request)
+            call_id = request.headers[self._call_id_header]
+            supplied = await scope.headers(request)
+            scope.validate(request)
+            request.headers.update(supplied)
+            self._stamp(request)
+            request.headers[self._call_id_header] = call_id
+            return
         if not self._stamp(request):
             return
         provider = self._token_provider
@@ -158,6 +194,11 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
         user = current_user() if not self._control_plane else None
         if user is not None:
             _apply_user_token(self._cfg, request, user.token)
+
+    async def _send_single_request(self, request: httpx.Request) -> httpx.Response:
+        # Revalidate after ALL shared request hooks, immediately before IO.
+        a2a_scope(request)
+        return await super()._send_single_request(request)
 
     # --- lifecycle hooks (BG §1.1) ------------------------------------------
     # The *logical* per-``send()`` seams, distinct from the per-wire
@@ -189,6 +230,9 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
         request a handler issued, never a success made of the refusal (#209). A
         handler that raises is logged and the refusal returned. A subclass that
         overrides this must return ``super()._on_refusal(...)`` to keep them."""
+        if a2a_scope(request) is not None:
+            # A2A actions are not replay-safe, even as a refusal reaction (#1395).
+            return response
         run = self._reactions.start()
         while (step := run.react(violation, request)) is not None:
             if isinstance(step, Invoke):
@@ -234,6 +278,8 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
             GatewayUnavailable: The gateway could not be reached (DNS, refused
                 connection, TLS, timeout).
         """
+        if a2a_scope(request) is not None:
+            auth, follow_redirects = None, False
         options = (stream, auth, follow_redirects)
         response, violation = await self._governed_send(request, options)
         if violation is None:
@@ -346,7 +392,11 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
 
         A non-2xx stream body is read first (bounded, #805) so the refusal is
         classified exactly as a buffered one; a transport failure mid-read
-        surfaces as :class:`GatewayUnavailable`. The refusal, if any, is
+        surfaces as :class:`GatewayUnavailable`. Scoped A2A JSON streams are
+        buffered before settlement too, so JSON-RPC refusals use the same hooks
+        and successful JSON fallbacks remain readable by the official SDK.
+        Exceptional body reads close the response without masking the failure.
+        The refusal, if any, is
         returned beside the response for ``send()`` to hand to ``_on_refusal``
         once the span is closed (#208). A caller who opted into
         ``on_model_substitution="raise"`` gets the error instead of the response,
@@ -357,12 +407,25 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
         fills ``gen_ai.usage.*`` and ends the span when the stream closes — on
         drain, mid-iteration abandonment, or exception. Anything else on a stream
         request has no SSE body to scan, so the span is ended inline."""
-        if streaming and response.status_code // 100 != 2:
+        scoped = a2a_scope(request) is not None
+        media_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        scoped_json = scoped and (media_type == "application/json" or media_type.endswith("+json"))
+        if streaming and (response.status_code // 100 != 2 or scoped_json):
             try:
-                await _aread_error_body(response)
-            except httpx.TransportError as exc:
-                await response.aclose()
-                raise self._unreachable(request, exc) from exc
+                if scoped_json and response.is_success:
+                    await response.aread()
+                else:
+                    await _aread_error_body(response)
+            except BaseException as exc:
+                try:
+                    await response.aclose()
+                except BaseException as cleanup_exc:  # noqa: BLE001 - preserve the body-read failure
+                    _log.debug(
+                        "closing a failed response body failed (%s)", type(cleanup_exc).__name__
+                    )
+                if isinstance(exc, httpx.TransportError):
+                    raise self._unreachable(request, exc) from exc
+                raise
         await self._on_response(request, response)
         violation, substitution = self._settle(request, response, gspan)
         if substitution is not None:
@@ -370,7 +433,11 @@ class DonkeyAsyncClient(_GovernedPipeline, httpx.AsyncClient):
             raise substitution
         if streaming:
             body = response.stream
-            if _is_streaming_success(response) and isinstance(body, httpx.AsyncByteStream):
+            if (
+                not scoped
+                and _is_streaming_success(response)
+                and isinstance(body, httpx.AsyncByteStream)
+            ):
                 response.stream = _SpanClosingAsyncStream(body, gspan)
             else:
                 gspan.end()

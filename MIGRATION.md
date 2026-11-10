@@ -3,6 +3,12 @@
 <!-- toc -->
 **Contents**
 
+- [Approval and credential hardening](#approval-and-credential-hardening)
+- [0.2.1: CLI argument swap, an async lock() and narrower refusal types](#021-cli-argument-swap-an-async-lock-and-narrower-refusal-types)
+  - [1. donkey expose and donkey preflight take the path, not the service](#1-donkey-expose-and-donkey-preflight-take-the-path-not-the-service)
+  - [2. donkey.tools.lock() is async](#2-donkeytoolslock-is-async)
+  - [3. Some refusals get a narrower type](#3-some-refusals-get-a-narrower-type)
+  - [New in 0.2.1 (not breaking)](#new-in-021-not-breaking)
 - [0.2.0: governed tools, publishing, approvals and more typed refusals](#020-governed-tools-publishing-approvals-and-more-typed-refusals)
   - [1. A CIBA approval response is GatewayApprovalPending or GatewayApprovalDenied](#1-a-ciba-approval-response-is-gatewayapprovalpending-or-gatewayapprovaldenied)
   - [2. Google Model Armor and CrowdStrike AIDR blocks are ContentSafetyBlocked](#2-google-model-armor-and-crowdstrike-aidr-blocks-are-contentsafetyblocked)
@@ -64,6 +70,161 @@
   - [16. An Agent Kill Switch block raises AgentKilled](#16-an-agent-kill-switch-block-raises-agentkilled)
   - [17. donkey-kit[all] leaves out the seven connection_kwargs() frameworks](#17-donkey-kitall-leaves-out-the-seven-connection_kwargs-frameworks)
 <!-- tocstop -->
+
+## Approval and credential hardening
+
+- Approval-gated tools now execute detached argument snapshots. Mutating the
+  original arguments or nested `Approval.arguments` values cannot change the
+  pending call. Use acyclic exact built-in containers and scalar values;
+  custom objects, subclasses and cycles in reviewed arguments raise `ConfigError`.
+  Convert custom user values to built-in data before requesting a fresh approval.
+  Snapshots are limited to 64 nested containers along any path, including the
+  outer parameter mapping. Deeper data raises actionable `ConfigError`; reduce
+  nesting before requesting a fresh approval.
+  The ADK plugin's trusted injected `ToolContext` remains supported as an
+  execution-only, identity-checked value excluded from review and snapshots.
+  Python defaults are captured for execution even with a custom `__signature__`;
+  only explicitly marked MCP schema invokers send supplied fields without
+  filling omitted schema defaults. Those defaults still appear for review.
+- Native framework resumes need the requester and argument evidence retained
+  in the same process for the latest 1,024 pauses. A restart, another process or
+  eviction loses that evidence and raises `AuthError` without running the tool.
+  Changed approval arguments raise `ConfigError`, including changes between
+  equal-looking but different exact types such as `True`, `1` and `1.0`.
+  Matching also requires identical `range` parameters (`start`, `stop`, `step`),
+  not just equal sequences. Float and complex-component binary representations
+  must match, so signed zero is preserved and NaNs match only identical binary
+  representations. Code that normalizes these representations between pause and
+  resume must request a fresh approval instead.
+  Request a fresh approval in
+  the original requester's context; `as_user()` alone cannot restore lost state.
+  Durable checkpoints and run states retain the framework pause, not DDK's
+  requester evidence.
+- OpenAI Agents SDK tools register requester evidence in the initial
+  `needs_approval` callback, not when `pending_approvals()` inspects the pause.
+  Run the agent in the requester's scope. Repeated same-process inspection
+  leaves retained evidence unchanged and emits no new pending event; inspecting
+  restored pauses never reconstructs missing evidence, even inside `as_user()`.
+  Approval ids use canonical JSON arguments, so key order or whitespace changes
+  do not change the id; this does not make a restored pause safe to execute.
+- User-token sends check the receiving client's endpoint configuration on
+  every send. Reused requests no longer retain SDK-injected user headers from
+  a finished scope. Both JWT and bearer provider tokens are endpoint-checked
+  before token requests, including raw shared-client sends.
+- `ChainedAuth` reports only the last provider exception type if all providers
+  fail, without exception chaining. Refusal-handler diagnostics omit callback
+  messages and tracebacks; the original refusal still propagates.
+- Locked per-tool MCP bindings use the validated descriptor snapshot instead
+  of a second listing. Whole-server bindings retain their later-listing limit.
+  MCP HTTP error classification accepts only complete identity-encoded bodies
+  within 64 KiB and a five-second total deadline shared with best-effort cleanup.
+  Cancellation does not wait behind cleanup. Authentication statuses still raise
+  `AuthError` and other listing failures raise `ToolInvocationError`.
+- Publication documentation must be a UTF-8 `.md` or `.markdown` source inside
+  the scanned root. Hidden path components and components named `credentials`
+  or `secrets` before the first dot (case-insensitive), including symlink targets,
+  are refused. `config.md`, `docs/configuration.md` and configuration directories
+  remain valid sources. Review both the dry-run source path and the file content;
+  path checks are not content sanitization.
+- Local gateway recordings always redact correlation, call-ID and cost values,
+  even without `recording_config`. Tests that asserted those recorded values
+  must instead inspect the request at an appropriate test seam. Only client/wallet
+  IDs, reserved application/business-group attribution and content-type values
+  remain visible. Valid SDK config reserves those names against custom credentials;
+  non-SDK clients must not place secrets there. Header names alone cannot make
+  arbitrary values safe. `recording_config` remains available on
+  `Gateway.configure()` and `start_gateway()` for configured secret-name redaction.
+- The simulator limits model request bodies to 4 MiB and answers larger bodies
+  with its own plain-text `413`, not a captured gateway refusal. Too-deep JSON
+  uses existing invalid-body behavior: an empty payload on OpenAI routes (default
+  happy-path `200` absent a scenario), and captured invalid-JSON `400` on native
+  Anthropic/Gemini routes, not an uncaught parser error.
+
+## 0.2.1: CLI argument swap, an async lock() and narrower refusal types
+
+Three changes since `0.2.0` can affect existing code. The first two touch only
+the CLI and `donkey.tools.lock()`. The third changes which exception type a few
+gateway refusals raise.
+
+### 1. `donkey expose` and `donkey preflight` take the path, not the service
+
+**Who:** scripts, CI jobs and runbooks that call `donkey expose SERVICE` or
+`donkey preflight SERVICE` (#1515).
+
+**Symptom:** the positional argument is now the path to scan (default `.`), and
+the service ID moved to `--service`. A bare service ID is read as a path, so
+`donkey preflight my-svc` stops with `nothing to scan at my-svc`, or scans a
+`./my-svc` directory that holds no `.donkey-kit.toml`.
+
+| | Command |
+|---|---|
+| 0.2.0 (old) | `donkey preflight my-svc` or `donkey expose my-svc --path ./repo` |
+| 0.2.1 (new) | `donkey preflight ./repo --service my-svc` or `donkey expose --service my-svc` |
+
+**Back-compat:** the old `SERVICE --path PATH` form still works. The hidden
+`--path` option is read, the first positional is taken as the service, and
+the command prints a deprecation warning on stderr. The bare `donkey preflight
+SERVICE` form, with no `--path`, is also deprecated: #1667 makes a single
+positional that is not an existing path and matches a declared service ID
+behave as `--service`, with the same warning. Both old forms are deprecated
+and are removed in 0.3.0.
+
+**Fix:** pass the path as the argument and the service as `--service`. Only
+`--service` is needed when the project declares more than one service.
+
+### 2. `donkey.tools.lock()` is async
+
+**Who:** code that calls `donkey.tools.lock()`.
+
+On `0.2.0`, `ToolsFacade.lock()` was a synchronous stub that raised
+`NotImplementedError` (blocked on the resolution API, BG §2.7). In 0.2.1 it is
+implemented as `async def lock(*, tags=None, governed=True, auth=None, path="donkey.lock")`
+and returns the `Path` it wrote. Calling it without `await` now gives a
+never-awaited coroutine and writes no lockfile.
+
+**Fix:** await it, as the other `donkey.tools` calls are:
+
+```python
+path = await donkey.tools.lock(tags=["inventory"])
+```
+
+See [Pinning & lockfile](/tool-access/lockfile).
+
+### 3. Some refusals get a narrower type
+
+**Who:** code that catches a specific exception type, or checks
+`type(err) is ...`, on the responses below. `except PolicyViolation` and
+`except DonkeyError` still catch every refusal on this list except the
+missing-model `400`.
+
+| Response | 0.2.0 | 0.2.1 |
+|---|---|---|
+| LLM proxy `400` "Missing 'model' field in request" (#1547) | unconfirmed `PolicyViolation` | `ModelNotRoutable`, `.model` is `None` |
+| A2A v1 Bedrock Guardrails block (#1630) | `ToolInvocationError` | `ContentSafetyBlocked`, `provider="bedrock-guardrails"` |
+| A2A Azure Content Safety reject, `x-flex-azure-guardrails-action: reject` (#1394) | `ToolInvocationError` | `ContentSafetyBlocked`, `provider="azure-content-safety"` |
+| MCP PII Detector `403` (#1386) | the framework's raw error | `PIIDetected`, with `.phase` and `.findings` |
+| CIBA denial or kill-switch `403` on a per-tool MCP binding (#1670) | the framework's raw error | `GatewayApprovalDenied` or `AgentKilled` |
+
+**Fix:** catch the new type, or keep catching `PolicyViolation`. The
+missing-model `400` is the one exception: `ModelNotRoutable` is not a
+`PolicyViolation`, so code that caught it as `PolicyViolation` must catch
+`ModelNotRoutable` instead. MCP
+schema-validation and tool-poisoning refusals are unchanged, and stay the
+framework's error.
+
+### New in 0.2.1 (not breaking)
+
+- `donkey.simulate_mcp()` and the packaged MCP captures in the simulator.
+- `donkey.simulate_a2a()`, which injects a captured gateway refusal into
+  outbound A2A calls. It is provisional.
+- Outbound A2A calls, `GatewayAuthChallenge`, and A2A quality annotations on
+  `donkey.a2a.call` spans. Explanation text needs
+  `telemetry_capture_content=True`.
+- `jsonrpc_refusal()`, which types a JSON-RPC policy refusal shared by MCP and
+  A2A.
+- `donkey.tools.lock()` and `discover(locked=True)`.
+- `donkey dev` replays A2A instance rejections, and serves A2A v0.3 with
+  `--protocol-version 0.3.0`.
 
 ## 0.2.0: governed tools, publishing, approvals and more typed refusals
 

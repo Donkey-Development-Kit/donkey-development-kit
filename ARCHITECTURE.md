@@ -63,7 +63,7 @@ layer may import a higher one.**
 ```
 integrations/   per-framework adapters — return NATIVE framework objects, never wrappers
       |         (langgraph · adk · strands · agent_framework · openai_agents · anthropic · crewai · llamaindex)
-a2a/            beside integrations, independent of it: the donkey.serve() listener over the official a2a-sdk (ADR 0014)
+a2a/            beside integrations, independent of it: inbound serve() and outbound SDK transports (ADRs 0014, 0022)
       ↓
 tools/          MCP session management, tool discovery/filtering — resolves registry handles
       ↓
@@ -87,7 +87,7 @@ linear stack:
   and exits 3.
 - **`donkey_kit.experimental`** re-exports the types outside the stable
   namespace (`AssetRef`, `Publication`, `STRICT`, `RegistryError`, …). Most
-  serve a surface still blocked on verification, such as the lockfile or the
+  serve a surface still blocked on verification, such as `Publication` or the
   governed-state search join; the registry and tool-call types those surfaces
   share have no settled tier yet. They are importable, but they are not in
   `donkey_kit.__all__` and may change in any release (ADR 0006) until their
@@ -139,14 +139,17 @@ integrations | a2a → tools → registry → llm → core
 ```
 
 `a2a` (`donkey.serve()`, BG §2.9.1, #224) sits beside `integrations`, not in
-it: it is the inbound A2A listener, not a framework adapter. It wraps the
+it: it holds the inbound A2A listener and outbound facade, not a framework adapter. It wraps the
 official `a2a-sdk` (the `[a2a]` extra). The layers contract lists the two as
 independent siblings (`integrations | a2a`), so neither may import the other
 (ADR 0014).
 
 It is `exhaustive`, so a new top-level module fails `lint-imports` until it is
-placed. Its one ignored import is `Donkey.simulate()`'s lazy import of
-`simulator.inject`: public API whose implementation lives in the simulator.
+placed. Its three ignored imports are `Donkey.simulate()`'s lazy import of
+`simulator.inject`, `Donkey.simulate_mcp()`'s lazy import of
+`simulator.mcp` (ADR 0023) and `Donkey.simulate_a2a()`'s lazy import of
+`simulator.a2a` (ADR 0025): public API whose implementation lives in the
+simulator.
 Beside it:
 
 - **Nothing imports the CLI.** `cli` sits on top, so no library module imports
@@ -166,9 +169,10 @@ Beside it:
 - **core is layered too:** `runtime` → `transport | approvals | inbound` → `budget | cache |
   cachecontrol | identity | telemetry | toolspec` → `auth | correlation | spanflush` → `config` →
   `classifier | cost | endpoints | header_names | reactions | refusals` →
-  `_policy_spec` → `runledger | step_up | tool_access` → `approval_types` → `errors` →
+   `tool_access` → `_policy_spec` → `jsonrpc_refusals` →
+   `runledger | step_up | _tool_access` → `approval_types` → `errors` →
   `_refusal_body | lastcall | masking` → `_verify` →
-  `_wire | _response | _budget_headers | _window`.
+   `_wire | _response | _budget_headers | _window | _policy_sample | _scope_entry`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
   through it. `runledger` holds the run ledger (#613): `correlation` binds one per
   `donkey.run()` block and the transport appends each call's `lastcall` record and
@@ -185,13 +189,33 @@ Beside it:
   tool's model calls go through the transport like any other, so an approval
   never overrides a refusal. A resumed tool runs as its requester: `identity`
   captures the user and attribution bound when the call was asked for, and
-  re-binds them on resume (#1416). Inside a LangGraph graph the gate pauses with `interrupt()` instead
+  re-binds them on resume (#1416). Approval arguments and pending execution
+  arguments are separate detached snapshots of acyclic exact built-in data;
+  custom objects in reviewed data and cycles raise `ConfigError`. ADK's plugin
+  provides an execution-only `ToolContext` exemption checked by object identity;
+  it is not snapshotted or reviewed. The gate's explicit `execution_defaults`
+  flag keeps Python defaults in execution while MCP invokers send only supplied
+  fields; `__signature__` does not select that behavior. Native comparison
+  checks exact types recursively, without cross-type equality coercions.
+  Native requester and argument
+  evidence is retained for the latest 1,024 pauses in process memory. A missing
+  requester refuses execution with `AuthError`; changed arguments raise
+  `ConfigError` (ADR 0026). A durable framework pause does not restore that
+  evidence after a restart. Only initial native pauses register origin evidence;
+  OpenAI Agents does this in `needs_approval`, not `pending_approvals()`.
+  Inspection never reconstructs origin evidence, and repeated registration
+  preserves the retained origin without another pending event.
+  Inside a LangGraph graph the gate pauses with `interrupt()` instead
   (#212): `donkey.py` passes the LangGraph adapter's hook into `gate(natives=...)`,
   so core still imports no framework.
   `inbound` binds the run for one inbound A2A task (#225): it adopts the
   caller's `X-Correlation-Id` or mints one, enters `run_scope`, and opens the
   `donkey.a2a.task` span. It takes headers as a plain mapping, so it imports no
-  `a2a-sdk` or `starlette`; `a2a` calls it, and so could another inbound surface.
+   `a2a-sdk` or `starlette`; `a2a` calls it, and so could another inbound surface.
+   It also owns `outbound_call()` and frozen `OutboundRun` (#1395): one
+   `donkey.a2a.call` CLIENT span and immutable W3C headers for card discovery
+   and delegation. It preserves an enclosing run or temporarily mints one,
+   propagates no baggage, and records failures by exception type only.
   `spanflush` flushes the span providers on a kill (#220); it imports nothing
   from core, so the transport reaches it without telemetry exposing its provider.
   `_refusal_body` holds the refusal-body parsers (`errors`' JSON
@@ -204,9 +228,16 @@ Beside it:
   `errors`, so `errors` never imports it. `step_up` (#1320) holds the OAuth2
   OBO policy's CIBA step-up types, which subclass `errors`' own, and fills a
   second hook slot there the same way, ahead of the auth rule. `tool_access`
-  (#312) holds the MCP tool-access denial: `ToolNotInProfile`, a `PolicyViolation`
-  read from a JSON-RPC error rather than an HTTP response, so it fills no hook
-  slot. This contract is exhaustive too.
+   (#312) re-exports the MCP tool-access type from `_tool_access` and delegates
+   to `jsonrpc_refusals`, the framework-free error walk (ADR 0021, #1385).
+   `classifier` fills its registry hook; explicit `jsonrpc_code` entries use the
+    same specificity/tie resolver, without letting HTTP-only entries claim RPC errors.
+    The capture-backed MCP PII built-in (#1386) requires exact policy/reason and
+    phase/code pairs, ahead of custom matches. It projects canonical finding types
+    and fully star-masked values; raw diagnostics remain only on `.response`.
+    This does not add SSE decoding, HTTP-200 interception or framework binding wiring.
+   `_policy_sample` holds the existing regex sample generator, keeping `_policy_spec`
+   within budget. This contract is exhaustive too.
 
 Two rules the import graph can't express are tests in
 `tests/unit/test_architecture.py`:
@@ -328,6 +359,27 @@ request either plane sends passes the same origin check.
   blocking `DonkeyClient` shares the async client's origin set. CrewAI, whose
   provider builds its own client, gets an `interceptor` that applies the same
   rule.
+- **Outbound A2A is a scoped plane** (#1395,
+  [ADR 0022](docs/adr/0022-scoped-a2a-outbound-plane.md)). `donkey.a2a` owns an
+  `A2AFacade` over the official SDK's JSON-RPC v1/v0.3 transports. `send()`
+  takes SDK `SendMessageRequest` and returns SDK `SendMessageResponse`;
+  `async with stream(...) as events` yields SDK `StreamResponse`. Each
+  operation checks default or explicit `GovernanceCriteria`, then resolves
+  its Exchange reference. The immutable `AgentHandle` remains resolution-only.
+  No card URL can retarget the registry-pinned endpoint. A distinct non-owning
+  `a2a_view()` uses the shared pool and observation hooks without extending
+  its LLM origin allowlist or inheriting LLM default headers. Only the exact
+  endpoint and GET of its pinned card are permitted. Auth/provenance and
+  current-user headers are read per request; redirects, 401 refresh/re-send,
+  5xx retries and refusal-action replay are disabled. Successful streams stay
+  unread by core and bypass GenAI scanning. Context exit closes local
+  resources and the span, never the remote task or the shared pool. REST,
+  gRPC, OAuth completion, resubscription and framework `as_tool()` are not
+  implemented. The facade is the provisional root-export exception
+  (ADR 0022): its docstring and the public-API snapshot agree. Evidence remains
+  **OFFLINE-VERIFIED** (ledger §8.5): successful gateway send and SSE are NOT
+  live verified by this implementation yet; refusal fixtures do not prove
+  streaming success.
 - **Adapters are lazy attributes.** `Donkey.__getattr__` resolves
   `donkey.<framework>` on first access through the `ADAPTERS` registry declared
   in `integrations/__init__.py`. Accessing an adapter whose optional extra is not
@@ -380,7 +432,10 @@ request either plane sends passes the same origin check.
   either plane: in `validated()` for model calls and the registry, before each
   control-plane token fetch, and before a `Donkey(auth=…)` provider's token is
   requested. The `donkey.as_user()` token counts as set in code too, and is
-  checked against `llm_proxy_url` when the scope is built (#1439). A URL
+  checked against `llm_proxy_url` when the scope is built (#1439), and against
+  the receiving transport's config on every send. Both JWT and bearer provider
+  tokens are endpoint-checked before each token request. Reused requests undo
+  the SDK's previous user-header write before applying the current scope. A URL
   derived from a configured endpoint is held to the rule of the endpoint it
   came from (ADR 0019, #1479). Discovery reads the MCP and A2A gateway URLs
   from the control plane at `base_url`. So before a discovered `ToolSet` lists
@@ -440,14 +495,15 @@ request either plane sends passes the same origin check.
   | `governed.py` | `GovernedTransport` / `GovernedSyncTransport`, the mount routers, the per-event-loop pool |
   | `async_client.py`, `sync_client.py` | `DonkeyAsyncClient` / `DonkeyClient`: only the send loop's IO |
   | `failures.py` | the typed errors a send raises instead of an httpx failure (`GatewayUnavailable`, the lifecycle `ConfigError`s, `sync_token_auth_error`) |
-  | `views.py` | the non-owning views (#733) and `built_on_httpx2()` |
+   | `views.py` | the non-owning views (#733), the exact-endpoint A2A view (#1395), and `built_on_httpx2()` |
   | `httpx2.py` | the `httpx2` bridge (lazy, never imported at package import) |
 
   A `502` or `504` on a model `POST` (a `POST` whose body, or native Gemini path, names a model) is
   not re-sent by default: the upstream call may have completed and billed, and
   no gateway idempotency key is verified (docs/verified-apis.md). Set
   `retry_model_calls_on_gateway_errors` to retry it; a `503`, and every other
-  request, still retries (docs/adr/0009-*.md, #728).
+   request outside the scoped A2A plane, still retries (docs/adr/0009-*.md, #728).
+   A2A never automatically replays any response, including 401 and every 5xx.
 
   Three contracts matter: **override the hook, not `send()`**; a subclass that
   overrides `_on_response` **must call `super()._on_response(...)`** or budget
@@ -494,7 +550,7 @@ Anypoint sandbox before it can be trusted, and it offers exactly two mechanisms:
 
 - **`blocked("…")`** returns a `NotImplementedError("blocked on verification: …")`.
   It is used where there is no defensible placeholder at all — e.g. a
-  `Publication`'s descriptor derivation and the lockfile's resolution API. The
+  `Publication`'s descriptor derivation and the governed-state search filters. The
   SDK raises rather than guesses. **Do not replace a `blocked(...)` guard with a guess.**
 - **`Unverified(...)`** placeholder constants hold a documented best-guess that is
   fully overridable via config/env, and emit a one-time `UnverifiedValueWarning`
@@ -528,8 +584,7 @@ publication of scanned MCP servers and agents with `donkey publish` and
 `ToolSet` bindings through the governed gateway (`docs/verified-apis.md` §9),
 and the `as_user()` user-token header (`docs/verified-apis.md` §13). Still
 blocked: a `Publication`'s descriptor derivation (`preview()`, `export()`,
-BG §2.5), the lockfile (`donkey.tools.lock()`, `discover(locked=True)`,
-BG §2.7), the governed-state search filters (`search(governed=, environment=,
+BG §2.5), the governed-state search filters (`search(governed=, environment=,
 domain=)`) and the hidden `donkey status`. The framework adapters are not
 blocked. They build their native object directly, and an adapter refuses with
 `blocked(...)` only when the installed framework version lacks the class or
@@ -770,16 +825,18 @@ keeps the table and each adapter's `AdapterCapabilities` equal:
 `typed_refusal_bridged` when `typed_refusals` is false, and `jwt_token_refreshed`
 when `transport` is `"framework"`.
 
-The four tool-binding scenarios (`single_tool_call`, `multi_tool_multi_server`,
-`tool_filtering`, #991, and `tool_access_denied_typed`, #312) run every
+The five tool-binding scenarios (`single_tool_call`, `multi_tool_multi_server`,
+`tool_filtering`, #991, `tool_access_denied_typed`, #312, and
+`policy_refusal_typed`, #1388) run every
 `ToolSet` binding against two local MCP servers
-(`tests/conformance/test_tool_binding.py`). They record two exemptions that are
-not about the transport, both for the whole-server bindings (ADK, Strands, the
-OpenAI Agents SDK, Agent Framework, CrewAI). Those bindings cannot rename one
-tool, so `multi_tool_multi_server` is asserted as a `ConfigError` refusal for
-them. They also leave each tool call to the framework, so the gateway's
-tool-access denial never reaches the SDK as `ToolNotInProfile`, and
-`tool_access_denied_typed` records what each framework does with it instead.
+(`tests/conformance/test_tool_binding.py`). Whole-server bindings (ADK, Strands,
+OpenAI Agents, Agent Framework, CrewAI) cannot rename one tool, so
+`multi_tool_multi_server` asserts a `ConfigError` refusal. ADK and Strands
+return refusal text: both denial and PII typing record asserted exemptions.
+CrewAI's MCP 1.x HTTP 403 path leaves the tool future unresolved, asserted in
+a bounded subprocess; its HTTP 200 access denial remains bridgeable. The other
+bindings type captured PII refusals. Whole-server raised MCP errors are recovered
+by `typed_refusals()`; native successful and `isError` results are unchanged.
 
 The centre of gravity moves with the roster cut (`BG §1.5`): the internal
 matrix shrinks to the deep adapters, and the deliverable becomes the **customer-facing

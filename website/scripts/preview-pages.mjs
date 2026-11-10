@@ -1,8 +1,8 @@
-import { createReadStream, existsSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, realpathSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 
-const root = resolve('out')
+const root = realpathSync(resolve('out'))
 // Mirrors next.config.mjs: empty (root) unless the export was built with DOCS_BASE_PATH.
 const basePath = (process.env.DOCS_BASE_PATH ?? '').replace(/\/+$/, '')
 const port = Number(process.env.PORT ?? 4173)
@@ -26,17 +26,29 @@ function resolveFile(pathname) {
   const requested = resolve(root, relativePath)
 
   if (requested !== root && !requested.startsWith(`${root}${sep}`)) return null
-  if (!extname(requested) && existsSync(`${requested}.html`)) return `${requested}.html`
-  if (existsSync(requested) && statSync(requested).isDirectory()) {
-    const index = join(requested, 'index.html')
-    return existsSync(index) ? index : null
+  const candidates = extname(requested)
+    ? [requested, join(requested, 'index.html')]
+    : [`${requested}.html`, requested, join(requested, 'index.html')]
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue
+    const real = realpathSync(candidate)
+    if (real !== root && !real.startsWith(`${root}${sep}`)) return null
+    if (statSync(real).isFile()) return real
   }
-  if (existsSync(requested)) return requested
   return null
 }
 
 createServer((request, response) => {
-  const pathname = new URL(request.url ?? '/', `http://${request.headers.host}`).pathname
+  let pathname
+  let file
+  try {
+    pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
+    file = resolveFile(pathname)
+  } catch (error) {
+    response.writeHead(error instanceof URIError || error instanceof TypeError ? 400 : 404)
+    response.end('Invalid or unavailable path')
+    return
+  }
   if (basePath && pathname === '/') {
     response.writeHead(302, { location: `${basePath}/` })
     response.end()
@@ -48,7 +60,6 @@ createServer((request, response) => {
     return
   }
 
-  const file = resolveFile(pathname)
   if (!file) {
     response.writeHead(404)
     response.end('Not found')
@@ -66,6 +77,6 @@ createServer((request, response) => {
     })
     stream.pipe(response)
   })
-}).listen(port, () => {
+}).listen(port, '127.0.0.1', () => {
   console.log(`GitHub Pages preview: http://localhost:${port}${basePath}/`)
 })

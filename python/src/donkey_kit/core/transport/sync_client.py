@@ -17,7 +17,13 @@ from ..reactions import Invoke, ReactionRun, RefusalHandlers
 from ..telemetry import GenAiSpan, genai_span, start_genai_span
 from .failures import _no_attempts, sync_token_auth_error
 from .governed import GovernedSyncTransport, _SyncMountRouter
-from .headers import Origin, _apply_auth, _apply_call_id_header, _apply_user_token
+from .headers import (
+    Origin,
+    _apply_auth,
+    _apply_call_id_header,
+    _apply_user_token,
+    _restore_user_token,
+)
 from .observe import _observe_final
 from .pipeline import ClientOptions, SendOptions, _GovernedPipeline
 from .policy import Finish, Retry, _request_model
@@ -109,6 +115,7 @@ class DonkeyClient(_GovernedPipeline, httpx.Client):
         return self._view
 
     def _inject_headers(self, request: httpx.Request) -> None:
+        _restore_user_token(request)
         if self._stamp(request):
             _apply_auth(self._cfg, request, None, control_plane=False)
             # The user bound by ``donkey.as_user(...)`` (BG §2.4).

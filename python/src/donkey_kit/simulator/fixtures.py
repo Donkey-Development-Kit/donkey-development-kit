@@ -96,7 +96,9 @@ def render_ratelimit_prose(remaining: int, limit: int, reset_ms: int) -> str:
 # headers the SDK consumes — classify() surfaces `x-request-id` as
 # DonkeyError.request_id, and `donkey.last_call` parses the decorator op into the
 # API-instance/environment ids (#362) — so replaying them is what makes
-# simulate()/`donkey mock` populate the record from the committed fixtures. The
+# simulate()/`donkey mock` populate the record from the committed fixtures.
+# Anthropic's own `request-id` is kept for the same reason: it is the
+# `request_id` of a native Anthropic ingress (#827, #1562). The
 # `retry-after` is kept for the CIBA pending 401, whose poll interval it carries (#1320). The
 # honesty marker stays the injected `x-donkey-simulator: true`, not the absence
 # of identity headers. The unsuffixed request-window trio is kept (#974); the
@@ -109,8 +111,15 @@ _KEEP_EXACT = frozenset(
         _wire.WWW_AUTHENTICATE_HEADER,
         _wire.RETRY_AFTER_HEADER,
         _wire.INJECTION_PROTECTION_HEADER,
+        _wire.A2A_AZURE_GUARDRAIL_ACTION_HEADER,
+        _wire.A2A_AZURE_GUARDRAIL_PHASE_HEADER,
+        _wire.A2A_AZURE_GUARDRAIL_REASON_HEADER,
+        _wire.A2A_BEDROCK_GUARDRAIL_ACTION_HEADER,
+        _wire.A2A_BEDROCK_GUARDRAIL_PHASE_HEADER,
+        _wire.A2A_BEDROCK_GUARDRAIL_REASON_HEADER,
         _wire.CORRELATION_ID_HEADER.lower(),
         _wire.REQUEST_ID_HEADER,
+        _wire.ANTHROPIC_REQUEST_ID_HEADER,
         _wire.DECORATOR_OPERATION_HEADER,
     }
 )
@@ -247,6 +256,14 @@ SHAPES: dict[str, _Spec] = {
         "reject.model-not-routable.body.json",
         400,
     ),
+    # The same 400 with no model where the ingress expects one (#1547): also
+    # ModelNotRoutable, .model None.
+    "model-missing": _Spec(
+        "anypoint/llm_proxy",
+        "reject.model-missing.headers.txt",
+        "reject.model-missing.body.json",
+        400,
+    ),
     # --- consumer-auth 401 (NOT one of the eight; classify() → AuthError) ---
     "client-id-missing": _Spec(
         "anypoint/llm_proxy",
@@ -272,6 +289,71 @@ SHAPES: dict[str, _Spec] = {
         "responses.finance.headers.txt",
         "responses.finance.body.json",
         200,
+    ),
+    # Qualified-vendor 200s (docs/verified-apis.md §2 qualified-vendor row, #1405,
+    # #1412): model-based-routing def 1.0.5 returns the configured
+    # ``groupId:vendor`` in ``x-llm-proxy-llm-provider`` (``mulesoft:openai``), on
+    # a matched route and on the policy fallback. Live /chat/completions captures
+    # (the directory README has the provenance); ``last_call`` keeps the provider
+    # verbatim and the span records the bare vendor.
+    "success-qualified-vendor": _Spec(
+        "anypoint/model_routing_qualified_vendor",
+        "chat_completions.success.headers.txt",
+        "chat_completions.success.body.json",
+        200,
+    ),
+    "fallback-qualified-vendor": _Spec(
+        "anypoint/model_routing_qualified_vendor",
+        "chat_completions.fallback.headers.txt",
+        "chat_completions.fallback.body.json",
+        200,
+    ),
+    # --- the native ingresses on model-based-routing 1.0.5 (#1404, #1562) ---
+    # Live captures from a two-route Format=Anthropic proxy and a two-route
+    # Format=Gemini proxy (docs/verified-apis.md §2 native-ingress rows; the
+    # directory READMEs have the provenance). Served on POST …/v1/messages and
+    # POST …/models/{model}:generateContent / :streamGenerateContent.
+    "anthropic-success": _Spec(
+        "anypoint/anthropic_inbound_multiroute",
+        "messages.success.headers.txt",
+        "messages.success.body.json",
+        200,
+    ),
+    "anthropic-fallback": _Spec(
+        "anypoint/anthropic_inbound_multiroute",
+        "messages.fallback.headers.txt",
+        "messages.fallback.body.json",
+        200,
+    ),
+    "anthropic-stream": _Spec(
+        "anypoint/anthropic_inbound_multiroute",
+        "messages.stream.headers.txt",
+        "messages.stream.body.txt",
+        200,
+    ),
+    "anthropic-invalid-json": _Spec(
+        "anypoint/anthropic_inbound_multiroute",
+        "messages.invalid_json.headers.txt",
+        "messages.invalid_json.body.json",
+        400,
+    ),
+    "gemini-success": _Spec(
+        "anypoint/gemini_inbound_multiroute",
+        "generate_content.success.headers.txt",
+        "generate_content.success.body.json",
+        200,
+    ),
+    "gemini-stream": _Spec(
+        "anypoint/gemini_inbound_multiroute",
+        "stream_generate_content.success.headers.txt",
+        "stream_generate_content.success.body.txt",
+        200,
+    ),
+    "gemini-invalid-json": _Spec(
+        "anypoint/gemini_inbound_multiroute",
+        "generate_content.invalid_json.headers.txt",
+        "generate_content.invalid_json.body.json",
+        400,
     ),
     "stream": _Spec(
         "anypoint/llm_proxy",
@@ -299,6 +381,32 @@ SHAPES: dict[str, _Spec] = {
         200,
     ),
 }
+
+# Ingress-only A2A v1 evidence (#1397): not model-route sentinels or new scenarios.
+# Each method has its own #1393 capture, even where the bodies happen to match.
+SHAPES.update(
+    {
+        f"a2a-v1-{policy}-{method}": _Spec(
+            "anypoint/a2a_policies",
+            f"v1-{policy}-{method}.headers.txt",
+            f"v1-{policy}-{method}.body.json" if policy != "rate" else None,
+            status,
+        )
+        for policy, status in (("azure-block", 403), ("pii", 403), ("rate", 429))
+        for method in ("send", "stream")
+    }
+)
+SHAPES.update(
+    {
+        f"a2a-v03-{policy}-send": _Spec(
+            "anypoint/a2a_policies",
+            f"v03-{policy}-send.headers.txt",
+            "v03-pii-send.body.json" if policy == "pii" else None,
+            status,
+        )
+        for policy, status in (("pii", 403), ("rate", 429))
+    }
+)
 
 # The package-data directory every row resolves to. Rows 3/4/6 live in
 # _fixtures/rejections/; the rest alias _fixtures/anypoint/llm_proxy/.

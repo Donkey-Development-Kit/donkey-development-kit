@@ -8,8 +8,10 @@ discriminator headers, and the SDK's typed refusals light up locally without a
 real Anypoint sandbox.
 
 It serves the two OpenAI-format model-call routes: ``POST …/responses`` and
-``POST …/chat/completions`` (#895), each non-streaming and streaming. Any other
-route gets the captured ``/models`` 404.
+``POST …/chat/completions`` (#895), each non-streaming and streaming, and the
+two native ingresses (#1562): Anthropic's ``POST …/v1/messages`` and Gemini's
+``POST …/models/{model}:generateContent`` / ``:streamGenerateContent``. Any
+other route gets the captured ``/models`` 404.
 
 What it is NOT: it enforces no policy, evaluates nothing, and forwards no live
 traffic. It is a separate process serving static fixtures. Every response
@@ -26,6 +28,8 @@ type leaks across the boundary under ``mypy --strict``.
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
@@ -60,6 +64,10 @@ _SIMULATOR_HEADER_BYTES = SIMULATOR_HEADER.encode("latin-1")
 # a simulator control surface only — NEVER a real Omni Gateway behaviour (verification discipline).
 SIM_MODEL_PREFIX = "donkey-sim/"
 
+# Match the A2A dev ingress's 4 MiB bound, counting streamed bodies as well as
+# declared lengths. This is a local resource limit, not a gateway policy shape.
+_MAX_BODY_BYTES = 4 * 1024 * 1024
+
 # The budget window the live proxy emits on a happy-path `200` (with the
 # `llm-token-rate-limit` policy applied) is a single prose header,
 # `x-llm-proxy-ratelimit`, NOT the numeric `x-token-*` trio (which the live gateway
@@ -69,7 +77,8 @@ SIM_MODEL_PREFIX = "donkey-sim/"
 #   "Token rate limit: {remaining} tokens remaining of {limit} limit. Reset in {ms}ms."
 
 # Shapes selectable via the model-id sentinel: the documented rejections
-# plus the consumer-auth 401 and the gateway's bare-model-name 400 (#891).
+# plus the consumer-auth 401 and the gateway's bare-model-name 400 (#891) and
+# missing-model 400 (#1547).
 _REJECTION_SHAPES = frozenset(
     {
         "token-rate-limit",
@@ -84,6 +93,7 @@ _REJECTION_SHAPES = frozenset(
         "ciba-denied",
         "model-not-found",
         "model-not-routable",
+        "model-missing",
         "upstream-5xx",
         "client-id-missing",
     }
@@ -94,18 +104,36 @@ _REJECTION_SHAPES = frozenset(
 # ``routing_score`` branch of ``donkey.last_call`` offline (#601). Kept apart from
 # the rejections because these are 200s; both are served as-is from the captured
 # fixture (no synthesised budget window), so the replay stays byte-faithful.
-_HAPPY_SHAPES = frozenset({"success-semantic"})
+# The two qualified-vendor 200s (#1412) drive a ``groupId:vendor`` provider
+# (``mulesoft:openai``) on a matched route and on the policy fallback.
+_HAPPY_SHAPES = frozenset(
+    {"success-semantic", "success-qualified-vendor", "fallback-qualified-vendor"}
+)
 
 # Every shape the model-id sentinel can force to a specific captured fixture.
 _SENTINEL_SHAPES = _REJECTION_SHAPES | _HAPPY_SHAPES
 
+# The rejections a native ingress can be forced to serve (#1562): the gateway's
+# own policy answers. The OpenAI upstream's model-not-found 400 and the
+# bare-model-name 400 are left out, because a native ingress serves an
+# unresolvable model on its own vendor instead (docs/verified-apis.md §2).
+_NATIVE_REJECTION_SHAPES = _REJECTION_SHAPES - {
+    "model-not-found",
+    "model-not-routable",
+    "model-missing",
+}
+
 
 @dataclass(frozen=True)
 class _Route:
-    """The happy-path fixture shapes one model-call route serves."""
+    """The fixture shapes one model-call route serves: its happy-path 200 and
+    stream, the shapes its model-id sentinel may force, and, on a native
+    ingress, the captured 400 for a body that is not JSON."""
 
     success: str
     stream: str
+    sentinels: frozenset[str] = _SENTINEL_SHAPES
+    invalid_json: str | None = None
 
 
 _RESPONSES_ROUTE = _Route(success="success", stream="stream")
@@ -113,6 +141,23 @@ _RESPONSES_ROUTE = _Route(success="success", stream="stream")
 # docs/verified-apis.md §2 Chat Completions row; the stream is OpenAI's public
 # shape until #894 captures one.
 _CHAT_COMPLETIONS_ROUTE = _Route(success="chat-success", stream="chat-stream")
+# The native ingresses on model-based-routing 1.0.5 (#1562), from the two-route
+# live captures. Anthropic adds the policy-fallback 200 as a sentinel; on the
+# Gemini ingress every path model was served by gemini, so it has none.
+_ANTHROPIC_ROUTE = _Route(
+    success="anthropic-success",
+    stream="anthropic-stream",
+    sentinels=_NATIVE_REJECTION_SHAPES | {"anthropic-fallback"},
+    invalid_json="anthropic-invalid-json",
+)
+_GEMINI_ROUTE = _Route(
+    success="gemini-success",
+    stream="gemini-stream",
+    sentinels=_NATIVE_REJECTION_SHAPES,
+    invalid_json="gemini-invalid-json",
+)
+# Gemini names the model in the path and streams by method, not by a body flag.
+_GEMINI_PATH = re.compile(r"/models/(.+):(generateContent|streamGenerateContent)$")
 
 
 class ASGIApp(Protocol):
@@ -220,6 +265,16 @@ class _Simulator:
             return await self._model_call(request, _RESPONSES_ROUTE)
         if request.method == "POST" and path.endswith("/chat/completions"):
             return await self._model_call(request, _CHAT_COMPLETIONS_ROUTE)
+        if request.method == "POST" and path.endswith("/v1/messages"):
+            return await self._model_call(request, _ANTHROPIC_ROUTE)
+        gemini = _GEMINI_PATH.search(path) if request.method == "POST" else None
+        if gemini is not None:
+            return await self._model_call(
+                request,
+                _GEMINI_ROUTE,
+                path_model=gemini.group(1),
+                stream=gemini.group(2) == "streamGenerateContent",
+            )
         if request.method == "GET" and path.endswith("/models"):
             # No catalog endpoint is verified; mirror the captured 404 rather
             # than fabricate a model list (verification discipline).
@@ -227,19 +282,54 @@ class _Simulator:
         # Unknown route: an honest, honesty-stamped 404.
         return self._response(load("models-notfound"))
 
-    async def _model_call(self, request: Any, route: _Route) -> Any:
-        """Serve one model call on either route (#895). The sentinel, the
-        scenario rules and the budget window are the same on both: a rejection
-        is the gateway's policy answer, and the gateway applies its policies
-        before it picks an upstream API. Only the happy-path bodies differ."""
+    async def _model_call(
+        self,
+        request: Any,
+        route: _Route,
+        *,
+        path_model: str | None = None,
+        stream: bool | None = None,
+    ) -> Any:
+        """Serve one model call on any route (#895, #1562). The sentinel, the
+        scenario rules and the budget window are the same on all of them: a
+        rejection is the gateway's policy answer, and the gateway applies its
+        policies before it picks an upstream API. Only the happy-path bodies
+        differ. ``path_model`` and ``stream`` are Gemini's, which names the
+        model in the path and streams by method."""
+        from starlette.responses import Response
+
+        def too_large() -> Any:
+            return Response(
+                f"request body over the donkey simulator limit of {_MAX_BODY_BYTES} bytes\n",
+                status_code=413,
+                headers={SIMULATOR_HEADER: "true", "connection": "close"},
+                media_type="text/plain",
+            )
+
         try:
-            payload = await request.json()
-        except Exception:  # noqa: BLE001 — a malformed/empty body is just "happy path"
+            declared = int(request.headers.get("content-length", "0"))
+        except ValueError:
+            declared = 0  # count the actual bytes when the declaration is malformed
+        if declared > _MAX_BODY_BYTES:
+            return too_large()
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > _MAX_BODY_BYTES:
+                return too_large()
+            body.extend(chunk)
+        try:
+            payload = json.loads(body)
+        except (ValueError, RecursionError):  # malformed, empty or too-deep JSON is invalid input
+            if route.invalid_json is not None:
+                # A native ingress answers its captured flat-string 400 (#1562).
+                return self._response(load(route.invalid_json))
             payload = {}
-        model = payload.get("model") if isinstance(payload, dict) else None
+        model = path_model
+        if model is None and isinstance(payload, dict):
+            model = payload.get("model")
         if isinstance(model, str) and model.startswith(SIM_MODEL_PREFIX):
             shape = model[len(SIM_MODEL_PREFIX) :]
-            if shape in _SENTINEL_SHAPES:
+            if shape in route.sentinels:
                 # The model-id sentinel is an explicit "force this exact shape"
                 # override and wins over ambient scenario fault-injection. It
                 # selects a rejection shape or a happy-path variant (the
@@ -270,21 +360,24 @@ class _Simulator:
             window_headers.update(self._budget.happy_path_headers())
         elif self._config.budget_window:
             window_headers.update(await self._synth_ratelimit_header())
-        return self._happy(payload, route, window_headers)
+        if stream is None:
+            stream = isinstance(payload, dict) and payload.get("stream") is True
+        return self._happy(route, window_headers, stream=stream)
 
-    def _happy(self, payload: Any, route: _Route, ratelimit_header: dict[str, str]) -> Any:
+    def _happy(self, route: _Route, ratelimit_header: dict[str, str], *, stream: bool) -> Any:
         """Serve the route's happy-path 200 (or its stream), carrying the given
         window headers (the token prose header, and the request trio when a
         request-limit scenario is on)."""
-        if isinstance(payload, dict) and payload.get("stream") is True:
+        if stream:
             # /responses: the captured stream sample is a single, truncated
             # `response.created` event — a real capture, NOT a complete SSE
             # stream ending in `data: [DONE]`. It is replayed verbatim rather than
             # fabricating the remaining events (verification discipline: never
             # invent gateway output); a complete SSE capture is a follow-up.
             # /chat/completions: OpenAI's public chunk shape, not a capture (see
-            # the "chat-stream" row in fixtures.SHAPES). Either way it carries the
-            # budget window prose header, like any happy path.
+            # the "chat-stream" row in fixtures.SHAPES). The native streams are
+            # complete live captures (#1562). Each carries the budget window
+            # prose header, like any happy path.
             return self._response(load(route.stream), extra=ratelimit_header)
         return self._response(load(route.success), extra=ratelimit_header)
 

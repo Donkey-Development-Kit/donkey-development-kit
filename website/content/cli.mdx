@@ -185,6 +185,7 @@ Global options go before the command (`donkey --json init`):
 | `--port` | `8000` | TCP port to bind. |
 | `--host` | `127.0.0.1` | Host/interface to bind. |
 | `--agent-version` | `0.0.0` | The agent version the card advertises. |
+| `--protocol-version` | `1.0` | A2A protocol to serve: 0.3.0 or 1.0 (default). |
 | `--scenario` | none | Inbound rejection rule, repeatable. e.g. 'pii_block:every=5', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
 
 `donkey doctor`: Diagnose governed access: config, credentials, gateway, model, budget.
@@ -198,8 +199,8 @@ Global options go before the command (`donkey --json init`):
 
 | Option | Default | Meaning |
 |---|---|---|
-| `service` | none | The service ID to expose; optional when the project has exactly one. |
-| `--path` | `.` | The repository (or one .py file) to scan. |
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--service` | none | The service ID to expose; optional when the project has exactly one. |
 | `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
 | `--target` | none | The gateway's name; overrides the declared target. |
 | `--dry-run` | off | Only read: print what would be created, and change nothing. |
@@ -223,8 +224,8 @@ Global options go before the command (`donkey --json init`):
 
 | Option | Default | Meaning |
 |---|---|---|
-| `service` | none | The service ID to expose; optional when the project has exactly one. |
-| `--path` | `.` | The repository (or one .py file) to scan. |
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--service` | none | The service ID to expose; optional when the project has exactly one. |
 | `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
 | `--target` | none | The gateway's name; overrides the declared target. |
 | `--json` | off | Emit the report as JSON. |
@@ -402,6 +403,25 @@ ingress, the rules it takes and where its rejection shapes come from are in
 isn't marked with `@donkey.agent`, and an invalid `--scenario` (including
 `budget`), exit with code `2`.
 
+`--protocol-version` accepts `1.0` (default) or `0.3.0`; an unsupported value
+also exits `2` before loading the target. `--agent-version` sets the card's
+application release version (default `0.0.0`), not the protocol:
+
+```bash
+donkey dev my_agent:handle --protocol-version 0.3.0 --agent-version 2.4.0 \
+  --scenario pii_block:every=5
+```
+
+v1 supports `injection`, `pii_block` and `request_limit` on `SendMessage` and
+`SendStreamingMessage`. v0.3 supports only PII/rate replay on `message/send`;
+`injection` exits `2` at startup. With scenarios configured, `message/stream`
+gets local plain-text HTTP `400` before a rule advances, even if none would
+reject. With no scenarios it passes through. Known wrong-version call methods
+and explicit mismatched version headers on calls get the same local `400`,
+not an invented gateway refusal. Every response carries
+`x-donkey-simulator: true`. See the
+[scenario/version/method matrix](/simulator#a2a-ingress-replay).
+
 `--host` defaults to `127.0.0.1`. A host that isn't loopback, such as
 `0.0.0.0`, still binds, but `donkey dev` prints a warning on stderr. Nothing
 authenticates the caller, so anyone who can reach the port can call the agent.
@@ -534,10 +554,17 @@ published version.
 ### `donkey expose`
 
 ```bash
-donkey preflight sku-manager           # what expose would do; reads only
-donkey expose sku-manager --dry-run    # the same
-donkey expose sku-manager              # publish, create, add policies, deploy
+donkey preflight --service sku-manager          # what expose would do; reads only
+donkey expose --service sku-manager --dry-run   # the same
+donkey expose --service sku-manager             # publish, create, add policies, deploy
 ```
+
+The argument is the path to scan (`.` by default), and `--service` names the
+service, which you can leave out when the project has exactly one. The 0.2.0
+form, with the service ID as the argument (`donkey preflight sku-manager`), still
+works until 0.3.0: when nothing is at that path and the project has a service
+with that ID, the command reads it as `--service` and prints a deprecation
+warning.
 
 Puts one MCP server or A2A agent behind a gateway that already exists, in the
 environment `ANYPOINT_ENV` (or `--env`) names. It runs one step at a time and

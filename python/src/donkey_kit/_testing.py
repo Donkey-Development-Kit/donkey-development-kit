@@ -17,7 +17,7 @@ registry (#210), so a registration one test makes never leaks into the next.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
 from .core import classifier
@@ -26,11 +26,17 @@ if TYPE_CHECKING:
     from .core.transport import DonkeyAsyncClient, DonkeyClient
     from .donkey import Donkey
     from .integrations._base import Adapter
+    from .registry.models import AgentHandle, McpServerHandle
+    from .tools.auth import McpAuth
+    from .tools.session import ToolSet
 
 __all__ = [
     "SwappableClient",
+    "a2a_discovery_scope",
     "http_clients",
     "isolated_classify",
+    "mcp_discovery_scope",
+    "mcp_factory_scope",
     "resolved_adapters",
     "swap_transport",
     "transport_of",
@@ -68,6 +74,39 @@ def http_clients(donkey: Donkey) -> tuple[DonkeyAsyncClient, DonkeyClient]:
 def resolved_adapters(donkey: Donkey) -> Mapping[str, Adapter]:
     """The adapters resolved on ``donkey`` so far, by attribute name."""
     return donkey._adapter_cache
+
+
+@contextlib.contextmanager
+def mcp_factory_scope(tools: ToolSet, factory: Callable[..., Any]) -> Iterator[None]:
+    """Attach an owner-local MCP factory, restoring the previous one on exit (#1391)."""
+    state = tools._mcp_transport
+    previous = state.get("factory")
+    state["factory"] = factory
+    try:
+        yield
+    finally:
+        if previous is None:
+            state.pop("factory", None)
+        else:
+            state["factory"] = previous
+
+
+def mcp_discovery_scope(
+    donkey: Donkey,
+    servers: Sequence[McpServerHandle],
+    *,
+    auth: McpAuth,
+    transport: dict[str, Callable[..., Any]],
+) -> contextlib.AbstractContextManager[None]:
+    """Make ``donkey.tools`` answer from ``servers`` until exit (#1391, ADR 0023)."""
+    return donkey._tools._discovery.simulated(servers, auth=auth, transport=transport)
+
+
+def a2a_discovery_scope(
+    donkey: Donkey, agents: Sequence[AgentHandle], *, auth: McpAuth
+) -> contextlib.AbstractContextManager[None]:
+    """Make ``donkey.a2a`` resolve only ``agents`` until exit (#1652, ADR 0025)."""
+    return donkey._a2a.simulated(agents, auth=auth)
 
 
 @contextlib.contextmanager

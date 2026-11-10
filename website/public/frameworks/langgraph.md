@@ -14,6 +14,10 @@ adapter runs the full conformance suite in CI.
 - Typed gateway refusals (`PIIDetected`, `TokenBudgetExceeded`, …) inside nodes.
 - A conformance suite you can run against your own graph.
 
+**Listed upstream.** LangChain lists DDK as "Donkey Kit (governed ChatOpenAI)"
+in its [chat model integrations](https://docs.langchain.com/oss/python/integrations/chat)
+and on [All providers](https://docs.langchain.com/oss/python/integrations/providers/all_providers).
+
 ## Install
 
 ```bash
@@ -188,6 +192,12 @@ the approver and runs it; `reject(...)` refuses it. Each helper returns an
 `Approval` whose `native` is the `Command` to resume on, or you can resume on
 `Command(resume={"approved": True, "by": "<approver>"})` yourself. A refusal
 from the approved tool's model call still leaves the graph typed.
+
+The checkpointer may retain the pause across a restart, but DDK retains its
+requester evidence only in process memory. A native resume with missing
+evidence raises `AuthError` without running the tool; request a fresh approval.
+Changed approval arguments raise `ConfigError`. See
+[Who a resumed call runs as](https://docs.donkey-kit.dev/hitl.md#who-a-resumed-call-runs-as).
 
 On Python 3.10, `interrupt()` only works when the graph runs with
 `graph.invoke()`. Under `graph.ainvoke()` it raises `RuntimeError: Called

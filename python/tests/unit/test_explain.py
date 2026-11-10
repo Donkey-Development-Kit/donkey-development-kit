@@ -257,6 +257,32 @@ async def test_a_pending_report_is_unknown() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("statuses", "passed"),
+    [
+        (["NonConformant", "Conformant"], False),
+        (["Pending", "Conformant"], None),
+        (["Failed", "Conformant"], None),
+        (["Conformant", "Conformant"], True),
+    ],
+)
+async def test_duplicate_ruleset_labels_do_not_hide_reports(
+    statuses: list[str], passed: bool | None
+) -> None:
+    body = _report("Conformant")
+    template = body["reports"][0]
+    body["reports"] = [dict(template, summaryStatus=status) for status in statuses]
+    details = []
+    for reports in (body["reports"], list(reversed(body["reports"]))):
+        fake = _Anypoint(**{_GOVERNANCE: {**body, "reports": reports}})
+        check = (await _registry(fake).explain(REF, criteria=STRICT)).checks[-1]
+        assert check.passed is passed
+        details.append(check.detail)
+        assert check.detail.count("Agent Network Best Practices:") == len(statuses)
+        assert all(status in check.detail for status in statuses)
+    assert details[0] == details[1]
+
+
 async def test_no_report_is_unknown_unless_unknown_is_allowed() -> None:
     lenient = GovernanceCriteria(require_governance_pass=True, allow_unknown=True)
 

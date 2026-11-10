@@ -44,13 +44,31 @@ tools = await donkey.tools.discover(
 | `domain` | `str \| None` | Catalog domain. Raises `NotImplementedError` for now: Exchange has no domain filter. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
 | `governed` | `bool \| GovernanceCriteria \| None` | `True` (the default) applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered. |
-| `locked` | `bool` | `True` resolves only the versions pinned in `donkey.lock` (see [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md)). Raises `NotImplementedError` for now. Default `False`. |
+| `locked` | `bool` | `True` reads `donkey.lock` and checks the set against it: drift raises `ToolLockDrift`, and unpinned tools are dropped (see [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md)). Provisional. Default `False`. |
+| `lock_path` | `str \| PathLike` | The lockfile `locked=True` reads. Default `"donkey.lock"`. |
 | `auth` | `McpAuth \| None` | The gateway credential bindings send. `None` uses the data-plane consumer credential; see [Auth](https://docs.donkey-kit.dev/tool-access/binding.md#auth). |
 
 It reads at most 200 MCP assets, and logs a warning when it reaches that limit;
 narrow it with `tags=`. A server that does not resolve to exactly one deployed
 MCP instance in the environment is listed with a failed `resolve_mcp` check, so
 `governed=True` leaves it out and binding refuses it.
+
+## Catalog-changing policies
+
+Discovery finds servers, not their current tool names. It opens no MCP
+connection, so MCP Tool Mapping and Tools Progressive Disclosure become visible
+only when you call `describe()` or bind. Use the gateway-visible names in
+filters and approval rules; see
+[Gateway-visible catalogs](https://docs.donkey-kit.dev/tool-access/binding.md#gateway-visible-catalogs).
+For access-scoped lists, refusal handling and result transformations, see
+[MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md).
+
+When listing tools, the SDK retains HTTP error bodies for classification only
+within a 64 KiB limit and a five-second total deadline shared by the read and
+best-effort cleanup, with no compressed or partial envelope classification.
+Cancellation is not delayed by cleanup. Authentication failures remain `AuthError`; other
+listing failures surface as `ToolInvocationError`. See
+[Results and errors](https://docs.donkey-kit.dev/tool-access/binding.md#results-and-errors).
 
 ## Registry search
 
@@ -62,7 +80,7 @@ types or a result limit, call `donkey.registry.search()` directly. It returns
 ```python
 refs = await donkey.registry.search(
     query="*accounts*",       # a glob over asset ID, name and description; None = no text filter
-    asset_types=["mcp"],      # "mcp", "agent" or "api"
+    asset_types=["mcp"],      # "mcp", "agent", "api" or "llm"
     tags=["approved"],        # all tags must be present
     limit=50,                 # max results (default 50)
 )
@@ -81,7 +99,9 @@ latest version:
   inside words, so a glob query reads the group's assets that pass the other
   filters, 250 at a time, until it has `limit` matches.
 - `asset_types` and `tags` are applied by Exchange. `"api"` covers Exchange's
-  REST, HTTP and SOAP API types. A tag is an Exchange tag.
+  REST, HTTP and SOAP API types. `"llm"` is an LLM proxy or a custom LLM
+  provider; read what one declares with
+  [`donkey.registry.llm_metadata()`](#reading-an-llm-assets-metadata). A tag is an Exchange tag.
 - `domain`, `environment`, `governed` and the `"a2a-agent"` type raise
   `NotImplementedError` for now. Exchange has no domain filter, and
   `environment` and `governed` need the governed-state join below.
@@ -132,8 +152,31 @@ print(agent.endpoint_url)   # https://<gateway-host>/<instance-path>/
 
 The agent's card is at `endpoint_url` + `.well-known/agent-card.json`. It raises
 `RegistryError` in the same cases as `resolve_mcp()`, including a gateway URL
-that is not `https://`, and like it sends no gateway credential. Calling the agent as a tool, `AgentHandle.as_tool()`, is on
-the [Roadmap](https://docs.donkey-kit.dev/tool-access/a2a.md).
+that is not `https://`, and like it sends no gateway credential. The immutable
+handle is resolution-only. Use [`donkey.a2a.send()` or `stream()`](https://docs.donkey-kit.dev/tool-access/a2a.md)
+with the Exchange reference to call the agent; that provisional surface is
+offline-verified, not yet live-verified for successful gateway send/SSE.
+Framework-native `AgentHandle.as_tool()` remains planned.
+
+## Reading an LLM asset's metadata
+
+`donkey.registry.llm_metadata()` is Live. It reads the
+`llm-metadata` file of an `llm` asset version, an LLM proxy or a custom LLM
+provider, and returns what it declares:
+
+```python
+meta = await donkey.registry.llm_metadata("<group-id>/my-llm-provider/1.0.0")
+if meta is not None:
+    print(meta.platform, meta.input_format, meta.models)
+```
+
+`LlmMetadata` has `platform`, `name`, `input_format`, `models` (the model IDs)
+and `capabilities` (the file's object as published). The read is tolerant: it
+ignores fields it does not know, and a field the file leaves out or sets to the
+wrong type comes back as `None` or empty, never a guess. A DDK LLM proxy's file
+sets only `platform`. The read returns `None` for a version with no
+`llm-metadata` file, and raises `RegistryError` when Exchange has no such
+version. It needs `read:exchange`, and the file download carries no credential.
 
 ## "Governed" is a computed predicate
 
@@ -223,7 +266,9 @@ It reads the asset version's API Manager instances in the environment set by
   gateways by name.
 - A version with no deployed instance fails the policy and gateway checks.
 - `governance_pass` reads the reports of the business group's API Governance
-  profiles. It is `False` when a report is `NonConformant`. It is UNKNOWN when
+  profiles, retaining every report even when ruleset labels repeat. Any
+  `NonConformant` report makes it `False`; it is `True` only when every report
+  is `Conformant`. It is UNKNOWN when
   no profile has evaluated the version, when a report is pending or failed, or
   when the read is refused. API Governance evaluates an asset version when it
   is published, so a profile created later does not report on it.
@@ -249,7 +294,9 @@ It reads the asset version's API Manager instances in the environment set by
 - **Cached, with a staleness check.** A discovery is cached for
   `registry_cache_ttl_s` seconds (default 300), per environment, tags and
   criteria. `ToolSet.discovered_at` says when the registry was read and
-  `ToolSet.is_stale` turns true once the TTL has passed.
+  `ToolSet.is_stale` turns true once the TTL has passed. When the entry
+  expires, the next `discover()` reads the registry again rather than the
+  registry's own cached lookups, so a verdict is never more than one TTL old.
   `donkey.tools.refresh()` drops the cached discoveries and the registry's
   cached `search()`, `explain()` and `resolve_mcp()` lookups, so the next
   `discover()` reads the governance verdicts from API Manager again.
@@ -278,4 +325,4 @@ tools = await donkey.tools.discover(tags=["erp"])  # cache hit
 ## Related
 
 - [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md) — turn a `ToolSet` into native tools.
-- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md) — pin resolved versions for production.
+- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md) — pin each server's listed tools and fail on drift.

@@ -1,0 +1,9 @@
+HTTP/1.1 404 Not Found
+content-type: application/json
+content-length: 510
+date: Mon, 02 Nov 2026 15:56:47 GMT
+server: Anypoint Flex Gateway
+x-correlation-id: 00000000-0000-4000-8000-f68f80ad30fe
+strict-transport-security: max-age=31536000; includeSubdomains
+connection: Close
+
