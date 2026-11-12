@@ -187,7 +187,7 @@ _BOUNDED = (
     ".returncode)"
 )
 
-# #730: a plain install carries no pydantic.
+# #730, #1708: check the plain wheel install, not CLI contributor tooling.
 _NO_PYDANTIC = """\
 import importlib.metadata, sys
 try:
@@ -195,7 +195,7 @@ try:
 except importlib.metadata.PackageNotFoundError:
     pass
 else:
-    sys.exit("pydantic is installed by the dev group; the base install must not need it")
+    sys.exit("pydantic is installed by the base wheel; the base install must not need it")
 import donkey_kit, donkey_kit.experimental
 assert "pydantic" not in sys.modules
 """
@@ -292,7 +292,6 @@ def base_only(session: nox.Session) -> None:
         "-c",
         "import donkey_kit; from donkey_kit import Donkey; print(donkey_kit.__version__)",
     )
-    session.run("python", "-c", _NO_PYDANTIC)
     session.run("pytest", "-q", "tests/unit")
     # The installed-wheel check runs in its own environment. The build uses the
     # locked release toolchain, as publish-*.yml does (#763): --no-isolation
@@ -313,6 +312,7 @@ def base_only(session: nox.Session) -> None:
         session.run("python", "-m", "venv", venv_dir)
         bindir = Path(venv_dir) / ("Scripts" if os.name == "nt" else "bin")
         session.run(str(bindir / "pip"), "install", wheel, external=True)
+        session.run(str(bindir / "python"), "-c", _NO_PYDANTIC, external=True)
         session.run(str(bindir / "python"), "-c", _WHEEL_FIXTURES, external=True)
 
 
