@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 import types
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
@@ -226,11 +227,27 @@ async def test_oversized_buffered_step_up_body_is_not_classified(server: _Server
 
 @pytest.mark.parametrize("mode", ["stall", "compressed", "large", "broken", "complete"])
 @pytest.mark.parametrize("binding", [False, True])
+@pytest.mark.parametrize("scheduler_delay", [0.0, 0.15])
 async def test_error_cleanup_shares_the_deadline_without_task_leaks(
-    server: _Server, monkeypatch: pytest.MonkeyPatch, mode: str, binding: bool
+    server: _Server,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    binding: bool,
+    scheduler_delay: float,
 ) -> None:
     monkeypatch.setattr(mcp_module, "_ERROR_BODY_TIMEOUT", 0.01)
     before = asyncio.all_tasks()
+    waits: list[tuple[float, float]] = []
+    wait_for = asyncio.wait_for
+
+    async def timed_wait(awaitable: Any, timeout: float) -> Any:
+        waits.append((asyncio.get_running_loop().time(), timeout))
+        return await wait_for(awaitable, timeout)
+
+    monkeypatch.setattr(asyncio, "wait_for", timed_wait)
+    # The watchdog allows runner scheduling delays; the recorded budgets below
+    # prove the shared deadline without racing two overdue timeout callbacks (#1709).
+    watchdog = 1.0
 
     class Stream(httpx.AsyncByteStream):
         closing = False
@@ -245,6 +262,9 @@ async def test_error_cleanup_shares_the_deadline_without_task_leaks(
 
         async def aclose(self) -> None:
             self.closing = True
+            if scheduler_delay:
+                # Exceed the original 100 ms watchdog, as a descheduled CI runner can.
+                asyncio.get_running_loop().call_soon(time.sleep, scheduler_delay)
             try:
                 await asyncio.Event().wait()
             finally:
@@ -262,14 +282,22 @@ async def test_error_cleanup_shares_the_deadline_without_task_leaks(
                 stream=stream,
                 request=httpx.Request("POST", "https://gw.example.test/x/"),
             )
-            with pytest.raises(httpx.HTTPStatusError):
-                await asyncio.wait_for(client.event_hooks["response"][0](response), 0.1)
+            with pytest.raises(httpx.HTTPStatusError, match="403"):
+                await asyncio.wait_for(client.event_hooks["response"][0](response), watchdog)
     else:
         with pytest.raises(AuthError, match="HTTP 403"):
             await asyncio.wait_for(
-                mcp_module.list_tools("https://gw.example.test/x/", {}, server="x"), 0.1
+                mcp_module.list_tools("https://gw.example.test/x/", {}, server="x"), watchdog
             )
-    assert asyncio.get_running_loop().time() - started < 0.1
+    assert asyncio.get_running_loop().time() - started < watchdog
+    assert waits[0][1] == watchdog
+    assert len(waits) == (2 if mode == "compressed" else 3)
+    assert all(0 <= timeout <= 0.01 for _, timeout in waits[1:])
+    if mode != "compressed":
+        # An early read can return its unused budget to close, not start a new deadline.
+        read_started, _ = waits[1]
+        close_started, close_timeout = waits[2]
+        assert close_timeout <= max(0.0, read_started + 0.01 - close_started) + 0.0001
     if mode != "stall":
         assert stream.closing
     assert not stream.closing or stream.close_cancelled
