@@ -62,9 +62,11 @@ should be split.
 
 The jobs, grouped by what they protect:
 
-- **Layering and packaging.** `base-only` installs only the base package and
-  runs `tests/unit`, so a framework import leaking into a lower layer fails
-  here. It then checks the built wheel in its own environment.
+- **Layering and packaging.** `base-only` installs the base package plus the
+  dev group and runs `tests/unit`, including the library's blocked-import
+  checks. CLI test tooling may bring its own optional dependencies. The built
+  wheel is then installed without extras or dev tooling in a clean environment,
+  where the no-Pydantic dependency check and packaged-fixture checks run (#1708).
   `all-extra-resolves` dry-runs `pip install ".[all]"` on every supported
   Python (#697). `new-dependencies` checks that any direct dependency new to
   the PR exists on PyPI (#936). `commit-identities` fails a PR whose commits
