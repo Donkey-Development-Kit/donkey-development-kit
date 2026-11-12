@@ -3,7 +3,7 @@
 # Covers ci.yml job(s): adapter-contract(langgraph)
 # See scripts/compile_constraints.py and docs/adr/0007-dependency-policy.md rule 3.
 #
-annotated-doc==0.0.5
+annotated-doc==0.0.6
 annotated-types==0.8.0
 anyio==4.16.0
 ast-serialize==0.13.1
@@ -12,7 +12,7 @@ certifi==2026.10.23
 cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.1
-coverage==7.17.2
+coverage==7.17.3
 cryptography==50.0.2
 distro==1.9.0
 grimp==3.19
@@ -26,11 +26,11 @@ idna==3.20
 import-linter==2.16
 iniconfig==2.3.1
 jiter==0.19.0
-jsonpatch==1.45
-jsonpointer==3.10
+jsonpatch==1.47
+jsonpointer==3.12
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
-langchain-core==1.7.6
+langchain-core==1.8.0
 langchain-mcp-adapters==0.3.2
 langchain-openai==1.7.4
 langchain-protocol==0.0.21
@@ -40,12 +40,12 @@ langgraph-prebuilt==1.1.1
 langgraph-sdk==0.4.14
 langsmith==0.14.17
 librt==0.16.0
-markdown-it-py==4.2.0
+markdown-it-py==4.3.0
 mcp==1.30.0
 mdurl==0.1.2
 mypy==2.4.1
 mypy-extensions==1.2.0
-openai==3.46.0
+openai==3.49.0
 orjson==3.13.0
 ormsgpack==1.13.1
 packaging==26.3
@@ -80,7 +80,7 @@ starlette==1.10.0
 tenacity==9.2.1
 tiktoken==0.14.0
 truststore==0.10.5
-typer==0.28.0
+typer==0.29.1
 typing-extensions==4.16.0
 typing-inspection==0.4.5
 urllib3==2.8.0

@@ -3,19 +3,19 @@
 # Covers ci.yml job(s): agents-strands-last-call
 # See scripts/compile_constraints.py and docs/adr/0007-dependency-policy.md rule 3.
 #
-annotated-doc==0.0.5
+annotated-doc==0.0.6
 annotated-types==0.8.0
 anyio==4.16.0
 ast-serialize==0.13.1
 attrs==26.1.0
 aws-bedrock-token-generator==1.1.0
-boto3==1.43.126
-botocore==1.43.126
+boto3==1.44.1
+botocore==1.44.1
 certifi==2026.10.23
 cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.1
-coverage==7.17.2
+coverage==7.17.3
 cryptography==50.0.2
 docstring-parser==0.18.0
 griffelib==2.4.1
@@ -33,13 +33,13 @@ jmespath==1.1.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 librt==0.16.0
-markdown-it-py==4.2.0
+markdown-it-py==4.3.0
 mcp==2.3.0
 mcp-types==2.3.0
 mdurl==0.1.2
 mypy==2.4.1
 mypy-extensions==1.2.0
-openai==3.46.0
+openai==3.49.0
 openai-agents==0.24.0
 opentelemetry-api==1.45.2
 opentelemetry-instrumentation==0.66b2
@@ -76,7 +76,7 @@ sse-starlette==3.7.0
 starlette==1.10.0
 strands-agents==1.64.0
 truststore==0.10.5
-typer==0.28.0
+typer==0.29.1
 typing-extensions==4.16.0
 typing-inspection==0.4.5
 urllib3==2.8.0
