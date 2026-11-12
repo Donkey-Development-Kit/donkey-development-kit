@@ -1299,6 +1299,44 @@ No adapter, consumer behavior, support depth or verification status changes.
 The historical live evidence remains unchanged: no live gateway call, live
 re-check or new fixture capture was performed.
 
+#### Anthropic release re-check (2026-11-12, #1707)
+
+The lock refresh in #1705 already selects `anthropic==2.8.0` in
+`python/constraints/adapter-contract-anthropic-py3.12.txt`, with
+`openai==3.49.0`, `httpx==0.28.1` and `httpx2==2.16.0`. On Python 3.12.16,
+the prior check at `91fe2490` passed `adapter-contract(anthropic)` (5,653
+passed, 824 skipped, 30 deselected), the strict four-scenario example smoke,
+and the `anthropic.AsyncAnthropic` signature check. Re-running the current
+lock at `a74f858a` on 2026-11-12 gives the same final counts: 5,653 passed,
+824 skipped, 30 deselected. The strict `smoke_example.py anthropic` passes,
+and all four offline conformance scenarios pass. The pinned-version descriptor
+fixture comparison is skipped because no capture exists at 2.8.0; the
+descriptor shape tests still run.
+
+`verify_frameworks.py --only anthropic --require-installed --emit-verified`
+confirms construction and the expected `anthropic.AsyncAnthropic` class.
+Installed-signature inspection confirms `base_url`, `api_key`,
+`default_headers`, `http_client` (typed `httpx2.AsyncClient | None`) and
+`max_retries` remain accepted constructor parameters. The adapter needs no
+constructor or transport changes. The minimum pre-PR sessions
+`typecheck-and-lint`, `test-3.11`, `new-dependencies` and `commit-identities`
+also pass.
+
+The upstream [v2.7.0 release notes](https://github.com/anthropics/anthropic-sdk-python/releases/tag/v2.7.0)
+describe API-error copying/unpickling fixes and provider-specific fixes for
+Bedrock, Vertex and Foundry. The
+[v2.8.0 release notes](https://github.com/anthropics/anthropic-sdk-python/releases/tag/v2.8.0)
+add administrative Claude Tag analytics/settings APIs and harden Bedrock,
+Vertex and Google Cloud path handling. These release-note observations are
+not evidence of new runtime validation by DDK, and those provider-specific
+and administrative paths were not separately exercised here.
+
+This is a docs-only evidence update: all checks above are offline, against
+mock transports and captured fixtures. **No live re-check was performed**:
+neither a new Messages API gateway round-trip nor an MCP fixture re-capture
+is claimed. The historical `VERIFIED (LIVE)` row, earlier live/local evidence
+and verification statuses remain unchanged.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
