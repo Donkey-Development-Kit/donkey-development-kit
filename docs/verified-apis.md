@@ -1192,6 +1192,43 @@ The 1.108.3 release notes were not otherwise inspected. These are offline checks
 against the local simulator and mock transports, not a new live gateway
 round-trip. Historical live evidence and verification statuses remain unchanged.
 
+#### LangChain Core release re-check (2026-11-12, #1703)
+
+The PR CI lock refresh merged in #1705 (`a74f858a`) selects
+`langchain-core==1.8.0`, superseding the `1.7.7` requested by #1703. The
+LangGraph adapter-contract lock pairs it with `langgraph==1.2.20`,
+`langchain-openai==1.7.4`, `openai==3.49.0` and `pydantic==2.14.3`.
+On Python 3.12.16, a fresh `nox -s 'adapter-contract(langgraph)'` run against
+that merged lock passes (5,709 passed, 811 skipped, 30 deselected), including
+the strict example smoke and conformance kit. In the same environment,
+`verify_frameworks.py --only langgraph --require-installed --emit-verified`
+confirms construction and the expected `langchain_openai.ChatOpenAI` class
+(`langchain_openai.chat_models.base.ChatOpenAI`).
+
+The earlier local review at bot head `91fe2490` also passed the adapter-contract
+suite (5,709 passed, 811 skipped, 30 deselected), strict smoke and offline
+signature/expected-class checks on this framework stack. That review used
+`coverage==7.17.2`; the merged lock and the fresh re-check above use
+`coverage==7.17.3`. The earlier run is not evidence for that final coverage pin.
+
+The [1.7.7 release notes](https://github.com/langchain-ai/langchain/releases/tag/langchain-core%3D%3D1.7.7)
+record a nesting-depth cap in `load()`. The
+[1.8.0 release notes](https://github.com/langchain-ai/langchain/releases/tag/langchain-core%3D%3D1.8.0)
+drop Python 3.10 support (Core now requires Python 3.11+) and add decision
+models. These release-note changes were not separately exercised here; the
+offline checks above do not imply a new adapter impact. DDK retains its Python
+3.10 floor and floor-only extras: the
+[Python 3.10 fresh-resolve CI leg](https://github.com/Donkey-Development-Kit/donkey-development-kit/actions/runs/43273960018/job/131377304032)
+passes with the eligible older `langchain-core==1.7.7`, not Core 1.8.0.
+The [merged-head CI run](https://github.com/Donkey-Development-Kit/donkey-development-kit/actions/runs/43273960018)
+at `a74f858a` is green.
+
+These are offline checks against the local simulator and mock transports.
+**No live re-check was run** and no MCP fixture was re-captured. The historical
+LangGraph `VERIFIED (LIVE)` row, its tested versions and all verification
+statuses remain unchanged. No public behavior or status changes, so the mapped
+LangGraph, configuration and unsupported-boundary website pages need no update.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
