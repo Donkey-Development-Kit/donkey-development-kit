@@ -1433,6 +1433,29 @@ exercised by this re-check; the passing checks establish the existing DDK
 adapter contract against the locked stack, not coverage of every upstream
 change.
 
+#### OpenAI release re-check (2026-11-13, #1725)
+
+The nightly lock refresh in #1726 (merged as `c6a2c74b`; tested at its head `f329a679`, same tree) moves `openai` from 3.49.0 to
+`openai==3.50.0` in `python/constraints/adapter-contract-openai-agents-py3.12.txt`;
+the same pin pairs it with `openai-agents==0.24.0`, `httpx==0.28.1` and
+`httpx2==2.16.0`. The refresh also moves `pytest-asyncio` to 1.5.0 and `ruff`
+to 0.17.5. A fresh install on Python 3.12.16 with that lock (the
+`adapter-contract` install command for the `openai-agents` extra) confirms
+`openai 3.50.0`. The whole suite passes: 5,708 passed, 814 skipped, 30 deselected.
+The strict example smoke builds the native object and passes the conformance
+kit. In that same environment,
+`verify_frameworks.py --only openai_agents --require-installed --emit-verified`
+confirms construction and the expected `agents.OpenAIChatCompletionsModel` class
+(actual path: `agents.models.openai_chatcompletions.OpenAIChatCompletionsModel`);
+its offline-only verdict is `UNVERIFIED (signature confirmed)`, with live not run.
+
+The [OpenAI v3.50.0 release notes](https://github.com/openai/openai-python/releases/tag/v3.50.0)
+list one feature, exposing reasoning input transformations on responses, plus a
+CI action bump and a review-handoff documentation change. DDK uses none of
+these surfaces, and they were read, not individually exercised by this re-check.
+The passing checks establish the existing DDK adapter contract against the
+locked stack, not coverage of every upstream change.
+
 All checks above are offline against the local simulator and mock transports.
 **No live re-check or new fixture capture was performed.** Historical live
 evidence and verification statuses remain unchanged. No adapter or public
@@ -1511,6 +1534,8 @@ depth remain unchanged. No adapter or public behavior changed, so the mapped
 CrewAI, configuration and unsupported-boundary website pages need no update.
 
 behavior changed, so the mapped MS Agent Framework, configuration and
+
+behavior changed, so the mapped OpenAI Agents, configuration and
 unsupported-boundary website pages need no update.
 
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
