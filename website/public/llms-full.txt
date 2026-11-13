@@ -11046,8 +11046,53 @@ names the format it found, even when the publish succeeded.
 
 ## From GitLab CI
 
-There is no GitLab component yet, so run `donkey publish` in a job of your
-own. This one plans on merge requests and publishes from the default branch:
+The `donkey-publish` component runs `donkey publish` in a GitLab pipeline. It
+is listed in the GitLab CI/CD Catalog, and you include it pinned to a release:
+
+```yaml
+# .gitlab-ci.yml
+include:
+  - component: $CI_SERVER_FQDN/donkey-development-kit/donkey-publish/publish@1.0.0
+```
+
+That adds a `donkey-publish` job which plans on merge requests and publishes
+from the default branch. Pin a full version or a commit SHA: `~latest` and a
+partial version like `1` move with the component, not with your review. The
+component's source and changelog are in its
+[GitLab project](https://gitlab.com/donkey-development-kit/donkey-publish).
+
+Add `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID` as
+CI/CD variables under **Settings > CI/CD > Variables**. Mask the secret and
+protect all three: a protected variable reaches only pipelines on protected
+branches, so the default branch gets the credentials and a merge request
+doesn't. They are variables rather than inputs, because GitLab writes an
+input into the pipeline configuration. The dry run needs none; set `group_id`
+in `[donkey.publication]` so it doesn't need the org ID either.
+
+| Input | Default | |
+| --- | --- | --- |
+| `stage` | `test` | The stage the `donkey-publish` job runs in. |
+| `path` | `.` | The directory (or one `.py` file) to scan and publish. |
+| `dry-run` | `auto` | `auto` plans in merge request pipelines and publishes on the default branch. `true` always plans; `false` always publishes. |
+| `if-changed` | `true` | `false` publishes even when the digest matches (`--always`). |
+| `python-version` | `3.12` | Selects the `python:<version>-slim` image (3.10 or later). |
+| `donkey-kit` | the release's pin | The pip requirement to install. Each component release pins the donkey-kit it was tested with (`donkey-kit[cli]==0.2.1` in 1.0.0). |
+| `constraints` | empty | A pip constraints file in your repository (`pip install -c`), as for the [GitHub action](#from-github-actions). |
+| `artifact-expire-in` | `30 days` | How long GitLab keeps the artifacts. |
+
+The job keeps `donkey-publish.json`, the JSON that `donkey publish --json`
+printed, and `donkey-publish-summary.txt`, the table of assets and issues it
+also prints in the log. Both are kept even when the job fails. A dotenv report
+gives jobs that `needs:` this one the `DONKEY_PUBLISHED`, `DONKEY_UNCHANGED`,
+`DONKEY_INCOMPLETE`, `DONKEY_FAILED` and `DONKEY_NOT_ATTEMPTED` counts. A
+failed publish fails the job with `donkey`'s exit code, and re-running the job
+finishes the publish (see [When a publish fails](#when-a-publish-fails)). Like
+the action, the component reads only the JSON format of the donkey-kit it
+pins, and drops control characters from what `donkey` prints.
+
+On a self-managed GitLab instance, which can't include a component from
+gitlab.com, run
+`donkey publish` in a job of your own:
 
 ```yaml
 # .gitlab-ci.yml
@@ -11069,16 +11114,9 @@ donkey-publish:
       - donkey-publish.json
 ```
 
-Add `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID` as
-CI/CD variables under **Settings > CI/CD > Variables**. Mask the secret and
-protect all three: a protected variable reaches only pipelines on protected
-branches, so the default branch gets the credentials and a merge request
-doesn't. The dry run needs none; set `group_id` in `[donkey.publication]` so
-it doesn't need the org ID either.
-
 `donkey publish` prints the JSON on stdout, which the job keeps as the
-`donkey-publish.json` artifact, even when the job fails. Any issue or refusal
-goes to stderr, so it shows in the job log, and the exit code fails the job.
+artifact. Any issue or refusal goes to stderr, so it shows in the job log, and
+the exit code fails the job.
 
 ## From Bitbucket Pipelines
 
