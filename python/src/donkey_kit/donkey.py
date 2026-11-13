@@ -1259,7 +1259,10 @@ class Donkey:
         Args:
             func: The tool, when used bare (``@donkey.tool``).
             approval: ``"required"`` gates every call behind a human decision.
-            risk: A label for the approver and the span, such as ``"financial"``.
+            risk: Advisory metadata for the approver, approval span events and
+                scan/Exchange publication, such as ``"financial"``. It does not
+                require approval by itself, is not sent with gateway tool calls,
+                and neither selects gateway policy nor requests step-up.
             approval_timeout: How long a pending approval waits before resolving
                 it raises :class:`~donkey_kit.core.approvals.ApprovalTimedOut`:
                 seconds, a ``timedelta`` or a string such as ``"15m"``.
