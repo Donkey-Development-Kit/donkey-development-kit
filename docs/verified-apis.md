@@ -1397,6 +1397,42 @@ so this was read, not exercised by this re-check; the passing tests establish
 the existing adapter contract against the locked stack, not coverage of every
 upstream change.
 
+#### MS Agent Framework release re-check (2026-11-13, #1722)
+
+The lock refresh in #1726 (merged as `c6a2c74b`; tested at its head `f329a679`, same tree) selects `agent-framework==1.26.0`,
+`agent-framework-core==1.26.0` and `agent-framework-openai==1.18.2` in
+`python/constraints/adapter-contract-agent_framework-py3.12.txt` and
+`agent-framework-middleware-py3.12.txt`, with `openai==3.50.0`, `mcp==2.3.0`,
+`httpx==0.28.1` and `httpx2==2.16.0`. A fresh local install on Python 3.12.16
+mirroring the `adapter-contract` install command confirms those versions. The
+full suite (`pytest -q` with `DONKEY_CONTRACT_EXTRA=agent_framework`) passes:
+6,220 passed, 402 skipped, 31 deselected, and the strict example smoke builds
+the native object and passes the conformance kit. In that environment,
+`verify_frameworks.py --only agent_framework agent_framework.responses
+--require-installed --emit-verified` confirms construction and the expected
+native class for both `OpenAIChatCompletionClient` (actual path
+`agent_framework_openai._chat_completion_client.OpenAIChatCompletionClient`)
+and `OpenAIChatClient` (`agent_framework_openai._chat_client.OpenAIChatClient`);
+the offline-only verdict for both is `UNVERIFIED (signature confirmed)`, with
+live not run. `nox -s agent-framework-middleware` passes (97 passed, 69 skipped).
+
+The pinned-version descriptor fixture comparison is skipped because no capture
+exists at agent-framework 1.26.0; the descriptor shape tests still run.
+
+The upstream [python-1.26.0 release notes](https://github.com/microsoft/agent-framework/releases/tag/python-1.26.0)
+were read. Items nearest DDK's adapter are Core fixes to Pydantic tool-result
+serialization and alias-keyed structured output, run-level tool approval
+isolation when an agent is exposed as a tool, and OpenAI-package changes that
+bind FIDES policy state to service-history continuations (Core 1.26 floor for
+`agent-framework-openai`). The release also deprecates the experimental
+`MemoryContextProvider` and `MemoryStore` family, makes GitHub Copilot and
+Hyperlight changes marked BREAKING, and widens dependency ranges for
+Anthropic 2.x and Google GenAI 3.x. DDK uses none of the deprecated or
+breaking packages. These release-note changes were read, not individually
+exercised by this re-check; the passing checks establish the existing DDK
+adapter contract against the locked stack, not coverage of every upstream
+change.
+
 All checks above are offline against the local simulator and mock transports.
 **No live re-check or new fixture capture was performed.** Historical live
 evidence and verification statuses remain unchanged. No adapter or public
@@ -1473,6 +1509,9 @@ All checks above are offline against the local simulator and mock transports.
 evidence, verification statuses, and CrewAI's `connection_kwargs()` support
 depth remain unchanged. No adapter or public behavior changed, so the mapped
 CrewAI, configuration and unsupported-boundary website pages need no update.
+
+behavior changed, so the mapped MS Agent Framework, configuration and
+unsupported-boundary website pages need no update.
 
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
