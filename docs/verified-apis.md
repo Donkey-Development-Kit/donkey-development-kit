@@ -1337,6 +1337,42 @@ neither a new Messages API gateway round-trip nor an MCP fixture re-capture
 is claimed. The historical `VERIFIED (LIVE)` row, earlier live/local evidence
 and verification statuses remain unchanged.
 
+#### CrewAI release re-check (2026-11-13, #1713)
+
+The lock refresh in #1705 (`a74f858a`) already selects `crewai==1.15.40`,
+`crewai-cli==1.15.40`, `crewai-core==1.15.40` and `crewai-tools==1.15.40`
+in `python/constraints/adapter-contract-crewai-py3.12.txt`. A fresh local
+`nox -s 'adapter-contract(crewai)'` run at `be39000e` on Python 3.12.16
+passes: 5,730 passed, 763 skipped, 31 deselected. The installed stack includes
+`openai==2.54.0`, `httpx==0.28.1`, `httpx2==2.16.0`, `mcpadapt==0.1.20`
+and `mcp==1.30.0`. The strict example smoke builds the native object and
+passes the conformance kit. In that same environment,
+`verify_frameworks.py --only crewai --require-installed --emit-verified`
+confirms construction and the expected
+`crewai.llms.providers.openai.completion.OpenAICompletion` class; its
+offline-only verdict is `UNVERIFIED (signature confirmed)`, with live not run.
+
+The pinned-version descriptor fixture comparison is skipped because no capture
+exists at CrewAI 1.15.40; the descriptor shape tests still run. The suite emits
+a `PytestUnhandledThreadExceptionWarning` from MCPAdapt's background thread
+during `test_cross_origin_redirect_never_forwards_the_credential[crewai]`:
+the MCP client raises `HTTPStatusError` for the unfollowed redirect. The test
+passes, but this run is not evidence of warning-free background cleanup.
+
+The upstream [1.15.40 release notes](https://github.com/crewAIInc/crewAI/releases/tag/1.15.40)
+describe removal of ChromaDB from the embedding-function layer, historical
+state lookup by row ID, JSONL RAG discovery, JSON-by-default standalone-agent
+scaffolding, and async `after_llm_call` hook and unresolved AMP-app fixes.
+These release-note changes were read, not individually exercised by this
+re-check. The passing checks establish the existing DDK adapter contract
+against the locked stack, not coverage of every upstream change.
+
+All checks above are offline against the local simulator and mock transports.
+**No live re-check or new fixture capture was performed.** Historical live
+evidence, verification statuses, and CrewAI's `connection_kwargs()` support
+depth remain unchanged. No adapter or public behavior changed, so the mapped
+CrewAI, configuration and unsupported-boundary website pages need no update.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
