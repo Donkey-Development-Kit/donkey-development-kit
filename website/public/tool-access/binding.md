@@ -319,7 +319,9 @@ credentials.
 
 To put a human decision in front of a sensitive tool, declare it on the set
 with `require_approval(tools=[...], risk=...)` before you bind (see
-"Discovered tools" in [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md)).
+"Discovered tools" in [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md)). `risk=` is advisory metadata
+for the reviewer and approval span events, not part of the MCP tool-call payload
+and not a request for gateway step-up.
 
 ## Per-framework binding
 
