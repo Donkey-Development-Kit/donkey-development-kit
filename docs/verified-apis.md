@@ -1263,6 +1263,42 @@ All local checks above are offline against the local simulator and mock
 transports; no live gateway call or new fixture capture was made. Historical
 live evidence and verification statuses remain unchanged.
 
+#### LiteLLM release re-check (2026-11-12, #1706)
+
+The ADK contract lock `python/constraints/adapter-contract-adk-py3.12.txt`,
+refreshed in #1705, selects `litellm==1.109.1`, superseding the 1.109.0
+release that triggered #1706. The installed stack is `google-adk==2.14.0`,
+`google-genai==2.34.0`, `openai==3.49.0`, `httpx==0.28.1` and
+`httpx2==2.16.0`, on Python 3.12.16.
+
+The earlier offline run at lock-refresh revision `91fe2490` passed
+`adapter-contract(adk)` (5,796 passed, 677 skipped, 31 deselected), its strict
+four-scenario example smoke, and the `adk` / `adk.gemini` signature and
+expected-class checks. A fresh run against the final #1705 lock gives the same
+test counts and passes the strict smoke. In that session's environment,
+`verify_frameworks.py --only adk --require-installed --emit-verified` confirms
+construction and the expected `google.adk.models.lite_llm.LiteLlm` and
+`google.adk.models.Gemini` classes; the returned subclasses are
+`GovernedLiteLlm` and `GovernedGemini`. Both runs are offline evidence, not
+new live verification. `LITELLM_LOCAL_MODEL_COST_MAP=True` prevents LiteLLM's
+remote cost-map fetch during the re-check.
+
+The [1.109.0 release notes](https://github.com/BerriAI/litellm/releases/tag/v1.109.0)
+include SDK-relevant OpenAI exception mapping, streaming fixes and cleanup of
+evicted aiohttp SDK clients. The
+[1.109.1 release](https://github.com/BerriAI/litellm/releases/tag/v1.109.1)
+backports [proxy request-body authentication hardening](https://github.com/BerriAI/litellm/pull/51264):
+credential fields such as `client_id` and `client_secret` are restricted in
+request bodies. That is LiteLLM proxy-server behavior, not a change to the
+DDK SDK's consumer-auth request headers sent to an Anypoint proxy. These
+release-note changes were read, not individually verified by this re-check;
+the passing tests establish the existing adapter contract against the locked
+stack, not coverage of every upstream fix.
+
+No adapter, consumer behavior, support depth or verification status changes.
+The historical live evidence remains unchanged: no live gateway call, live
+re-check or new fixture capture was performed.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
