@@ -210,6 +210,73 @@ returns TypeSafe's own client pointed at Jev behind Omni Gateway, with the same
 auth, correlation, typed refusals, spans, budget and simulator support as LLM
 calls.
 
+#### Today: TypeSafe's community adapter on a governed LLM proxy
+
+Jev itself is out of reach, but you can write System One code now and run it on
+a gateway-approved LLM. TypeSafe's community
+[`system-one-adapter`](https://github.com/typesafe-ai/system-one-adapter-python)
+is a drop-in `TypeSafeClient` replacement backed by LLMs. It is TypeSafe's
+project, not part of DDK: DDK has no adapter for it and does not depend on it.
+Answers come from the general LLM your proxy routes to, **not from Jev**, so
+the confidence values are not Jev's calibrated ones.
+
+The adapter's `OpenAIProvider` builds its own OpenAI client and has no public
+hook for headers or a client, so a plain provider pointed at the proxy is
+refused with `401 Client ID is not present`. The subclass below swaps in
+`donkey.openai(sync=True)` after construction. That touches the adapter's
+private `_client` attribute, so pin the adapter version. An upstream client
+hook is requested in
+[typesafe-ai/system-one-adapter-python#52](https://github.com/typesafe-ai/system-one-adapter-python/issues/52).
+
+```python
+# pip install "donkey-kit[llm]" "system-one-adapter[openai]==<pinned version>"
+import os
+
+from donkey_kit import Donkey
+from system_one_adapter import Noul, SystemOneAdapterClient
+from system_one_adapter.providers.openai import OpenAIProvider
+
+class GovernedOpenAIProvider(OpenAIProvider):
+    def __init__(self, model_name: str, client) -> None:
+        super().__init__(
+            model_name,
+            base_url=str(client.base_url),
+            api_key="unused",
+            api="chat_completions",
+        )
+        self._client.close()
+        self._client = client  # private attribute: pin the adapter version
+
+donkey = Donkey.from_env()
+provider = GovernedOpenAIProvider(os.environ["MODEL"], donkey.openai(sync=True))
+with SystemOneAdapterClient(structured_outputs=True, llm_answer_mode="probabilities") as client:
+    response = client.system_one(
+        state="This book was a delight to read.",
+        questions={"positive": Noul(instructions="The book review is positive.")},
+        model=provider,  # a provider instance, so no provider= is needed
+    )
+print(response.answers)
+print(donkey.last_call)  # served model, token counts, request id
+```
+
+`MODEL` names a model the proxy routes, for example `openai/gpt-5-mini`.
+In a spike against a live model-routing proxy this ran with both strict
+structured output and the adapter's prompted-JSON fallback, and the SDK's
+headers, retries, spans and `donkey.last_call` applied. It is not part of the
+SDK's test suite or the nightly matrix, so treat it as a worked example, not a
+verified adapter.
+
+Two things to know:
+
+- `response.debug["llm_attempts"]` holds full prompts and responses in memory.
+  DDK does not export it to spans or logs, but do not log it yourself.
+- A gateway refusal reaches your code as the adapter's own error (for example
+  `TypeSafeAuthenticationError`) with the OpenAI error as `__cause__`, not as a
+  DDK typed refusal. Pass `err.__cause__.response` to `donkey_kit.classify()`
+  to get the typed error. The adapter also does not detect a chat completion
+  that carries only `message.refusal`
+  ([typesafe-ai/system-one-adapter-python#46](https://github.com/typesafe-ai/system-one-adapter-python/issues/46)).
+
 ## Injection depth differs by framework
 
 How much of the SDK's HTTP layer reaches the request depends on what each
