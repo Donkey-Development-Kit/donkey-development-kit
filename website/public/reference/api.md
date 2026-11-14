@@ -678,7 +678,7 @@ is raised.
 | `GatewayApprovalPending` | `DonkeyError` | The gateway is waiting for the user to approve this call out of band (CIBA). |
 | `GatewayAuthRequired` | `DonkeyError` | An A2A task needs authorization, not CIBA polling or a local approval. |
 | `GatewayUnavailable` | `DonkeyError` | The gateway could not be reached at all — a transport-level failure (DNS, refused connection, TLS error, timeout) with NO HTTP response behind it. |
-| `ModelNotRoutable` | `DonkeyError` | The gateway could not pick a provider for the requested model, so it rejected the request before any upstream call. |
+| `ModelNotRoutable` | `DonkeyError` | The gateway could not pick a provider for the model, so it rejected the request before any upstream call: a bare model name on a multi-provider proxy (`gpt-5-mini`, ambiguous unless exactly one provider knows it; the flat-string `error` asks for `provider/model`), a missing model, or a provider with no route or fallback. A client configuration mistake, NOT a refusal (not a `PolicyViolation`) and NOT an upstream rejection (not an `UpstreamRequestError`). Terminal, never retried. `model` / `provider`: the model or unrouted provider the gateway echoed, else `None`. |
 | `ModelSubstituted` | `DonkeyError` | The gateway served a *different* model than the one requested — a routing fallback substituted the model, and `on_model_substitution="raise"` opted the caller into treating that as an error. |
 | `PIIDetected` | `PolicyViolation` | PII policy refusal; MCP adds safe `phase` / `findings` metadata. |
 | `PolicyViolation` | `DonkeyError` | Base for gateway-enforced refusals. NEVER retried. |
