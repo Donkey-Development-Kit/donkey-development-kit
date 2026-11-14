@@ -112,9 +112,11 @@ concurrent threads because they mutate interpreter state; see
 [Diataxis](https://diataxis.fr/) separates tutorial, how-to, reference and
 explanation. Apply that distinction without multiplying pages unnecessarily:
 
-- `website/content/cli.mdx`: tested consumer walkthrough and generated command
-  reference; installation, flags, exit codes, remediation and effect boundaries.
-- `website/content/quickstart.mdx`: the short entry path, linked to the walkthrough.
+- `website/content/cli.mdx`: existing consumer CLI page and generated command
+  reference; #1751 will add the tested onboarding walkthrough covering
+  installation, flags, exit codes, remediation and effect boundaries.
+- `website/content/quickstart.mdx`: existing short entry path; #1751 will link
+  it to the new walkthrough when that walkthrough lands.
 - `docs/cli-architecture.md`: contributor explanation of modules, dependencies,
   configuration and execution boundaries.
 - This file: sourced design guidance and the reusable regression checklist.

@@ -7,7 +7,7 @@ architecture invariant or a claim that milestone 28 has shipped. The
 [CLI design guidance](cli-design.md) explains the review and testing bar.
 Implementation plans and unresolved decisions belong in
 [milestone 28](https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/28),
-not this file. Scope follows BG section 1.9, 2.5 and 2.9.
+not this file. Scope follows BG §1.9, BG §2.5 and BG §2.9.
 
 ## Entry Point And Layers
 
@@ -33,7 +33,11 @@ flowchart TD
 
 `cli` is the highest package layer and may call the SDK's lower layers. No
 library module may import it back. Typer and Rich belong to `[cli]`, never the
-base SDK import path. These existing import-linter contracts are documented in
+base SDK import path. Import-linter forbids library imports of `donkey_kit.cli`
+and explicitly forbids `core` from importing Typer or Rich. It does not prohibit
+every other library layer from importing those dependencies directly; keeping
+terminal concerns out of those layers is also a review responsibility. The
+existing contracts are documented in
 [the package architecture](../ARCHITECTURE.md#layered-architecture).
 
 Command functions own arguments, stream rendering and exit statuses. Domain
@@ -83,16 +87,21 @@ for `init`, but the input project file for `doctor`. Other commands reject it.
 
 Current `init` resolves from the working directory via `DonkeyConfig.from_env()`:
 the `--config` destination does not select its input. It returns successfully
-without changing an existing file unless `--force` requests regeneration.
+without resolving configuration or changing an existing file unless `--force`
+requests regeneration.
 Regeneration replaces the entire document, including any unrelated declarations;
 it is not a merge. Its current write is direct, not atomic.
 
 For scan/publication/exposure, PATH is a directory or a single Python file.
 Current declaration readers load `.donkey-kit.toml` at that root or file's
 parent, then merge the adjacent `.donkey-kit.local.toml` over it key by key.
-They do not read user-wide declaration tables. Publication may separately
-resolve connection config from the working directory when the project file is
-absent; this is not the declaration merge. These distinctions must be made
+They do not read user-wide declaration tables. Publication always separately
+resolves connection config, even for `--dry-run`, using the working directory's
+project config when the scanned project file is absent. Environment variables
+and user config also participate, and the resolved `org_id` supplies the plan's
+default group ID. The same source tree can therefore produce different offline
+plans in different shells; offline does not mean context-free. This is not the
+declaration merge. These distinctions must be made
 explicit before adding scaffold output selection: a non-default scan root must
 not silently acquire the working directory's declarations, and an overlay-free
 scaffold must not reuse the current merged readers without separating inputs.
@@ -101,7 +110,7 @@ scaffold must not reuse the current merged readers without separating inputs.
 
 | Command | Network | Writes or executes |
 | --- | --- | --- |
-| `init` | No | Writes a connection config file; resolves existing config sources. |
+| `init` | No | Creates missing destination parent directories and writes a connection config file; resolves existing config sources only on the write path. An existing target without `--force` returns before resolution. |
 | `scan` | No | No writes; AST parsing and declaration reads only. |
 | `publish --dry-run` | No | No writes; offline publication plan. |
 | `publish` | Yes | Publishes assets and associated metadata. |
@@ -131,10 +140,15 @@ Commands already have distinct machine contracts: `scan_format`, `plan_format`,
 `init` and `doctor` do not carry those format keys. Do not silently wrap all
 existing documents in a new envelope.
 
-Declaration failures generally produce the command's JSON document and exit 1;
-missing paths or invalid connection config generally exit 2 without a document.
-The precise command contract wins over a proposed global rule. Hidden `status`
-exits 3; `test` forwards pytest's exit status. `_app.main` handles otherwise
+Declaration failures generally produce the command's JSON document and exit 1.
+`scan` uses exit 2 for a missing path; malformed declarations are scan issues
+with exit 1. Publication/verification/exposure commands use exit 2 for missing
+paths or invalid connection config, without a document. Named exceptions are
+`doctor`, which exits 1 on config failures, and `init`, whose command body has
+no exit-2 path: write failures exit 1 and escaping `DonkeyError` is handled by
+`main`. Parser/global-option usage errors may still exit 2 before those command
+bodies run. The precise command contract wins over a proposed global rule.
+Hidden `status` exits 3; `test` forwards pytest's exit status. `_app.main` handles otherwise
 escaping `DonkeyError` as stderr plus exit 1, not a universal JSON error handler.
 
 The 2026-11-14 review found gaps, not new supported behavior: `init` string
@@ -146,9 +160,11 @@ false-green fallback. Their remediation is recorded in issues #1746 through
 ## Maintaining This Map
 
 Update this explanation when registration, paths, dependency boundaries,
-workflow effects or output contracts change. Update consumer examples in
-`website/content/cli.mdx` and the generated command reference through
-`python/scripts/generate_docs.py`, not by hand. Published-surface changes also
+workflow effects or output contracts change. CLI changes should explicitly
+review this map alongside the consumer docs to prevent the dated baseline from
+silently drifting. Update consumer examples in `website/content/cli.mdx` by
+hand, and regenerate only its `cli-reference` command-reference region with
+`python/scripts/generate_docs.py`. Published-surface changes also
 need the sibling acceptance harness; contributor docs are not a substitute.
 
 Changing an invariant, dependency policy or import-linter contract requires a
