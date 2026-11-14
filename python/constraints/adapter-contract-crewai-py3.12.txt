@@ -41,7 +41,7 @@ frozenlist==1.8.0
 fsspec==2026.9.0
 google-re2==1.1.20251105
 googleapis-common-protos==1.76.0
-grimp==3.19
+grimp==3.20
 grpcio==1.85.1
 h11==0.16.0
 hf-xet==1.8.0
