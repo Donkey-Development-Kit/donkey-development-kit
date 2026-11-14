@@ -1403,6 +1403,40 @@ evidence and verification statuses remain unchanged. No adapter or public
 behavior changed, so the mapped ADK, configuration and unsupported-boundary
 website pages need no update.
 
+#### LangGraph release re-check (2026-11-13, #1724)
+
+The PR CI lock refresh in #1726 (merged as `c6a2c74b`; tested at its head `f329a679`, same tree) selects `langgraph==1.2.21` in
+`python/constraints/adapter-contract-langgraph-py3.12.txt`, paired with
+`langchain-core==1.8.0`, `langchain-openai==1.7.4`, `openai==3.50.0`,
+`httpx==0.28.1`, `httpx2==2.16.0`, `pydantic==2.14.3` and `coverage==7.17.3`.
+A fresh Python 3.12.16 venv installed with that constraint file (the
+`adapter-contract` install command) reports `langgraph 1.2.21`. Its full
+`pytest -q` passes: 5,709 passed, 811 skipped, 30 deselected. The strict
+`smoke_example.py langgraph` builds the native object and passes the
+conformance kit. In the same environment, `verify_frameworks.py --only
+langgraph --require-installed --emit-verified` confirms construction and the
+expected `langchain_openai.ChatOpenAI` class
+(`langchain_openai.chat_models.base.ChatOpenAI`); its offline-only verdict is
+`UNVERIFIED (signature confirmed)`, with live not run.
+
+The [langgraph 1.2.21 release notes](https://github.com/langchain-ai/langgraph/releases/tag/1.2.21)
+list `get_subgraphs` whole-namespace-segment matching, reading an undeclared
+subgraph namespace with the parent graph, an `UnknownInterruptError` docs
+clarification that each `interrupt()` call has its own id, and dependency bumps.
+These changes were read, not individually exercised by this re-check. DDK's
+LangGraph adapter uses `interrupt()` and `Command(resume=...)` for approvals and
+does not call `get_subgraphs`; the passing checks establish the existing adapter
+contract against the locked stack, not coverage of every upstream change.
+DDK retains its Python 3.10 floor and floor-only extras: the
+[`all-extra-resolves (3.10)` CI job](https://github.com/Donkey-Development-Kit/donkey-development-kit/actions/runs/43443601890)
+passes at `f329a679`, as does `adapter-contract (langgraph)` in that run.
+
+These are offline checks against the local simulator and mock transports.
+**No live re-check was run** and no MCP fixture was re-captured. The historical
+LangGraph `VERIFIED (LIVE)` row, its tested versions and all verification
+statuses remain unchanged. No public behavior or status changes, so the mapped
+LangGraph, configuration and unsupported-boundary website pages need no update.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
