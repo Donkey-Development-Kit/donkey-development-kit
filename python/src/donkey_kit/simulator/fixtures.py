@@ -308,6 +308,27 @@ SHAPES: dict[str, _Spec] = {
         "chat_completions.fallback.body.json",
         200,
     ),
+    # The llm-gw-v2 outbound transcoders (docs/verified-apis.md §2 v2 /responses
+    # row, #1409, #1412): Anthropic and Gemini answering in OpenAI's shapes, with
+    # usage normalised (input includes the cache read, no cache-write count,
+    # Gemini reasoning tokens). Byte copies of the live captures; the directory
+    # README has the provenance. The two cached bodies were kept without headers.
+    **{
+        f"v2-{upstream}{suffix}": _Spec(
+            "anypoint/llm_gw_v2",
+            f"{upstream}.responses{suffix.replace('-', '.')}.headers.txt",
+            f"{upstream}.responses{suffix.replace('-', '.')}.body.{ext}",
+            200,
+        )
+        for upstream in ("anthropic", "gemini")
+        for suffix, ext in (("", "json"), ("-stream", "txt"))
+    },
+    "v2-gemini-cached": _Spec(
+        "anypoint/llm_gw_v2", None, "gemini.responses.cached.body.json", 200, "application/json"
+    ),
+    "v2-anthropic-chat-cached": _Spec(
+        "anypoint/llm_gw_v2", None, "anthropic.chat.cached.body.json", 200, "application/json"
+    ),
     # --- the native ingresses on model-based-routing 1.0.5 (#1404, #1562) ---
     # Live captures from a two-route Format=Anthropic proxy and a two-route
     # Format=Gemini proxy (docs/verified-apis.md §2 native-ingress rows; the

@@ -44,6 +44,15 @@ Two more replay a proxy whose vendors are configured as `groupId:vendor`:
 `donkey-sim/success-qualified-vendor` (a matched route) and
 `donkey-sim/fallback-qualified-vendor` (the routing fallback). Both report
 `x-llm-proxy-llm-provider: mulesoft:openai`, which `last_call.served_provider` keeps as is.
+Six more replay an Anthropic or Gemini route behind the gateway's v2 OpenAI
+transcoders, whose usage the gateway normalises (see
+[Token usage](https://docs.donkey-kit.dev/reference/last-call.md#token-usage)): `donkey-sim/v2-anthropic` and
+`donkey-sim/v2-gemini` (a `/responses` tool call), their `-stream` variants (the
+named-event stream ending in `response.completed` with `usage`),
+`donkey-sim/v2-gemini-cached` (a cache read with reasoning tokens) and
+`donkey-sim/v2-anthropic-chat-cached` (a `/chat/completions` cache read). On all six,
+`last_call.cache_write_tokens` stays `None`. The two cached bodies were captured
+without headers, so they carry no routing headers.
 Any other `model` value gets the default model-based happy path. The
 `donkey-sim/` prefix is a simulator-only control surface; the real gateway never
 interprets it.
