@@ -1,0 +1,156 @@
+# CLI Architecture
+
+Maintainer-facing explanation of the shipped `donkey` CLI, reviewed against
+`27d7e6a25d3c79052ee1b013a5dfb3915d488c2a` on 2026-11-14. This is not a new
+architecture invariant or a claim that milestone 28 has shipped. The
+[consumer CLI reference](https://docs.donkey-kit.dev/cli) explains usage;
+[CLI design guidance](cli-design.md) explains the review and testing bar.
+Implementation plans and unresolved decisions belong in
+[milestone 28](https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/28),
+not this file. Scope follows BG section 1.9, 2.5 and 2.9.
+
+## Entry Point And Layers
+
+The console script in `python/pyproject.toml` is
+`donkey = "donkey_kit.cli:main"`. `cli/__init__.py` imports `_app` first, then
+imports command modules for their registration side effects. `_app.app` is the
+single Typer application; `expose.py` registers both `expose` and `preflight`.
+This is eager command registration, not dynamic plugin discovery.
+
+**Command execution boundaries**
+
+```mermaid
+flowchart TD
+    Entry[donkey console script] --> App[Typer parsing and command dispatch]
+    App --> Local[init and scan]
+    App --> Plans[publish and exposure planning]
+    App --> Runtime[doctor and local runtime commands]
+    Local --> Config[core config and static registry scan]
+    Plans --> Offline[publish dry-run: offline]
+    Plans --> Reads[verify and preflight: remote reads]
+    Plans --> Writes[publish and expose: remote writes]
+```
+
+`cli` is the highest package layer and may call the SDK's lower layers. No
+library module may import it back. Typer and Rich belong to `[cli]`, never the
+base SDK import path. These existing import-linter contracts are documented in
+[the package architecture](../ARCHITECTURE.md#layered-architecture).
+
+Command functions own arguments, stream rendering and exit statuses. Domain
+models and validation remain in `core` and `registry`: no Typer contexts or
+terminal formatting should enter those layers. Reuse a small helper when
+behavior genuinely repeats; a command bus, plugin system or new generic
+service layer is not required by onboarding.
+
+## Module Responsibilities
+
+Paths below are relative to `python/src/donkey_kit/`.
+
+| Module and symbol | Responsibility |
+| --- | --- |
+| `cli/_app.py`: `app`, `_global`, `main` | Registration, global options, version output and a final `DonkeyError` boundary. |
+| `cli/_common.py`: `document`, `print_issues`, `ci_source` | Publication document adaptation, issue rendering and optional CI attribution. Not a universal output schema. |
+| `cli/init.py`: `init`, `_render_toml` | Resolve connection configuration and render an explicit non-secret allowlist into project TOML. |
+| `cli/scan.py`: `scan` | Render `registry.scan.scan` results without executing application code. |
+| `registry/scan.py`: `scan`, `ScanResult` | AST discovery, literal declaration validation and project service metadata. |
+| `registry/publish_plan.py`: `plan_publication`, `PublishPlan` | Offline publication validation and deterministic asset planning. |
+| `registry/expose_plan.py`: `plan_exposure`, `ExposePlan` | Validate and select one service for exposure through an existing gateway. |
+| `cli/publish.py`: `publish`, `_publish` | Plan first, then execute publication through a `Runtime` only for a live run. |
+| `cli/verify.py`: `verify` | Compare published assets with their live service, using existing verification APIs. |
+| `cli/expose.py`: `_run`, `_expose` | Shared exposure/preflight path; read-only or additive live execution. |
+| `cli/doctor.py`: `doctor`, `_probe_checks` | A real governed LLM probe and evidence-based diagnostic checks. |
+| `cli/mock.py`, `cli/dev.py`, `cli/test.py` | Simulator, A2A local development and pytest front ends; these are not static scanning. |
+| `cli/_blocked.py` | Hidden, verification-blocked `status`; no invented platform calls. |
+
+Async command operations are bridged with `asyncio.run`; the command helpers
+that own a `Runtime` close it in `finally`. Optional framework/server/test
+dependencies must remain deferred until execution, so command help is available
+without those extras. `dev` and `test` intentionally load user targets; the
+static scanner does not.
+
+## Configuration And Paths
+
+`DonkeyConfig.resolve` owns per-field precedence: explicit overrides,
+environment variables, project-local overlay, project file, user file, defaults.
+It also owns endpoint provenance and credential trust. A renderer must not
+duplicate these rules or bypass them by reconstructing a runtime configuration.
+
+Current global options go **before** the command. `--config` selects the output
+for `init`, but the input project file for `doctor`. Other commands reject it.
+`--env` applies globally only to `init`; exposure commands have their own local
+`--env`. `--json` is global, and several commands also accept it locally.
+`--version` is eager plain-text output, not a JSON document.
+
+Current `init` resolves from the working directory via `DonkeyConfig.from_env()`:
+the `--config` destination does not select its input. It returns successfully
+without changing an existing file unless `--force` requests regeneration.
+Regeneration replaces the entire document, including any unrelated declarations;
+it is not a merge. Its current write is direct, not atomic.
+
+For scan/publication/exposure, PATH is a directory or a single Python file.
+Current declaration readers load `.donkey-kit.toml` at that root or file's
+parent, then merge the adjacent `.donkey-kit.local.toml` over it key by key.
+They do not read user-wide declaration tables. Publication may separately
+resolve connection config from the working directory when the project file is
+absent; this is not the declaration merge. These distinctions must be made
+explicit before adding scaffold output selection: a non-default scan root must
+not silently acquire the working directory's declarations, and an overlay-free
+scaffold must not reuse the current merged readers without separating inputs.
+
+## Side Effects And Readiness
+
+| Command | Network | Writes or executes |
+| --- | --- | --- |
+| `init` | No | Writes a connection config file; resolves existing config sources. |
+| `scan` | No | No writes; AST parsing and declaration reads only. |
+| `publish --dry-run` | No | No writes; offline publication plan. |
+| `publish` | Yes | Publishes assets and associated metadata. |
+| `verify` | Yes | Remote reads and service comparisons. |
+| `preflight`, `expose --dry-run` | Yes | Remote reads; neither means offline. |
+| `expose` | Yes | Additive publication, API instance/policy/deployment operations under ADR 0015. |
+| `doctor` | Yes | A real model request, potentially consuming tokens or budget. |
+| `mock`, `dev` | Local listener | Starts a server; `dev` executes an imported application target. |
+| `test` | Depends on test selection | Executes pytest and the user's selected test/agent code. |
+
+Valid TOML, a clean static scan, a complete publication declaration, and a
+reachable or governed service are different facts. An MCP server may scan
+cleanly without a transport. Agent publication can legitimately use protocol
+`other`; A2A verification/exposure needs its more specific declarations.
+Readiness must respect the selected workflow instead of inventing one universal
+required-field list. Unknown or untested facts must stay unknown.
+
+`scaffold` does **not** exist in this reviewed revision. Milestone 28 proposes
+offline candidates from the existing scanner, safe declaration writes and
+workflow-scoped readiness. Those plans must not be marketed as installed
+commands until implementation and published-package acceptance land.
+
+## Output And Failure Contracts
+
+Commands already have distinct machine contracts: `scan_format`, `plan_format`,
+`publish_format`, `verify_format` and `expose_format`, currently version 1.
+`init` and `doctor` do not carry those format keys. Do not silently wrap all
+existing documents in a new envelope.
+
+Declaration failures generally produce the command's JSON document and exit 1;
+missing paths or invalid connection config generally exit 2 without a document.
+The precise command contract wins over a proposed global rule. Hidden `status`
+exits 3; `test` forwards pytest's exit status. `_app.main` handles otherwise
+escaping `DonkeyError` as stderr plus exit 1, not a universal JSON error handler.
+
+The 2026-11-14 review found gaps, not new supported behavior: `init` string
+escaping and destination protection, credential-bearing public URLs, decoding
+errors escaping config handling, static scanner ambiguity, and `doctor`'s
+false-green fallback. Their remediation is recorded in issues #1746 through
+#1751. Passing existing tests does not establish that those cases are safe.
+
+## Maintaining This Map
+
+Update this explanation when registration, paths, dependency boundaries,
+workflow effects or output contracts change. Update consumer examples in
+`website/content/cli.mdx` and the generated command reference through
+`python/scripts/generate_docs.py`, not by hand. Published-surface changes also
+need the sibling acceptance harness; contributor docs are not a substitute.
+
+Changing an invariant, dependency policy or import-linter contract requires a
+new [ADR](adr/README.md). Describing the current design and documenting
+issue-owned improvements changes none of those contracts.

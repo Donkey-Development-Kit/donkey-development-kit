@@ -8,12 +8,15 @@ consumer docs: for *using* the SDK see the Nextra site under `website/`; for
 [`../spec/`](../spec/) — the build plan (phases, invariants) and the build
 guide (feature scope, cited `BG §N.N`).
 
-Everything here serves the **verification discipline**: *never invent an
-endpoint, header name, or class name.* The files track what has been proven
-against a real Anypoint sandbox versus what is still assumed or blocked.
+These references cover verification, architecture and engineering operations.
+The **verification discipline** remains binding: *never invent an endpoint,
+header name, or class name.* The ledger tracks what has been proven against a
+real Anypoint sandbox versus what is still assumed or blocked.
 
 | File | What it is |
 | --- | --- |
+| [`cli-architecture.md`](cli-architecture.md) | **How the CLI is built**: entry point, module responsibilities, configuration/path semantics, offline versus remote effects, and existing output contracts. Planned onboarding work is explicitly separated from shipped behavior. |
+| [`cli-design.md`](cli-design.md) | **CLI design and testing guidance**: sourced best practices, deterministic scaffolding, secret-safe diagnostics, file-write guarantees and a regression checklist. Implementation plans remain in GitHub issues. |
 | [`verified-apis.md`](verified-apis.md) | **The verification ledger** — the single source of truth for every endpoint, header, and class name the SDK touches and its status (`VERIFIED (LIVE)` / `VERIFIED (CLI)` / `VERIFIED (plugin)` / `UNVERIFIED` / blocked). When a value is confirmed against a sandbox, flip its row here **and** replace its `Unverified(...)` placeholder in `core/_verify.py` with a plain constant — the two edits move together. |
 | [`unsupported-boundary.md`](unsupported-boundary.md) | A pointer to the procurement doc, which now lives on the site as the [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary) page (#795). That page classifies every platform API the SDK calls (public / no-SLA / undocumented). |
 | [`python-support.md`](python-support.md) | **The Python support policy** — which CPython versions are supported and tested, and when one is dropped (the first minor release after its end of life). |
