@@ -177,7 +177,7 @@ proxy, and the URL must pass the
 [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https):
 
 ```python
-llm = donkey.adk.gemini("gemini-3.8-flash", base_url="https://…/ddk-gemini-inbound/")
+llm = donkey.adk.gemini("gemini-3.8-flash", base_url="https://…/model/gemini-inbound/")
 ```
 
 Any other keyword is passed to ADK's `Gemini` and overrides the governed
