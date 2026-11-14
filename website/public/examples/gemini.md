@@ -25,7 +25,7 @@ Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm]"   # httpx + classify()
 set -a; source .env.local; set +a
-export DONKEY_LLM_PROXY_URL=https://<host>/ddk-gemini-inbound/      # overrides the file
+export DONKEY_LLM_PROXY_URL=https://<host>/model/gemini-inbound/      # overrides the file
 ```
 
 The model is `gemini-3.8-flash` (the `MODEL` constant).
