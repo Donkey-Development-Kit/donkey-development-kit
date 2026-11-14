@@ -18212,6 +18212,14 @@ Each is `None` (never `0`) when unobserved or absent.
 | `cache_write_tokens` | `int \| None` | Input tokens written into the prompt cache this call. |
 | `reasoning_tokens` | `int \| None` | Output tokens spent on model reasoning the developer never sees. |
 
+  On a proxy whose Anthropic or Gemini route runs through the gateway's v2
+  OpenAI transcoders, the gateway rewrites usage into OpenAI's semantics before
+  DDK reads it. `input_tokens` then **includes** the cache read, `cached_tokens`
+  is the cache read, and Gemini's thinking shows as `reasoning_tokens`. That
+  usage has no cache-write count, so `cache_write_tokens` stays `None` there. A
+  cost rollup must not add `cached_tokens` back into `input_tokens` for these
+  routes. Verified live in November 2026.
+
 ## Semantic cache
 
 When the proxy is fronted by the Anypoint **semantic-caching** policy, the
