@@ -18,6 +18,7 @@ import httpx
 import pytest
 
 from donkey_kit.core.config import DonkeyConfig
+from donkey_kit.core.errors import UpstreamRequestError, classify
 from donkey_kit.core.lastcall import current_last_call, parse_usage
 from donkey_kit.core.transport import DonkeyAsyncClient
 from donkey_kit.simulator.fixtures import parse_headers
@@ -276,3 +277,43 @@ async def test_openai_responses_stream_helper_parses_the_v2_stream(upstream: str
     (call,) = [item for item in final.output if item.type == "function_call"]
     assert call.name == LONG_NAME
     assert final.usage is not None and final.usage.total_tokens > 0
+
+
+# --- the tool-name 400s (#1755), shapes read from the policy source -------------
+#
+# Not captured live. The collision 400 needs two tool identities whose encodings
+# share a 64-bit SHA-256 prefix after truncation (provider_tool_name.rs), so no
+# real request reaches it. The bodies below are the ones the v2 transcoders build
+# (microgateway-hybrid-policies b3e2ae1f): Anthropic answers invalid_request_error,
+# Gemini unsupported_params_error, both with param "tools". classify() types them
+# through its generic nested-error path, so no new error type is needed.
+
+_POLICY_SOURCE_400S = {
+    "anthropic.collision": (
+        "invalid_request_error",
+        "Responses tool names produced the same provider-safe alias: f_x__h_0123456789abcdef",
+        "tools",
+    ),
+    "anthropic.invalid_name": (
+        "invalid_request_error",
+        "Anthropic tool names must match ^[a-zA-Z0-9_-]{1,128}$ after Responses namespace encoding",
+        "tool_choice",
+    ),
+    "gemini.collision": (
+        "unsupported_params_error",
+        "Responses tool names produced the same provider-safe alias: f_x__h_0123456789abcdef",
+        "tools",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", _POLICY_SOURCE_400S)
+def test_tool_name_400_is_typed_as_upstream_request_error(case: str) -> None:
+    error_type, message, param = _POLICY_SOURCE_400S[case]
+    body = {"error": {"message": message, "type": error_type, "param": param, "code": None}}
+    response = httpx.Response(400, json=body, request=httpx.Request("POST", _RESPONSES))
+
+    err = classify(response)
+
+    assert isinstance(err, UpstreamRequestError)
+    assert err.param == param
