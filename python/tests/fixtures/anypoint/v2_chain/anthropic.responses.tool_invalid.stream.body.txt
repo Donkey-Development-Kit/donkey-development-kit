@@ -1,0 +1,30 @@
+event: response.created
+data: {"response":{"id":"msg_011Ch3CQq6xanzQtFn2D7X3b","object":"response","model":"claude-haiku-4-5-20251001","status":"in_progress","output":[],"usage":null},"type":"response.created","sequence_number":0}
+
+event: response.in_progress
+data: {"response":{"id":"msg_011Ch3CQq6xanzQtFn2D7X3b","object":"response","model":"claude-haiku-4-5-20251001","status":"in_progress","output":[],"usage":null},"type":"response.in_progress","sequence_number":1}
+
+event: response.output_item.added
+data: {"output_index":0,"item":{"type":"function_call","id":"fc_msg_011Ch3CQq6xanzQtFn2D7X3b_0","call_id":"toolu_01RoNXCfYthUdFCCuSmfdTCW","name":"mcp.server/get weather!","status":"in_progress","arguments":""},"type":"response.output_item.added","response_id":"msg_011Ch3CQq6xanzQtFn2D7X3b","sequence_number":2}
+
+event: response.function_call_arguments.delta
+data: {"item_id":"fc_msg_011Ch3CQq6xanzQtFn2D7X3b_0","output_index":0,"delta":"","type":"response.function_call_arguments.delta","response_id":"msg_011Ch3CQq6xanzQtFn2D7X3b","sequence_number":3}
+
+event: response.function_call_arguments.delta
+data: {"item_id":"fc_msg_011Ch3CQq6xanzQtFn2D7X3b_0","output_index":0,"delta":"{\"city\"","type":"response.function_call_arguments.delta","response_id":"msg_011Ch3CQq6xanzQtFn2D7X3b","sequence_number":4}
+
+event: response.function_call_arguments.delta
+data: {"item_id":"fc_msg_011Ch3CQq6xanzQtFn2D7X3b_0","output_index":0,"delta":": \"Pari","type":"response.function_call_arguments.delta","response_id":"msg_011Ch3CQq6xanzQtFn2D7X3b","sequence_number":5}
+
+event: response.function_call_arguments.delta
+data: {"item_id":"fc_msg_011Ch3CQq6xanzQtFn2D7X3b_0","output_index":0,"delta":"s\"}","type":"response.function_call_arguments.delta","response_id":"msg_011Ch3CQq6xanzQtFn2D7X3b","sequence_number":6}
+
+event: response.function_call_arguments.done
+data: {"item_id":"fc_msg_011Ch3CQq6xanzQtFn2D7X3b_0","output_index":0,"arguments":"{\"city\": \"Paris\"}","type":"response.function_call_arguments.done","response_id":"msg_011Ch3CQq6xanzQtFn2D7X3b","sequence_number":7}
+
+event: response.output_item.done
+data: {"output_index":0,"item":{"type":"function_call","id":"fc_msg_011Ch3CQq6xanzQtFn2D7X3b_0","call_id":"toolu_01RoNXCfYthUdFCCuSmfdTCW","name":"mcp.server/get weather!","status":"completed","arguments":"{\"city\": \"Paris\"}"},"type":"response.output_item.done","response_id":"msg_011Ch3CQq6xanzQtFn2D7X3b","sequence_number":8}
+
+event: response.completed
+data: {"response":{"id":"msg_011Ch3CQq6xanzQtFn2D7X3b","object":"response","model":"claude-haiku-4-5-20251001","status":"completed","output":[{"type":"function_call","id":"fc_msg_011Ch3CQq6xanzQtFn2D7X3b_0","call_id":"toolu_01RoNXCfYthUdFCCuSmfdTCW","name":"mcp.server/get weather!","status":"completed","arguments":"{\"city\": \"Paris\"}"}],"usage":{"input_tokens":682,"input_tokens_details":{"cached_tokens":0},"output_tokens":60,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":742}},"type":"response.completed","sequence_number":9}
+

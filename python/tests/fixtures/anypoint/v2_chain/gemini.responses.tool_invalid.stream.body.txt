@@ -1,0 +1,27 @@
+event: response.created
+data: {"response":{"id":"KZf4auSdHcK9jMcPqrDFuQI","object":"response","model":"gemini-3.8-flash","status":"in_progress","output":[],"usage":null},"type":"response.created","sequence_number":0}
+
+event: response.in_progress
+data: {"response":{"id":"KZf4auSdHcK9jMcPqrDFuQI","object":"response","model":"gemini-3.8-flash","status":"in_progress","output":[],"usage":null},"type":"response.in_progress","sequence_number":1}
+
+event: response.output_item.added
+data: {"output_index":0,"item":{"type":"reasoning","id":"rs_call_7213297206238586916","summary":[],"encrypted_content":"EvoCCvcCAWkUfROFamddd/R2+8k8yBecJ53y+qjQhnxQXzA6/HgBrBOTPfpfxOMbhWrCgl/qt7UZNN55U3iiQxextbZmcmTy5N3POtXP+RETlXOGZUbGTNNrkJgDaxv7tmneYZZ5NaDo0M68D6yzgT+bt1qTJB39KhlocbW+MQUAe2qmxG51XhY5R9qoNrXQgmqufWvfYB8FtADQBvj+3BMHIuqeutxg4qJhRL7GCiaQ5/rY9YwOrkyIITfexTqr4y8+k7eH9zvaKIkpfFciyIvwpSB9jGOGInCKFcBJNRXvje1mARw3jDt58AJZvPevj2ZRO8OJu//Fj8RBe5/4Qm2aA76qxcYbcbx017brx5HWV7bbHuiDg1vseNcED/COvyUDBMWHtkqU/i0zWZ5rE0Dsnim36BuZikC2idg1zjIY5YtMDAUcI2RBb+jwShB6c97p3s6PhGzQCHGy8E683IOpqR5zah5u4NM9xNS/TpQ+DSveC4J0RuEhSaG+","status":"completed"},"type":"response.output_item.added","response_id":"KZf4auSdHcK9jMcPqrDFuQI","sequence_number":2}
+
+event: response.output_item.done
+data: {"output_index":0,"item":{"type":"reasoning","id":"rs_call_7213297206238586916","summary":[],"encrypted_content":"EvoCCvcCAWkUfROFamddd/R2+8k8yBecJ53y+qjQhnxQXzA6/HgBrBOTPfpfxOMbhWrCgl/qt7UZNN55U3iiQxextbZmcmTy5N3POtXP+RETlXOGZUbGTNNrkJgDaxv7tmneYZZ5NaDo0M68D6yzgT+bt1qTJB39KhlocbW+MQUAe2qmxG51XhY5R9qoNrXQgmqufWvfYB8FtADQBvj+3BMHIuqeutxg4qJhRL7GCiaQ5/rY9YwOrkyIITfexTqr4y8+k7eH9zvaKIkpfFciyIvwpSB9jGOGInCKFcBJNRXvje1mARw3jDt58AJZvPevj2ZRO8OJu//Fj8RBe5/4Qm2aA76qxcYbcbx017brx5HWV7bbHuiDg1vseNcED/COvyUDBMWHtkqU/i0zWZ5rE0Dsnim36BuZikC2idg1zjIY5YtMDAUcI2RBb+jwShB6c97p3s6PhGzQCHGy8E683IOpqR5zah5u4NM9xNS/TpQ+DSveC4J0RuEhSaG+","status":"completed"},"type":"response.output_item.done","response_id":"KZf4auSdHcK9jMcPqrDFuQI","sequence_number":3}
+
+event: response.output_item.added
+data: {"output_index":1,"item":{"type":"function_call","id":"fc_KZf4auSdHcK9jMcPqrDFuQI_1","call_id":"call_7213297206238586916","name":"mcp.server/get weather!","status":"in_progress","arguments":""},"type":"response.output_item.added","response_id":"KZf4auSdHcK9jMcPqrDFuQI","sequence_number":4}
+
+event: response.function_call_arguments.delta
+data: {"item_id":"fc_KZf4auSdHcK9jMcPqrDFuQI_1","output_index":1,"delta":"{\"city\":\"Paris\"}","type":"response.function_call_arguments.delta","response_id":"KZf4auSdHcK9jMcPqrDFuQI","sequence_number":5}
+
+event: response.function_call_arguments.done
+data: {"item_id":"fc_KZf4auSdHcK9jMcPqrDFuQI_1","output_index":1,"arguments":"{\"city\":\"Paris\"}","type":"response.function_call_arguments.done","response_id":"KZf4auSdHcK9jMcPqrDFuQI","sequence_number":6}
+
+event: response.output_item.done
+data: {"output_index":1,"item":{"type":"function_call","id":"fc_KZf4auSdHcK9jMcPqrDFuQI_1","call_id":"call_7213297206238586916","name":"mcp.server/get weather!","status":"completed","arguments":"{\"city\":\"Paris\"}"},"type":"response.output_item.done","response_id":"KZf4auSdHcK9jMcPqrDFuQI","sequence_number":7}
+
+event: response.completed
+data: {"response":{"id":"KZf4auSdHcK9jMcPqrDFuQI","object":"response","model":"gemini-3.8-flash","status":"completed","usage":{"input_tokens":78,"input_tokens_details":{"cached_tokens":0},"output_tokens":110,"output_tokens_details":{"reasoning_tokens":72},"total_tokens":188},"output":[{"type":"reasoning","id":"rs_call_7213297206238586916","summary":[],"encrypted_content":"EvoCCvcCAWkUfROFamddd/R2+8k8yBecJ53y+qjQhnxQXzA6/HgBrBOTPfpfxOMbhWrCgl/qt7UZNN55U3iiQxextbZmcmTy5N3POtXP+RETlXOGZUbGTNNrkJgDaxv7tmneYZZ5NaDo0M68D6yzgT+bt1qTJB39KhlocbW+MQUAe2qmxG51XhY5R9qoNrXQgmqufWvfYB8FtADQBvj+3BMHIuqeutxg4qJhRL7GCiaQ5/rY9YwOrkyIITfexTqr4y8+k7eH9zvaKIkpfFciyIvwpSB9jGOGInCKFcBJNRXvje1mARw3jDt58AJZvPevj2ZRO8OJu//Fj8RBe5/4Qm2aA76qxcYbcbx017brx5HWV7bbHuiDg1vseNcED/COvyUDBMWHtkqU/i0zWZ5rE0Dsnim36BuZikC2idg1zjIY5YtMDAUcI2RBb+jwShB6c97p3s6PhGzQCHGy8E683IOpqR5zah5u4NM9xNS/TpQ+DSveC4J0RuEhSaG+","status":"completed"},{"type":"function_call","id":"fc_KZf4auSdHcK9jMcPqrDFuQI_1","call_id":"call_7213297206238586916","name":"mcp.server/get weather!","status":"completed","arguments":"{\"city\":\"Paris\"}"}]},"type":"response.completed","sequence_number":8}
+

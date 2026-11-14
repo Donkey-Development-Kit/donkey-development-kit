@@ -1,0 +1,1 @@
+{"id":"K5f4auuxJpr7-sAP28WPiAk","object":"response","model":"gemini-3.8-flash","status":"completed","output":[],"usage":{"input_tokens":106,"input_tokens_details":{"cached_tokens":0},"output_tokens":296,"output_tokens_details":{"reasoning_tokens":288},"total_tokens":402}}
