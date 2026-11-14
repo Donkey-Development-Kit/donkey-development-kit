@@ -1373,6 +1373,36 @@ evidence, verification statuses, and CrewAI's `connection_kwargs()` support
 depth remain unchanged. No adapter or public behavior changed, so the mapped
 CrewAI, configuration and unsupported-boundary website pages need no update.
 
+#### Google ADK release re-check (2026-11-13, #1721)
+
+The lock refresh in #1726 (merged as `c6a2c74b`; tested at its head `f329a679`, same tree) selects `google-adk==2.14.1` in
+`python/constraints/adapter-contract-adk-py3.12.txt`, with
+`google-genai==2.34.0`, `litellm==1.109.1`, `openai==3.50.0`, `httpx==0.28.1`
+and `httpx2==2.16.0`. A fresh local install of that lock (the
+`adapter-contract` install command, `.[llm,local,adk]` with the `contract-adk`
+group) on Python 3.12.16 passes the whole suite: 5,796 passed, 677 skipped,
+31 deselected. `scripts/smoke_example.py adk` builds the native object and
+passes the conformance kit. `verify_frameworks.py --only adk --require-installed
+--emit-verified` confirms construction and the expected
+`google.adk.models.lite_llm.LiteLlm` and `google.adk.models.Gemini` classes;
+the returned subclasses are `GovernedLiteLlm` and `GovernedGemini`, and the
+offline-only verdict for both `adk` and `adk.gemini` is `UNVERIFIED (signature
+confirmed)`, with live not run. `LITELLM_LOCAL_MODEL_COST_MAP=True` prevents
+LiteLLM's remote cost-map fetch during the re-check.
+
+The [2.14.1 release notes](https://github.com/google/adk-python/releases/tag/v2.14.1)
+list a single bug fix: FastAPI's native tracing is turned off on Agent Engine.
+DDK's adapter does not use the ADK FastAPI server or Agent Engine deployment,
+so this was read, not exercised by this re-check; the passing tests establish
+the existing adapter contract against the locked stack, not coverage of every
+upstream change.
+
+All checks above are offline against the local simulator and mock transports.
+**No live re-check or new fixture capture was performed.** Historical live
+evidence and verification statuses remain unchanged. No adapter or public
+behavior changed, so the mapped ADK, configuration and unsupported-boundary
+website pages need no update.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
