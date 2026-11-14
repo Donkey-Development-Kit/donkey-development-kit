@@ -451,3 +451,53 @@ async def test_stock_openai_client_reads_chat_completions(stream: bool) -> None:
             completion = await client.chat.completions.create(model="gpt-5-mini", messages=messages)
             text = completion.choices[0].message.content or ""
     assert text == "pong — how can I help?"
+
+
+# --- the llm-gw-v2 usage shapes (#1412) ----------------------------------------
+
+# (shape, served provider, cached_tokens, reasoning_tokens). Provider None: the
+# cached bodies were captured without headers. Expected counts are the captures'.
+_V2_SHAPES = [
+    ("v2-anthropic", "anthropic", 0, 0),
+    ("v2-anthropic-stream", "anthropic", 0, 0),
+    ("v2-gemini", "gemini", 0, 95),
+    ("v2-gemini-stream", "gemini", 0, 76),
+    ("v2-gemini-cached", None, 4709, 32),
+    ("v2-anthropic-chat-cached", None, 7309, 0),
+]
+
+
+@pytest.mark.parametrize(("shape", "provider", "cached", "reasoning"), _V2_SHAPES)
+async def test_v2_sentinel_replays_normalised_usage_into_last_call(
+    shape: str, provider: str | None, cached: int, reasoning: int
+) -> None:
+    # #1412: the v2 transcoders' OpenAI-shaped usage, replayed byte-identical and
+    # read by the real transport: input includes the cache read, no cache-write.
+    from donkey_kit.core.config import DonkeyConfig
+    from donkey_kit.core.lastcall import current_last_call
+    from donkey_kit.core.transport import DonkeyAsyncClient
+
+    stream = shape.endswith("-stream")
+    transport = httpx.ASGITransport(app=build_app())
+    cfg = DonkeyConfig(llm_proxy_url="http://sim/")
+    async with DonkeyAsyncClient(cfg, None, transport=transport) as client:
+        payload = {"model": SIM_MODEL_PREFIX + shape, "input": "hi", "stream": stream}
+        if stream:
+            request = client.build_request("POST", "http://sim/responses", json=payload)
+            resp = await client.send(request, stream=True)
+            body = b"".join([chunk async for chunk in resp.aiter_bytes()])
+            await resp.aclose()
+        else:
+            resp = await client.post("http://sim/responses", json=payload)
+            body = resp.content
+
+    assert resp.status_code == 200
+    assert resp.headers[SIMULATOR_HEADER] == "true"
+    assert body == fx.load(shape).body
+    record = current_last_call()
+    assert record is not None
+    assert record.served_provider == provider
+    assert record.input_tokens is not None and record.input_tokens >= cached
+    assert record.cached_tokens == cached
+    assert record.cache_write_tokens is None
+    assert record.reasoning_tokens == reasoning
