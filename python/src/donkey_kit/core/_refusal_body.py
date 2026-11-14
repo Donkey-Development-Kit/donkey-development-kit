@@ -19,6 +19,7 @@ __all__ = [
     "MODEL_MISSING_REMEDIATION",
     "MODEL_NOT_ROUTABLE_RE",
     "PII_TYPES",
+    "PROVIDER_UNSUPPORTED_REMEDIATION",
     "PiiSpan",
     "code_str",
     "content_safety_headers",
@@ -31,6 +32,7 @@ __all__ = [
     "retry_after",
     "sent_ids",
     "str_or_none",
+    "unroutable_remediation",
 ]
 
 _PII_TYPE_RE = re.compile(r'"pii_type"\s*:\s*"([^"]+)"')
@@ -235,10 +237,15 @@ def parse_retry_after(raw: str | None) -> float | None:
 # one (#1547): no ``model`` body field on OpenAI ingress, or an OpenAI body on a
 # native Gemini ingress, whose router reads the model from the URL path. Live
 # text, model-based-routing 1.0.5: "Failed to parse model from request: Missing
-# 'model' field in request".
+# 'model' field in request". The ``provider`` branch is a ``provider/model`` whose
+# provider has no route on the proxy and no fallback is configured (#1740). Live
+# text, model-based-routing impl 1.0.10, on OpenAI and native Anthropic ingress:
+# "Provider validation failed: Unsupported provider 'mistral'. No fallback
+# configuration."
 MODEL_NOT_ROUTABLE_RE = re.compile(
     r"Model '(?P<model>[^']*)' is not in the known unique model map"
     r"|(?P<missing>Missing 'model' field in request)"
+    r"|Unsupported provider '(?P<provider>[^']*)'\. No fallback configuration"
 )
 # ModelNotRoutable's next step for the missing-model variant (#1547), kept here
 # with the sentence it answers.
@@ -247,6 +254,21 @@ MODEL_MISSING_REMEDIATION = (
     "'model' body field for OpenAI ingress, or the URL path for native Gemini ingress. "
     "Send the model, and use the client that matches the proxy's format."
 )
+# ModelNotRoutable's next step for the unsupported-provider variant (#1740).
+PROVIDER_UNSUPPORTED_REMEDIATION = (
+    "This proxy has no route for the provider named in the model's 'provider/' prefix, "
+    "and no fallback is configured. Use a provider the proxy routes to, or ask the "
+    "proxy owner to add a route or a fallback for it."
+)
+
+
+def unroutable_remediation(match: re.Match[str]) -> str | None:
+    """The variant-specific next step for a :data:`MODEL_NOT_ROUTABLE_RE` match, or ``None``
+    for the bare-model-name rejection, which keeps ``ModelNotRoutable``'s class default."""
+    if match["missing"]:
+        return MODEL_MISSING_REMEDIATION
+    return PROVIDER_UNSUPPORTED_REMEDIATION if match["provider"] is not None else None
+
 
 # Content-safety / guardrails policies report their verdict in a pair of vendor
 # headers — an ``...-action`` (``allow``|``reject``) and a comma-separated
