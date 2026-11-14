@@ -87,7 +87,7 @@ they're created); two are standing and unversioned.
 | `Phase 4 — Enterprise readiness (0.4.0)` | 10 | Security review, performance budget, error-message pass, migration and deprecation policy, compliance evidence, log shipping, residency, workload identity, support model. |
 | `Phase 5 — Complete rollout (1.0.0)` | 6 | TypeScript port, remaining adapters by demand, go-to-market, 1.0 stability guarantees. Build guide 3.5, gated on Python PMF. |
 | `Verification` | 6 | The verification-discipline worklist: never invent an endpoint, header, class name or kwarg. Cross-phase, unversioned — each row blocks specific feature work. |
-| `Upstream gaps` | 6 | Product asks to the Omni Gateway team. Filed in Phase 1, landing whenever the gateway ships them. Build guide 3.1. |
+| `Upstream gaps` | 6 | Asks to the Omni Gateway team or an upstream library (e.g. an agent-framework SDK). Filed when a feature is blocked on them, landing whenever upstream ships them. Build guide 3.1. |
 
 `Verification` and `Upstream gaps` do not complete and are not versioned.
 They run continuously and each of their rows blocks specific feature work,
@@ -662,7 +662,7 @@ which part of the guide is its spec.
 | Label | Meaning |
 |---|---|
 | `blocked-on-verification` | Cannot be closed by writing code (verification discipline) |
-| `upstream-gap` | A product ask to the Omni Gateway team, not SDK code |
+| `upstream-gap` | An ask to the Omni Gateway team or an upstream library, not SDK code |
 | `epic` | Tracking issue spanning several child issues |
 | `six-piece-minimum` | Part of the minimum set that justifies installing the SDK |
 
