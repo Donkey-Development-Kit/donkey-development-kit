@@ -4,8 +4,8 @@ DDK is delivered in five phases, with consolidation releases between them. Each 
 goal; the progress bars and issue lists below are loaded from those milestones
 when you open the page. Phase 1 shipped as `donkey-kit` 0.1.0, and its
 stabilisation releases, 0.1.1, 0.1.2 and 0.1.3, followed. Phase 2 shipped as
-0.2.0, and the consolidation release 0.2.1 sits on top of it
-before Phase 3. The newest release is
+0.2.0, followed by the consolidation release 0.2.1. Phase 2.2 continues that
+consolidation toward 0.2.2 before Phase 3. The newest release is
 the one on [PyPI](https://pypi.org/project/donkey-kit/), with its notes on the
 [release notes](https://docs.donkey-kit.dev/release-notes.md) page. The status pill on each phase below shows
 which one is in progress.
@@ -108,6 +108,17 @@ which one is in progress.
   PII echoed in refusal bodies is redacted. Schema-validation and
   tool-poisoning refusals are captured but stay untyped, because the gateway
   marks no policy on them.
+
+## Phase 2.2 — Consolidate Phase 2
+
+  **Version 0.2.2 · Goal:** continue settling the Phase 2 surface after
+  0.2.1, without adding Phase 3 scope.
+
+  Compatibility with new framework releases, model-routing and transcoder
+  verification, and publishing integrations for GitLab CI and Bitbucket
+  Pipelines. Work that depends on provider access or upstream capabilities
+  remains open until it can be verified; the issue list below tracks what has
+  landed and what still needs evidence.
 
 ## Phase 3 — Platform capabilities
 
