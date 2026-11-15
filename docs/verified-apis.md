@@ -253,6 +253,19 @@ fixtures are in `python/tests/fixtures/anypoint/routes/` (the README there lists
 | `/responses` on the `llm-gw-v2` chain × Anthropic and Gemini (#1409) | `llm/client.py`, the Responses adapters (OpenAI Agents SDK, LangGraph `use_responses_api=True`, `agent_framework` `api="responses"`) | VERIFIED (LIVE) | Through the v2 outbound transcoders (`llm-v2-out-{anthropic,gemini}-to-openai-trans-policy` impl 1.0.1, `llm-v2-out-auth-apikey-policy` 1.0.0, `llm-proxy-core` 1.0.12, `model-based-routing` 1.0.10): **200**, Response with top-level `status: "completed"`. Stream: the full named-event lifecycle on both upstreams (`response.created` → `in_progress` → `output_item.added` / `.done`, reasoning items included for Gemini → `function_call_arguments.delta` / `.done` → `response.completed` with `output` and `usage`), with a contiguous `sequence_number`. The `openai` client's `responses.stream()` helper parses it (offline replay). This closes the v1 Gemini single-event gap (#830) for proxies on the v2 chain. **Tool names round-trip unchanged**: a 147-character name and `mcp.server/get weather!` come back as sent in `output[].name` and in the stream events, both modes. A `get.weather` + `get_weather` pair is accepted (200): the transcoders escape names injectively and hash-truncate only past 128 characters, so the name-collision `400` needs a 64-bit SHA-256 prefix collision and no real request reaches it (#1755). Its body, and the invalid-provider-name `400` (Anthropic), are VERIFIED (POLICY SOURCE) at `microgateway-hybrid-policies` `b3e2ae1f`: Anthropic answers `type: "invalid_request_error"`, Gemini `"unsupported_params_error"`, with `param` `"tools"` (or `"tool_choice"` for Anthropic's invalid name). `classify()` types both as `UpstreamRequestError` with `.param` set, pinned offline. **Gaps (upstream):** a call that exhausts `max_output_tokens` still reports `status: "completed"` with `incomplete_details: null`, and on Gemini `output` can be `[]` when reasoning spent the budget; on `/chat/completions`, `max_tokens` is ignored (`max_completion_tokens` is honoured, `finish_reason: "length"`). Reported upstream as #1754, GUS W-24915236 | 2026-11-14 | live capture from a torn-down probe proxy (instance `21300212`) — `python/tests/fixtures/anypoint/v2_chain/`, pinned by `tests/unit/test_v2_chain_contract.py` |
 | Reject → SDK error | `core/errors.py` (`classify()`) | VERIFIED (LIVE) | All seven 400 envelopes and the Azure 404 map to `UpstreamRequestError`, never a gateway `PolicyViolation`. `code` is the native OpenAI code or the stringified HTTP status. `error_type` is the provider `type`, or `None` for Gemini's empty `type` | 2026-10-08 | pinned by `tests/unit/test_route_upstream_contract.py` |
 
+**v2 Responses stream client compatibility (#1764, offline replay 2026-11-15).**
+The v2 row's `responses.stream()` claim was re-checked with `openai` **1.66.5**
+on Python 3.10.21 and **3.51.0** on Python 3.12: both parse the unchanged
+Anthropic and Gemini captures. Versions **1.66.0, 1.66.1, 1.66.2 and 1.66.3**
+instead construct the sparse initial `response.created` as a
+`ResponseAudioDeltaEvent`, leave its nested `response` as a dict, and raise
+`AttributeError` on `response.to_dict()`. The upstream
+[discriminated-union fix](https://github.com/openai/openai-python/commit/eb3d7ae36d2686645e15840ab369255157247dd9)
+handles Pydantic schemas wrapped in `definitions`. **1.66.5** is the first
+published release containing it (1.66.4 has a git tag but is not on PyPI), so
+the `[llm]` floor is `openai>=1.66.5`; no transport or fixture workaround is
+needed. This is client replay evidence, not a new live gateway capture.
+
 **Decision: MAF/LangGraph default route (#894).** `/chat/completions` is the only
 route all four upstreams serve. `/responses` 404s on Azure OpenAI and only
 streams in full on OpenAI. The Responses-first defaults therefore fail or degrade
@@ -1621,7 +1634,7 @@ offline evidence, not a live round-trip.
 
 | Extra | Floor | Why this floor | §8 row |
 |---|---|---|---|
-| `llm` | `openai>=1.66` | First openai with the Responses API (`client.responses`), the data plane `donkey.llm.client()` speaks (§2). | — (§2) |
+| `llm` | `openai>=1.66.5` | First published release with the discriminated-union fix needed by the captured v2 Responses streams (#1764, upstream openai/openai-python#2206). 1.66.0–1.66.3 crash `responses.stream()` on `response.created`; 1.66.4 is not on PyPI. 1.66.5 passes the unchanged Anthropic and Gemini replays on Python 3.10.21 (2026-11-15). The Responses API itself first appeared in 1.66.0. | — (§2) |
 | `langgraph` | `langgraph>=0.4`, `langchain-openai>=0.3.9`, `langchain-core>=0.3.45` | langchain-openai 0.3.9 added `use_responses_api`, which the adapter always passes; on 0.3.8 and earlier it lands in the request body instead of switching the route. langgraph 0.3.x does not return `__interrupt__` from `ainvoke` on a pause, so the `interrupt()` composition test fails. langchain-core 0.3.45 is what langchain-openai 0.3.9 requires. The conformance plugin passes 4/4 at these floors. | LangGraph |
 | `adk` | `google-adk>=2.4`, `litellm[mcp]>=1.84` | 2.4.0 is the first whose `Gemini` has `client_kwargs`. Below it, ADK's pydantic config drops the kwarg silently and `gemini()` bypasses the gateway (#735). `LiteLlm` and `Gemini` both pass the signature check at 2.4.0. litellm's own `mcp` extra, not a floor: from 1.106.0 a request with `tools` imports `litellm.proxy._experimental.mcp_server.catalog`, which does `from mcp.types import CacheableResult` at module level, and plain `litellm` does not install `mcp`, so a tool-bearing `model()` run fails with "No module named 'mcp'" (#1267, BerriAI/litellm#46045; still present in 1.106.4 and 1.107.0rc2). From litellm 1.103.0 the extra brings `mcp>=2.2,<3` (litellm's range, not ours); `mcp` 1.x has no `CacheableResult`. litellm 1.100.0–1.102.x bring `mcp>=1.28.1,<2.0`, and below 1.100.0 litellm declares no `mcp` extra, so `[mcp]` installs nothing at the `>=1.84` floor. That is harmless, because the module-level import arrived in 1.106.0 (PyPI `provides_extra` and `requires_dist`, checked 2026-10-30). Reproduced offline on `adapter-contract-adk-py3.12.txt` before the fix and passing after it (`test_adk_model_runner_with_a_tool_reaches_the_answer`). | Google ADK; Google ADK (native Gemini) |
 | `agent_framework` | `agent-framework>=1.13` | Bisected from the verified 1.19.0. In 1.0.0–1.11.0 `agent_framework.openai.OpenAIChatClient` does not exist, so the adapter raises its `blocked on verification` import error. 1.12.0 builds it and passes the signature check, but `test_framework_redirects.py::test_agent_framework` fails: the call never reaches the proxy. 1.13.0 is the first that passes both. | MS Agent Framework |
@@ -1643,7 +1656,7 @@ each extra with `uv pip install --resolution lowest-direct` on Python 3.10, runs
 the unit and adapter-contract suites, and then `scripts/check_floors.py` fails
 the leg if any declared floor is not the installed version. The framework legs
 leave `[llm]` out, because a framework that needs a newer `openai` than
-`openai>=1.66` would otherwise push its own resolve above its floor. The
+`openai>=1.66.5` would otherwise push its own resolve above its floor. The
 `openai-1x` PR job holds `[llm]` to the 1.x line (`openai<2`).
 
 ### 8.4 Docs status roster

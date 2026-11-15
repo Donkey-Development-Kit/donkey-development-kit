@@ -57,3 +57,15 @@ account headers). The consumer credentials were never written to disk.
   `x-llm-proxy-llm-provider` and `x-llm-proxy-llm-model`.
 
 Pinned by `tests/unit/test_v2_chain_contract.py`.
+
+## Client replay compatibility (#1764)
+
+Offline replay on 2026-11-15: `openai` **1.66.5** (Python 3.10.21) and
+**3.51.0** (Python 3.12) parse both `tool_long` streams with
+`responses.stream()` and recover the final function call and usage.
+**1.66.0–1.66.3** misclassify the sparse `response.created` event and fail with
+`AttributeError: 'dict' object has no attribute 'to_dict'`. The upstream
+[discriminated-union fix](https://github.com/openai/openai-python/commit/eb3d7ae36d2686645e15840ab369255157247dd9)
+first ships on PyPI in **1.66.5** (1.66.4 is not published), the new `[llm]`
+floor. The captures remain unchanged; this is client replay evidence, not a
+new live capture.

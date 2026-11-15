@@ -360,7 +360,7 @@
   "anypoint/semantic_cache/responses.principal-id.headers.txt": "sha256:431d6bba6f219c21de71b79ea98128107efaf2250f8a1fe783de6b792a9d91fa",
   "anypoint/semantic_cache/responses.threshold-override.headers.txt": "sha256:6012cd81f4102be2ca4091d5c704c8c06a8ea509ce07601843f6e6a36540dab0",
   "anypoint/semantic_cache/responses.ttl-override.headers.txt": "sha256:1ff0dddcfb2399f32310f4aef6413593c40225c9e00be74d4ce683e3b54f2932",
-  "anypoint/v2_chain/README.md": "sha256:b33c112f7f7f3e70b8b5c28351b50e9f974300bb619718a46d6df0b37b901d11",
+  "anypoint/v2_chain/README.md": "sha256:dcb4988e415c017f2edd3d5642bdc12940123fa7ab824ff191a3319df4ef4214",
   "anypoint/v2_chain/anthropic.chat.cache_1.body.json": "sha256:7bb2e777a5b8fada9bfafcbf4ec7a3c02ffe45fd4a115988f33197bbb0a6aee4",
   "anypoint/v2_chain/anthropic.chat.cache_2.body.json": "sha256:b271525aa8f72634f933a49703bef3730301a708eaf718bc889ca15a2f338b5b",
   "anypoint/v2_chain/anthropic.responses.cache_1.body.json": "sha256:b4bbd802acbc38f2858a73d2c837a676087672c0d6b85e86bdc3bf2bd986c6b0",

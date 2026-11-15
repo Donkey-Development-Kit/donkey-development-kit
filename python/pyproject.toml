@@ -59,8 +59,9 @@ Changelog = "https://github.com/Donkey-Development-Kit/donkey-development-kit/re
 
 [project.optional-dependencies]
 # --- LLM client (raw, framework-free) ---
-# 1.66 is the first openai with the Responses API, the data plane `client()` speaks (§2).
-llm = ["openai>=1.66"]
+# 1.66.5 fixes event discrimination for the captured v2 Responses streams (#1764).
+# Lowest verified release: docs/verified-apis.md §8.3.
+llm = ["openai>=1.66.5"]
 
 # --- Per-framework integrations (one extra each) ---
 # Floors, never ceilings (§8.4) — but every allowed version must work, so each
