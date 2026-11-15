@@ -11133,8 +11133,44 @@ the exit code fails the job.
 
 ## From Bitbucket Pipelines
 
-There is no Bitbucket Pipe yet, so run `donkey publish` in a step of your
-own. This one plans on pull requests and publishes from `main`:
+The [donkey-publish-pipe](https://bitbucket.org/donkey-development-kit/donkey-publish-pipe/)
+packages the CLI for Bitbucket. Release `0.1.0` runs donkey-kit `0.2.1` in a
+public, signed Docker Hub image. Pin a full Pipe version:
+
+```yaml
+pipelines:
+  pull-requests:
+    "**":
+      - step:
+          name: Plan publication
+          script:
+            - pipe: donkey-development-kit/donkey-publish-pipe:0.1.0
+              variables:
+                DRY_RUN: "true"
+          artifacts:
+            - donkey-publish.json
+  branches:
+    main:
+      - step:
+          name: Publish to Exchange
+          deployment: production
+          script:
+            - pipe: donkey-development-kit/donkey-publish-pipe:0.1.0
+              variables:
+                ANYPOINT_CLIENT_ID: $ANYPOINT_CLIENT_ID
+                ANYPOINT_CLIENT_SECRET: $ANYPOINT_CLIENT_SECRET
+                ANYPOINT_ORG_ID: $ANYPOINT_ORG_ID
+          artifacts:
+            - donkey-publish.json
+```
+
+The Pipe accepts `SCAN_PATH` (default `.`), `DRY_RUN` (default `false`),
+`IF_CHANGED` (default `true`; `false` selects `--always`) and `RESULT_FILE`
+(default `donkey-publish.json`). Its README documents the variables and
+signature verification key. You need no Docker Hub account to use it.
+
+Alternatively, install the CLI in a step of your own. This one plans on pull
+requests and publishes from `main`:
 
 ```yaml
 # bitbucket-pipelines.yml
