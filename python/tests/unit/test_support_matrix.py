@@ -118,6 +118,14 @@ def test_every_declared_dependency_has_a_floor() -> None:
     assert unfloored == []
 
 
+def test_llm_floor_supports_the_captured_v2_responses_stream() -> None:
+    """Earlier releases misclassify response.created and crash the stream helper (#1764)."""
+    reqs = floors_mod.selected_requirements(
+        _pyproject(), base=False, dev_group=False, extras=["llm"]
+    )
+    assert floors_mod.floors(reqs) == {"openai": Version("1.66.5")}
+
+
 # --- scripts/coinstall_matrix.py ---------------------------------------------
 
 
