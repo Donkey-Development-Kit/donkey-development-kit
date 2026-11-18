@@ -42,7 +42,7 @@ repos:
           os.chdir('python');
           sys.exit(subprocess.call(['lint-imports'], env=dict(os.environ, PYTHONPATH='src')))"
         language: python
-        additional_dependencies: [import-linter==2.16]
+        additional_dependencies: [import-linter==2.17]
         # The source tree, and pyproject.toml where the contracts live.
         files: ^python/(src/.*\.py|pyproject\.toml)$
         pass_filenames: false
