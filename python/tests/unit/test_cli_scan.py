@@ -81,7 +81,7 @@ def test_summary_shows_how_each_server_is_reached(tmp_path: Path) -> None:
     root = _repo(tmp_path)
 
     result = runner.invoke(app, ["scan", str(root)])
-    assert "transport undeclared (set [donkey.mcp_servers.sku-manager] in .donkey-kit.toml)" in (
+    assert "transport undeclared (set transport in [donkey.mcp_servers.sku-manager]; " in (
         result.output
     )
 

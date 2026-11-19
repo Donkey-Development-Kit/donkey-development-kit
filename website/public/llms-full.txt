@@ -7947,7 +7947,25 @@ the command got as far as reading the declaration. Nothing is sent then. A
 `publish` or `verify` reports every asset `not_attempted`, an `expose`
 report has `ok: false` and no steps, and every document lists the issues.
 The issues also go to stderr, and the command exits `1`. A missing path or
-invalid config exits `2` with no document.
+invalid config exits `2` with no document. That includes a `.donkey-kit.toml`
+that is not UTF-8 or not valid TOML: the message names the file and shows none
+of its bytes.
+
+When an issue is a missing declaration, its message names the table and key to
+set. If the table isn't in `.donkey-kit.toml` yet, it also gives the
+`donkey scaffold` command that adds it, with every key that table still lacks
+as a `--set` (see [Filling a placeholder](#filling-a-placeholder-with---set)):
+
+```
+  .donkey-kit.toml:0  missing-version  donkey.publication: set version in [donkey.publication] to a semantic version, such as 1.0.0; `donkey scaffold --set publication.version=1.0.0 --set publication.group_id=GROUP_ID` adds the table with it
+```
+
+Replace each upper-case value, such as `GROUP_ID`, before you run it. Once the
+table exists, the message says only which key to set in it, since scaffold
+never changes a table you already have. Other issues, such as an invalid value,
+get no scaffold advice. An endpoint or provider URL that carries a credential
+(a user name or password, or a query or fragment parameter such as `api_key`)
+is refused, and the message never shows the URL.
 
 ### Command reference
 
@@ -8032,6 +8050,7 @@ Global options go before the command (`donkey --json init`):
 | `--dry-run` | off | Print the candidate tables instead of writing .donkey-kit.toml. |
 | `--expose` | off | Also propose the [donkey.expose] tables `donkey expose` reads. |
 | `--service` | none | Only this service ID's tables and exposure readiness; repeat for more. Repeatable. |
+| `--set` | none | Fill a placeholder of a table scaffold adds, such as publication.version=1.0.0; repeat for more. Repeatable. |
 | `--json` | off | Emit the scaffold as one JSON document. |
 
 `donkey scan`: Find @donkey.agent and @donkey.tool markers statically and report them.
@@ -8309,6 +8328,8 @@ found 1 agent, 2 tools, 1 MCP server
 - How each MCP server is reached, its transport and endpoint, comes from a
   `[donkey.mcp_servers.<id>]` table in `.donkey-kit.toml`, never from code. A
   server without one is shown as `transport undeclared`, which is not an issue.
+  The line names the key to set and the `donkey scaffold` command that adds the
+  table.
   See [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
 - An agent's protocol and endpoint come the same way from a
   `[donkey.agents.<name>]` table. See
@@ -8362,7 +8383,8 @@ $ donkey scaffold --dry-run
   filled in, and is listed as already declared.
 - It exits `0` even when placeholders are left to fill in, `1` when the scan
   reports an issue or the write is refused, and `2` when the path does not
-  exist or `--service` names a service the scan didn't find.
+  exist, `--service` names a service the scan didn't find, or a `--set` is
+  refused.
 
 `donkey scaffold` writes the tables to the `.donkey-kit.toml` next to the code
 it scanned, not the one in your working directory:
@@ -8438,6 +8460,35 @@ The JSON document carries the same report as `readiness`: `scan` (`valid` or
 `invalid`), `publication` and one `exposure` entry per service, each with a
 `status`, its `missing` values (`table`, `key`, `detail`, `required`) and its
 `problems`, plus `live: "not-checked"`.
+
+#### Filling a placeholder with `--set`
+
+`--set TABLE.KEY=VALUE` writes a value you know into a table scaffold adds, as
+a real key instead of a commented placeholder. Repeat it for more. The
+`donkey.` prefix is optional:
+
+```
+$ donkey scaffold --set publication.version=1.0.0 \
+    --set mcp_servers.sku-manager.transport=streamable-http \
+    --set mcp_servers.sku-manager.endpoint=https://sku-manager.acme.com/mcp
+```
+
+- It fills only a placeholder scaffold itself leaves open: `protocol` and
+  `endpoint` for an agent, `transport` and `endpoint` for an MCP server,
+  `version` and `group_id` for `[donkey.publication]`, and with `--expose`,
+  `target` and each service's `upstream`.
+- Each value is checked the way `donkey publish` and `donkey expose` check it:
+  a semantic version, a known transport or protocol, an http or https URL with
+  no credential in it, no endpoint for a `stdio` server, and an endpoint for an
+  `a2a_v1` agent.
+- Setting an agent's `protocol` to `a2a_v1` with `--expose` also proposes its
+  `[donkey.expose.services.<name>]` table.
+- It refuses a table that `.donkey-kit.toml` already has (edit the file
+  instead), a key that looks like a secret (keep secrets in the environment or
+  `.env`), and a key or table scaffold doesn't propose. A refused `--set` exits
+  `2`, writes nothing and never echoes the value.
+- After a write, the readiness report counts the values you set. A
+  `--dry-run` reports the committed file's readiness and says so.
 
 ### `donkey publish`
 

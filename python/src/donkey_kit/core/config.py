@@ -1058,18 +1058,17 @@ def _merge_table(
 
 def _read_table(path: Path, name: str = "donkey") -> dict[str, object]:
     """Read the ``[<name>]`` table. For ``[donkey]``, keep only keys that are
-    real config fields."""
+    real config fields. A read, UTF-8 or TOML failure is a ConfigError showing no bytes (#1750)."""
     try:
-        data = tomllib.loads(path.read_text())
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"Malformed {path}: {exc}") from exc
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        why = exc if isinstance(exc, tomllib.TOMLDecodeError) else "not readable UTF-8 text"
+        raise ConfigError(f"Malformed {path}: {why}") from exc
     table = data.get(name, {})
     if not isinstance(table, dict):
         raise ConfigError(f"{path}: [{name}] must be a table.")
-    if name != "donkey":
-        return table
     known = {f.name for f in fields(DonkeyConfig) if not f.name.startswith("_")}
-    return {k: v for k, v in table.items() if k in known}
+    return table if name != "donkey" else {k: v for k, v in table.items() if k in known}
 
 
 def _warn_on_secrets(path: Path, table: dict[str, object]) -> None:

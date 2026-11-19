@@ -36,6 +36,7 @@ from typing import Any, Literal
 from ..core.config import LOCAL_TOML_NAME, TOML_NAME
 from .models import AssetRef
 from .publish_plan import PlannedAsset, PublishPlan
+from .remedy import scaffold_command, set_argument, table_name
 from .scan import ScanIssue, _endpoint_problem
 
 if sys.version_info >= (3, 11):
@@ -45,6 +46,7 @@ else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
 
 __all__ = ["ExposePlan", "PlannedPolicy", "plan_exposure"]
 
+_EXPOSE = ("donkey", "expose")
 _TABLE_KEYS = frozenset({"target", "services"})
 _SERVICE_KEYS = frozenset({"label", "upstream", "policies"})
 _POLICY_KEYS = frozenset({"asset", "configuration", "outbound"})
@@ -102,11 +104,28 @@ def plan_exposure(
     issues = [*publication.issues]
     asset = _pick(publication, service, declared)
     target = target or declared.target
+    entry = declared.services.get(asset.service_id, {}) if asset is not None else {}
+    upstream = (entry.get("upstream") or asset.endpoint) if asset is not None else None
+    exposable = asset is not None and (asset.type == "mcp" or asset.protocol == "a2a_v1")
+    # The scaffold command that adds every missing expose table at once; it can
+    # only add a table the project file does not have yet.
+    sets = []
+    if not target and not declared.present:
+        sets.append(set_argument(_EXPOSE, "target", "GATEWAY"))
+    if (
+        asset is not None
+        and exposable
+        and upstream is None
+        and asset.service_id not in declared.services
+    ):
+        sets.append(set_argument((*_EXPOSE, "services", asset.service_id), "upstream", "URL"))
+    command = scaffold_command(root, expose=True, sets=sets)
     if not target:
+        how = f" (`{command}` adds the table with it)" if not declared.present else ""
         declared.issue(
             "missing-target",
             "donkey.expose",
-            "name the gateway to deploy to: set target in [donkey.expose], or pass --target",
+            f"name the gateway to deploy to: set target in [donkey.expose]{how}, or pass --target",
         )
     for service_id in sorted(set(declared.services) - {a.service_id for a in publication.assets}):
         declared.issue(
@@ -117,8 +136,10 @@ def plan_exposure(
     if asset is None:
         return ExposePlan(None, target=target, issues=_sorted(issues, declared))
 
-    entry = declared.services.get(asset.service_id, {})
-    subject = f"expose service {asset.service_id}"
+    sid = asset.service_id
+    subject = f"expose service {sid}"
+    service_table = table_name(*_EXPOSE, "services", sid)
+    owner = table_name("donkey", "mcp_servers" if asset.type == "mcp" else "agents", sid)
     endpoint_type: Literal["mcp", "a2a"] | None = None
     if asset.type == "mcp":
         endpoint_type = "mcp"
@@ -128,8 +149,8 @@ def plan_exposure(
         declared.issue(
             "not-exposable",
             subject,
-            f"agent {asset.service_id!r} has protocol {asset.protocol!r}; the gateway "
-            'fronts A2A agents only: set protocol = "a2a_v1" in [donkey.agents]',
+            f"agent {sid!r} has protocol {asset.protocol!r}; the gateway fronts A2A "
+            f'agents only: set protocol = "a2a_v1" and its endpoint in [{owner}]',
         )
     label = entry.get("label") or asset.asset_id
     if not _LABEL.fullmatch(label):
@@ -137,15 +158,15 @@ def plan_exposure(
             "invalid-expose",
             subject,
             f"label {label!r} is the instance's base path, so it must be letters, digits, "
-            "'.', '_' or '-'; set label in its [donkey.expose.services] table",
+            f"'.', '_' or '-'; set label in [{service_table}]",
         )
-    upstream = entry.get("upstream") or asset.endpoint
     if upstream is None:
+        how = f" (`{command}` adds it)" if sid not in declared.services and exposable else ""
         declared.issue(
             "missing-upstream",
             subject,
-            "set upstream in its [donkey.expose.services] table (or its endpoint) to the "
-            "URL the gateway reaches it on",
+            f"set upstream in [{service_table}]{how}, or endpoint in [{owner}], to the URL "
+            "the gateway reaches it on",
         )
     policies: tuple[PlannedPolicy, ...] = entry.get("policies", ())
     if endpoint_type == "mcp" and any(p.outbound for p in policies):
@@ -200,6 +221,8 @@ class _Declaration:
 
     def __init__(self, directory: Path, *, local_overlay: bool = True) -> None:
         self.issues: list[ScanIssue] = []
+        # Whether either file has a [donkey.expose] table, valid or not.
+        self.present = False
         self.target: str | None = None
         self.services: dict[str, dict[str, Any]] = {}
         self._file = TOML_NAME
@@ -222,6 +245,7 @@ class _Declaration:
         if table is None:
             return
         self._file = name
+        self.present = True
         if not isinstance(table, dict):
             self.issue("invalid-expose", "donkey.expose", "must be a table")
             return
