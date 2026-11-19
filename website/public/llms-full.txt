@@ -8490,7 +8490,17 @@ found 1 agent, 2 tools, 1 MCP server
   table. A value the scan rejects, such as an unknown transport or an endpoint
   with a credential in it, is shown as `transport invalid` or `endpoint
   invalid` instead, next to the `invalid-transport` or `invalid-endpoint`
-  issue that says why.
+  issue that says why. The rejected value is never printed:
+
+  ```
+  $ donkey scan .
+    agent  support-triage  (app/main.py:13)
+    mcp    sku-manager  (1 tool: lookup_sku)  streamable-http endpoint invalid (see the invalid-endpoint issue)
+  found 1 agent, 1 tool, 1 MCP server
+  1 issue
+    .donkey-kit.toml:0  invalid-endpoint  mcp server sku-manager: endpoint has a query parameter 'api_key' that looks like a credential; the governed transport supplies credentials, so remove them from the URL
+  ```
+
   See [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
 - An agent's protocol and endpoint come the same way from a
   `[donkey.agents.<name>]` table. See
