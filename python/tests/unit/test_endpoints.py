@@ -246,3 +246,46 @@ def test_an_adapter_factory_refuses_a_url_with_userinfo() -> None:
         adapter.chat_model("m", base_url=_with_userinfo("other.example.internal", path="/v1/"))
 
     _assert_userinfo_refusal(err.value, name="base_url", host="other.example.internal")
+
+
+# --- url_credential_problem: URLs about to be shown or written (#1746) -------
+
+_SENTINEL = "s3ntinel-v4lue"
+
+
+@pytest.mark.parametrize(
+    ("url", "fragment"),
+    [
+        (f"https://user:{_SENTINEL}@gw.example.test/", "user name or password"),
+        (f"https://{_SENTINEL}@gw.example.test/", "user name or password"),
+        (f"https://gw.example.test/?access_token={_SENTINEL}", "'access_token'"),
+        (f"https://gw.example.test/?API-Key={_SENTINEL}", "'API-Key'"),
+        (f"https://gw.example.test/?sig={_SENTINEL}&x=1", "'sig'"),
+        (f"https://gw.example.test/#id_token={_SENTINEL}", "fragment parameter 'id_token'"),
+        (f"https://user:{_SENTINEL}@gw.example.test:99999999/", "not a valid URL"),
+        (f"https://user:{_SENTINEL}@gw.example.test:port/", "not a valid URL"),
+        (f"https://[{_SENTINEL}/", "not a valid URL"),
+    ],
+)
+def test_url_credential_problem_refuses_without_echoing(url: str, fragment: str) -> None:
+    from donkey_kit.core.endpoints import url_credential_problem
+
+    problem = url_credential_problem(url)
+    assert problem is not None
+    assert fragment in problem
+    assert _SENTINEL not in problem
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://gw.example.test/",
+        "https://gw.example.test:8443/proxy/?region=eu&page=2",
+        "http://localhost:8080/",
+        "https://gw.example.test/#section",
+    ],
+)
+def test_url_credential_problem_accepts_plain_urls(url: str) -> None:
+    from donkey_kit.core.endpoints import url_credential_problem
+
+    assert url_credential_problem(url) is None

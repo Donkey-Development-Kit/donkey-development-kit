@@ -5,6 +5,11 @@ loopback hosts (``localhost``, ``127.0.0.0/8``, ``::1``) because the local
 gateway simulator and local development listen there, and for any other host
 only when ``DONKEY_ALLOW_HTTP=1`` is set in the environment. A URL that carries
 a user name or password is refused whatever the scheme or host (#1478).
+
+:func:`url_credential_problem` is the check for a URL about to be *shown or
+written* (a generated config file, a public declaration): it also refuses
+credential-looking query or fragment parameters, and a URL that cannot be parsed,
+since nothing about such a value proves it carries no credential (#1746).
 """
 
 from __future__ import annotations
@@ -12,7 +17,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import warnings
-from urllib.parse import SplitResult, urlsplit
+from urllib.parse import SplitResult, parse_qsl, urlsplit
 
 from ._verify import REGION_HOSTS
 from .errors import ConfigError, ConfigWarning
@@ -25,7 +30,9 @@ __all__ = [
     "host_of",
     "is_loopback",
     "is_loopback_host",
+    "looks_like_credential_param",
     "require_secure_url",
+    "url_credential_problem",
 ]
 
 #: The Anypoint control-plane hosts the SDK already knows, one per region.
@@ -123,3 +130,48 @@ def require_secure_url(url: str, *, name: str) -> None:
         "is accepted for loopback hosts (localhost, 127.0.0.0/8, ::1), such as the "
         f"local gateway simulator. {remedy}."
     )
+
+
+# Query parameter names that carry a credential, compared lower-cased with "-"
+# and "_" removed: an exact name, or a fragment anywhere in the name.
+_CREDENTIAL_PARAMS = frozenset({"auth", "key", "pwd", "sig"})
+_CREDENTIAL_FRAGMENTS = (
+    "accesskey",
+    "apikey",
+    "authorization",
+    "clientid",
+    "credential",
+    "passwd",
+    "password",
+    "secret",
+    "signature",
+    "token",
+)
+
+
+def looks_like_credential_param(name: str) -> bool:
+    """True when a URL query parameter called ``name`` looks like it carries a
+    credential (``api_key``, ``access-token``, ``sig``, ...)."""
+    key = name.lower().replace("-", "").replace("_", "")
+    return key in _CREDENTIAL_PARAMS or any(f in key for f in _CREDENTIAL_FRAGMENTS)
+
+
+def url_credential_problem(url: str) -> str | None:
+    """Why ``url`` must not be shown or written verbatim, or ``None`` when it may.
+
+    A URL is refused when it carries a user name or password, when a query or
+    fragment parameter looks like a credential, or when it cannot be parsed at
+    all (a malformed port, say), since then nothing proves it is credential-free.
+    The reason never contains the URL or any part of its value, so it is safe to
+    print.
+    """
+    parts = _split(url)
+    if parts is None:
+        return "is not a valid URL (it is not shown, in case it carries a credential)"
+    if parts.username is not None or parts.password is not None:
+        return "carries a user name or password"
+    for where, text in (("query", parts.query), ("fragment", parts.fragment)):
+        for name, _ in parse_qsl(text, keep_blank_values=True):
+            if looks_like_credential_param(name):
+                return f"has a {where} parameter {name!r} that looks like a credential"
+    return None

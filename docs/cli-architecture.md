@@ -54,7 +54,8 @@ Paths below are relative to `python/src/donkey_kit/`.
 | --- | --- |
 | `cli/_app.py`: `app`, `_global`, `main` | Registration, global options, version output and a final `DonkeyError` boundary. |
 | `cli/_common.py`: `document`, `print_issues`, `ci_source` | Publication document adaptation, issue rendering and optional CI attribution. Not a universal output schema. |
-| `cli/init.py`: `init`, `_render_toml` | Resolve connection configuration and render an explicit non-secret allowlist into project TOML. |
+| `cli/init.py`: `init`, `_render_toml`, `_checked` | Resolve connection configuration, render an explicit non-secret allowlist (auth mode included) into escaped project TOML, refuse credential-bearing URLs, and validate the complete candidate before writing. |
+| `cli/_files.py`: `check_destination`, `create_new`, `replace` | CLI-only destination policy and staged publication for generated files: no symlink/directory/secret-holder targets, no-clobber creation, mode-preserving same-directory replace. |
 | `cli/scan.py`: `scan` | Render `registry.scan.scan` results without executing application code. |
 | `registry/scan.py`: `scan`, `ScanResult` | AST discovery with lexical receiver resolution, literal argument validation and project service metadata. `local_overlay=False` reads the project file alone. |
 | `cli/scaffold.py`: `scaffold` | Render `registry.scaffold.build_scaffold` as a TOML preview, a summary and versioned JSON. |
@@ -83,7 +84,7 @@ It also owns endpoint provenance and credential trust. A renderer must not
 duplicate these rules or bypass them by reconstructing a runtime configuration.
 
 Current global options go **before** the command. `--config` selects the output
-for `init`, but the input project file for `doctor`. Other commands reject it.
+for `init` (never read as its input), but the input project file for `doctor`. Other commands reject it.
 `--env` applies globally only to `init`; exposure commands have their own local
 `--env`. `--json` is global, and several commands also accept it locally.
 `--version` is eager plain-text output, not a JSON document.
@@ -93,7 +94,12 @@ the `--config` destination does not select its input. It returns successfully
 without resolving configuration or changing an existing file unless `--force`
 requests regeneration.
 Regeneration replaces the entire document, including any unrelated declarations;
-it is not a merge. Its current write is direct, not atomic.
+it is not a merge, and `init` names the dropped tables on stderr. Since #1746 the
+write is staged in the destination directory and published by `os.link`
+(creation: a file that appears meanwhile is never clobbered) or `os.replace`
+(regeneration: atomic for readers, last writer wins against a concurrent editor).
+The final destination component may not be a symlink, a directory or a
+secret-holder name, with or without `--force`; ancestor symlinks are allowed.
 
 For scan/publication/exposure, PATH is a directory or a single Python file.
 Current declaration readers load `.donkey-kit.toml` at that root or file's
@@ -116,7 +122,7 @@ reads no environment variable or user file.
 
 | Command | Network | Writes or executes |
 | --- | --- | --- |
-| `init` | No | Creates missing destination parent directories and writes a connection config file; resolves existing config sources only on the write path. An existing target without `--force` returns before resolution. |
+| `init` | No | Creates missing destination parent directories and writes a connection config file; resolves existing config sources only on the write path. An existing target without `--force` returns before resolution; an unsafe destination is refused first. |
 | `scan` | No | No writes; AST parsing and declaration reads only. |
 | `scaffold --dry-run` | No | No writes; AST parsing and a project-file read only. A bare `scaffold` exits 2 until writing lands (#1748). |
 | `publish --dry-run` | No | No writes; offline publication plan. |
@@ -153,15 +159,16 @@ Declaration failures generally produce the command's JSON document and exit 1.
 are scan issues with exit 1, and `scaffold`'s unfilled placeholders exit 0. Publication/verification/exposure commands use exit 2 for missing
 paths or invalid connection config, without a document. Named exceptions are
 `doctor`, which exits 1 on config failures, and `init`, whose command body has
-no exit-2 path: write failures exit 1 and escaping `DonkeyError` is handled by
+no exit-2 path: write failures and refused destinations or values exit 1 to stderr without a JSON document, and escaping `DonkeyError` is handled by
 `main`. Parser/global-option usage errors may still exit 2 before those command
 bodies run. The precise command contract wins over a proposed global rule.
 Hidden `status` exits 3; `test` forwards pytest's exit status. `_app.main` handles otherwise
 escaping `DonkeyError` as stderr plus exit 1, not a universal JSON error handler.
 
 The 2026-11-14 review found gaps, not new supported behavior: `init` string
-escaping and destination protection, credential-bearing public URLs, decoding
-errors escaping config handling, static scanner ambiguity, and `doctor`'s
+escaping and destination protection (closed by #1746, which also refuses
+credential-bearing URLs in what `init` writes), credential-bearing public URLs
+elsewhere, decoding errors escaping config handling, static scanner ambiguity, and `doctor`'s
 false-green fallback. Their remediation is recorded in issues #1746 through
 #1751. Passing existing tests does not establish that those cases are safe.
 

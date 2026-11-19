@@ -7899,8 +7899,9 @@ donkey --env Sandbox init         # write this Anypoint environment into the gen
 donkey --json init                # machine-readable output where a command supports it
 ```
 
-`--config` selects the file `init` writes or the project file `doctor` reads;
-`doctor` still applies the normal per-field precedence: explicit kwargs (when
+`--config` selects the file `init` writes or the project file `doctor` reads.
+For `init` it is only the destination: `init` still resolves its values from
+the working directory, as described [below](#donkey-init). `doctor` still applies the normal per-field precedence: explicit kwargs (when
 calling the config loader in code), environment variables, the named file's
 local overlay, the named file, user config, then defaults. `--env` applies to
 `init` only; set `ANYPOINT_ENV` for `doctor`. Other commands reject these flags
@@ -7957,7 +7958,7 @@ Global options go before the command (`donkey --json init`):
 | Option | Default | Meaning |
 |---|---|---|
 | `--version` | off | Print the donkey-kit version and exit. |
-| `--config` | none | Where `init` writes .donkey-kit.toml, or the project config file `doctor` reads. |
+| `--config` | none | Where `init` writes .donkey-kit.toml (output only, never read), or the project config file `doctor` reads. |
 | `--env` | none | Anypoint environment `init` writes (e.g. Sandbox). init only. |
 | `--json` | off | Emit machine-readable JSON where the command supports it. |
 
@@ -7994,7 +7995,7 @@ Global options go before the command (`donkey --json init`):
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--force` | off | Regenerate even if the file already exists. |
+| `--force` | off | Regenerate the whole file even if it exists. Not a merge: other tables are dropped. |
 
 `donkey mock`: Run the local gateway simulator.
 
@@ -8055,22 +8056,51 @@ Global options go before the command (`donkey --json init`):
 ### `donkey init`
 
 Resolves your current configuration (env vars → config files → defaults; see
-[Precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence)) and writes a **commented** `.donkey-kit.toml` with the values it
-found.
+[Precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence)), from the working directory,
+and writes a **commented** `.donkey-kit.toml` with the non-secret connection
+values it found.
 
 - **Names every missing required field at once** — control plane *and* LLM
   proxy — using the same validation the SDK runs at call time, so `init` and a
   real request never disagree about what is required.
+- **Keeps your connection mode.** Besides the IDs and URLs, it writes the
+  LLM proxy auth mode (`llm_proxy_auth`, only when you set one), the
+  model-wallet selector (`llm_proxy_wallet_client_id`) and the dynamic-key
+  header name (`llm_proxy_key_header`), so the generated file can express a
+  `jwt`, `bearer` or Dynamic API Key setup. In `jwt` and `bearer` mode the token
+  itself comes from an `AuthProvider` you pass in code
+  (`Donkey(llm_auth=...)`); it is never a config value, so CLI commands that
+  call the proxy can't use those modes.
 - **Never writes a secret.** `client_secret`, `llm_proxy_client_secret`, and
   `llm_proxy_key` are emitted as commented pointers, not values. Put them in a
   gitignored `.donkey-kit.local.toml` next to the file, or in environment
-  variables. A URL in `.donkey-kit.toml`, including a loopback one, only
+  variables. A `base_url` or `llm_proxy_url` that carries a credential (a user
+  name or password, or a query parameter such as `api_key` or `token`), or that
+  can't be parsed, is refused rather than written, and the message names the
+  field and where it was set, never its value.
+  A URL in `.donkey-kit.toml`, including a loopback one, only
   receives credentials from those two files unless you opt in; see
   [Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
   The file's comments also say that URLs must use `https://`, that `localhost`
   is accepted over plain `http://`, and that `DONKEY_ALLOW_HTTP=1` in the
   environment (not in the file) allows plain `http://` to other hosts.
-- **Idempotent.** An existing file is left untouched unless you pass `--force`.
+- **Idempotent.** An existing file is left untouched, and `init` exits `0`,
+  unless you pass `--force`.
+- **`--force` regenerates the whole file.** It is not a merge: tables `init`
+  doesn't generate, such as `[donkey.agents]`, `[donkey.publication]` or
+  `[donkey.expose]`, are not carried over, and `init` names the ones it dropped
+  on stderr. Don't use `--force` on a file holding declarations you wrote by
+  hand.
+
+Where it writes: the global `--config` path, else `./.donkey-kit.toml`. Missing
+parent directories are created. The file appears complete or not at all, and a
+replaced file keeps its permissions. `init` exits `1`, writes nothing and prints
+no JSON document when the destination is a symlink (including a dangling
+one), a directory, or a file that holds secrets (`.donkey-kit.local.toml`,
+`.env`, `.env.*`, `.envrc`, `donkey.lock.local`), and when a file appears at the
+destination while `init` is writing. `--force` overrides none of these refusals.
+Replacing an existing file is atomic for readers, but if another program saves
+the same file at that moment, the last write wins.
 
 ```bash
 donkey init --force
