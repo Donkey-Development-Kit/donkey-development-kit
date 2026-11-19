@@ -89,14 +89,16 @@ def plan_exposure(
     *,
     service: str | None = None,
     target: str | None = None,
+    local_overlay: bool = True,
 ) -> ExposePlan:
     """Plan exposing ``service`` (scanned from ``root``) offline.
 
     ``service`` may be left out when the publication plan has exactly one
     service. ``target`` overrides ``[donkey.expose] target``.
+    ``local_overlay=False`` reads the project file alone.
     """
     base = Path(root)
-    declared = _Declaration(base.parent if base.is_file() else base)
+    declared = _Declaration(base.parent if base.is_file() else base, local_overlay=local_overlay)
     issues = [*publication.issues]
     asset = _pick(publication, service, declared)
     target = target or declared.target
@@ -196,12 +198,12 @@ class _Declaration:
     """The ``[donkey.expose]`` tables beside the scanned code, read as
     ``[donkey.publication]`` is: the project file, then the local file over it."""
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, *, local_overlay: bool = True) -> None:
         self.issues: list[ScanIssue] = []
         self.target: str | None = None
         self.services: dict[str, dict[str, Any]] = {}
         self._file = TOML_NAME
-        for name in (TOML_NAME, LOCAL_TOML_NAME):
+        for name in (TOML_NAME, LOCAL_TOML_NAME) if local_overlay else (TOML_NAME,):
             path = directory / name
             if path.is_file():
                 self._read(path, name)

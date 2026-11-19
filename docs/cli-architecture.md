@@ -60,6 +60,7 @@ Paths below are relative to `python/src/donkey_kit/`.
 | `registry/scan.py`: `scan`, `ScanResult` | AST discovery with lexical receiver resolution, literal argument validation and project service metadata. `local_overlay=False` reads the project file alone. |
 | `cli/scaffold.py`: `scaffold` | Write `registry.scaffold.build_scaffold`'s candidates through `cli/_files.py`, or render them as a TOML preview, a summary and versioned JSON. |
 | `registry/scaffold.py`: `build_scaffold`, `Scaffold` | Overlay-free candidate declaration tables for scanned services, with commented placeholders for deployment facts; `Scaffold.apply` appends them to the project text and proves the result parses to the old tables plus the new. |
+| `registry/readiness.py`: `assess`, `Readiness` | Offline, overlay-free readiness per workflow: scan validity, publication and per-service exposure status, with missing values named by table and key. |
 | `core/toml_text.py`: `basic_string`, `key`, `comment` | Hand-written TOML text for generated files; callers parse the result back. |
 | `registry/publish_plan.py`: `plan_publication`, `PublishPlan` | Offline publication validation and deterministic asset planning. |
 | `registry/expose_plan.py`: `plan_exposure`, `ExposePlan` | Validate and select one service for exposure through an existing gateway. |
@@ -146,9 +147,21 @@ required-field list. Unknown or untested facts must stay unknown.
 them to the project file (#1748). The append is text-only, so no TOML writer
 dependency is needed and the authored bytes survive. A representation it cannot
 extend safely, such as an inline table, is refused rather than normalized.
-Workflow-scoped readiness (#1749) is still a milestone 28 plan and must not be
-marketed as installed until implementation and published-package acceptance
-land.
+Its summary ends with workflow-scoped readiness (#1749,
+`registry/readiness.py`): scan validity, project-wide publication readiness
+and per-service exposure readiness, each a separate status. It reuses
+`plan_publication` and `plan_exposure` with `local_overlay=False` instead of
+restating their rules, so it reads the same committed file as the candidates
+and never the overlay, environment or connection config. A group ID the
+resolved `org_id` could supply is therefore a non-required note, and live
+state is always `not-checked`. It must not be marketed as installed until
+published-package acceptance (#1751) lands.
+
+`doctor` confirms only what a typed refusal proves (#1749):
+`ModelNotRoutable` and `UpstreamModelError` fail the model, a
+`PolicyViolation` stays INFO (exit 0) and names the model as routed only from
+the `x-llm-proxy-llm-provider` header, and any other error fails a `probe` line
+with credentials and model not confirmed.
 
 ## Output And Failure Contracts
 
