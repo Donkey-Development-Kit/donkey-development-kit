@@ -86,8 +86,7 @@ def scaffold(
     ),
     as_json: bool = typer.Option(False, "--json", help="emit the scaffold as one JSON document"),
 ) -> None:
-    """Add the .donkey-kit.toml tables the scanned services still need, and say
-    what each workflow still needs."""
+    """Add the .donkey-kit.toml tables the scanned services need and report readiness."""
     as_json = as_json or bool((ctx.obj or {}).get("json"))
     sets = tuple(set_ or ())
     try:
