@@ -45,6 +45,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
 from ..core.config import LOCAL_TOML_NAME, TOML_NAME
+from ..core.endpoints import looks_like_credential_param
 from ..core.toolspec import validate_service_id
 from .publication import check_description_quality, content_digest
 
@@ -784,35 +785,13 @@ def _endpoint_problem(value: object, transport: str | None) -> str | None:
         # Never echo the value: it carries a credential.
         return "endpoint must not carry credentials; the governed transport supplies them"
     for name, _ in parse_qsl(parts.query, keep_blank_values=True):
-        if _looks_like_credential(name):
+        if looks_like_credential_param(name):
             # The endpoint is published verbatim, so a credential here would be public.
             return (
                 f"endpoint must not carry credentials: its query parameter {name!r} looks "
                 "like one, and the governed transport supplies them"
             )
     return None
-
-
-# Query parameter names that carry a credential, compared lower-cased with "-"
-# and "_" removed: an exact name, or a fragment anywhere in the name.
-_CREDENTIAL_PARAMS = frozenset({"auth", "key", "pwd", "sig"})
-_CREDENTIAL_FRAGMENTS = (
-    "accesskey",
-    "apikey",
-    "authorization",
-    "clientid",
-    "credential",
-    "passwd",
-    "password",
-    "secret",
-    "signature",
-    "token",
-)
-
-
-def _looks_like_credential(name: str) -> bool:
-    key = name.lower().replace("-", "").replace("_", "")
-    return key in _CREDENTIAL_PARAMS or any(f in key for f in _CREDENTIAL_FRAGMENTS)
 
 
 def _description_issues(

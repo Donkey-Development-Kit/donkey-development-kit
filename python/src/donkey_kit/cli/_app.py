@@ -51,7 +51,10 @@ def _global(
         None,
         "--config",
         metavar="PATH",
-        help=f"Where `init` writes {TOML_NAME}, or the project config file `doctor` reads.",
+        help=(
+            f"Where `init` writes {TOML_NAME} (output only, never read), "
+            "or the project config file `doctor` reads."
+        ),
     ),
     env: str | None = typer.Option(
         None,
