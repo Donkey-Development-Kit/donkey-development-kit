@@ -852,6 +852,9 @@ pytest plugin** users run against their own agent (#191).
   feature-by-feature scope and acceptance bars; cited as `BG §N.N`.
 - [`docs/verified-apis.md`](docs/verified-apis.md) — the verification ledger
   (source of truth for what is verified vs. blocked).
+- [CLI architecture](docs/cli-architecture.md) and
+  [CLI design guidance](docs/cli-design.md): command boundaries, current
+  contracts and the sourced design/testing checklist.
 - [`docs/adr/`](docs/adr/README.md) — the architecture decision records: why
   each decision here was taken, the alternatives rejected, and the process for
   changing one.

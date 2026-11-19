@@ -215,13 +215,13 @@ request against the deployed gateway.
 | Auth: model-wallet ingress (alt to `client_id`/`client_secret`, #372) | `core/transport/headers.py`, `core/config.py` — contract verified; SDK wiring landed in #509 (`llm_proxy_auth="jwt"` + `llm_proxy_wallet_client_id` + `Donkey(llm_auth=…)`) | VERIFIED (LIVE) | Wallet-backed model proxies auth via an **IdP-issued JWT + a client ID**, with **no `client_secret`**: the client ID travels as the **`X-Client-Id`** request header (exact casing confirmed; value = the wallet's system-generated `clientId`, `ddk-model-wallet` here — read it from the omni API response, don't assume) which selects the wallet (echoed back as response header **`x-model-wallet-selected`**), *and* as a `client_id` **JWT claim** read by the LLM Proxy Core Policy at `#[authentication.properties.claims.client_id]` after the **JWT Validation** policy validates + publishes claims. **The JWT rides as `Authorization: Bearer <JWT>`** — this was an *assumption* from the doc read (Bearer is nowhere quoted on the source page); now **confirmed** (policy `jwtOrigin: httpBearerAuthenticationHeader`; missing header → `400 {"error":"JWT Token is required."}`, `www-authenticate: Bearer`; invalid/expired token → `401 {"error":"Invalid token."}`). No `client_id`/`client_secret` request headers are sent and the call still succeeds → the default **DataWeave Headers Transformation** + **Client ID Enforcement** policies are confirmed **disabled**. Requires an org **IdP** (JWKS URL / signing key — "orgs without an IdP can't use model wallets"). A **parallel** ingress model, NOT a replacement of the LIVE `client_id`/`client_secret` pair above. | 2026-09-21 | live probe — `tests/fixtures/anypoint/model_wallet/` (`ddk-model-wallet`, instance `21186246`, Sandbox); shape corroborates `docs.mulesoft.com/general/exp-model-wallets-manage` |
 | Auth: plain bearer token, no wallet (#836) | `core/config.py` (`llm_proxy_auth="bearer"`), `core/transport/headers.py`, `core/runtime.py` | PARTIAL | Sends the token from `Donkey(llm_auth=…)` as **`Authorization: Bearer <token>`**, the header and scheme already VERIFIED (LIVE) on the model-wallet row (`_verify.LLM_PROXY_WALLET_JWT_HEADER` / `_SCHEME`), with no `X-Client-Id` and no `client_id`/`client_secret`. The SDK side is unit-tested against a mock transport (`tests/unit/test_llm_bearer_mode.py`). Not yet captured live: a proxy with JWT Validation on and no model wallet (the shape the model-wallet row implies but did not probe). | 2026-10-01 | unit tests; header shape from the model-wallet live probe |
 | Auth: provider key on a Dynamic API Key route (#367, #1253) | `core/config.py` (`llm_proxy_key_header`), `core/transport/headers.py` | UNVERIFIED | In `client-id` and `bearer` mode, when `llm_proxy_key_header` and `llm_proxy_key` are both set, the SDK sends `{llm_proxy_key_header: llm_proxy_key}` on every LLM-proxy request; `jwt` mode never sends it, because a model wallet holds its own provider keys. There is no fixed header: a route whose API key is set to Dynamic reads the provider key through a DataWeave expression the proxy admin writes, and Anypoint's `#[attributes.headers['X-API-KEY']]` is only an example. The SDK side is unit-tested. **Not verified:** a live capture of a Dynamic API Key route reading the provider key from the header its expression names | — | — |
-| Model routing | `llm/client.py`; consumed by `core/lastcall.py` + `core/transport/` (#309) | VERIFIED (LIVE) | `model-based-routing` 1.0.3 reads `model` from body → provider. Response headers `x-llm-proxy-routing-type: ModelBased`, `x-llm-proxy-routing-fallback: false`, `x-llm-proxy-llm-provider: openai`, `x-llm-proxy-llm-model: gpt-5.1`, `x-llm-proxy-model-based-routing-success: Request successfully matched. …`. As of #309 the SDK surfaces these at `donkey.last_call` (`served_provider`/`served_model`/`routing_type`/`fallback`, `substituted` when served≠requested — `x-llm-proxy-llm-model` is the BARE model and the `provider/` routing prefix travels in `x-llm-proxy-llm-provider`, so a requested prefix naming the served provider is ignored; live on OpenAI, Gemini, Azure OpenAI and Bedrock routes 2026-09-24, #586), emits them as `gen_ai.response.model` / `donkey.routing.type` / `donkey.routing.fallback` span attrs, and **does not retry** a `503` a fallback header already marked failed-over (#309, must not fight #183). With **more than one provider** configured, a bare model name (`gpt-5-mini`) the gateway cannot pin to a single provider is rejected `400` before any upstream call; use `provider/model` (`openai/gpt-5-mini`). `classify()` types it `ModelNotRoutable` (§4 item 6, live 2026-10-01, #825) | 2026-08-28 | live probe (`responses.success.headers.txt`) |
+| Model routing | `llm/client.py`; consumed by `core/lastcall.py` + `core/transport/` (#309) | VERIFIED (LIVE) | `model-based-routing` 1.0.3 reads `model` from body → provider. Response headers `x-llm-proxy-routing-type: ModelBased`, `x-llm-proxy-routing-fallback: false`, `x-llm-proxy-llm-provider: openai`, `x-llm-proxy-llm-model: gpt-5.1`, `x-llm-proxy-model-based-routing-success: Request successfully matched. …`. As of #309 the SDK surfaces these at `donkey.last_call` (`served_provider`/`served_model`/`routing_type`/`fallback`, `substituted` when served≠requested — `x-llm-proxy-llm-model` is the BARE model and the `provider/` routing prefix travels in `x-llm-proxy-llm-provider`, so a requested prefix naming the served provider is ignored; live on OpenAI, Gemini, Azure OpenAI and Bedrock routes 2026-09-24, #586), emits them as `gen_ai.response.model` / `donkey.routing.type` / `donkey.routing.fallback` span attrs, and **does not retry** a `503` a fallback header already marked failed-over (#309, must not fight #183). With **more than one provider** configured, a bare model name (`gpt-5-mini`) the gateway cannot pin to a single provider is rejected `400` before any upstream call; use `provider/model` (`openai/gpt-5-mini`). `classify()` types it `ModelNotRoutable` (§4 item 6, live 2026-10-01, #825). A `provider/` prefix with no route and no fallback is rejected `400` "Unsupported provider '…'. No fallback configuration.", also `ModelNotRoutable` (live 2026-11-14 on impl 1.0.9 and 1.0.10, #1740) | 2026-08-28 | live probe (`responses.success.headers.txt`) |
 | Semantic routing (#589, #590) | `llm/client.py`; the four shared routing headers consumed by `core/lastcall.py` + `core/transport/` (#309); the semantic-only `x-llm-proxy-semantic-routing-success` header parsed by `core/lastcall.py` (`_parse_semantic_routing` / `semantic_routing`) into `LastCall.matched_topic` + `LastCall.routing_score`, and emitted on the span as `donkey.routing.matched_topic` / `donkey.routing.score` via `core/telemetry.py` (#590) | VERIFIED (LIVE) | A **semantic-routing** proxy emits the **same four routing headers as model-based** — `x-llm-proxy-routing-type` (value **`Semantic`** vs `ModelBased`), `-routing-fallback`, `-llm-provider`, `-llm-model` — so #309's `LastCall` parsing already works unchanged for the semantic case. Additionally, a **semantic-only** header carries the match detail: **`x-llm-proxy-semantic-routing-success`**, exact format `Request successfully matched '{topic}' topic (Provider: {provider}, Model: {model}). Score: {score}.` (observed: Finance → `openai`/`gpt-5-mini` score `0.62`; Code → `gemini`/`gemini-2.5-flash` score `0.62`). Note the format is `(Provider: …, Model: …)` — **not** a `provider/model` slug — and the score is a bare `0.xx`. Also present alongside: `x-llm-proxy-request-success` (`Request completed successfully. Provider: …, Model: ….`) and, on OpenAI-served routes, cost hints `x-llm-proxy-input-tokens-cost-per-1m` / `-output-tokens-cost-per-1m` (out of scope for #590 — see its Out of scope). **Fallback (`routing-fallback: true`) was NOT reproducible on this SSC** (§0.3 — not fabricated): with a 10-vector `text-embedding-3-small` store, cosine similarity floors ~`0.51`–`0.53` (above the `0.5` threshold, comparison strictly-greater-than) even for gibberish/off-topic prompts, so every request matched a primary topic with `routing-fallback: false`. The fallback-branch header shape therefore remains uncaptured. | 2026-09-24 | live probe against `ddk-semantic-advanced-routing` (instance `21194930`, DDK/Sandbox, private-space) — captured in `python/src/donkey_kit/simulator/_fixtures/anypoint/semantic_routing/` |
 | Semantic caching (#588; consumed by #587) | Request steering will inject `x-cache-*` at the `core/transport/` `_inject_headers` seam; response signals will surface on `core/lastcall.py` + span attrs via `core/telemetry.py`; header names are plain constants in `core/_verify.py`, injected by `core/cachecontrol.py` (#587) | VERIFIED (LIVE) | A proxy with the **Semantic Caching policy** (`semantic-caching-policy-openai-azure-ai-search` 1.0.1) honors five **lowercase** `x-cache-*` request steering headers (spec's `X-Cache-*` casing accepted case-insensitively): `x-cache-skip: true` → `x-semantic-cache-status: bypass`; `x-cache-no-store: true` → `x-semantic-cache-status: no-store` + echo `x-semantic-cache-no-store: true`, entry **not written** (proven by a follow-up `miss` on the same prompt); `x-cache-ttl: 60` → echo `x-semantic-cache-ttl: 60` (default `604800`); `x-cache-threshold: 0.5` → echo `x-semantic-cache-threshold: 0.5000` (default `0.7500`); `x-cache-principal-id: <s>` → echo `x-semantic-cache-principal-id: <s>` and **partitions the similarity filter** (a set principal missed a semantically-near cached entry). Response signals: **`x-semantic-cache-status`** takes all four values `miss`/`hit`/`bypass`/`no-store` (all captured); **`x-semantic-cache-score`** (4-dp, e.g. `1.0000`) is present **only on `hit`**; `x-semantic-cache-ttl` / `-threshold` present on miss/hit/no-store but **absent on `bypass`**. **Cost on hit is proven by verbatim replay, NOT a `total_cost` body field** (#587's description assumed one — it does **not** exist): a `hit` returns the **byte-identical** stored completion (same `chatcmpl-…` id + `usage`) at ~3.0s vs ~9.3s, and the upstream `openai-*`/`x-ratelimit-*`/`x-request-id` headers present on miss/bypass/no-store are **absent on hit** → no provider round-trip. So #587 must derive "zero spend on hit" from `x-semantic-cache-status == hit`, not from a body field. The static per-1M rate hints `x-llm-proxy-input-tokens-cost-per-1m` / `-output-tokens-cost-per-1m` appear on every response and are **not** a per-request charge. Layers cleanly over the model-based routing headers (§ above) without altering them. | 2026-09-24 | live probe against `ddk-semantic-cache` (instance `21195392`, DDK/Sandbox, private-space) — captured in `python/tests/fixtures/anypoint/semantic_cache/` |
 | Token accounting (cost attribution) | `llm/*`, telemetry | VERIFIED (LIVE) | response `usage: {input_tokens, output_tokens, total_tokens, input_tokens_details, output_tokens_details}` — the detail sub-objects carry `cached_tokens` / `cache_write_tokens` (under `input_tokens_details`) and `reasoning_tokens` (under `output_tokens_details`), surfaced per-call at `donkey.last_call` and on the span (#307, see §3); also upstream `x-ratelimit-*` headers passed through (Go-style **duration-string** resets, e.g. `0s`/`12ms` — distinct from the gateway's own `x-llm-proxy-ratelimit`/`x-token-*` window, see §4) | 2026-08-28 | `responses.success.body.json` |
 | Request fields passed through | `llm/client.py` | VERIFIED (LIVE) | OpenAI body passed through verbatim; response returned verbatim (model `gpt-5.1`→`gpt-5.1-2025-11-13`, full Responses object) | 2026-08-28 | live probe |
 | Streaming support | `llm/client.py` | VERIFIED (LIVE) | `"stream": true` → `200`, `content-type: text/event-stream`, chunked SSE (`event: response.created` / `response.in_progress` / …); same `x-llm-proxy-*` headers | 2026-08-28 | live probe (`responses.stream.*`) |
-| Chat-completions streaming over a Gemini upstream (#830) | `llm/client.py` (`donkey.llm.client()` callers), `integrations/strands.py`; `core/transport/streaming.py` (`_SseUsageScanner`) is unaffected | VERIFIED (LIVE) — **non-conformant** (upstream gap) | An OpenAI-format proxy that routes `chat/completions` with `"stream": true` to a **Gemini** upstream answers `200`, `content-type: text/event-stream`, chunked, but each `data:` event is a whole **`chat.completion`** carrying the next piece of text in `choices[0].message`; there is **no `delta`**. `finish_reason` is `"stop"` on **every** event (a tool call too, not `"tool_calls"`), there is **no `data: [DONE]`**, and `usage` sits on every event and is **cumulative** (`stream_options.include_usage` adds no usage-only chunk). Tool calls arrive whole in `message.tool_calls`. The openai SDK builds `ChatCompletionChunk`s without validating them, so `choices[0].delta` is `None` (openai 2.54.0 and 3.22.1), and `chat.completions.stream(...)` raises `AssertionError`. Strands streams by default and fails on every turn (strands-agents 1.57.1); `stream=False` works. `donkey.strands.model()` therefore builds its `OpenAIModel` with `stream=False` (#852); pass `stream=True` only on a route that sends deltas. The SSE usage scanner keeps the latest counts, so `donkey.last_call` and the span still get the terminal totals. Same on all three Gemini routes probed (`ddk-model-wallet`, `ddk-request-compression`, `ddk-multi-route-fallback`); an OpenAI route on the same host (`ddk-openai-model-routing`) streams conformant `chat.completion.chunk` deltas and `[DONE]`. The native Gemini ingress (row above) streams correctly. | 2026-10-01 | live probe — `python/tests/fixtures/anypoint/openai_gemini_stream/`, pinned by `tests/unit/test_openai_gemini_stream_contract.py` |
+| Chat-completions streaming over a Gemini upstream (#830) | `llm/client.py` (`donkey.llm.client()` callers), `integrations/strands.py`; `core/transport/streaming.py` (`_SseUsageScanner`) is unaffected | VERIFIED (LIVE) — **non-conformant** (upstream gap) | An OpenAI-format proxy that routes `chat/completions` with `"stream": true` to a **Gemini** upstream answers `200`, `content-type: text/event-stream`, chunked, but each `data:` event is a whole **`chat.completion`** carrying the next piece of text in `choices[0].message`; there is **no `delta`**. `finish_reason` is `"stop"` on **every** event (a tool call too, not `"tool_calls"`), there is **no `data: [DONE]`**, and `usage` sits on every event and is **cumulative** (`stream_options.include_usage` adds no usage-only chunk). Tool calls arrive whole in `message.tool_calls`. The openai SDK builds `ChatCompletionChunk`s without validating them, so `choices[0].delta` is `None` (openai 2.54.0 and 3.22.1), and `chat.completions.stream(...)` raises `AssertionError`. Strands streams by default and fails on every turn (strands-agents 1.57.1); `stream=False` works. `donkey.strands.model()` therefore builds its `OpenAIModel` with `stream=False` (#852); pass `stream=True` only on a route that sends deltas. The SSE usage scanner keeps the latest counts, so `donkey.last_call` and the span still get the terminal totals. Same on all three Gemini routes probed (`ddk-model-wallet`, `ddk-request-compression`, `ddk-multi-route-fallback`); an OpenAI route on the same host (`ddk-openai-model-routing`) streams conformant `chat.completion.chunk` deltas and `[DONE]`. The native Gemini ingress (row above) streams correctly. **Scope: the v1 transcoder.** On a proxy with the `llm-gw-v2` outbound chain the Gemini chat stream returns 200 with its usage on the last chunk, and `/responses` streams the full named-event lifecycle (live 2026-11-14, #1403, #1409; see the v2 row in the per-upstream matrix). This row and the Strands `stream=False` default remain correct for v1 proxies. | 2026-10-01 | live probe — `python/tests/fixtures/anypoint/openai_gemini_stream/`, pinned by `tests/unit/test_openai_gemini_stream_contract.py` |
 | `/models` endpoint | `llm/catalog.py` | VERIFIED (LIVE) | **Does not exist** — `GET /openai-sdk/models` → `404`, `x-llm-proxy-model-based-routing-success: Request passed through without model-based routing`. The proxy only routes requests carrying `model` in the body; no catalog endpoint. `llm/catalog.py` must source models elsewhere | 2026-08-28 | live probe (`models.notfound.headers.txt`) |
 | Supported providers | `llm/catalog.py` | VERIFIED (CLI) | openai, azureopenai, gemini, **bedrock**, **anthropic** (each a `*-llm-provider-policy-flex` in org `68ef9520…`). From `model-based-routing` 1.0.5 a routing policy may name a vendor in the qualified `groupId:vendor` form (`mulesoft:openai`); see *Qualified vendor in the provider header (#1405)* | 2026-08-28; qualified form 2026-11-03 | `exchange:asset:list llm`; live probes for the qualified form |
 
@@ -249,8 +249,22 @@ fixtures are in `python/tests/fixtures/anypoint/routes/` (the README there lists
 | `/responses` × OpenAI | `llm/client.py`, LangGraph (`use_responses_api=True`), `agent_framework.chat_client()` default | VERIFIED (LIVE) | **200**, verbatim Response (`status: "completed"`). Stream: the full named-event sequence (`response.created` → `in_progress` → `output_item.*` / `content_part.*` / `output_text.delta` + `.done` → `response.completed`). Reject: **400**, native OpenAI envelope | 2026-10-08 | live capture — `python/tests/fixtures/anypoint/routes/``openai.responses.*` |
 | `/responses` × Azure OpenAI | same | VERIFIED (LIVE) — **not served** | **404** `{"error":{"code":"404","message": "Resource not found"}}` on all three shapes, after the proxy routed the model. The body is never validated, so the `temperature: 99` request 404s too. This confirms the #826 / 2026-10-07 probe | 2026-10-08 | live capture — `python/tests/fixtures/anypoint/routes/``azureopenai.responses.*` |
 | `/responses` × Bedrock-Anthropic | same | VERIFIED (LIVE) — stream **partial** | **200**, gateway-transcoded Response (`object: "response"`, per-item `status: "completed"`, top-level `status: null`). Stream: named events `response.created`, `output_item.added`, `content_part.added`, `output_text.delta`, `output_item.done`, `response.completed`. There is **no** `response.in_progress`, `output_text.done` or `content_part.done`; no `output_item.done` carries an `item` and `response.completed` has no `output`, so the `openai` client's `responses.stream()` helper raises `AttributeError` (offline replay, `openai` 3.26.1) while `responses.create(stream=True)` iterates. Reject: **400**, Bedrock envelope as on chat. **Message-typed input re-checked 2026-11-03 (#1409, transcoder impl 1.0.4):** role-only `developer`/`user` messages with string content, a prior assistant output message and list content → **200**. Streamed, it opens with an `output_item.done` for index 0 that no `output_item.added` announced, then streams the text at index 1 | 2026-11-03 | live capture — `python/tests/fixtures/anypoint/routes/``bedrockanthropic.responses.*` (message input: `bedrockanthropic.responses.message_input.*`) |
-| `/responses` × Gemini | same | VERIFIED (LIVE) — stream **non-conformant** | **200**, gateway-transcoded Response (top-level `status: null`). Stream: **one** `data:` event holding the whole Response, with **no `event:` lines**, so a Responses-stream client sees no named events. Reject: **400**, Gemini envelope as on chat | 2026-10-08 | live capture — `python/tests/fixtures/anypoint/routes/``gemini.responses.*` |
+| `/responses` × Gemini | same | VERIFIED (LIVE) — stream **non-conformant** on the v1 transcoder; conformant on v2 (row below) | **200**, gateway-transcoded Response (top-level `status: null`). Stream: **one** `data:` event holding the whole Response, with **no `event:` lines**, so a Responses-stream client sees no named events. Reject: **400**, Gemini envelope as on chat | 2026-10-08 | live capture — `python/tests/fixtures/anypoint/routes/``gemini.responses.*` |
+| `/responses` on the `llm-gw-v2` chain × Anthropic and Gemini (#1409) | `llm/client.py`, the Responses adapters (OpenAI Agents SDK, LangGraph `use_responses_api=True`, `agent_framework` `api="responses"`) | VERIFIED (LIVE) | Through the v2 outbound transcoders (`llm-v2-out-{anthropic,gemini}-to-openai-trans-policy` impl 1.0.1, `llm-v2-out-auth-apikey-policy` 1.0.0, `llm-proxy-core` 1.0.12, `model-based-routing` 1.0.10): **200**, Response with top-level `status: "completed"`. Stream: the full named-event lifecycle on both upstreams (`response.created` → `in_progress` → `output_item.added` / `.done`, reasoning items included for Gemini → `function_call_arguments.delta` / `.done` → `response.completed` with `output` and `usage`), with a contiguous `sequence_number`. The `openai` client's `responses.stream()` helper parses it (offline replay). This closes the v1 Gemini single-event gap (#830) for proxies on the v2 chain. **Tool names round-trip unchanged**: a 147-character name and `mcp.server/get weather!` come back as sent in `output[].name` and in the stream events, both modes. A `get.weather` + `get_weather` pair is accepted (200): the transcoders escape names injectively and hash-truncate only past 128 characters, so the name-collision `400` needs a 64-bit SHA-256 prefix collision and no real request reaches it (#1755). Its body, and the invalid-provider-name `400` (Anthropic), are VERIFIED (POLICY SOURCE) at `microgateway-hybrid-policies` `b3e2ae1f`: Anthropic answers `type: "invalid_request_error"`, Gemini `"unsupported_params_error"`, with `param` `"tools"` (or `"tool_choice"` for Anthropic's invalid name). `classify()` types both as `UpstreamRequestError` with `.param` set, pinned offline. **Gaps (upstream):** a call that exhausts `max_output_tokens` still reports `status: "completed"` with `incomplete_details: null`, and on Gemini `output` can be `[]` when reasoning spent the budget; on `/chat/completions`, `max_tokens` is ignored (`max_completion_tokens` is honoured, `finish_reason: "length"`). Reported upstream as #1754, GUS W-24915236 | 2026-11-14 | live capture from a torn-down probe proxy (instance `21300212`) — `python/tests/fixtures/anypoint/v2_chain/`, pinned by `tests/unit/test_v2_chain_contract.py` |
 | Reject → SDK error | `core/errors.py` (`classify()`) | VERIFIED (LIVE) | All seven 400 envelopes and the Azure 404 map to `UpstreamRequestError`, never a gateway `PolicyViolation`. `code` is the native OpenAI code or the stringified HTTP status. `error_type` is the provider `type`, or `None` for Gemini's empty `type` | 2026-10-08 | pinned by `tests/unit/test_route_upstream_contract.py` |
+
+**v2 Responses stream client compatibility (#1764, offline replay 2026-11-15).**
+The v2 row's `responses.stream()` claim was re-checked with `openai` **1.66.5**
+on Python 3.10.21 and **3.51.0** on Python 3.12: both parse the unchanged
+Anthropic and Gemini captures. Versions **1.66.0, 1.66.1, 1.66.2 and 1.66.3**
+instead construct the sparse initial `response.created` as a
+`ResponseAudioDeltaEvent`, leave its nested `response` as a dict, and raise
+`AttributeError` on `response.to_dict()`. The upstream
+[discriminated-union fix](https://github.com/openai/openai-python/commit/eb3d7ae36d2686645e15840ab369255157247dd9)
+handles Pydantic schemas wrapped in `definitions`. **1.66.5** is the first
+published release containing it (1.66.4 has a git tag but is not on PyPI), so
+the `[llm]` floor is `openai>=1.66.5`; no transport or fixture workaround is
+needed. This is client replay evidence, not a new live gateway capture.
 
 **Decision: MAF/LangGraph default route (#894).** `/chat/completions` is the only
 route all four upstreams serve. `/responses` 404s on Azure OpenAI and only
@@ -377,13 +391,25 @@ detail counts at the pinned version, so they live in the stable `donkey.*`
 namespace). This is a *consumption* of the live-verified §2 shape, so it warrants
 no `UnverifiedValueWarning`.
 
+**On the `llm-gw-v2` chain (#1409, live 2026-11-14)** the transcoders normalise
+Anthropic and Gemini usage to OpenAI semantics before the SDK sees it:
+`input_tokens` / `prompt_tokens` include the cache read, `cached_tokens` is the
+cache read (Anthropic chat 7309 of 7318 on a warm call; Gemini 4709 of 6753),
+and Gemini's thinking shows as `reasoning_tokens`. There is **no cache-write
+count**: cache creation is folded into the input total, so `last_call.cache_write_tokens`
+stays `None` on these proxies. `last_call` reads the shapes with no code change
+(`tests/unit/test_v2_chain_contract.py`, fixtures in
+`python/tests/fixtures/anypoint/v2_chain/`). Anthropic `/responses` caches only
+with `cache_control` on a system `input_text`; a prefix in `instructions` is not
+cached.
+
 | Item | Where used | Status | Verified value | Date | Source |
 |---|---|---|---|---|---|
 | Per-agent attribution unit (direct proxy) | `core/config.py`, transport | VERIFIED (LIVE) | the `client_id`/`client_secret` credential pair = the agent identity; issued per client application | 2026-08-28 | live probe + `policy:list` |
 | Per-agent attribution unit (model-wallet ingress, #372) | `core/config.py`, transport — SDK wiring landed in #509 | VERIFIED (LIVE) | under a **model wallet**, the caller is identified by the JWT `client_id` claim (`ddk-model-wallet-client`) **and** the wallet's `X-Client-Id` request header (`ddk-model-wallet`), matched against the wallet's `predicates` (`group=ddk` AND `client_id=…`) — not the `client_id`/`client_secret` pair. Requires an org IdP. Budget counts against the matched wallet's `modelId` (`openai:gpt-5-mini`); see the §2 "model-wallet ingress" row for the full auth shape. | 2026-09-21 | live probe — `tests/fixtures/anypoint/model_wallet/` (`wallet.definition.json`, `jwt.claims.json`, `responses.success.headers.txt` → `x-model-wallet-selected`) |
 | Gateway identity on response | `core/transport/observe.py` (`x-llm-proxy-llm-provider` → `gen_ai.system`, #192); `core/lastcall.py` **parses** `x-envoy-decorator-operation` and the upstream request id (#362) | VERIFIED (LIVE) | `x-envoy-decorator-operation: api-instance-21133858.00000000-…svc`; `x-correlation-id`; `x-llm-proxy-llm-provider/-llm-model/-routing-type`. **`x-correlation-id` echo semantics (#300):** the gateway returns a client-sent `X-Correlation-Id` **verbatim** (any format: `test-12345`, a dashless `uuid4().hex`, a lowercase header name), and **mints** a dashed UUID only when the request carries none — so a dashed UUID in a capture means no id was sent, not that the gateway replaced one. Holds on gateway-generated responses too (401 bad credentials, 400) and with a client `X-Request-Id` alongside; the response `x-request-id` is the upstream's own id (row below), never an echo. See the run-correlation-id request-header row. | 2026-10-08 | `responses.success.headers.txt`; live probes 2026-10-08 (#300) against `ddk-openai-model-routing` (21177134) and `ddk-bedrock-anthropic-model-routing` (21192625) on shared-omni-gateway, `ddk-azure-openai-model-routing` (21188199) on private-space-omni-gateway |
 | Qualified vendor in the provider header (#1405) | `core/lastcall.py` (`provider_vendor`, `is_substitution`), `core/transport/observe.py` (`gen_ai.system`) | VERIFIED (LIVE) | `model-based-routing` def 1.0.5 / impl 1.0.9 accepts `supportedVendors[].vendor` as `groupId:vendor`. It routes on the suffix and returns the **complete** value: `x-llm-proxy-llm-provider: mulesoft:openai`, `x-llm-proxy-model-based-routing-success: Request successfully matched. Provider: mulesoft:openai, Model: gpt-5-mini.` The same holds for `mulesoft:gemini` and on the fallback path (`mistral/…` → `x-llm-proxy-routing-fallback: true`, provider `mulesoft:openai`). A bare model with two vendors configured is still `400` (`ModelNotRoutable`). The SDK keeps `last_call.served_provider` verbatim (`mulesoft:openai`), records the vendor suffix as the span's `gen_ai.system` (`openai`, OTel expects a bare system name), and `is_substitution()` matches the request's `provider/` prefix against the suffix, so `openai/gpt-5-mini` served as `gpt-5-mini` by `mulesoft:openai` is not a substitution. | 2026-11-03 | live probes against a qualified-vendor model-based proxy (instance `21271481`, DDK/Sandbox, shared-omni-gateway) — captured in `python/tests/fixtures/anypoint/model_routing_qualified_vendor/` |
-| Gateway identity on an `llm-gw-v2` proxy (#1405) | `core/lastcall.py` (`is_substitution`), `core/transport/observe.py`, `core/transport/policy.py` | UNVERIFIED | Expected, not yet captured: on the composable `llm-gw-v2` chain, `x-llm-proxy-routing-type` and `x-llm-proxy-routing-fallback` become internal stream properties (`llm_gw.routing.{type,fallback}`) and are no longer returned. **`x-llm-proxy-llm-provider` is still returned** when `model-based-routing` runs in v2 chain mode (its README "v2 Chain Mode": it returns only `x-llm-proxy-llm-provider` and `x-llm-proxy-model-based-routing-success`); a chain without it emits only `x-llm-proxy-llm-model`. The SDK fails open on any missing header: `served_provider`, `routing_type` and `fallback` stay `None`, the span omits `gen_ai.system` and the routing attributes, and `is_substitution()` compares only the model part of a `provider/model` request when the provider header is absent. The row stays `UNVERIFIED` until a live capture from a v2-chain proxy lands in `python/tests/fixtures/anypoint/` (#1405); the upstream ask for a client-visible signal is #1410. | — | read from `microgateway-hybrid-policies` `99b6ccc1` (2026-11-02): `llm-gw/model-based-routing/README.md` "v2 Chain Mode", `llm-gw-v2/llm-v2-model-router-policy`, `llm-gw-v2/llm-v2-out-model-policy`, ADR-0001 (not a live capture) |
+| Gateway identity on an `llm-gw-v2` proxy (#1405) | `core/lastcall.py` (`is_substitution`), `core/transport/observe.py`, `core/transport/policy.py` | UNVERIFIED | Expected, not yet captured: on the composable `llm-gw-v2` chain, `x-llm-proxy-routing-type` and `x-llm-proxy-routing-fallback` become internal stream properties (`llm_gw.routing.{type,fallback}`) and are no longer returned. **`x-llm-proxy-llm-provider` is still returned** when `model-based-routing` runs in v2 chain mode (its README "v2 Chain Mode": it returns only `x-llm-proxy-llm-provider` and `x-llm-proxy-model-based-routing-success`); a chain without it emits only `x-llm-proxy-llm-model`. The SDK fails open on any missing header: `served_provider`, `routing_type` and `fallback` stay `None`, the span omits `gen_ai.system` and the routing attributes, and `is_substitution()` compares only the model part of a `provider/model` request when the provider header is absent. **Partial live evidence (2026-11-14, #1409):** a proxy pairing `model-based-routing` impl 1.0.10 with the v2 *outbound* transcoders still returned all four headers (`x-llm-proxy-routing-type: ModelBased`, `x-llm-proxy-routing-fallback: false`, `-llm-provider`, `-llm-model`), and `last_call.routing_type` was `ModelBased` (`python/tests/fixtures/anypoint/v2_chain/`). Since `routing-type` was returned, that policy was not in v2 chain mode, so the capture does not cover the composable router chain this row is about. The row stays `UNVERIFIED` until a live capture from a v2-chain proxy lands in `python/tests/fixtures/anypoint/` (#1405); the upstream ask for a client-visible signal is #1410. | — | read from `microgateway-hybrid-policies` `99b6ccc1` (2026-11-02): `llm-gw/model-based-routing/README.md` "v2 Chain Mode", `llm-gw-v2/llm-v2-model-router-policy`, `llm-gw-v2/llm-v2-out-model-policy`, ADR-0001 (not a live capture) |
 | Upstream request id on response (per provider, #542) | `core/lastcall.py:request_id` (shared by `LastCall` + `classify()`) | VERIFIED (LIVE) | provider's own id, passed through — header name varies: OpenAI `x-request-id` (`req_…`); Azure OpenAI `x-request-id` (UUID) + `apim-request-id`; Bedrock **only** `x-amzn-requestid` (no `x-request-id`); native `Format=Anthropic` ingress **only** `request-id` (`req_…`, #827). Resolved in that order, failing open to `None`. | 2026-09-24 | live probe (DDK/Sandbox): `openai-`/`azure-openai-`/`bedrock-anthropic-model-routing`; `anthropic_inbound/responses.success.headers.txt` |
 | Agent→agent egress attribution header | `core/_verify.py` → transport | VERIFIED (build) | `x-anypoint-api-instance-id` → `agent-connection-telemetry` policy `sourceAgentId`; `tracing` labels `mulesoft.api.instance.id`, `mulesoft.api.type=llm` | 2026-08-28 | built `connection.json` (§12.6) |
 | Business-group attribution header name | `core/_verify.py` → transport | UNVERIFIED | not surfaced as a request header in the direct-proxy path | — | — |
@@ -493,6 +519,18 @@ headers.
    1.0.5 / impl 1.0.9, byte-identical on a native Gemini ingress, a
    single-provider and a multi-provider OpenAI ingress (#1547); fixture
    `reject.model-missing.{headers.txt,body.json}`.
+   A third sentence in the same flat envelope, `Provider validation failed:
+   Unsupported provider '<provider>'. No fallback configuration.`, rejects a
+   `provider/model` whose provider has no route on the proxy when no fallback is
+   configured. It comes with no `x-llm-proxy-*` header, and the upstream is not
+   called. `classify()` returns `ModelNotRoutable` with `.provider` set to the
+   named provider, `.model` `None`, and an unsupported-provider remediation.
+   VERIFIED (LIVE) 2026-11-14 on model-based-routing impl 1.0.10, on an OpenAI
+   ingress (`mistral/mistral-small`) and a native Anthropic ingress
+   (`openai/gpt-5-mini`), and byte-identical on impl 1.0.9 (`ddk-openai-model-routing`,
+   `mistral/…` and `anthropic/…`) (#1740); fixtures
+   `tests/fixtures/anypoint/model_routing_unsupported_provider/`. With a fallback
+   configured, the same request goes to the fallback route instead (#1405).
 7. **Request rate limit** — `429` from the stock `rate-limiting` policy (it
    counts requests, not tokens): body `{"error":"Too Many Requests"}`
    (`content-type: application/json; charset=UTF-8`), the unsuffixed
@@ -554,8 +592,8 @@ in either an OpenAI-style object envelope or a Gemini-style **list** envelope
 (`[{"error":{…}}]`, #548) — → `UpstreamRequestError` (carries provider
 `code`/`type`/`param`, with Gemini's `status` standing in for `type`); a non-auth
 4xx whose flat-string `error` says the model "is not in the known unique model
-map", or "Missing 'model' field in request", → `ModelNotRoutable` (item 6,
-#825, #1547); `5xx` →
+map", "Missing 'model' field in request", or "Unsupported provider '…'. No
+fallback configuration", → `ModelNotRoutable` (item 6, #825, #1547, #1740); `5xx` →
 `UpstreamModelError`. Auth is then the verified client-id-enforcement shape: a
 `401`, **or** a `403` carrying a `www-authenticate` header → `AuthError`. A `403`
 **without** `www-authenticate` that matched none of the discriminators above is
@@ -753,6 +791,7 @@ driving `ddk-model-wallet` (2000 tokens/day on `openai:gpt-5-mini`) on instance
 | model-based-routing / upstream | `model-based-routing` `1.0.3` | VERIFIED (LIVE) | passthrough of provider error (OpenAI `400 model_not_found` object) | 2026-08-28 | live probe |
 | model-based-routing, bare model name, more than one provider | applied to `ddk-multi-route-fallback`, `ddk-azure-openai-model-routing` | VERIFIED (LIVE) | gateway's own `400`, flat-string `{"error":"Failed to parse model from request: Model '…' is not in the known unique model map and multiple providers are configured. Use 'provider/model' format."}`, no `x-llm-proxy-*` headers, upstream not called → `ModelNotRoutable` (item 6 above) | 2026-10-01 | live probe (#825) |
 | model-based-routing, no model where the ingress expects one | native Gemini ingress sent an OpenAI body; OpenAI ingress (single- and multi-provider) sent no `model` | VERIFIED (LIVE) | gateway's own `400`, flat-string `{"error":"Failed to parse model from request: Missing 'model' field in request"}`, no `x-llm-proxy-*` headers, upstream not called → `ModelNotRoutable` with `.model` `None` (item 6 above) | 2026-11-02 | live probe on model-based-routing 1.0.5 / impl 1.0.9 (#1547) |
+| model-based-routing, `provider/` prefix with no route and no fallback | OpenAI ingress sent `mistral/…`; native Anthropic ingress sent `openai/…` | VERIFIED (LIVE) | gateway's own `400`, flat-string `{"error":"Provider validation failed: Unsupported provider '…'. No fallback configuration."}`, no `x-llm-proxy-*` headers, upstream not called → `ModelNotRoutable` with `.provider` (item 6 above) | 2026-11-14 | live probe on model-based-routing impl 1.0.9 and 1.0.10 (#1740) |
 | LLM proxy core | `llm-proxy-core` `1.0.5` | applied VERIFIED (LIVE) | on `openai-sdk`; rejection body not yet triggered | 2026-08-28 | `policy:list` |
 | Request rate limiting | `rate-limiting` `1.5.1` (impl `rate-limiting-flex` `1.2.2`), `exposeHeaders: true` | VERIFIED (LIVE) | `429`, body `{"error":"Too Many Requests"}`, the unsuffixed `x-ratelimit-limit`/`-remaining`/`-reset`(ms) trio, no `retry-after`, no `x-token-*`; the same trio on every `200` → `RequestRateLimitExceeded` (item 7 above). See "Request window emission" above. | 2026-10-07 | live probe, `ddk-request-rate-limit` instance 21188400 (#974) |
 | Token rate limiting | interface `llm-token-rate-limit` `1.0.2` (impl `-policy-flex` `1.0.4`) | VERIFIED (LIVE) | Two emission forms: `429` limit-exceeded → **empty body**, numeric trio `x-token-limit`/`x-token-remaining`/`x-token-reset`(ms), no `retry-after`; `200`/`403` under the same policy → the window as prose in a single `x-llm-proxy-ratelimit` header (ms reset). See "Budget window emission" above. | 2026-08-28; re-confirmed 2026-10-07 | applied + live probe; re-probe on `ddk-token-rate-limit` (instance 21188394, #253) |
@@ -1192,6 +1231,352 @@ The 1.108.3 release notes were not otherwise inspected. These are offline checks
 against the local simulator and mock transports, not a new live gateway
 round-trip. Historical live evidence and verification statuses remain unchanged.
 
+#### LangChain Core release re-check (2026-11-12, #1703)
+
+The PR CI lock refresh merged in #1705 (`a74f858a`) selects
+`langchain-core==1.8.0`, superseding the `1.7.7` requested by #1703. The
+LangGraph adapter-contract lock pairs it with `langgraph==1.2.20`,
+`langchain-openai==1.7.4`, `openai==3.49.0` and `pydantic==2.14.3`.
+On Python 3.12.16, a fresh `nox -s 'adapter-contract(langgraph)'` run against
+that merged lock passes (5,709 passed, 811 skipped, 30 deselected), including
+the strict example smoke and conformance kit. In the same environment,
+`verify_frameworks.py --only langgraph --require-installed --emit-verified`
+confirms construction and the expected `langchain_openai.ChatOpenAI` class
+(`langchain_openai.chat_models.base.ChatOpenAI`).
+
+The earlier local review at bot head `91fe2490` also passed the adapter-contract
+suite (5,709 passed, 811 skipped, 30 deselected), strict smoke and offline
+signature/expected-class checks on this framework stack. That review used
+`coverage==7.17.2`; the merged lock and the fresh re-check above use
+`coverage==7.17.3`. The earlier run is not evidence for that final coverage pin.
+
+The [1.7.7 release notes](https://github.com/langchain-ai/langchain/releases/tag/langchain-core%3D%3D1.7.7)
+record a nesting-depth cap in `load()`. The
+[1.8.0 release notes](https://github.com/langchain-ai/langchain/releases/tag/langchain-core%3D%3D1.8.0)
+drop Python 3.10 support (Core now requires Python 3.11+) and add decision
+models. These release-note changes were not separately exercised here; the
+offline checks above do not imply a new adapter impact. DDK retains its Python
+3.10 floor and floor-only extras: the
+[Python 3.10 fresh-resolve CI leg](https://github.com/Donkey-Development-Kit/donkey-development-kit/actions/runs/43273960018/job/131377304032)
+passes with the eligible older `langchain-core==1.7.7`, not Core 1.8.0.
+The [merged-head CI run](https://github.com/Donkey-Development-Kit/donkey-development-kit/actions/runs/43273960018)
+at `a74f858a` is green.
+
+These are offline checks against the local simulator and mock transports.
+**No live re-check was run** and no MCP fixture was re-captured. The historical
+LangGraph `VERIFIED (LIVE)` row, its tested versions and all verification
+statuses remain unchanged. No public behavior or status changes, so the mapped
+LangGraph, configuration and unsupported-boundary website pages need no update.
+
+#### OpenAI release re-check (2026-11-12, #1704)
+
+The lock refresh in #1705 now selects `openai==3.49.0`; the OpenAI Agents
+contract lock pairs it with `openai-agents==0.24.0`, `httpx==0.28.1` and
+`httpx2==2.16.0`. On Python 3.12.16, the prior bot-head `91fe2490` check
+passed `adapter-contract(openai-agents)` (5,708 passed, 814 skipped,
+30 deselected), the strict example smoke and the offline signature check for
+`OpenAIChatCompletionsModel`.
+
+Re-run locally against the current #1705 lock at `a74f858a` on Python 3.12.16:
+`uvx nox --envdir .nox --no-reuse-existing-virtualenvs -s
+'adapter-contract(openai-agents)'` passes with the same 5,708 passed,
+814 skipped and 30 deselected, including the strict example smoke and
+conformance kit. In that session's environment, `verify_frameworks.py --only
+openai_agents --require-installed --emit-verified` confirms construction and
+the expected `agents.OpenAIChatCompletionsModel` class (actual path:
+`agents.models.openai_chatcompletions.OpenAIChatCompletionsModel`); its
+offline-only verdict is `UNVERIFIED (signature confirmed)`, with live not run.
+
+The [OpenAI v3.49.0 release notes](https://github.com/openai/openai-python/releases/tag/v3.49.0)
+add typed async function tools and fix microphone recordings to encode valid
+PCM WAV. Those release-note changes are not runtime claims about DDK's adapter.
+The LlamaIndex locks also now select `openai==3.49.0` with
+`llama-index-llms-openai==0.8.4`: [upstream PR #24138](https://github.com/run-llama/llama_index/pull/24138)
+lifts the `openai<3` ceiling to `<4` and fixes the private schema-helper import
+removed in OpenAI 3.40+. [CI run 43244153291](https://github.com/Donkey-Development-Kit/donkey-development-kit/actions/runs/43244153291)
+on #1705's pre-merge head `48236233` is green across all gates, including
+`llamaindex-transport` and `adapter-contract(llamaindex)`. These are CI results,
+not local LlamaIndex test results for this re-check.
+
+All local checks above are offline against the local simulator and mock
+transports; no live gateway call or new fixture capture was made. Historical
+live evidence and verification statuses remain unchanged.
+
+#### LiteLLM release re-check (2026-11-12, #1706)
+
+The ADK contract lock `python/constraints/adapter-contract-adk-py3.12.txt`,
+refreshed in #1705, selects `litellm==1.109.1`, superseding the 1.109.0
+release that triggered #1706. The installed stack is `google-adk==2.14.0`,
+`google-genai==2.34.0`, `openai==3.49.0`, `httpx==0.28.1` and
+`httpx2==2.16.0`, on Python 3.12.16.
+
+The earlier offline run at lock-refresh revision `91fe2490` passed
+`adapter-contract(adk)` (5,796 passed, 677 skipped, 31 deselected), its strict
+four-scenario example smoke, and the `adk` / `adk.gemini` signature and
+expected-class checks. A fresh run against the final #1705 lock gives the same
+test counts and passes the strict smoke. In that session's environment,
+`verify_frameworks.py --only adk --require-installed --emit-verified` confirms
+construction and the expected `google.adk.models.lite_llm.LiteLlm` and
+`google.adk.models.Gemini` classes; the returned subclasses are
+`GovernedLiteLlm` and `GovernedGemini`. Both runs are offline evidence, not
+new live verification. `LITELLM_LOCAL_MODEL_COST_MAP=True` prevents LiteLLM's
+remote cost-map fetch during the re-check.
+
+The [1.109.0 release notes](https://github.com/BerriAI/litellm/releases/tag/v1.109.0)
+include SDK-relevant OpenAI exception mapping, streaming fixes and cleanup of
+evicted aiohttp SDK clients. The
+[1.109.1 release](https://github.com/BerriAI/litellm/releases/tag/v1.109.1)
+backports [proxy request-body authentication hardening](https://github.com/BerriAI/litellm/pull/51264):
+credential fields such as `client_id` and `client_secret` are restricted in
+request bodies. That is LiteLLM proxy-server behavior, not a change to the
+DDK SDK's consumer-auth request headers sent to an Anypoint proxy. These
+release-note changes were read, not individually verified by this re-check;
+the passing tests establish the existing adapter contract against the locked
+stack, not coverage of every upstream fix.
+
+No adapter, consumer behavior, support depth or verification status changes.
+The historical live evidence remains unchanged: no live gateway call, live
+re-check or new fixture capture was performed.
+
+#### Anthropic release re-check (2026-11-12, #1707)
+
+The lock refresh in #1705 already selects `anthropic==2.8.0` in
+`python/constraints/adapter-contract-anthropic-py3.12.txt`, with
+`openai==3.49.0`, `httpx==0.28.1` and `httpx2==2.16.0`. On Python 3.12.16,
+the prior check at `91fe2490` passed `adapter-contract(anthropic)` (5,653
+passed, 824 skipped, 30 deselected), the strict four-scenario example smoke,
+and the `anthropic.AsyncAnthropic` signature check. Re-running the current
+lock at `a74f858a` on 2026-11-12 gives the same final counts: 5,653 passed,
+824 skipped, 30 deselected. The strict `smoke_example.py anthropic` passes,
+and all four offline conformance scenarios pass. The pinned-version descriptor
+fixture comparison is skipped because no capture exists at 2.8.0; the
+descriptor shape tests still run.
+
+`verify_frameworks.py --only anthropic --require-installed --emit-verified`
+confirms construction and the expected `anthropic.AsyncAnthropic` class.
+Installed-signature inspection confirms `base_url`, `api_key`,
+`default_headers`, `http_client` (typed `httpx2.AsyncClient | None`) and
+`max_retries` remain accepted constructor parameters. The adapter needs no
+constructor or transport changes. The minimum pre-PR sessions
+`typecheck-and-lint`, `test-3.11`, `new-dependencies` and `commit-identities`
+also pass.
+
+The upstream [v2.7.0 release notes](https://github.com/anthropics/anthropic-sdk-python/releases/tag/v2.7.0)
+describe API-error copying/unpickling fixes and provider-specific fixes for
+Bedrock, Vertex and Foundry. The
+[v2.8.0 release notes](https://github.com/anthropics/anthropic-sdk-python/releases/tag/v2.8.0)
+add administrative Claude Tag analytics/settings APIs and harden Bedrock,
+Vertex and Google Cloud path handling. These release-note observations are
+not evidence of new runtime validation by DDK, and those provider-specific
+and administrative paths were not separately exercised here.
+
+This is a docs-only evidence update: all checks above are offline, against
+mock transports and captured fixtures. **No live re-check was performed**:
+neither a new Messages API gateway round-trip nor an MCP fixture re-capture
+is claimed. The historical `VERIFIED (LIVE)` row, earlier live/local evidence
+and verification statuses remain unchanged.
+
+#### CrewAI release re-check (2026-11-13, #1713)
+
+The lock refresh in #1705 (`a74f858a`) already selects `crewai==1.15.40`,
+`crewai-cli==1.15.40`, `crewai-core==1.15.40` and `crewai-tools==1.15.40`
+in `python/constraints/adapter-contract-crewai-py3.12.txt`. A fresh local
+`nox -s 'adapter-contract(crewai)'` run at `be39000e` on Python 3.12.16
+passes: 5,730 passed, 763 skipped, 31 deselected. The installed stack includes
+`openai==2.54.0`, `httpx==0.28.1`, `httpx2==2.16.0`, `mcpadapt==0.1.20`
+and `mcp==1.30.0`. The strict example smoke builds the native object and
+passes the conformance kit. In that same environment,
+`verify_frameworks.py --only crewai --require-installed --emit-verified`
+confirms construction and the expected
+`crewai.llms.providers.openai.completion.OpenAICompletion` class; its
+offline-only verdict is `UNVERIFIED (signature confirmed)`, with live not run.
+
+The pinned-version descriptor fixture comparison is skipped because no capture
+exists at CrewAI 1.15.40; the descriptor shape tests still run. The suite emits
+a `PytestUnhandledThreadExceptionWarning` from MCPAdapt's background thread
+during `test_cross_origin_redirect_never_forwards_the_credential[crewai]`:
+the MCP client raises `HTTPStatusError` for the unfollowed redirect. The test
+passes, but this run is not evidence of warning-free background cleanup.
+
+The upstream [1.15.40 release notes](https://github.com/crewAIInc/crewAI/releases/tag/1.15.40)
+describe removal of ChromaDB from the embedding-function layer, historical
+state lookup by row ID, JSONL RAG discovery, JSON-by-default standalone-agent
+scaffolding, and async `after_llm_call` hook and unresolved AMP-app fixes.
+These release-note changes were read, not individually exercised by this
+re-check. The passing checks establish the existing DDK adapter contract
+against the locked stack, not coverage of every upstream change.
+
+All checks above are offline against the local simulator and mock transports.
+**No live re-check or new fixture capture was performed.** Historical live
+evidence, verification statuses, and CrewAI's `connection_kwargs()` support
+depth remain unchanged. No adapter or public behavior changed, so the mapped
+CrewAI, configuration and unsupported-boundary website pages need no update.
+
+#### Google ADK release re-check (2026-11-13, #1721)
+
+The lock refresh in #1726 (merged as `c6a2c74b`; tested at its head `f329a679`, same tree) selects `google-adk==2.14.1` in
+`python/constraints/adapter-contract-adk-py3.12.txt`, with
+`google-genai==2.34.0`, `litellm==1.109.1`, `openai==3.50.0`, `httpx==0.28.1`
+and `httpx2==2.16.0`. A fresh local install of that lock (the
+`adapter-contract` install command, `.[llm,local,adk]` with the `contract-adk`
+group) on Python 3.12.16 passes the whole suite: 5,796 passed, 677 skipped,
+31 deselected. `scripts/smoke_example.py adk` builds the native object and
+passes the conformance kit. `verify_frameworks.py --only adk --require-installed
+--emit-verified` confirms construction and the expected
+`google.adk.models.lite_llm.LiteLlm` and `google.adk.models.Gemini` classes;
+the returned subclasses are `GovernedLiteLlm` and `GovernedGemini`, and the
+offline-only verdict for both `adk` and `adk.gemini` is `UNVERIFIED (signature
+confirmed)`, with live not run. `LITELLM_LOCAL_MODEL_COST_MAP=True` prevents
+LiteLLM's remote cost-map fetch during the re-check.
+
+The [2.14.1 release notes](https://github.com/google/adk-python/releases/tag/v2.14.1)
+list a single bug fix: FastAPI's native tracing is turned off on Agent Engine.
+DDK's adapter does not use the ADK FastAPI server or Agent Engine deployment,
+so this was read, not exercised by this re-check; the passing tests establish
+the existing adapter contract against the locked stack, not coverage of every
+upstream change.
+
+#### MS Agent Framework release re-check (2026-11-13, #1722)
+
+The lock refresh in #1726 (merged as `c6a2c74b`; tested at its head `f329a679`, same tree) selects `agent-framework==1.26.0`,
+`agent-framework-core==1.26.0` and `agent-framework-openai==1.18.2` in
+`python/constraints/adapter-contract-agent_framework-py3.12.txt` and
+`agent-framework-middleware-py3.12.txt`, with `openai==3.50.0`, `mcp==2.3.0`,
+`httpx==0.28.1` and `httpx2==2.16.0`. A fresh local install on Python 3.12.16
+mirroring the `adapter-contract` install command confirms those versions. The
+full suite (`pytest -q` with `DONKEY_CONTRACT_EXTRA=agent_framework`) passes:
+6,220 passed, 402 skipped, 31 deselected, and the strict example smoke builds
+the native object and passes the conformance kit. In that environment,
+`verify_frameworks.py --only agent_framework agent_framework.responses
+--require-installed --emit-verified` confirms construction and the expected
+native class for both `OpenAIChatCompletionClient` (actual path
+`agent_framework_openai._chat_completion_client.OpenAIChatCompletionClient`)
+and `OpenAIChatClient` (`agent_framework_openai._chat_client.OpenAIChatClient`);
+the offline-only verdict for both is `UNVERIFIED (signature confirmed)`, with
+live not run. `nox -s agent-framework-middleware` passes (97 passed, 69 skipped).
+
+The pinned-version descriptor fixture comparison is skipped because no capture
+exists at agent-framework 1.26.0; the descriptor shape tests still run.
+
+The upstream [python-1.26.0 release notes](https://github.com/microsoft/agent-framework/releases/tag/python-1.26.0)
+were read. Items nearest DDK's adapter are Core fixes to Pydantic tool-result
+serialization and alias-keyed structured output, run-level tool approval
+isolation when an agent is exposed as a tool, and OpenAI-package changes that
+bind FIDES policy state to service-history continuations (Core 1.26 floor for
+`agent-framework-openai`). The release also deprecates the experimental
+`MemoryContextProvider` and `MemoryStore` family, makes GitHub Copilot and
+Hyperlight changes marked BREAKING, and widens dependency ranges for
+Anthropic 2.x and Google GenAI 3.x. DDK uses none of the deprecated or
+breaking packages. These release-note changes were read, not individually
+exercised by this re-check; the passing checks establish the existing DDK
+adapter contract against the locked stack, not coverage of every upstream
+change.
+
+#### OpenAI release re-check (2026-11-13, #1725)
+
+The nightly lock refresh in #1726 (merged as `c6a2c74b`; tested at its head `f329a679`, same tree) moves `openai` from 3.49.0 to
+`openai==3.50.0` in `python/constraints/adapter-contract-openai-agents-py3.12.txt`;
+the same pin pairs it with `openai-agents==0.24.0`, `httpx==0.28.1` and
+`httpx2==2.16.0`. The refresh also moves `pytest-asyncio` to 1.5.0 and `ruff`
+to 0.17.5. A fresh install on Python 3.12.16 with that lock (the
+`adapter-contract` install command for the `openai-agents` extra) confirms
+`openai 3.50.0`. The whole suite passes: 5,708 passed, 814 skipped, 30 deselected.
+The strict example smoke builds the native object and passes the conformance
+kit. In that same environment,
+`verify_frameworks.py --only openai_agents --require-installed --emit-verified`
+confirms construction and the expected `agents.OpenAIChatCompletionsModel` class
+(actual path: `agents.models.openai_chatcompletions.OpenAIChatCompletionsModel`);
+its offline-only verdict is `UNVERIFIED (signature confirmed)`, with live not run.
+
+The [OpenAI v3.50.0 release notes](https://github.com/openai/openai-python/releases/tag/v3.50.0)
+list one feature, exposing reasoning input transformations on responses, plus a
+CI action bump and a review-handoff documentation change. DDK uses none of
+these surfaces, and they were read, not individually exercised by this re-check.
+The passing checks establish the existing DDK adapter contract against the
+locked stack, not coverage of every upstream change.
+
+All checks above are offline against the local simulator and mock transports.
+**No live re-check or new fixture capture was performed.** Historical live
+evidence and verification statuses remain unchanged. No adapter or public
+behavior changed, so the mapped ADK, configuration and unsupported-boundary
+website pages need no update.
+
+#### LangGraph release re-check (2026-11-13, #1724)
+
+The PR CI lock refresh in #1726 (merged as `c6a2c74b`; tested at its head `f329a679`, same tree) selects `langgraph==1.2.21` in
+`python/constraints/adapter-contract-langgraph-py3.12.txt`, paired with
+`langchain-core==1.8.0`, `langchain-openai==1.7.4`, `openai==3.50.0`,
+`httpx==0.28.1`, `httpx2==2.16.0`, `pydantic==2.14.3` and `coverage==7.17.3`.
+A fresh Python 3.12.16 venv installed with that constraint file (the
+`adapter-contract` install command) reports `langgraph 1.2.21`. Its full
+`pytest -q` passes: 5,709 passed, 811 skipped, 30 deselected. The strict
+`smoke_example.py langgraph` builds the native object and passes the
+conformance kit. In the same environment, `verify_frameworks.py --only
+langgraph --require-installed --emit-verified` confirms construction and the
+expected `langchain_openai.ChatOpenAI` class
+(`langchain_openai.chat_models.base.ChatOpenAI`); its offline-only verdict is
+`UNVERIFIED (signature confirmed)`, with live not run.
+
+The [langgraph 1.2.21 release notes](https://github.com/langchain-ai/langgraph/releases/tag/1.2.21)
+list `get_subgraphs` whole-namespace-segment matching, reading an undeclared
+subgraph namespace with the parent graph, an `UnknownInterruptError` docs
+clarification that each `interrupt()` call has its own id, and dependency bumps.
+These changes were read, not individually exercised by this re-check. DDK's
+LangGraph adapter uses `interrupt()` and `Command(resume=...)` for approvals and
+does not call `get_subgraphs`; the passing checks establish the existing adapter
+contract against the locked stack, not coverage of every upstream change.
+DDK retains its Python 3.10 floor and floor-only extras: the
+[`all-extra-resolves (3.10)` CI job](https://github.com/Donkey-Development-Kit/donkey-development-kit/actions/runs/43443601890)
+passes at `f329a679`, as does `adapter-contract (langgraph)` in that run.
+
+These are offline checks against the local simulator and mock transports.
+**No live re-check was run** and no MCP fixture was re-captured. The historical
+LangGraph `VERIFIED (LIVE)` row, its tested versions and all verification
+statuses remain unchanged. No public behavior or status changes, so the mapped
+LangGraph, configuration and unsupported-boundary website pages need no update.
+
+#### CrewAI release re-check (2026-11-13, #1723)
+
+The lock refresh in #1726 (merged as `c6a2c74b`; tested at its head `f329a679`, same tree) selects `crewai==1.15.41`,
+`crewai-cli==1.15.41`, `crewai-core==1.15.41` and `crewai-tools==1.15.41`
+in `python/constraints/adapter-contract-crewai-py3.12.txt`. A fresh local
+`nox -s 'adapter-contract(crewai)'` run at `f329a679` on Python 3.12.16
+passes: 5,730 passed, 763 skipped, 31 deselected. The installed stack includes
+`openai==2.54.0`, `httpx==0.28.1`, `httpx2==2.16.0`, `mcpadapt==0.1.20`
+and `mcp==1.30.0`. The strict example smoke builds the native object and
+passes the conformance kit. In that same environment,
+`verify_frameworks.py --only crewai --require-installed --emit-verified`
+confirms construction and the expected
+`crewai.llms.providers.openai.completion.OpenAICompletion` class; its
+offline-only verdict is `UNVERIFIED (signature confirmed)`, with live not run.
+
+The pinned-version descriptor fixture comparison is skipped because no capture
+exists at CrewAI 1.15.41; the descriptor shape tests still run. The suite again
+emits a `PytestUnhandledThreadExceptionWarning` from MCPAdapt's background
+thread during
+`test_cross_origin_redirect_never_forwards_the_credential[crewai]`: the MCP
+client raises `HTTPStatusError` for the unfollowed redirect. The test passes,
+but this run is not evidence of warning-free background cleanup.
+
+The upstream [1.15.41 release notes](https://github.com/crewAIInc/crewAI/releases/tag/1.15.41)
+describe approved private URL hosts, a PyMuPDF 2.x dependency fix, preserved
+step outputs across a human-feedback resume, stripping of the `cache_breakpoint`
+marker on the LiteLLM path, and a URL-read test cleanup. These release-note
+changes were read, not individually exercised by this re-check. The passing
+checks establish the existing DDK adapter contract against the locked stack,
+not coverage of every upstream change.
+
+All checks above are offline against the local simulator and mock transports.
+**No live re-check or new fixture capture was performed.** Historical live
+evidence, verification statuses, and CrewAI's `connection_kwargs()` support
+depth remain unchanged. No adapter or public behavior changed, so the mapped
+CrewAI, configuration and unsupported-boundary website pages need no update.
+
+behavior changed, so the mapped MS Agent Framework, configuration and
+
+behavior changed, so the mapped OpenAI Agents, configuration and
+unsupported-boundary website pages need no update.
+
 ### 8.1 Known upstream incompatibilities (floors, not ceilings)
 
 Per the floors-never-ceilings rule the extras declare **floors and no ceilings**, so a fresh resolve always
@@ -1201,7 +1586,7 @@ run is diagnosable instead of surprising.
 
 | Dependency | Breaks at | Symptom | Status | Date |
 |---|---|---|---|---|
-| `openai` | `>=3.0` | The SDK passes its shared `DonkeyAsyncClient` (an `httpx.AsyncClient` subclass) into `AsyncOpenAI(http_client=…)`. openai 3.x retyped that parameter to `httpx2.AsyncClient`, a distinct class from a separate distribution, so `mypy --strict` flagged `llm/client.py` and `integrations/openai_agents.py`. **Type-annotation-only** — when an `http_client` is injected, openai builds and sends every request *through that client*, so `httpx2` never touches our path. Since #728, where the SDK builds the `OpenAI`/`AsyncOpenAI` itself it no longer relies on openai accepting an `httpx` client: when `openai.DefaultAsyncHttpxClient` is built on `httpx2` (openai 3.x), `donkey.llm.client()` (async and sync) and the adapters that pre-build an `AsyncOpenAI` (`_proxy_openai_client`: OpenAI Agents SDK, MS Agent Framework, ADK `client`) pass the same core `httpx2` bridge the `anthropic` row below uses (`core/transport/httpx2.py`, chosen by `built_on_httpx2()`); openai `<3` keeps the non-owning view. The adapters whose framework builds the OpenAI client from an `http_client` kwarg (LangGraph `http_async_client`/`http_client`, LlamaIndex `async_http_client`/`http_client`, Strands `client_args["http_client"]`) hand it a *reusable* variant of the same bridge on openai 3.x (its close is a no-op, because Strands closes its client after every request), and the view on openai `<3`; one helper (`llm.client.openai_http_client` / `openai_sync_http_client`) makes the choice for all of them, pinned by `test_adapter_openai3_bridge.py` (#728). The LlamaIndex lock still selects `openai==2.54.0`; older `strands-agents[openai]` releases also pinned `openai<3`, but `strands-agents==1.63.0` now resolves naturally with `openai==3.42.1` and exercises the reusable bridge alongside LangGraph (offline re-check 2026-11-02, #1523, above). **Mitigated** with a `cast(Any, …)` on the argument at the three version-conditional `http_client` sites (`llm/client.py` ×2 and `_proxy_openai_client` in `integrations/_base.py`) — `cast(Any, …)` erases the type on both majors, so `mypy --strict` passes under **both** openai `<3` and `>=3` (was a targeted `# type: ignore[arg-type]` / `cast("httpx.Response", …)` that passed only under openai `>=3` and became `unused-ignore` / `redundant-cast` under openai `<3`, #597; original guards #137). The `exc.response` side needs no guard: `classify()` and `DonkeyError.response` take the structural `ResponseLike` Protocol (`core/_response.py`), which `httpx.Response` and `httpx2.Response` both satisfy, so the documented `classify(exc.response)` type-checks on both majors; pinned by `tests/typecheck/classify_response_contract.py` (#933). **Runtime re-verified and test-pinned** against openai 3.x (async + sync): `test_llm_client_openai3_injection.py` drives `donkey.llm.client()` through a mock transport and asserts the `client_id`/`client_secret` pair is injected and the base URL carries no `/v1` (#18). | MITIGATED | 2026-10-07 |
+| `openai` | `>=3.0` | The SDK passes its shared `DonkeyAsyncClient` (an `httpx.AsyncClient` subclass) into `AsyncOpenAI(http_client=…)`. openai 3.x retyped that parameter to `httpx2.AsyncClient`, a distinct class from a separate distribution, so `mypy --strict` flagged `llm/client.py` and `integrations/openai_agents.py`. **Type-annotation-only** — when an `http_client` is injected, openai builds and sends every request *through that client*, so `httpx2` never touches our path. Since #728, where the SDK builds the `OpenAI`/`AsyncOpenAI` itself it no longer relies on openai accepting an `httpx` client: when `openai.DefaultAsyncHttpxClient` is built on `httpx2` (openai 3.x), `donkey.llm.client()` (async and sync) and the adapters that pre-build an `AsyncOpenAI` (`_proxy_openai_client`: OpenAI Agents SDK, MS Agent Framework, ADK `client`) pass the same core `httpx2` bridge the `anthropic` row below uses (`core/transport/httpx2.py`, chosen by `built_on_httpx2()`); openai `<3` keeps the non-owning view. The adapters whose framework builds the OpenAI client from an `http_client` kwarg (LangGraph `http_async_client`/`http_client`, LlamaIndex `async_http_client`/`http_client`, Strands `client_args["http_client"]`) hand it a *reusable* variant of the same bridge on openai 3.x (its close is a no-op, because Strands closes its client after every request), and the view on openai `<3`; one helper (`llm.client.openai_http_client` / `openai_sync_http_client`) makes the choice for all of them, pinned by `test_adapter_openai3_bridge.py` (#728). The LlamaIndex locks now select `openai==3.49.0` with `llama-index-llms-openai==0.8.4` after [upstream PR #24138](https://github.com/run-llama/llama_index/pull/24138) lifted the `openai<3` ceiling and fixed the private schema-helper import (2026-11-12, #1704, above); older `strands-agents[openai]` releases also pinned `openai<3`, but `strands-agents==1.63.0` now resolves naturally with `openai==3.42.1` and exercises the reusable bridge alongside LangGraph (offline re-check 2026-11-02, #1523, above). **Mitigated** with a `cast(Any, …)` on the argument at the three version-conditional `http_client` sites (`llm/client.py` ×2 and `_proxy_openai_client` in `integrations/_base.py`) — `cast(Any, …)` erases the type on both majors, so `mypy --strict` passes under **both** openai `<3` and `>=3` (was a targeted `# type: ignore[arg-type]` / `cast("httpx.Response", …)` that passed only under openai `>=3` and became `unused-ignore` / `redundant-cast` under openai `<3`, #597; original guards #137). The `exc.response` side needs no guard: `classify()` and `DonkeyError.response` take the structural `ResponseLike` Protocol (`core/_response.py`), which `httpx.Response` and `httpx2.Response` both satisfy, so the documented `classify(exc.response)` type-checks on both majors; pinned by `tests/typecheck/classify_response_contract.py` (#933). **Runtime re-verified and test-pinned** against openai 3.x (async + sync): `test_llm_client_openai3_injection.py` drives `donkey.llm.client()` through a mock transport and asserts the `client_id`/`client_secret` pair is injected and the base URL carries no `/v1` (#18). | MITIGATED | 2026-10-07 |
 | The framework extras together (`adk`, `agent_framework`, `anthropic`, `crewai`, …) | `anthropic>=1.0`, `google-adk>=2.10`, `agent-framework>=1.19` | On 2026-09-30 the framework extras were not co-installable at their releases of the day. `agent-framework-anthropic` (pulled in by every `agent-framework`) requires `anthropic<1`, while the `anthropic` extra resolves to 1.x; `google-adk>=2.10` requires `opentelemetry-api`/`-sdk<=1.42.1`, while `agent-framework>=1.19` needs OpenTelemetry `>=1.43`. With all of them in one resolve, pip backtracks for minutes and exits `resolution-too-deep`; raising the floors to the §8-verified versions makes the set unsatisfiable, so no floor fixes it. **Mitigated** by scoping `all` to the extras that install together (`llm`, `langgraph`, `otel`, `cli`, `local`, since joined by `a2a` and `mcp`, #1436); each framework extra resolves on its own and alongside `all`, at its newest release. CI dry-runs `.[all]` on every PR and nightly so a new upstream conflict fails there first (#697). Since #769 the nightly `co-installability` job regenerates the pairwise table in [`co-installability.md`](co-installability.md) with uv and fails when it changes. On 2026-10-10 every framework extra resolved on its own, in every pair, and all eight together with `[all]` (uv, and `pip install --dry-run` on Python 3.12). `all` stays scoped: no floor can keep a co-install true. Re-read 2026-10-14 (#1126): `agent-framework-anthropic` 1.0.0b261008 (with `agent-framework` 1.21.0) now requires `anthropic>=1.11.0,<2` (b261002 required `>=0.80.0,<0.117.0`), so the `anthropic<1` half of this conflict no longer applies to `agent_framework`; the `google-adk` / OpenTelemetry half is unchanged and is not re-checked here, and `scripts/coinstall_matrix.py` was not re-run. | MITIGATED | 2026-10-10 |
 | `anthropic` | `>=1.0` | `anthropic` 1.0 moved from `httpx` to `httpx2` (Pydantic's continuation of `httpx`: same API, separate distribution and classes) and, unlike openai 3.x above, **rejects** an `httpx` object at runtime: `AsyncAnthropic(http_client=<DonkeyAsyncClient>)` raised `TypeError: Invalid 'http_client' argument; 'httpx.AsyncClient' is from the 'httpx' package, but this SDK uses 'httpx2'`, so `donkey.anthropic.client()` failed on every 1.x release. The old `[all]` hid it, because `agent-framework-anthropic` held `anthropic<1` there. **Mitigated** without a ceiling: on `anthropic>=1.0` the adapter passes an `httpx2.AsyncClient` whose transport forwards each request through the shared `DonkeyAsyncClient` (the core bridge `core/transport/httpx2.py`, #728), so header injection, retries and the 401 refresh, the GenAI span, budget and `donkey.last_call` still run in one HTTP stack; `anthropic<1` gets the shared client's non-owning view (#733). The stack is chosen from `anthropic.DefaultAsyncHttpxClient` (an `httpx.AsyncClient` subclass before 1.0). The transport cannot see `send(stream=…)`, so the bridge streams when the JSON body carries `"stream": true` or the `X-Stainless-Raw-Response: stream` header is set; only these Stainless-style signals are recognised. The bridge has a blocking twin over the shared `DonkeyClient` (#728). The ids the shared client sends are copied back onto the framework's request, so `classify(exc.response)` carries the run's correlation id and the sent call id on both stacks (#738). Pinned by `test_anthropic_httpx2_bridge.py` and `test_anthropic_client_stacks.py` (a real client end to end, run on `anthropic==1.9.0` and `0.125.0`) (#701, #738). | MITIGATED | 2026-10-01 |
 | `langgraph` × `langchain-core` | `langgraph==0.5.0` with `langchain-core>=1.0` | `langgraph` 0.5.0 declares `langchain-core>=0.1` but fails at import against langchain-core 1.x (`TypeError: Cannot create a consistent method resolution order (MRO) for bases ABC, Generic`). A single upstream point release: 0.4.0, 0.4.10, 0.5.4 and 0.6.0 all pass the LangGraph tests and the conformance suite against langchain-core 1.x. No resolve picks it unless `langgraph==0.5.0` is pinned (a fresh resolve takes the newest; lowest-direct takes 0.4.0). Recorded, not excluded: excluding it would be a ceiling-style exclusion (#743). | OPEN (upstream) | 2026-10-01 |
@@ -1249,7 +1634,7 @@ offline evidence, not a live round-trip.
 
 | Extra | Floor | Why this floor | §8 row |
 |---|---|---|---|
-| `llm` | `openai>=1.66` | First openai with the Responses API (`client.responses`), the data plane `donkey.llm.client()` speaks (§2). | — (§2) |
+| `llm` | `openai>=1.66.5` | First published release with the discriminated-union fix needed by the captured v2 Responses streams (#1764, upstream openai/openai-python#2206). 1.66.0–1.66.3 crash `responses.stream()` on `response.created`; 1.66.4 is not on PyPI. 1.66.5 passes the unchanged Anthropic and Gemini replays on Python 3.10.21 (2026-11-15). The Responses API itself first appeared in 1.66.0. | — (§2) |
 | `langgraph` | `langgraph>=0.4`, `langchain-openai>=0.3.9`, `langchain-core>=0.3.45` | langchain-openai 0.3.9 added `use_responses_api`, which the adapter always passes; on 0.3.8 and earlier it lands in the request body instead of switching the route. langgraph 0.3.x does not return `__interrupt__` from `ainvoke` on a pause, so the `interrupt()` composition test fails. langchain-core 0.3.45 is what langchain-openai 0.3.9 requires. The conformance plugin passes 4/4 at these floors. | LangGraph |
 | `adk` | `google-adk>=2.4`, `litellm[mcp]>=1.84` | 2.4.0 is the first whose `Gemini` has `client_kwargs`. Below it, ADK's pydantic config drops the kwarg silently and `gemini()` bypasses the gateway (#735). `LiteLlm` and `Gemini` both pass the signature check at 2.4.0. litellm's own `mcp` extra, not a floor: from 1.106.0 a request with `tools` imports `litellm.proxy._experimental.mcp_server.catalog`, which does `from mcp.types import CacheableResult` at module level, and plain `litellm` does not install `mcp`, so a tool-bearing `model()` run fails with "No module named 'mcp'" (#1267, BerriAI/litellm#46045; still present in 1.106.4 and 1.107.0rc2). From litellm 1.103.0 the extra brings `mcp>=2.2,<3` (litellm's range, not ours); `mcp` 1.x has no `CacheableResult`. litellm 1.100.0–1.102.x bring `mcp>=1.28.1,<2.0`, and below 1.100.0 litellm declares no `mcp` extra, so `[mcp]` installs nothing at the `>=1.84` floor. That is harmless, because the module-level import arrived in 1.106.0 (PyPI `provides_extra` and `requires_dist`, checked 2026-10-30). Reproduced offline on `adapter-contract-adk-py3.12.txt` before the fix and passing after it (`test_adk_model_runner_with_a_tool_reaches_the_answer`). | Google ADK; Google ADK (native Gemini) |
 | `agent_framework` | `agent-framework>=1.13` | Bisected from the verified 1.19.0. In 1.0.0–1.11.0 `agent_framework.openai.OpenAIChatClient` does not exist, so the adapter raises its `blocked on verification` import error. 1.12.0 builds it and passes the signature check, but `test_framework_redirects.py::test_agent_framework` fails: the call never reaches the proxy. 1.13.0 is the first that passes both. | MS Agent Framework |
@@ -1271,7 +1656,7 @@ each extra with `uv pip install --resolution lowest-direct` on Python 3.10, runs
 the unit and adapter-contract suites, and then `scripts/check_floors.py` fails
 the leg if any declared floor is not the installed version. The framework legs
 leave `[llm]` out, because a framework that needs a newer `openai` than
-`openai>=1.66` would otherwise push its own resolve above its floor. The
+`openai>=1.66.5` would otherwise push its own resolve above its floor. The
 `openai-1x` PR job holds `[llm]` to the 1.x line (`openai<2`).
 
 ### 8.4 Docs status roster

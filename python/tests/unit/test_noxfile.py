@@ -258,6 +258,19 @@ def test_ci_pins_the_nox_version_the_noxfile_needs() -> None:
     assert needs == f">={version}"
 
 
+def test_base_dependency_check_runs_in_the_clean_wheel_environment() -> None:
+    checks = [
+        node
+        for node in ast.walk(_sessions()["base-only"])
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "session.run"
+        and any(isinstance(arg, ast.Name) and arg.id == "_NO_PYDANTIC" for arg in node.args)
+    ]
+    assert len(checks) == 1
+    assert ast.unparse(checks[0].args[0]) == "str(bindir / 'python')"
+    assert any(k.arg == "external" and ast.literal_eval(k.value) for k in checks[0].keywords)
+
+
 def _lock_pin(package: str) -> str:
     for line in _require(_LINT_LOCK).read_text(encoding="utf-8").splitlines():
         if line.startswith(f"{package}=="):

@@ -457,7 +457,7 @@ donkey.classify.register(
 
 ## 2.3 Human-in-the-loop normalisation + step-up routing
 
-**What it is.** One SDK vocabulary for "pause and ask a human," mapped onto each framework's native primitive, with an option to route the approval through the gateway's identity layer.
+**What it is.** One SDK vocabulary for "pause and ask a human," mapped onto each framework's native primitive. Local approvals are advisory; the gateway's own step-up is a separate, policy-driven outcome, not a routing target for a local approval.
 
 | Framework / protocol | Native primitive the SDK maps to |
 |---|---|
@@ -477,7 +477,9 @@ When the agent calls `issue_refund`, the SDK raises `ApprovalRequired` (or trigg
 
 **Why it matters — Scenario A.** Refunds over €100 need a human. Today that is bespoke code per team per framework. With this, it is a decorator argument, the pending approval is visible in the span (1.6), and the approver's identity lands in the audit trail (1.7).
 
-**Honest note.** Every framework already has HITL. The value is *normalisation* (one vocabulary), *auditability* (correlation + approver in the trail), and *gateway routing* (step-up MFA) — not a new mechanism. Do not build a queue or an approval UI; integrate with what the customer has (Slack, ServiceNow, LangGraph's checkpointer).
+`risk=` is advisory metadata for the local approver, existing approval events and scan/Exchange publication. It does not require approval by itself, select a gateway policy, travel with gateway tool calls or initiate step-up (#1402). The gateway decides step-up from its own policy configuration; the SDK reports typed pending/denied outcomes (#214).
+
+**Honest note.** Every framework already has HITL. The value is *normalisation* (one vocabulary) and *auditability* (correlation + approver in the trail), not a new mechanism or client-requested gateway routing. Do not build a queue or an approval UI; integrate with what the customer has (Slack, ServiceNow, LangGraph's checkpointer).
 
 **Effort:** L.
 

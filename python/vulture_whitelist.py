@@ -204,3 +204,5 @@ _.is_a  # unused method (src/donkey_kit/core/runledger.py)
 # (#1533, tests/unit/test_llm_metadata.py, website/content/tool-access/discovery.mdx).
 platform  # unused variable (src/donkey_kit/registry/models.py)
 input_format  # unused variable (src/donkey_kit/registry/models.py)
+_.missing_model_remediation  # public class attribute: ModelNotRoutable's #1547 wording (tests, errors.mdx)
+_.unsupported_provider_remediation  # public class attribute: ModelNotRoutable's #1740 wording (tests, errors.mdx)

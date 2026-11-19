@@ -1,0 +1,9 @@
+event: response.created
+data: {"response":{"id":"MZf4asmVFbb5jrEPl6b2-AQ","object":"response","model":"gemini-3.8-flash","status":"in_progress","output":[],"usage":null},"type":"response.created","sequence_number":0}
+
+event: response.in_progress
+data: {"response":{"id":"MZf4asmVFbb5jrEPl6b2-AQ","object":"response","model":"gemini-3.8-flash","status":"in_progress","output":[],"usage":null},"type":"response.in_progress","sequence_number":1}
+
+event: response.completed
+data: {"response":{"id":"MZf4asmVFbb5jrEPl6b2-AQ","object":"response","model":"gemini-3.8-flash","status":"completed","usage":{"input_tokens":106,"input_tokens_details":{"cached_tokens":0},"output_tokens":296,"output_tokens_details":{"reasoning_tokens":287},"total_tokens":402},"output":[]},"type":"response.completed","sequence_number":2}
+

@@ -106,8 +106,21 @@ _REJECTION_SHAPES = frozenset(
 # fixture (no synthesised budget window), so the replay stays byte-faithful.
 # The two qualified-vendor 200s (#1412) drive a ``groupId:vendor`` provider
 # (``mulesoft:openai``) on a matched route and on the policy fallback.
+# The llm-gw-v2 shapes (#1412) drive the normalised v2 usage: Anthropic and
+# Gemini /responses (each also streamed), a Gemini cache read with reasoning
+# tokens, and an Anthropic chat cache read.
 _HAPPY_SHAPES = frozenset(
-    {"success-semantic", "success-qualified-vendor", "fallback-qualified-vendor"}
+    {
+        "success-semantic",
+        "success-qualified-vendor",
+        "fallback-qualified-vendor",
+        "v2-anthropic",
+        "v2-anthropic-stream",
+        "v2-gemini",
+        "v2-gemini-stream",
+        "v2-gemini-cached",
+        "v2-anthropic-chat-cached",
+    }
 )
 
 # Every shape the model-id sentinel can force to a specific captured fixture.

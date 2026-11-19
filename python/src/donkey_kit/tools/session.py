@@ -395,7 +395,9 @@ class ToolSet:
 
         Args:
             tools: Exact tool names to gate.
-            risk: A label for the approver and the span, such as ``"financial"``.
+            risk: Advisory metadata for the approver and approval span events,
+                such as ``"financial"``. It is not sent with MCP tool calls and
+                neither selects gateway policy nor requests step-up.
             timeout: How long a pending approval waits for a decision.
 
         Raises:

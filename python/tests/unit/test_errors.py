@@ -406,6 +406,39 @@ def test_missing_model_400_is_model_not_routable_not_a_refusal() -> None:
     assert "file an issue" not in err.remediation.lower()
 
 
+_UNSUPPORTED = (
+    "Provider validation failed: Unsupported provider 'mistral'. No fallback configuration."
+)
+
+
+def test_unsupported_provider_400_is_model_not_routable_not_a_refusal() -> None:
+    err = classify(httpx.Response(400, json={"error": _UNSUPPORTED}))
+    assert isinstance(err, ModelNotRoutable)
+    assert not isinstance(err, PolicyViolation)
+    assert err.model is None
+    assert err.provider == "mistral"
+    assert err.remediation == ModelNotRoutable.unsupported_provider_remediation
+    assert "file an issue" not in err.remediation.lower()
+
+
+def test_other_model_not_routable_variants_carry_no_provider() -> None:
+    for text in (_UNROUTABLE, _MISSING):
+        err = classify(httpx.Response(400, json={"error": text}))
+        assert isinstance(err, ModelNotRoutable)
+        assert err.provider is None
+
+
+def test_nested_envelope_with_the_unsupported_provider_text_stays_upstream() -> None:
+    err = classify(httpx.Response(400, json={"error": {"message": _UNSUPPORTED}}))
+    assert isinstance(err, UpstreamRequestError)
+
+
+def test_unsupported_provider_without_the_fallback_clause_is_not_guessed() -> None:
+    """Only the captured sentence is typed; a variant wording falls through."""
+    err = classify(httpx.Response(400, json={"error": "Unsupported provider 'mistral'"}))
+    assert not isinstance(err, ModelNotRoutable)
+
+
 def test_nested_envelope_with_the_missing_model_text_stays_upstream() -> None:
     err = classify(httpx.Response(400, json={"error": {"message": _MISSING}}))
     assert isinstance(err, UpstreamRequestError)

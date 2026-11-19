@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 
 from donkey_kit.core.errors import (
     AuthError,
@@ -207,3 +208,42 @@ def test_anypoint_flat_error_4xx_stays_policy_violation() -> None:
     err = classify(resp)
     assert isinstance(err, PolicyViolation)
     assert err.policy == "unknown"
+
+
+_UNSUPPORTED_PROVIDER = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "anypoint"
+    / "model_routing_unsupported_provider"
+)
+
+
+@pytest.mark.parametrize(
+    ("name", "provider"),
+    [
+        ("chat_completions.unsupported_provider_400", "mistral"),
+        ("messages.unsupported_provider_400", "openai"),
+    ],
+)
+def test_unsupported_provider_400_classifies_as_model_not_routable(
+    name: str, provider: str
+) -> None:
+    """docs/verified-apis.md §4 live capture (#1740): model-based-routing impl 1.0.10
+    rejects a ``provider/model`` whose provider has no route and no fallback, on OpenAI
+    and on native Anthropic ingress, with a 400 flat ``error`` and no routing headers.
+    The upstream was never called: ModelNotRoutable naming the provider, not a
+    PolicyViolation."""
+    h = parse_headers((_UNSUPPORTED_PROVIDER / f"{name}.headers.txt").read_text())
+    body = json.loads((_UNSUPPORTED_PROVIDER / f"{name}.body.json").read_text())
+    assert isinstance(body["error"], str)
+    assert not any(k.startswith("x-llm-proxy-") for k in h)
+
+    err = classify(httpx.Response(400, headers=h, json=body))
+    assert isinstance(err, ModelNotRoutable)
+    assert not isinstance(err, PolicyViolation)
+    assert not isinstance(err, UpstreamRequestError)
+    assert err.provider == provider
+    assert err.model is None
+    assert body["error"] in str(err)
+    assert err.remediation == ModelNotRoutable.unsupported_provider_remediation
+    assert policy_type_slug(err) is None

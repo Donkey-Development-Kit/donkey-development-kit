@@ -69,13 +69,20 @@ it marks the tool and returns the same function (see
 | Keyword | Default | Meaning |
 |---|---|---|
 | `approval` | `None` | `"required"` gates the tool behind a human decision. |
-| `risk` | `None` | A label you choose, such as `"financial"`. DDK carries it on the approval and the span, and attaches no behaviour to it. |
+| `risk` | `None` | Advisory metadata you choose, such as `"financial"`. DDK carries it on the approval and approval span events, and attaches no behaviour to it. |
 | `approval_timeout` | `"15m"` | How long a pending approval waits for a decision: seconds, a `timedelta`, or a string such as `"30s"`, `"15m"` or `"1h"`. |
 
 A gated tool keeps its name, docstring, signature and `async`-ness, so a
 framework that introspects tools sees the original. `registered_tools()`
 records `approval` and `risk` on its `ToolSpec`, and the `ToolSpec`'s `func` is
 the gated function.
+
+`risk=` is a label, not an enforcement level. It does not require approval by
+itself: `@donkey.tool(risk="financial")` still runs normally unless you also
+set `approval="required"`. Your reviewer can use the label as context, and
+`donkey scan` and Exchange publication can show the declared value as metadata.
+DDK does not send it with gateway tool calls, select a gateway policy from it,
+or use it to request [gateway step-up](#gateway-step-up).
 
 The call's arguments are checked against the signature before anything is
 recorded. A call that could never run raises `TypeError` straight away instead
@@ -714,7 +721,7 @@ from a Python callable having `__signature__`.
 | Keyword | Default | Meaning |
 |---|---|---|
 | `tools` | — | Exact tool names to gate. |
-| `risk` | `None` | A label for the reviewer and the span, as on `@donkey.tool`. |
+| `risk` | `None` | Advisory metadata for the reviewer and approval span events, as on `@donkey.tool`; not sent with MCP tool calls or used to request gateway step-up. |
 | `timeout` | `"15m"` | How long a pending approval waits, as `approval_timeout` on `@donkey.tool`. |
 
 - **Names are exact,** like [`filter()`](/tool-access/binding#mcp-session-management).

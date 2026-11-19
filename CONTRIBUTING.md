@@ -224,7 +224,7 @@ and its session drift apart.
 | --- | --- |
 | `typecheck-and-lint` | `mypy --strict`, then each `examples/` package; `ruff check .`; `ruff format --check .`; `lint-imports`; the verification-claim, doc-link and fixture-scrub scripts; `vulture` |
 | `test` (`test-3.10` to `test-3.14`) | the default suite and `-m local_gateway`; the offline seams under a dead proxy; the default suite under a dead proxy and OTLP collector; on 3.11, branch coverage and its floor |
-| `base-only` | the base install alone: `import donkey_kit`, no pydantic, `tests/unit`, and the built wheel's packaged fixtures |
+| `base-only` | base + dev tooling: `import donkey_kit` and `tests/unit`; a clean base wheel install: no pydantic and the packaged fixtures |
 | `all-extra-resolves` | `pip install --dry-run ".[all]"` resolves within 5 minutes, per Python |
 | `anthropic-stacks(...)`, `adk-stacks(...)`, `agent-framework-middleware`, `llamaindex-transport`, `agents-strands-last-call` | each framework's tests, with that framework installed |
 | `adapter-contract(<extra>)` | the whole suite and the strict example smoke, one leg per `ADAPTERS` extra |

@@ -21,7 +21,7 @@ Follow the [examples setup](https://docs.donkey-kit.dev/examples.md#setup) first
 ```bash
 python -m pip install -e "../donkey-development-kit/python[llm,anthropic]"
 set -a; source .env.local; set +a
-export DONKEY_LLM_PROXY_URL=https://<host>/ddk-anthropic-inbound/   # 01 only; overrides the file
+export DONKEY_LLM_PROXY_URL=https://<host>/model/anthropic-inbound/   # 01 only; overrides the file
 ```
 
   **`anthropic` 0.x and 1.x both work.** The `anthropic` 1.x releases

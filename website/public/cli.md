@@ -48,7 +48,10 @@ undescribed tool is useless to a model and to a registry.
 `@donkey.tool(approval="required", risk="financial")` gates the tool behind a
 human decision: a call raises `ApprovalRequired` instead of running, and
 `donkey.approvals.resolve(...)` runs it once someone approves. The approval is
-client-side and advisory. See [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md).
+client-side and advisory. `risk=` labels the approval, approval span events and
+scan/Exchange publication metadata; it does not require approval on its own,
+select a gateway policy or request gateway step-up. See
+[Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md#declaring-an-approval).
 
 `@donkey.tool(server="sku-manager")` attributes the tool to the MCP server it
 belongs to, by that server's **service ID**: lowercase kebab-case, recorded as
