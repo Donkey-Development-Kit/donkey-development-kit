@@ -31,6 +31,7 @@ def test_visible_commands() -> None:
         "dev",
         "test",
         "scan",
+        "scaffold",
         "publish",
         "verify",
         "expose",
