@@ -39,12 +39,14 @@ import copy
 import json
 import sys
 from collections import Counter
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from ..core.config import TOML_NAME
 from ..core.toml_text import basic_string, comment, key
+from .readiness import Readiness, assess
 from .scan import ScanIssue, ScanResult, scan
 
 if sys.version_info >= (3, 11):
@@ -58,6 +60,7 @@ __all__ = [
     "Placeholder",
     "Scaffold",
     "ScaffoldRefused",
+    "UnknownService",
     "build_scaffold",
 ]
 
@@ -70,6 +73,10 @@ _HEADER = (
     "# Commented keys are deployment facts the code does not say: replace each",
     "# <placeholder> with the real value, then uncomment the line.",
 )
+
+
+class UnknownService(ValueError):
+    """A service ID asked for is not one the scan found; the message lists those it did."""
 
 
 class ScaffoldRefused(ValueError):
@@ -141,7 +148,11 @@ class Scaffold:
     scaffold's own: ``scaffold-conflict`` when a key the candidate needs is
     already something other than a table, and ``scaffold-refused`` when the
     CLI declined to write. ``written`` says whether the candidates were
-    written to ``destination``; a preview never writes.
+    written to ``destination``; a preview never writes. ``readiness`` is what
+    each workflow still needs (#1749), assessed offline from the committed
+    project file. The candidates add no value a planner reads (an
+    ``asset_id`` equal to the service ID is its default), so it holds after
+    they are written as before.
     """
 
     candidates: tuple[CandidateTable, ...] = ()
@@ -150,6 +161,7 @@ class Scaffold:
     issues: tuple[ScanIssue, ...] = ()
     destination: str = TOML_NAME
     written: bool = False
+    readiness: Readiness = field(default_factory=lambda: Readiness(scan_valid=True))
 
     @property
     def unresolved(self) -> int:
@@ -174,6 +186,7 @@ class Scaffold:
             "issues": [i.to_dict() for i in self.issues],
             "toml": self.to_toml(),
             "written": self.written,
+            "readiness": self.readiness.to_dict(),
         }
 
     def to_json(self) -> str:
@@ -228,24 +241,38 @@ class Scaffold:
         return text
 
 
-def build_scaffold(root: str | Path, *, expose: bool = False) -> Scaffold:
-    """Propose the declaration tables ``root``'s project file lacks, offline.
+def build_scaffold(
+    root: str | Path, *, expose: bool = False, services: Collection[str] | None = None
+) -> Scaffold:
+    """Propose the declaration tables ``root``'s project file lacks, offline,
+    and assess what each workflow still needs (#1749).
 
     ``root`` is a directory or one ``.py`` file, as for
     :func:`~donkey_kit.registry.scan.scan`. ``expose`` adds the
-    ``[donkey.expose]`` tables. Reads no environment variable, user file or
+    ``[donkey.expose]`` tables. ``services`` limits the proposals and the
+    exposure readiness to those service IDs; the shared tables and publication
+    readiness stay project-wide. Reads no environment variable, user file or
     local overlay, and makes no network call.
 
     Raises:
         FileNotFoundError: ``root`` does not exist.
+        UnknownService: a name in ``services`` is no scanned service's ID.
     """
     base = Path(root)
     result = scan(base, local_overlay=False)
+    if services is not None:
+        found = sorted({a.name for a in result.agents} | {s.id for s in result.mcp_servers})
+        unknown = sorted(set(services) - set(found))
+        if unknown:
+            raise UnknownService(
+                f"no agent or MCP server has service ID {', '.join(map(repr, unknown))}; "
+                f"found {', '.join(found) or 'none'}"
+            )
     directory = base.parent if base.is_file() else base
     project = _project(directory / TOML_NAME)
     builder = _Builder(project)
     if project is not None:
-        _propose(builder, result, expose=expose)
+        _propose(builder, result, expose=expose, services=services)
     issues = sorted(
         (*result.issues, *builder.issues), key=lambda i: (i.path, i.line, i.kind, i.subject)
     )
@@ -254,6 +281,7 @@ def build_scaffold(root: str | Path, *, expose: bool = False) -> Scaffold:
         declared=tuple(builder.declared),
         unattributed=tuple(t.qualname for t in result.unattributed),
         issues=tuple(issues),
+        readiness=assess(result, base, project, services=services),
     )
 
 
@@ -270,12 +298,18 @@ def _project(path: Path) -> dict[str, Any] | None:
     return data
 
 
-def _propose(builder: _Builder, result: ScanResult, *, expose: bool) -> None:
+def _propose(
+    builder: _Builder, result: ScanResult, *, expose: bool, services: Collection[str] | None
+) -> None:
     # A repeated service ID is a scan issue; proposing a table for it would
     # pick one of the services at random.
     ids = Counter([a.name for a in result.agents] + [s.id for s in result.mcp_servers])
-    agents = sorted((a for a in result.agents if ids[a.name] == 1), key=lambda a: a.name)
-    servers = [s for s in result.mcp_servers if ids[s.id] == 1]  # sorted by the scan
+
+    def wanted(sid: str) -> bool:
+        return ids[sid] == 1 and (services is None or sid in services)
+
+    agents = sorted((a for a in result.agents if wanted(a.name)), key=lambda a: a.name)
+    servers = [s for s in result.mcp_servers if wanted(s.id)]  # sorted by the scan
 
     for a in agents:
         builder.add(

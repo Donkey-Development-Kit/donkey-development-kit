@@ -189,17 +189,22 @@ class PublishPlan:
 
 
 def plan_publication(
-    result: ScanResult, root: str | Path, *, default_group_id: str | None = None
+    result: ScanResult,
+    root: str | Path,
+    *,
+    default_group_id: str | None = None,
+    local_overlay: bool = True,
 ) -> PublishPlan:
     """Plan the Exchange assets for ``result`` (scanned from ``root``) offline.
 
     ``default_group_id`` is the group used when ``[donkey.publication]`` sets
     none: the org ID, which Exchange uses as the default Maven group
-    (docs/verified-apis.md §7). Makes no network call.
+    (docs/verified-apis.md §7). ``local_overlay=False`` reads the project file
+    alone, as :func:`~donkey_kit.registry.scan.scan` can. Makes no network call.
     """
     base = Path(root)
     directory = base.parent if base.is_file() else base
-    declared = _Declaration(directory)
+    declared = _Declaration(directory, local_overlay=local_overlay)
     group_id = declared.group_id or default_group_id
     if not group_id:
         declared.issue(
@@ -307,7 +312,7 @@ class _Declaration:
     file first, the local file merged over it key by key, a user-wide file never.
     """
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, *, local_overlay: bool = True) -> None:
         self.issues: list[ScanIssue] = []
         self.group_id: str | None = None
         self.version: str | None = None
@@ -319,7 +324,7 @@ class _Declaration:
         self.documentation_text: dict[str, str] = {}
         self._directory = directory
         self._file = TOML_NAME
-        for name in (TOML_NAME, LOCAL_TOML_NAME):
+        for name in (TOML_NAME, LOCAL_TOML_NAME) if local_overlay else (TOML_NAME,):
             path = directory / name
             if path.is_file():
                 self._read(path, name)

@@ -238,13 +238,14 @@ Global options go before the command (`donkey --json init`):
 | `--if-changed` / `--always` | on | Skip an asset whose latest published version has the same digest. |
 | `--json` | off | Emit the plan, or what was published, as JSON. |
 
-`donkey scaffold`: Add the .donkey-kit.toml tables the scanned services still need.
+`donkey scaffold`: Add the .donkey-kit.toml tables the scanned services still need, and say what each workflow still needs.
 
 | Option | Default | Meaning |
 |---|---|---|
 | `path` | `.` | The repository (or one .py file) to scan. |
 | `--dry-run` | off | Print the candidate tables instead of writing .donkey-kit.toml. |
 | `--expose` | off | Also propose the [donkey.expose] tables `donkey expose` reads. |
+| `--service` | none | Only this service ID's tables and exposure readiness; repeat for more. Repeatable. |
 | `--json` | off | Emit the scaffold as one JSON document. |
 
 `donkey scan`: Find @donkey.agent and @donkey.tool markers statically and report them.
@@ -340,6 +341,19 @@ outside. `doctor` makes one real governed call and tells them apart:
   `/chat/completions` once and reports the route as working if that answers.
   Call it with `client.chat.completions.create(...)` on `donkey.llm.client()`,
   or with your framework's chat-completions client.
+
+Any other refusal confirms only what it proves, so a refused call never shows
+the model as working:
+
+- **Model not routable** — the gateway refused the model before calling any
+  upstream. The `model` line fails and `credentials` shows as not confirmed.
+- **Upstream failure** — the provider failed the call. The `model` line fails.
+- **Policy refusal** — a gateway policy, such as PII detection, refused the
+  probe. That is an informational line and `doctor` exits `0`. The credentials
+  were accepted, but the model is reported as routed only when the response
+  names the provider it was routed to.
+- **Anything else** — a `probe` line fails with the error, and neither the
+  credentials nor the model are confirmed.
 
 Each verdict prints the same remediation string the matching typed exception
 carries, so the fix is in the output rather than in a runbook. The budget line
@@ -562,7 +576,7 @@ $ donkey scaffold --dry-run
   filled in, and is listed as already declared.
 - It exits `0` even when placeholders are left to fill in, `1` when the scan
   reports an issue or the write is refused, and `2` when the path does not
-  exist.
+  exist or `--service` names a service the scan didn't find.
 
 `donkey scaffold` writes the tables to the `.donkey-kit.toml` next to the code
 it scanned, not the one in your working directory:
@@ -587,6 +601,57 @@ it scanned, not the one in your working directory:
 
 `--dry-run` writes nothing: it prints the TOML to stdout and the summary to
 stderr, and its JSON document says `written: false`.
+
+#### What each workflow still needs
+
+A file that parses is not yet one you can publish or expose: a commented
+placeholder declares nothing, and an MCP server scans cleanly without a
+transport. So the summary ends with a readiness report that keeps three facts
+apart: whether the scan is valid, whether `donkey publish` has what it needs,
+and, for each service, whether `donkey expose` does. Each missing value is named
+by its table and key:
+
+```
+readiness, offline from the committed file (live credentials and reachability not checked: donkey doctor, donkey preflight)
+  scan: valid
+  publish: incomplete
+      missing  [donkey.publication] version: a semantic version, such as 1.0.0
+      note  [donkey.mcp_servers.sku-manager] transport: not declared: the server is published without a transport
+      note  [donkey.publication] group_id: not declared: publish uses the configured org_id (ANYPOINT_ORG_ID), which is not checked offline
+  expose sku-manager: incomplete; publish is not ready, and expose publishes first
+      missing  [donkey.expose] target: the gateway to deploy to, or pass --target
+      missing  [donkey.expose.services.sku-manager] upstream: the URL the gateway reaches it on, or set endpoint in [donkey.mcp_servers.sku-manager]
+```
+
+| Status | Meaning |
+| --- | --- |
+| `ready` | Everything the workflow reads is declared. Live state is still not checked. |
+| `incomplete` | A required value is missing. Each one is a `missing` line. |
+| `invalid` | A declaration is wrong. The line says what to fix. |
+| `blocked` | The scan reports an issue, so the workflow can't be assessed until you fix it. |
+| `not-exposable` | The gateway doesn't front this service: an agent declared with a protocol other than `a2a_v1`. |
+
+- `note` lines are gaps that don't stop the workflow, such as a group ID the
+  configured `org_id` supplies at publish time.
+- A value still shaped like a placeholder, such as `"<org id>"`, counts as
+  missing.
+- Publication covers the whole project, since one publish registers every
+  service. Exposure is assessed per service, so one service can be ready while
+  another is not exposable.
+- It reads the committed `.donkey-kit.toml` only and makes no network call. It
+  never says a service is verified: run `donkey doctor`, `donkey preflight` and
+  `donkey expose --dry-run` for the credentials, the gateway and the upstreams.
+- An incomplete workflow doesn't change the exit code.
+
+`--service ID` limits the proposed service tables and the exposure report to
+that service; repeat it for more. The shared `[donkey.publication]` and
+`[donkey.expose]` tables and the publication report stay project-wide. An ID the
+scan didn't find exits `2` and lists the IDs it did find.
+
+The JSON document carries the same report as `readiness`: `scan` (`valid` or
+`invalid`), `publication` and one `exposure` entry per service, each with a
+`status`, its `missing` values (`table`, `key`, `detail`, `required`) and its
+`problems`, plus `live: "not-checked"`.
 
 ### `donkey publish`
 

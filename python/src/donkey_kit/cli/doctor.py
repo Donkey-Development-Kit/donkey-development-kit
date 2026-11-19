@@ -24,6 +24,15 @@ Two ``404`` shapes are read from the response itself, not its error type
   (docs/verified-apis.md §2, Chat Completions row) and reports the route as
   working if it answers.
 
+Any other typed refusal confirms only what it proves (#1749). A model the
+gateway refuses before any upstream call (:class:`ModelNotRoutable`) fails
+the model and leaves the credentials not confirmed; an upstream failure
+(:class:`UpstreamModelError`) fails the model. A policy refusal
+(:class:`PolicyViolation`) is an INFO line and exits 0: it accepted the
+credentials, but it names the model as routed only when the response carries
+the routing header. Any other error fails a ``probe`` line and confirms
+neither credentials nor model, so a refusal is never reported as a green model.
+
 Every failure line prints the remediation string carried by the exception it
 stands for, so the CLI and the taxonomy can never disagree (AC2, one source of
 wording). The budget line always states ``observed_at`` staleness — the proxy
@@ -64,6 +73,9 @@ from ..core.errors import (
     ConfigError,
     DonkeyError,
     GatewayUnavailable,
+    ModelNotRoutable,
+    PolicyViolation,
+    UpstreamModelError,
     UpstreamRequestError,
 )
 from ._app import app
@@ -336,14 +348,67 @@ def _probe_checks(result: ProbeResult) -> list[DoctorCheck]:
             checks.append(DoctorCheck("chat completions", Level.OK, "served on this route"))
         return checks
 
-    # Any other typed error (a policy refusal or an upstream 5xx on the probe):
-    # auth and the model were both accepted; the failure is reported on its own
-    # line so doctor stays honest about what it saw.
+    # The gateway's routing refused the model before any upstream call (a bare
+    # name on a multi-provider proxy, no model, or an unrouted provider/ prefix:
+    # docs/verified-apis.md §4 item 6). Those 400s carry no x-llm-proxy-* header
+    # and were captured with working credentials only, so they don't show
+    # whether the client_id was checked.
+    if isinstance(err, ModelNotRoutable):
+        unconfirmed = "not confirmed — the gateway refused the model before any upstream call"
+        return [
+            gateway,
+            DoctorCheck("credentials", Level.SKIP, unconfirmed),
+            DoctorCheck("model", Level.FAIL, f"not routable — {err}", err.remediation),
+        ]
+
+    # Past this point only a routing header proves the model was routed, and a
+    # request that reached a provider passed the client_id check on its way.
+    routed = _routed_to(err)
+    if routed is not None:
+        creds = DoctorCheck("credentials", Level.OK, "client_id accepted")
+        model = DoctorCheck("model", Level.OK, f"routed to {routed}")
+    elif err is not None:
+        unconfirmed = f"not confirmed — the probe failed with {type(err).__name__}"
+        creds = DoctorCheck("credentials", Level.SKIP, unconfirmed)
+        model = DoctorCheck("model", Level.SKIP, unconfirmed)
+
+    # A provider failure (5xx) means the model is not usable right now.
+    if isinstance(err, UpstreamModelError):
+        where = f"routed to {routed}, but" if routed else "not confirmed:"
+        model = DoctorCheck(
+            "model", Level.FAIL, f"{where} the upstream failed — {err}", err.remediation
+        )
+        return [gateway, creds, model]
+
+    # A deliberate refusal: the proxy is working and governing the probe, so it
+    # is reported on its own line and doesn't fail doctor. A refusal is decided
+    # after the client_id check (the behavior #202 documents); whether the model
+    # was routed depends on where the policy sits, so only a header says so.
+    if isinstance(err, PolicyViolation):
+        creds = DoctorCheck("credentials", Level.OK, "client_id accepted")
+        if routed is None:
+            model = DoctorCheck("model", Level.SKIP, "not confirmed — a policy refused the probe")
+        return [gateway, creds, model, DoctorCheck("policy", Level.INFO, str(err), err.remediation)]
+
+    # Any other failure is one doctor cannot read, so it confirms nothing it
+    # didn't see and fails: the probe did not work.
     if err is not None:
-        detail = getattr(err, "remediation", None)
-        return [gateway, creds, model, DoctorCheck("policy", Level.INFO, str(err), detail)]
+        return [
+            gateway,
+            creds,
+            model,
+            DoctorCheck("probe", Level.FAIL, f"{type(err).__name__}: {err}", err.remediation),
+        ]
 
     return [gateway, creds, model]
+
+
+def _routed_to(err: DonkeyError | None) -> str | None:
+    """The provider the proxy routed the probe to, from the error response's
+    ``x-llm-proxy-llm-provider`` header, or ``None`` when it carries none."""
+    headers = getattr(getattr(err, "response", None), "headers", None)
+    value = headers.get(LLM_PROVIDER_HEADER) if headers is not None else None
+    return value if isinstance(value, str) and value else None
 
 
 def _model_remediation(err: UpstreamRequestError) -> str:
