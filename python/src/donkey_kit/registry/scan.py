@@ -45,11 +45,11 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import urlsplit
 
 from ..core.approvals import parse_timeout
 from ..core.config import LOCAL_TOML_NAME, TOML_NAME
-from ..core.endpoints import looks_like_credential_param
+from ..core.endpoints import url_credential_problem
 from ..core.toolspec import validate_service_id
 from .publication import check_description_quality, content_digest
 
@@ -1117,7 +1117,8 @@ class _Declarations:
                 "invalid-agent",
                 subject,
                 entry["protocol"][1],
-                "an a2a_v1 agent needs an endpoint: its agent card names the URL it is served at",
+                f"an a2a_v1 agent needs an endpoint: set endpoint in [donkey.agents.{agent.name}] "
+                "to the URL it is served at, which its agent card names",
             )
         return replace(agent, protocol=protocol, endpoint=endpoint)
 
@@ -1128,23 +1129,25 @@ def _endpoint_problem(value: object, transport: str | None) -> str | None:
         return "a stdio server is started as a process and has no endpoint; remove it"
     if not isinstance(value, str):
         return f"endpoint must be an http or https URL, not {value!r}"
+    # The credential check comes first, and its reason never holds the value: the
+    # endpoint is published verbatim, and a malformed URL may still carry a
+    # credential, so neither may be echoed (#1750).
     try:
         parts = urlsplit(value)
         _ = parts.port  # raises ValueError on a malformed port
     except ValueError:
-        parts = None
-    if parts is None or parts.scheme not in ("http", "https") or not parts.hostname:
+        return (
+            "endpoint must be an http or https URL, and this one does not parse "
+            "(it is not shown, in case it carries a credential)"
+        )
+    credential = url_credential_problem(value)
+    if credential is not None:
+        return (
+            f"endpoint {credential}; the governed transport supplies credentials, "
+            "so remove them from the URL"
+        )
+    if parts.scheme not in ("http", "https") or not parts.hostname:
         return f"endpoint must be an http or https URL, not {value!r}"
-    if parts.username is not None or parts.password is not None:
-        # Never echo the value: it carries a credential.
-        return "endpoint must not carry credentials; the governed transport supplies them"
-    for name, _ in parse_qsl(parts.query, keep_blank_values=True):
-        if looks_like_credential_param(name):
-            # The endpoint is published verbatim, so a credential here would be public.
-            return (
-                f"endpoint must not carry credentials: its query parameter {name!r} looks "
-                "like one, and the governed transport supplies them"
-            )
     return None
 
 

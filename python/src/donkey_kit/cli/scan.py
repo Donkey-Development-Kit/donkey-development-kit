@@ -16,6 +16,8 @@ from pathlib import Path
 
 import typer
 
+from ..core.config import TOML_NAME
+from ..registry.remedy import scaffold_command, table_name
 from ..registry.scan import ScannedMcpServer, ScanResult
 from ..registry.scan import scan as scan_repository
 from ._app import app
@@ -39,7 +41,7 @@ def scan(
     if as_json:
         typer.echo(result.to_json(), nl=False)
     else:
-        _summary(result)
+        _summary(result, path)
     raise typer.Exit(1 if result.issues else 0)
 
 
@@ -47,23 +49,26 @@ def _plural(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
 
-def _reached(server: ScannedMcpServer) -> str:
-    """How the server is reached, or which declaration is missing (#1193)."""
-    where = f"set [donkey.mcp_servers.{server.id}] in .donkey-kit.toml"
+def _reached(server: ScannedMcpServer, root: Path) -> str:
+    """How the server is reached, or which key to declare where (#1193, #1750)."""
+    table = table_name("donkey", "mcp_servers", server.id)
+    hint = f"`{scaffold_command(root)}` adds the table if {TOML_NAME} lacks it"
     if server.transport is None:
-        return f"transport undeclared ({where})"
+        return f"transport undeclared (set transport in [{table}]; {hint})"
     if server.transport == "stdio":
         return "stdio"
-    return f"{server.transport} {server.endpoint or f'endpoint undeclared ({where})'}"
+    if server.endpoint is None:
+        return f"{server.transport} endpoint undeclared (set endpoint in [{table}])"
+    return f"{server.transport} {server.endpoint}"
 
 
-def _summary(result: ScanResult) -> None:
+def _summary(result: ScanResult, root: Path) -> None:
     for a in result.agents:
         typer.echo(f"  agent  {a.name}  ({a.path}:{a.line})")
     for s in result.mcp_servers:
         typer.echo(
             f"  mcp    {s.id}  ({_plural(len(s.tools), 'tool')}: {', '.join(s.tools)})"
-            f"  {_reached(s)}"
+            f"  {_reached(s, root)}"
         )
     if result.unattributed:
         names = ", ".join(t.qualname for t in result.unattributed)

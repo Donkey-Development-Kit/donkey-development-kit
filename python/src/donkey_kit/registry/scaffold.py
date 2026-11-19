@@ -16,7 +16,10 @@ proposes the ``.donkey-kit.toml`` tables the project file does not have yet:
 What the code says is written as an active key. What it cannot say (an
 endpoint, a protocol, a version, a gateway) is a deployment fact, so it is a
 commented placeholder (``# protocol = "<a2a_v1 or other>"``): a scaffold
-never invents a fact, and a commented key declares nothing.
+never invents a fact, and a commented key declares nothing. The developer can
+state one with ``sets`` (``donkey scaffold --set agents.triage.protocol=a2a_v1``,
+#1750): it fills that placeholder as an active key, validated as the planners
+validate it, and only in a table scaffold is adding.
 
 The input is the code and the committed project ``.donkey-kit.toml`` alone.
 Neither the developer's ``.donkey-kit.local.toml``, the user-wide config nor
@@ -39,15 +42,18 @@ import copy
 import json
 import sys
 from collections import Counter
-from collections.abc import Collection
-from dataclasses import dataclass, field
+from collections.abc import Collection, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from ..core.config import TOML_NAME
+from ..core.endpoints import looks_like_credential_param
 from ..core.toml_text import basic_string, comment, key
+from .publish_plan import _SEMVER
 from .readiness import Readiness, assess
-from .scan import ScanIssue, ScanResult, scan
+from .remedy import set_argument, table_name
+from .scan import AGENT_PROTOCOLS, MCP_TRANSPORTS, ScanIssue, ScanResult, _endpoint_problem, scan
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -57,6 +63,7 @@ else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
 __all__ = [
     "SCAFFOLD_FORMAT",
     "CandidateTable",
+    "InvalidSet",
     "Placeholder",
     "Scaffold",
     "ScaffoldRefused",
@@ -73,10 +80,18 @@ _HEADER = (
     "# Commented keys are deployment facts the code does not say: replace each",
     "# <placeholder> with the real value, then uncomment the line.",
 )
+_AGENTS = ("donkey", "agents")
+_EXPOSE = ("donkey", "expose")
 
 
 class UnknownService(ValueError):
     """A service ID asked for is not one the scan found; the message lists those it did."""
+
+
+class InvalidSet(ValueError):
+    """A ``--set`` cannot fill a placeholder: malformed, a secret-looking key,
+    a table or key scaffold does not leave open, or an invalid value. The
+    message names the table and key, never the value."""
 
 
 class ScaffoldRefused(ValueError):
@@ -150,9 +165,10 @@ class Scaffold:
     CLI declined to write. ``written`` says whether the candidates were
     written to ``destination``; a preview never writes. ``readiness`` is what
     each workflow still needs (#1749), assessed offline from the committed
-    project file. The candidates add no value a planner reads (an
-    ``asset_id`` equal to the service ID is its default), so it holds after
-    they are written as before.
+    project file. Without ``--set`` the candidates add no value a planner
+    reads (an ``asset_id`` equal to the service ID is its default), so it
+    holds after they are written as before; values a ``--set`` fills count
+    only once written, so the CLI assesses again after writing them (#1750).
     """
 
     candidates: tuple[CandidateTable, ...] = ()
@@ -242,7 +258,11 @@ class Scaffold:
 
 
 def build_scaffold(
-    root: str | Path, *, expose: bool = False, services: Collection[str] | None = None
+    root: str | Path,
+    *,
+    expose: bool = False,
+    services: Collection[str] | None = None,
+    sets: Sequence[str] = (),
 ) -> Scaffold:
     """Propose the declaration tables ``root``'s project file lacks, offline,
     and assess what each workflow still needs (#1749).
@@ -254,10 +274,18 @@ def build_scaffold(
     readiness stay project-wide. Reads no environment variable, user file or
     local overlay, and makes no network call.
 
+    Each of ``sets`` is ``TABLE.KEY=VALUE`` (``publication.version=1.0.0``;
+    the ``donkey.`` prefix is optional) and fills one placeholder of a
+    proposed table, validated as the planners validate it (#1750). Only a
+    placeholder scaffold leaves open can be filled: a table the project file
+    already has is edited there, not here.
+
     Raises:
         FileNotFoundError: ``root`` does not exist.
         UnknownService: a name in ``services`` is no scanned service's ID.
+        InvalidSet: a ``sets`` entry cannot be applied; the message names it.
     """
+    filled = _parse_sets(sets)
     base = Path(root)
     result = scan(base, local_overlay=False)
     if services is not None:
@@ -272,7 +300,11 @@ def build_scaffold(
     project = _project(directory / TOML_NAME)
     builder = _Builder(project)
     if project is not None:
-        _propose(builder, result, expose=expose, services=services)
+        protocols = {
+            t[2]: v["protocol"] for t, v in filled.items() if t[:2] == _AGENTS and "protocol" in v
+        }
+        _propose(builder, result, expose=expose, services=services, protocols=protocols)
+        _fill(builder, filled, expose=expose)
     issues = sorted(
         (*result.issues, *builder.issues), key=lambda i: (i.path, i.line, i.kind, i.subject)
     )
@@ -298,8 +330,113 @@ def _project(path: Path) -> dict[str, Any] | None:
     return data
 
 
+def _parse_sets(sets: Sequence[str]) -> dict[tuple[str, ...], dict[str, str]]:
+    """``TABLE.KEY=VALUE`` arguments by table path, syntax and key name only;
+    :func:`_fill` checks them against the candidates. A value is never quoted
+    back: it may be a credential typed by mistake."""
+    filled: dict[tuple[str, ...], dict[str, str]] = {}
+    for argument in sets:
+        path, sep, value = argument.partition("=")
+        parts = path.strip().split(".")
+        if parts[0] == "donkey":
+            parts = parts[1:]
+        if not sep or len(parts) < 2 or not all(parts):
+            raise InvalidSet(
+                "--set takes TABLE.KEY=VALUE, such as publication.version=1.0.0 "
+                "(the argument is not shown, in case it holds a credential)"
+            )
+        *table, name = parts
+        if looks_like_credential_param(name):
+            raise InvalidSet(
+                f"--set {name} looks like a secret, and secrets do not belong in the "
+                f"committed {TOML_NAME}: keep it in the environment or .env"
+            )
+        entries = filled.setdefault(("donkey", *table), {})
+        if name in entries:
+            raise InvalidSet(f"--set gives {name} in [{table_name('donkey', *table)}] twice")
+        entries[name] = value
+    return filled
+
+
+def _value_problem(name: str, value: str, entries: dict[str, str]) -> str | None:
+    """Why ``value`` is not a valid ``name``, by the planners' rules, without
+    showing the value."""
+    if name == "version" and not _SEMVER.fullmatch(value):
+        return "version must be a semantic version, such as 1.0.0"
+    if name == "transport" and value not in MCP_TRANSPORTS:
+        return f"transport must be one of {', '.join(MCP_TRANSPORTS)}"
+    if name == "protocol" and value not in AGENT_PROTOCOLS:
+        return f"protocol must be one of {', '.join(AGENT_PROTOCOLS)}"
+    if name in ("endpoint", "upstream"):
+        problem = _endpoint_problem(value, entries.get("transport"))
+        if problem is None:
+            return None
+        return problem.removesuffix(f", not {value!r}").replace("endpoint", name, 1)
+    return None if value.strip() else f"{name} must not be empty"
+
+
+def _fill(
+    builder: _Builder, filled: dict[tuple[str, ...], dict[str, str]], *, expose: bool
+) -> None:
+    """Move each ``--set`` value from its candidate's placeholders to its
+    values, or raise :class:`InvalidSet` naming what is wrong."""
+    for table, entries in filled.items():
+        name = table_name(*table)
+        found = [i for i, c in enumerate(builder.candidates) if c.table == table]
+        if not found:
+            if table[:2] == _EXPOSE and not expose:
+                raise InvalidSet(f"[{name}] is an expose table: pass --expose to add it")
+            if _has(builder.project, table):
+                raise InvalidSet(
+                    f"[{name}] is already in {TOML_NAME}: edit it there, since scaffold "
+                    "only adds tables the file lacks"
+                )
+            open_tables = ", ".join(c.name for c in builder.candidates if c.unresolved)
+            raise InvalidSet(
+                f"scaffold does not propose [{name}]; the tables it leaves keys open in "
+                f"are: {open_tables or 'none'}"
+            )
+        candidate = builder.candidates[found[0]]
+        holes = [p.key for p in candidate.unresolved]
+        for k, value in entries.items():
+            if not holes:
+                raise InvalidSet(f"scaffold fills every key of [{name}] itself; none is open")
+            if k not in holes:
+                raise InvalidSet(
+                    f"{k} is not a key scaffold leaves open in [{name}]; those are: "
+                    f"{', '.join(holes)}"
+                )
+            problem = _value_problem(k, value, entries)
+            if problem is not None:
+                raise InvalidSet(f"--set {table_name(*table[1:], k)}: {problem}")
+        if entries.get("protocol") == "a2a_v1" and "endpoint" not in entries:
+            raise InvalidSet(
+                "an a2a_v1 agent needs an endpoint: add "
+                f"--set {set_argument(table, 'endpoint', 'URL')}, the URL its agent card names"
+            )
+        builder.candidates[found[0]] = replace(
+            candidate,
+            values={**candidate.values, **{k: entries[k] for k in holes if k in entries}},
+            unresolved=tuple(p for p in candidate.unresolved if p.key not in entries),
+        )
+
+
+def _has(project: dict[str, Any], table: tuple[str, ...]) -> bool:
+    node: object = project
+    for part in table:
+        if not isinstance(node, dict) or part not in node:
+            return False
+        node = node[part]
+    return True
+
+
 def _propose(
-    builder: _Builder, result: ScanResult, *, expose: bool, services: Collection[str] | None
+    builder: _Builder,
+    result: ScanResult,
+    *,
+    expose: bool,
+    services: Collection[str] | None,
+    protocols: dict[str, str],
 ) -> None:
     # A repeated service ID is a scan issue; proposing a table for it would
     # pick one of the services at random.
@@ -358,8 +495,12 @@ def _propose(
     if not expose:
         return
     # The gateway fronts MCP servers and A2A agents (expose_plan); an agent's
-    # protocol is what the project file declares, unknown until it does.
-    exposable = sorted([s.id for s in servers] + [a.name for a in agents if a.protocol == "a2a_v1"])
+    # protocol is what the project file declares, or a --set gives, unknown
+    # until one does.
+    exposable = sorted(
+        [s.id for s in servers]
+        + [a.name for a in agents if protocols.get(a.name, a.protocol) == "a2a_v1"]
+    )
     if not exposable:
         return
     builder.add(

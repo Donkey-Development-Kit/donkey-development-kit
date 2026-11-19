@@ -27,9 +27,16 @@ expose`` does, each missing value named by its table and key. Live state
 verified. ``--service ID`` (repeatable) limits the proposed service tables and
 the exposure readiness to those services.
 
+``--set TABLE.KEY=VALUE`` (repeatable) fills a placeholder of a table scaffold
+adds, as an active key, validated as ``donkey publish`` and ``donkey expose``
+validate it (#1750). A key already declared, a secret-looking key and an
+invalid value are refused, and the value is never echoed. After a write, the
+readiness is assessed again so it counts the filled values.
+
 Unfilled placeholders and an incomplete workflow are reported, not failures:
 it exits 0 with them, 1 when the scan reports an issue or the write is
-refused, and 2 for a path that does not exist or an unknown ``--service``.
+refused, and 2 for a path that does not exist, an unknown ``--service`` or a
+refused ``--set`` (nothing is written then).
 """
 
 from __future__ import annotations
@@ -41,7 +48,13 @@ import typer
 
 from ..core.config import TOML_NAME
 from ..registry.readiness import NOT_EXPOSABLE, READY, Readiness, WorkflowReadiness
-from ..registry.scaffold import Scaffold, ScaffoldRefused, UnknownService, build_scaffold
+from ..registry.scaffold import (
+    InvalidSet,
+    Scaffold,
+    ScaffoldRefused,
+    UnknownService,
+    build_scaffold,
+)
 from ..registry.scan import ScanIssue
 from . import _files
 from ._app import app
@@ -64,26 +77,40 @@ def scaffold(
         "--service",
         help="only this service ID's tables and exposure readiness; repeat for more",
     ),
+    set_: list[str] | None = typer.Option(
+        None,
+        "--set",
+        metavar="TABLE.KEY=VALUE",
+        help="fill a placeholder of a table scaffold adds, such as publication.version=1.0.0; "
+        "repeat for more",
+    ),
     as_json: bool = typer.Option(False, "--json", help="emit the scaffold as one JSON document"),
 ) -> None:
     """Add the .donkey-kit.toml tables the scanned services still need, and say
     what each workflow still needs."""
     as_json = as_json or bool((ctx.obj or {}).get("json"))
+    sets = tuple(set_ or ())
     try:
-        result = build_scaffold(path, expose=expose, services=service or None)
-    except (FileNotFoundError, UnknownService) as exc:
+        result = build_scaffold(path, expose=expose, services=service or None, sets=sets)
+    except (FileNotFoundError, UnknownService, InvalidSet) as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(2) from exc
     destination = (path.parent if path.is_file() else path) / TOML_NAME
     existed = destination.exists()
     if not dry_run:
         result = _write(result, destination)
+        if result.written and sets:
+            # The filled values are in the file now: assess what they changed.
+            after = build_scaffold(path, expose=expose, services=service or None)
+            result = dataclasses.replace(result, readiness=after.readiness)
     if as_json:
         typer.echo(result.to_json(), nl=False)
     else:
         if dry_run:
             typer.echo(result.to_toml(), nl=False)
         _summary(result, destination, dry_run=dry_run, created=not existed)
+        if sets and not result.written:
+            typer.echo("  (the --set values count in readiness once they are written)", err=True)
     raise typer.Exit(1 if result.issues else 0)
 
 

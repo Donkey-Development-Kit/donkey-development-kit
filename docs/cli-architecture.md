@@ -61,6 +61,7 @@ Paths below are relative to `python/src/donkey_kit/`.
 | `cli/scaffold.py`: `scaffold` | Write `registry.scaffold.build_scaffold`'s candidates through `cli/_files.py`, or render them as a TOML preview, a summary and versioned JSON. |
 | `registry/scaffold.py`: `build_scaffold`, `Scaffold` | Overlay-free candidate declaration tables for scanned services, with commented placeholders for deployment facts; `Scaffold.apply` appends them to the project text and proves the result parses to the old tables plus the new. |
 | `registry/readiness.py`: `assess`, `Readiness` | Offline, overlay-free readiness per workflow: scan validity, publication and per-service exposure status, with missing values named by table and key. |
+| `registry/remedy.py`: `scaffold_command`, `set_argument`, `table_name` | One wording for a missing declaration (#1750): the table header and an executable, shell-quoted `donkey scaffold [--expose] [--set ...] [PATH]` command. Planners add the command only when the responsible table is absent. |
 | `core/toml_text.py`: `basic_string`, `key`, `comment` | Hand-written TOML text for generated files; callers parse the result back. |
 | `registry/publish_plan.py`: `plan_publication`, `PublishPlan` | Offline publication validation and deterministic asset planning. |
 | `registry/expose_plan.py`: `plan_exposure`, `ExposePlan` | Validate and select one service for exposure through an existing gateway. |
@@ -157,6 +158,24 @@ resolved `org_id` could supply is therefore a non-required note, and live
 state is always `not-checked`. It must not be marketed as installed until
 published-package acceptance (#1751) lands.
 
+`scaffold --set TABLE.KEY=VALUE` (#1750) turns a placeholder of a proposed
+table into an active key. It is not an editor: it fills only keys in
+`CandidateTable.unresolved`, refuses a table the project file already has, a
+secret-looking key (`looks_like_credential_param`) and anything not proposed,
+and validates values with the planners' own rules (`_SEMVER`,
+`MCP_TRANSPORTS`, `AGENT_PROTOCOLS`, `scan._endpoint_problem`). `InvalidSet`
+names the table and key, never the value, and the CLI exits 2 before writing.
+Because the filled values change what planners read, the CLI assesses
+readiness again after a write that used `--set`.
+
+Missing-declaration messages from scan, publish, verify, preflight and expose
+name the exact table and key; when the table is absent they append one
+`registry/remedy.py` command carrying a `--set` for every key that table
+still lacks, since a second scaffold run would not touch the table once it
+exists. Other failures carry no scaffold advice. Endpoint and provider URLs
+are checked for credentials (`core/endpoints.url_credential_problem`) before
+any other rule that would quote them.
+
 `doctor` confirms only what a typed refusal proves (#1749):
 `ModelNotRoutable` and `UpstreamModelError` fail the model, a
 `PolicyViolation` stays INFO (exit 0) and names the model as routed only from
@@ -175,8 +194,11 @@ Declaration failures generally produce the command's JSON document and exit 1.
 `scan` and `scaffold` use exit 2 for a missing path; malformed declarations
 are scan issues with exit 1, as is a refused `scaffold` write (a
 `scaffold-refused` issue in the document), and `scaffold`'s unfilled
-placeholders exit 0. Publication/verification/exposure commands use exit 2 for missing
-paths or invalid connection config, without a document. Named exceptions are
+placeholders exit 0; a refused `--set` exits 2. Publication/verification/exposure commands use exit 2 for missing
+paths or invalid connection config, without a document. A config file that
+cannot be read, is not UTF-8 or is not valid TOML is a `ConfigError` from
+`core/config._read_table` (#1750) that names the file and shows no bytes, so it
+takes that exit-2 path instead of a traceback. Named exceptions are
 `doctor`, which exits 1 on config failures, and `init`, whose command body has
 no exit-2 path: write failures and refused destinations or values exit 1 to stderr without a JSON document, and escaping `DonkeyError` is handled by
 `main`. Parser/global-option usage errors may still exit 2 before those command
