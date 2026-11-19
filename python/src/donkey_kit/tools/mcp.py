@@ -34,6 +34,10 @@ _TIMEOUT = 30.0
 _READ_TIMEOUT = 300.0
 _ERROR_BODY_CAP = 64 * 1024
 _ERROR_BODY_TIMEOUT = 5.0
+#: ``asyncio.wait_for`` cancels a coroutine before it starts when its timeout is
+#: zero, so a spent deadline would skip the close entirely (#1785). Any positive
+#: budget lets the close begin and stops it at its first suspension.
+_CLOSE_START_BUDGET = 1e-6
 
 
 def _streamable() -> Any:  # noqa: ANN401
@@ -102,7 +106,7 @@ async def _read_error(response: Any) -> None:  # noqa: ANN401
     # Cancellation is not caught: never delay it behind a stalled close operation.
     try:
         close = response.stream.aclose if content is not None and not refused else response.aclose
-        await asyncio.wait_for(close(), max(0.0, deadline - loop.time()))
+        await asyncio.wait_for(close(), max(_CLOSE_START_BUDGET, deadline - loop.time()))
     except Exception:  # noqa: BLE001 -- best-effort cleanup must retain the HTTP status
         refused = True
     if refused:
