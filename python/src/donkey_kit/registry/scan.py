@@ -44,7 +44,7 @@ from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from ..core.approvals import parse_timeout
@@ -212,6 +212,16 @@ class ScanResult:
     def unattributed(self) -> tuple[ScannedTool, ...]:
         """The tools with no ``server=``: reported, never guessed (#503)."""
         return tuple(t for t in self.tools if t.server is None)
+
+    def rejected(self, table: Literal["agent", "mcp server"], name: str, key: str) -> bool:
+        """Whether ``[donkey.agents.<name>]`` or ``[donkey.mcp_servers.<name>]``
+        declares ``key`` with a value scan rejected (#1802).
+
+        The model carries ``None`` for a rejected value, the same as for an
+        undeclared key, so a reader that would say "undeclared" asks this first.
+        """
+        kind, subject = f"invalid-{key}", f"{table} {name}"
+        return any(i.kind == kind and i.subject == subject for i in self.issues)
 
     def digest(self) -> str:
         """A content digest over what would be published (BG §2.5).

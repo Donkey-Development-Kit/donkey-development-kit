@@ -5,7 +5,7 @@ A front end over :func:`donkey_kit.registry.scan.scan`: static analysis only, so
 it never imports the code it scans. It prints a summary, or with ``--json`` the
 canonical scan model for a CI diff. It writes no file. Each MCP server line
 shows the transport and endpoint ``[donkey.mcp_servers]`` declares, or says
-which is undeclared (#1193). It exits 1 when scan reports an issue (a missing
+which is undeclared (#1193) or invalid (#1802). It exits 1 when scan reports an issue (a missing
 or tautological description, an invalid service ID, ...) so CI fails before
 anything is published.
 """
@@ -49,15 +49,21 @@ def _plural(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
 
-def _reached(server: ScannedMcpServer, root: Path) -> str:
-    """How the server is reached, or which key to declare where (#1193, #1750)."""
+def _reached(server: ScannedMcpServer, result: ScanResult, root: Path) -> str:
+    """How the server is reached, or which key to declare or fix where (#1193,
+    #1750, #1802). A rejected value is invalid, not undeclared: the issue it
+    raised says why, so the line points there rather than at setting the key."""
     table = table_name("donkey", "mcp_servers", server.id)
     hint = f"`{scaffold_command(root)}` adds the table if {TOML_NAME} lacks it"
     if server.transport is None:
+        if result.rejected("mcp server", server.id, "transport"):
+            return "transport invalid (see the invalid-transport issue)"
         return f"transport undeclared (set transport in [{table}]; {hint})"
     if server.transport == "stdio":
         return "stdio"
     if server.endpoint is None:
+        if result.rejected("mcp server", server.id, "endpoint"):
+            return f"{server.transport} endpoint invalid (see the invalid-endpoint issue)"
         return f"{server.transport} endpoint undeclared (set endpoint in [{table}])"
     return f"{server.transport} {server.endpoint}"
 
@@ -68,7 +74,7 @@ def _summary(result: ScanResult, root: Path) -> None:
     for s in result.mcp_servers:
         typer.echo(
             f"  mcp    {s.id}  ({_plural(len(s.tools), 'tool')}: {', '.join(s.tools)})"
-            f"  {_reached(s, root)}"
+            f"  {_reached(s, result, root)}"
         )
     if result.unattributed:
         names = ", ".join(t.qualname for t in result.unattributed)

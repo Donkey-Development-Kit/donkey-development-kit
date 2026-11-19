@@ -696,7 +696,10 @@ found 1 agent, 2 tools, 1 MCP server
   `[donkey.mcp_servers.<id>]` table in `.donkey-kit.toml`, never from code. A
   server without one is shown as `transport undeclared`, which is not an issue.
   The line names the key to set and the `donkey scaffold` command that adds the
-  table.
+  table. A value the scan rejects, such as an unknown transport or an endpoint
+  with a credential in it, is shown as `transport invalid` or `endpoint
+  invalid` instead, next to the `invalid-transport` or `invalid-endpoint`
+  issue that says why.
   See [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
 - An agent's protocol and endpoint come the same way from a
   `[donkey.agents.<name>]` table. See
@@ -810,6 +813,9 @@ readiness, offline from the committed file (live credentials and reachability no
   configured `org_id` supplies at publish time.
 - A value still shaped like a placeholder, such as `"<org id>"`, counts as
   missing.
+- A value the scan rejects is reported as invalid, never as not declared: the
+  workflow is `blocked` by its `invalid-*` issue, and a line that depends on
+  it says to fix the value rather than set it.
 - Publication covers the whole project, since one publish registers every
   service. Exposure is assessed per service, so one service can be ready while
   another is not exposable.

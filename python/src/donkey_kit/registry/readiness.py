@@ -29,7 +29,7 @@ import re
 from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ..core.toml_text import key
 from .expose_plan import plan_exposure
@@ -202,9 +202,10 @@ def _publication(
             )
         else:
             problems.append(issue)
-    # Published regardless, but not as the developer may expect: say so.
+    # Published regardless, but not as the developer may expect: say so. A
+    # rejected value is not "not declared": its invalid-* issue blocks (#1802).
     for agent in result.agents:
-        if agent.protocol is None:
+        if agent.protocol is None and not result.rejected("agent", agent.name, "protocol"):
             missing.append(
                 Missing(
                     _table("donkey", "agents", agent.name),
@@ -214,7 +215,7 @@ def _publication(
                 )
             )
     for server in result.mcp_servers:
-        if server.transport is None:
+        if server.transport is None and not result.rejected("mcp server", server.id, "transport"):
             missing.append(
                 Missing(
                     _table("donkey", "mcp_servers", server.id),
@@ -244,6 +245,18 @@ def _exposure(
     ]
     agent = next((a for a in result.agents if a.name == sid), None)
     owner = _table("donkey", "agents", sid) if agent else _table("donkey", "mcp_servers", sid)
+    kind: Literal["agent", "mcp server"] = "agent" if agent else "mcp server"
+    # A rejected endpoint or protocol is declared: say fix it, not set it (#1802).
+    endpoint = (
+        f"fix the invalid endpoint in [{owner}]"
+        if result.rejected(kind, sid, "endpoint")
+        else f"set endpoint in [{owner}]"
+    )
+    protocol = (
+        "invalid (see the invalid-protocol issue)"
+        if result.rejected(kind, sid, "protocol")
+        else "not declared"
+    )
     problems: list[ScanIssue] = []
     not_exposable = False
     for issue in issues:
@@ -258,12 +271,12 @@ def _exposure(
                 Missing(
                     service_table,
                     "upstream",
-                    f"the URL the gateway reaches it on, or set endpoint in [{owner}]",
+                    f"the URL the gateway reaches it on, or {endpoint}",
                 )
             )
         elif issue.kind == "not-exposable" and agent is not None and agent.protocol is None:
             missing.append(
-                Missing(owner, "protocol", 'not declared: set "a2a_v1" to expose the agent')
+                Missing(owner, "protocol", f'{protocol}: set "a2a_v1" to expose the agent')
             )
         elif issue.kind == "not-exposable":
             not_exposable = True
