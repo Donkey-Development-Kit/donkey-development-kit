@@ -15,8 +15,9 @@ OTLP endpoint is configured: set ``OTEL_EXPORTER_OTLP_ENDPOINT`` and spans flow
 to your own sink with no SDK-specific env var; opt out entirely with
 ``DONKEY_TELEMETRY=false``.
 
-``scaffold --dry-run`` (#1747) proposes the ``.donkey-kit.toml`` tables the
-scanned services still need, offline and from the committed project file alone.
+``scaffold`` (#1747, #1748) adds the ``.donkey-kit.toml`` tables the scanned
+services still need, offline and from the committed project file alone; it
+appends to that file and never rewrites what is there.
 ``publish`` (#218, #1291) registers a repository's MCP servers and agents in
 Exchange from CI, and ``verify`` (#1352) checks each published MCP server
 against its live tools. ``expose`` (#226) puts one of them behind an existing

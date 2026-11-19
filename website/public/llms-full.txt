@@ -7880,7 +7880,7 @@ donkey mock          # the local simulator — --scenario scripts failures
 donkey dev my:agent  # serves an @donkey.agent behind a simulated A2A ingress
 donkey test          # a thin front end to pytest --donkey-conformance
 donkey scan          # finds your agents, tools and MCP servers, without running your code
-donkey scaffold --dry-run  # proposes the .donkey-kit.toml tables they still need
+donkey scaffold      # adds the .donkey-kit.toml tables they still need
 donkey publish       # registers them in Exchange; --dry-run prints the plan and sends nothing
 donkey verify        # checks published MCP servers and agents against their live side; reads only
 donkey preflight     # checks, read-only, that a service can be put behind its gateway
@@ -7936,7 +7936,7 @@ existing reader:
 | Command | Format key | What it prints |
 |---|---|---|
 | `donkey scan` | `scan_format: 1` | The scan model. |
-| `donkey scaffold --dry-run` | `scaffold_format: 1` | The candidate tables, the TOML preview (`toml`), what is already declared, and the issues. |
+| `donkey scaffold` | `scaffold_format: 1` | The candidate tables, their TOML (`toml`), what is already declared, whether they were `written`, and the issues. |
 | `donkey publish --dry-run` | `plan_format: 1` | The plan: the assets a publish would register, and the issues. |
 | `donkey publish` | `publish_format: 1` | The plan's assets, each with a `status` and a `detail`, and the issues. |
 | `donkey verify` | `verify_format: 1` | The plan's assets, each with a `status`, a `detail` and its `differences`, and the issues. |
@@ -8024,7 +8024,7 @@ Global options go before the command (`donkey --json init`):
 | `--if-changed` / `--always` | on | Skip an asset whose latest published version has the same digest. |
 | `--json` | off | Emit the plan, or what was published, as JSON. |
 
-`donkey scaffold`: Propose the .donkey-kit.toml tables the scanned services still need.
+`donkey scaffold`: Add the .donkey-kit.toml tables the scanned services still need.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -8317,7 +8317,7 @@ the input `donkey publish` reads.
 
 ### `donkey scaffold`
 
-Proposes the `.donkey-kit.toml` tables your scanned services still need: an
+Adds the `.donkey-kit.toml` tables your scanned services still need: an
 `[donkey.agents.<name>]` or `[donkey.mcp_servers.<id>]` table for each service,
 and the `[donkey.publication]` tables `donkey publish` reads. With `--expose` it
 adds the `[donkey.expose]` tables too. It builds on the same static scan, so it
@@ -8346,14 +8346,33 @@ $ donkey scaffold --dry-run
   every checkout of a commit gets the same output.
 - A table the project file already has is left alone, even if it is only partly
   filled in, and is listed as already declared.
-- The TOML goes to stdout and the summary to stderr. `--json`, or the global
-  `donkey --json scaffold`, prints one document (`scaffold_format: 1`) that
-  includes the same TOML as `toml`.
 - It exits `0` even when placeholders are left to fill in, `1` when the scan
-  reports an issue, and `2` when the path does not exist.
+  reports an issue or the write is refused, and `2` when the path does not
+  exist.
 
-`--dry-run` is required for now: without it, `donkey scaffold` exits `2` and
-writes nothing.
+`donkey scaffold` writes the tables to the `.donkey-kit.toml` next to the code
+it scanned, not the one in your working directory:
+
+- With no file there, it creates one. Otherwise it **appends** the missing
+  tables after what you wrote, which it keeps byte for byte, comments and line
+  endings included. It never rewrites or reorders your text.
+- Running it again adds nothing and leaves the file as it is.
+- It writes nothing when the scan reports an issue. It also refuses, leaving the
+  file untouched, when the file is not valid TOML, when the file is a symlink,
+  when an inline table or dotted key means the appended tables would not parse
+  or would change a value, and when the file changes while the write is being
+  prepared. Each refusal is a `scaffold-refused` issue that says why; add the
+  tables from `--dry-run` by hand in that case.
+- The write is staged beside the file and switched in one step, so a reader
+  never sees half a file. An edit saved in the instant between the final check
+  and the switch is still lost, so don't run it while you have unsaved edits to
+  the file open.
+- The summary goes to stderr. `--json`, or the global `donkey --json scaffold`,
+  prints one document (`scaffold_format: 1`) with the TOML as `toml` and
+  `written: true` when it wrote it.
+
+`--dry-run` writes nothing: it prints the TOML to stdout and the summary to
+stderr, and its JSON document says `written: false`.
 
 ### `donkey publish`
 

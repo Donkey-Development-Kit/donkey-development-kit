@@ -37,6 +37,7 @@ from ..core.config import (
     DonkeyConfig,
 )
 from ..core.endpoints import ALLOW_HTTP_ENV, url_credential_problem
+from ..core.toml_text import basic_string
 from . import _files
 from ._app import app
 
@@ -89,16 +90,10 @@ _SECRET_FIELDS: tuple[tuple[str, str], ...] = (
     ("llm_proxy_key", "DONKEY_LLM_PROXY_KEY"),
 )
 
-# TOML basic-string escapes; every other control character becomes \\uXXXX.
-_ESCAPES = {
-    '"': '\\"',
-    "\\": "\\\\",
-    "\b": "\\b",
-    "\t": "\\t",
-    "\n": "\\n",
-    "\f": "\\f",
-    "\r": "\\r",
-}
+_NOT_UNICODE = (
+    "a resolved value is not valid Unicode text (it is not shown), so it cannot be "
+    "written as UTF-8. Fix the value where it is set, then re-run `donkey init`."
+)
 
 
 class _Refused(Exception):
@@ -111,15 +106,10 @@ def _toml_str(value: object) -> str:
     its own TOML type, not ``str()``."""
     if not isinstance(value, str):
         raise TypeError(f"init renders only string fields, not {type(value).__name__}")
-    out = []
-    for ch in value:
-        if ch in _ESCAPES:
-            out.append(_ESCAPES[ch])
-        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
-            out.append(f"\\u{ord(ch):04X}")
-        else:
-            out.append(ch)
-    return '"' + "".join(out) + '"'
+    try:
+        return basic_string(value)
+    except ValueError as exc:  # a lone surrogate, as an undecodable env var carries
+        raise _Refused(_NOT_UNICODE) from exc
 
 
 def _collect_missing(config: DonkeyConfig) -> list[str]:
@@ -209,10 +199,7 @@ def _checked(config: DonkeyConfig, content: str) -> str:
     try:
         content.encode("utf-8")
     except UnicodeEncodeError as exc:
-        raise _Refused(
-            "a resolved value is not valid Unicode text (it is not shown), so it cannot be "
-            "written as UTF-8. Fix the value where it is set, then re-run `donkey init`."
-        ) from exc
+        raise _Refused(_NOT_UNICODE) from exc
     expected = {name: value for _, pairs in _emitted(config) for name, value in pairs}
     try:
         written = tomllib.loads(content).get("donkey")

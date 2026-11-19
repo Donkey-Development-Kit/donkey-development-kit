@@ -8,6 +8,7 @@ exit or have side effects if they ran.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import sys
@@ -15,11 +16,18 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from click.testing import Result
 from typer.testing import CliRunner
 
-from donkey_kit.cli import app
+from donkey_kit.cli import _files, app
 from donkey_kit.core.toml_text import basic_string, comment, key
-from donkey_kit.registry.scaffold import SCAFFOLD_FORMAT, build_scaffold
+from donkey_kit.registry.scaffold import (
+    SCAFFOLD_FORMAT,
+    CandidateTable,
+    Scaffold,
+    ScaffoldRefused,
+    build_scaffold,
+)
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -27,6 +35,7 @@ else:
     import tomli as tomllib
 
 runner = CliRunner()
+TOML = ".donkey-kit.toml"
 
 GOV = """\
     from donkey_kit import Donkey
@@ -300,7 +309,7 @@ def test_dry_run_prints_toml_on_stdout_and_a_summary_on_stderr(tmp_path: Path) -
     assert result.exit_code == 0, result.output
     assert result.stdout == build_scaffold(tmp_path).to_toml()
     assert tomllib.loads(result.stdout)
-    assert "5 tables for .donkey-kit.toml, 6 placeholders to fill in" in result.stderr
+    assert f"5 tables for {tmp_path / TOML}, 6 placeholders to fill in" in result.stderr
     assert "unattributed  orphan" in result.stderr
 
 
@@ -347,7 +356,7 @@ def test_an_empty_project_has_nothing_to_add(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert result.stdout == ""
-    assert "nothing to add to .donkey-kit.toml" in result.stderr
+    assert f"nothing to add to {tmp_path / TOML}" in result.stderr
 
 
 def test_a_missing_path_exits_2_without_a_document(tmp_path: Path) -> None:
@@ -357,14 +366,342 @@ def test_a_missing_path_exits_2_without_a_document(tmp_path: Path) -> None:
     assert result.stdout == ""
 
 
-def test_a_bare_run_does_not_write_yet(tmp_path: Path) -> None:
+# --- writing (#1748) -------------------------------------------------------
+
+
+def _scaffold(root: Path, *args: str) -> Result:
+    return runner.invoke(app, ["scaffold", *args, str(root)])
+
+
+def _names(root: Path) -> list[str]:
+    return sorted(p.name for p in root.iterdir())
+
+
+def test_a_bare_run_creates_the_file_the_preview_showed(tmp_path: Path) -> None:
     root = _repo(tmp_path)
+    preview = _scaffold(root, "--dry-run").stdout
 
-    result = runner.invoke(app, ["scaffold", str(root)])
+    result = _scaffold(root)
 
-    assert result.exit_code == 2
-    assert "--dry-run" in result.stderr
-    assert not (root / ".donkey-kit.toml").exists()
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert f"created {root / TOML} with 5 tables, 6 placeholders to fill in" in result.stderr
+    assert (root / TOML).read_text(encoding="utf-8") == preview
+
+
+def test_a_second_and_third_run_are_byte_identical_no_ops(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    assert _scaffold(root).exit_code == 0
+    first = (root / TOML).read_bytes()
+
+    for _ in range(2):
+        again = _scaffold(root, "--json")
+        assert again.exit_code == 0
+        data = json.loads(again.stdout)
+        assert data["written"] is False
+        assert data["candidates"] == []
+        assert (root / TOML).read_bytes() == first
+
+
+def test_missing_tables_are_appended_after_the_authored_bytes(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    authored = (
+        "# authored by hand: keep this comment\n"
+        "[donkey]\n"
+        'org_id = "o-1"   # trailing comment\n'
+        "unknown_key = 3\n"
+        "\n"
+        '[donkey.agents."support-triage"]\n'
+        'protocol = "other"\n'
+        "\n"
+        "[tool.other]\n"
+        "x = [1, 2]\n"
+    )
+    (root / TOML).write_text(authored, encoding="utf-8")
+    before = tomllib.loads(authored)
+
+    result = _scaffold(root)
+
+    assert result.exit_code == 0, result.output
+    assert f"added to {root / TOML}: 4 tables" in result.stderr
+    assert "already declared  donkey.agents.support-triage" in result.stderr
+    text = (root / TOML).read_text(encoding="utf-8")
+    assert text.startswith(authored)
+    after = tomllib.loads(text)
+    assert after["tool"] == before["tool"]
+    assert after["donkey"]["org_id"] == "o-1"
+    assert after["donkey"]["unknown_key"] == 3
+    assert after["donkey"]["agents"] == {"support-triage": {"protocol": "other"}}
+    assert _tables(text[len(authored) :]) == [
+        "[donkey.mcp_servers.sku-manager]",
+        "[donkey.publication]",
+        "[donkey.publication.assets.sku-manager]",
+        "[donkey.publication.assets.support-triage]",
+    ]
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_a_file_without_a_final_newline_keeps_its_line_endings(
+    tmp_path: Path, newline: str
+) -> None:
+    root = _repo(tmp_path)
+    authored = f'[donkey]{newline}org_id = "o-1"'
+    (root / TOML).write_bytes(authored.encode())
+
+    assert _scaffold(root).exit_code == 0
+
+    data = (root / TOML).read_bytes()
+    assert data.startswith(authored.encode() + newline.encode())
+    if newline == "\n":
+        assert b"\r" not in data
+    else:
+        assert data.count(b"\n") == data.count(b"\r\n")
+    assert tomllib.loads(data.decode())["donkey"]["org_id"] == "o-1"
+
+
+@pytest.mark.parametrize(
+    "authored",
+    [
+        pytest.param("[donkey]\nagents = {}\n", id="inline-table"),
+        pytest.param('donkey = { org_id = "o-1" }\n', id="inline-root"),
+    ],
+)
+def test_a_representation_a_header_cannot_extend_is_refused_untouched(
+    tmp_path: Path, authored: str
+) -> None:
+    root = _repo(tmp_path)
+    (root / TOML).write_text(authored, encoding="utf-8")
+
+    result = _scaffold(root, "--json")
+
+    assert result.exit_code == 1
+    data = json.loads(result.stdout)
+    assert data["written"] is False
+    assert [i["kind"] for i in data["issues"]] == ["scaffold-refused"]
+    assert "by hand" in data["issues"][0]["detail"]
+    assert (root / TOML).read_text(encoding="utf-8") == authored
+    assert _names(root) == sorted([TOML, "app"])
+
+
+def test_a_table_defined_by_dotted_keys_gets_only_sub_table_headers(tmp_path: Path) -> None:
+    # TOML lets a header add a sub-table to a table dotted keys defined, but not
+    # re-open that table: [donkey.publication] is already declared here, so only
+    # its assets are appended.
+    root = _repo(tmp_path)
+    authored = '[donkey]\npublication.version = "1.0.0"\n'
+    (root / TOML).write_text(authored, encoding="utf-8")
+
+    result = _scaffold(root)
+
+    assert result.exit_code == 0, result.output
+    text = (root / TOML).read_text(encoding="utf-8")
+    assert text.startswith(authored)
+    assert "[donkey.publication]" not in text
+    publication = tomllib.loads(text)["donkey"]["publication"]
+    assert publication["version"] == "1.0.0"
+    assert sorted(publication["assets"]) == ["sku-manager", "support-triage"]
+
+
+def test_a_dotted_key_to_an_inline_table_is_refused_untouched(tmp_path: Path) -> None:
+    # The assets table exists, as an inline table no header may extend, so the
+    # appended [donkey.publication.assets.<id>] would not parse.
+    root = _repo(tmp_path)
+    authored = "donkey.publication.assets = {}\n"
+    (root / TOML).write_text(authored, encoding="utf-8")
+
+    result = _scaffold(root)
+
+    assert result.exit_code == 1
+    assert "scaffold-refused" in result.stderr
+    assert (root / TOML).read_text(encoding="utf-8") == authored
+
+
+def test_scan_issues_and_conflicts_write_nothing(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    authored = '[donkey]\npublication = "not a table"\n'
+    (root / TOML).write_text(authored, encoding="utf-8")
+
+    result = _scaffold(root)
+
+    assert result.exit_code == 1
+    assert "scaffold-conflict" in result.stderr
+    assert f"nothing written to {root / TOML}" in result.stderr
+    assert (root / TOML).read_text(encoding="utf-8") == authored
+
+
+@pytest.mark.parametrize("content", [b"[donkey\n", b"\xff\xfe"])
+def test_a_malformed_project_file_is_refused_untouched(tmp_path: Path, content: bytes) -> None:
+    root = _repo(tmp_path)
+    (root / TOML).write_bytes(content)
+
+    result = _scaffold(root)
+
+    assert result.exit_code == 1
+    assert (root / TOML).read_bytes() == content
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges on Windows")
+def test_a_symlinked_project_file_is_refused_and_its_target_untouched(tmp_path: Path) -> None:
+    root = _repo(tmp_path / "repo")
+    target = tmp_path / "elsewhere.toml"
+    target.write_text("[donkey]\n", encoding="utf-8")
+    (root / TOML).symlink_to(target)
+
+    result = _scaffold(root)
+
+    assert result.exit_code == 1
+    assert "symlink" in result.stderr
+    assert target.read_text(encoding="utf-8") == "[donkey]\n"
+    assert (root / TOML).is_symlink()
+
+
+def test_the_local_overlay_is_never_read_into_the_file_nor_modified(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    overlay = root / ".donkey-kit.local.toml"
+    sentinel = "-".join(["overlay", "only", "value"])
+    overlay_bytes = f'[donkey]\nclient_secret = "{sentinel}"\n'.encode()
+    overlay.write_bytes(overlay_bytes)
+
+    result = _scaffold(root)
+
+    assert result.exit_code == 0
+    assert overlay.read_bytes() == overlay_bytes
+    assert sentinel not in (root / TOML).read_text(encoding="utf-8")
+    assert sentinel not in result.output
+
+
+def test_an_edit_made_while_the_write_is_staged_is_kept_and_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path)
+    (root / TOML).write_text("[donkey]\n", encoding="utf-8")
+    real_stage = _files._stage
+
+    def stage_then_edit(path: Path, content: str) -> Path:
+        staged = real_stage(path, content)
+        path.write_text('[donkey]\norg_id = "edited meanwhile"\n', encoding="utf-8")
+        return staged
+
+    monkeypatch.setattr(_files, "_stage", stage_then_edit)
+
+    result = _scaffold(root)
+
+    assert result.exit_code == 1
+    assert "changed while the write was staged" in result.stderr
+    assert "edited meanwhile" in (root / TOML).read_text(encoding="utf-8")
+    assert _names(root) == sorted([TOML, "app"])
+
+
+def test_a_file_created_while_the_write_is_staged_wins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path)
+    real_stage = _files._stage
+
+    def stage_then_create(path: Path, content: str) -> Path:
+        staged = real_stage(path, content)
+        path.write_text("# someone else's file\n", encoding="utf-8")
+        return staged
+
+    monkeypatch.setattr(_files, "_stage", stage_then_create)
+
+    result = _scaffold(root)
+
+    assert result.exit_code == 1
+    assert (root / TOML).read_text(encoding="utf-8") == "# someone else's file\n"
+    assert _names(root) == sorted([TOML, "app"])
+
+
+def test_a_failed_replace_leaves_the_original_and_no_temp_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path)
+    (root / TOML).write_text("[donkey]\n", encoding="utf-8")
+
+    def broken(src: object, dst: object) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(os, "replace", broken)
+
+    result = _scaffold(root, "--json")
+
+    assert result.exit_code == 1
+    data = json.loads(result.stdout)
+    assert data["written"] is False
+    assert "could not be written" in data["issues"][-1]["detail"]
+    assert (root / TOML).read_text(encoding="utf-8") == "[donkey]\n"
+    assert _names(root) == sorted([TOML, "app"])
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+def test_an_appended_file_keeps_its_permissions(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    (root / TOML).write_text("[donkey]\n", encoding="utf-8")
+    (root / TOML).chmod(0o640)
+
+    assert _scaffold(root).exit_code == 0
+
+    assert (root / TOML).stat().st_mode & 0o777 == 0o640
+
+
+def test_json_write_agrees_with_the_preview_and_the_file(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    preview = json.loads(_scaffold(root, "--dry-run", "--json").stdout)
+
+    result = _scaffold(root, "--json")
+
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert data["written"] is True
+    assert preview["written"] is False
+    assert data["toml"] == preview["toml"] == (root / TOML).read_text(encoding="utf-8")
+    assert data["candidates"] == preview["candidates"]
+
+
+def test_a_single_file_root_writes_beside_it(tmp_path: Path) -> None:
+    source = """\
+        from donkey_kit import Donkey
+
+        donkey = Donkey()
+
+
+        @donkey.tool(server="solo")
+        def ping() -> str:
+            \"\"\"Answer pong, for a one-file project.\"\"\"
+    """
+    root = _write(tmp_path, {"pkg/solo.py": source})
+
+    result = _scaffold(root / "pkg" / "solo.py")
+
+    assert result.exit_code == 0, result.output
+    assert "[donkey.mcp_servers.solo]" in (root / "pkg" / TOML).read_text(encoding="utf-8")
+    assert not (root / TOML).exists()
+
+
+def test_apply_refuses_text_that_would_change_what_it_declares() -> None:
+    candidate = CandidateTable(("donkey", "agents", "a"), "a", "agent")
+    plan = Scaffold(candidates=(candidate,))
+
+    assert plan.apply(None) == plan.to_toml()
+    assert Scaffold().apply("x = 1\n") == "x = 1\n"
+    with pytest.raises(ScaffoldRefused, match="not valid TOML"):
+        plan.apply("[donkey\n")
+    with pytest.raises(ScaffoldRefused, match="by hand"):
+        plan.apply("[donkey]\nagents = { b = {} }\n")
+
+
+def test_replace_refuses_when_the_file_no_longer_holds_the_expected_bytes(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / TOML
+    target.write_bytes(b"new")
+
+    with pytest.raises(_files.WriteConflict):
+        _files.replace(target, "content", expected=b"old")
+
+    assert target.read_bytes() == b"new"
+    _files.replace(target, "content", expected=b"new")
+    assert target.read_text(encoding="utf-8") == "content"
 
 
 @pytest.mark.parametrize("flag", [["--config", "x.toml"], ["--env", "prod"]])
