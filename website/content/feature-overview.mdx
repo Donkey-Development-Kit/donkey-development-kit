@@ -168,7 +168,9 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
   </Card>
   <Card title="Scan & publish" href="/publishing" icon="⇧" badge="Live" badgeTone="live">
     **Purpose:** `donkey scan` derives a model of your agents, tools and
-    MCP servers from code; `donkey publish` registers it in Exchange, and
+    MCP servers from code; `donkey scaffold` adds the `.donkey-kit.toml`
+    declarations they still need and says what each workflow is missing;
+    `donkey publish` registers them in Exchange, and
     `donkey verify` checks the live servers and agents against what was
     published. **Advantage:** the catalog stays in sync from CI, not by hand.
   </Card>

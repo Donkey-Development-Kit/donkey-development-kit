@@ -731,7 +731,9 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
   
   
     **Purpose:** `donkey scan` derives a model of your agents, tools and
-    MCP servers from code; `donkey publish` registers it in Exchange, and
+    MCP servers from code; `donkey scaffold` adds the `.donkey-kit.toml`
+    declarations they still need and says what each workflow is missing;
+    `donkey publish` registers them in Exchange, and
     `donkey verify` checks the live servers and agents against what was
     published. **Advantage:** the catalog stays in sync from CI, not by hand.
   
@@ -8198,7 +8200,7 @@ Global options go before the command (`donkey --json init`):
 | `--if-changed` / `--always` | on | Skip an asset whose latest published version has the same digest. |
 | `--json` | off | Emit the plan, or what was published, as JSON. |
 
-`donkey scaffold`: Add the .donkey-kit.toml tables the scanned services still need, and say what each workflow still needs.
+`donkey scaffold`: Add the .donkey-kit.toml tables the scanned services need and report readiness.
 
 | Option | Default | Meaning |
 |---|---|---|
