@@ -190,6 +190,58 @@ def test_a_scan_issue_blocks_both_workflows(tmp_path: Path) -> None:
     assert result.to_dict()["readiness"]["scan"] == "invalid"
 
 
+def test_a_rejected_value_is_reported_as_invalid_not_undeclared(tmp_path: Path) -> None:
+    # #1802: a declared but rejected value is left None in the model; readiness
+    # must not call it "not declared" or tell the developer to set it.
+    project = (
+        COMPLETE.replace('protocol = "a2a_v1"', 'protocol = "a2a"')
+        .replace('transport = "streamable-http"', 'transport = "carrier-pigeon"')
+        .replace("https://sku.example.test/mcp", "https://sku.example.test/mcp?api_key=SENTINEL")
+        .replace("https://triage.example.test/", "https://u:SENTINEL@triage.example.test/")
+    )
+    result = build_scaffold(_repo(tmp_path, project))
+    readiness = result.readiness
+
+    assert {i.kind for i in result.issues} == {
+        "invalid-protocol",
+        "invalid-transport",
+        "invalid-endpoint",
+    }
+    publication = readiness.publication
+    assert publication is not None
+    assert publication.status == BLOCKED
+    assert _keys(publication, required=False) == []
+
+    by_service = {e.service: e for e in readiness.exposure}
+    triage = by_service["support-triage"]
+    assert triage.status == BLOCKED
+    details = {(m.table, m.key): m.detail for m in triage.missing}
+    assert details[("donkey.agents.support-triage", "protocol")].startswith(
+        "invalid (see the invalid-protocol issue)"
+    )
+    assert details[("donkey.expose.services.support-triage", "upstream")].endswith(
+        "fix the invalid endpoint in [donkey.agents.support-triage]"
+    )
+    rendered = json.dumps(result.to_dict())
+    assert "not declared" not in rendered
+    assert "set endpoint" not in rendered
+    assert "SENTINEL" not in rendered
+
+
+def test_an_mcp_servers_rejected_endpoint_says_fix_it(tmp_path: Path) -> None:
+    project = COMPLETE.replace(
+        "https://sku.example.test/mcp", "https://sku.example.test/mcp?api_key=SENTINEL"
+    )
+    readiness = build_scaffold(_repo(tmp_path, project)).readiness
+
+    sku = next(e for e in readiness.exposure if e.service == "sku-manager")
+    upstream = next(m for m in sku.missing if m.key == "upstream")
+    assert upstream.detail == (
+        "the URL the gateway reaches it on, or fix the invalid endpoint in "
+        "[donkey.mcp_servers.sku-manager]"
+    )
+
+
 def test_malformed_project_file_is_an_invalid_scan(tmp_path: Path) -> None:
     readiness = build_scaffold(_repo(tmp_path, "[donkey\n")).readiness
     assert not readiness.scan_valid

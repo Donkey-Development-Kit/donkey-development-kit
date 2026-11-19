@@ -111,3 +111,26 @@ def test_an_invalid_declaration_fails_the_run(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "invalid-transport" in result.output
+
+
+def test_a_rejected_value_is_invalid_not_undeclared(tmp_path: Path) -> None:
+    # #1802: the key is set, so the line must not tell the developer to set it.
+    root = _repo(tmp_path)
+    (root / ".donkey-kit.toml").write_text(
+        '[donkey.mcp_servers.sku-manager]\ntransport = "websocket"\n', encoding="utf-8"
+    )
+    result = runner.invoke(app, ["scan", str(root)])
+    assert "  transport invalid (see the invalid-transport issue)" in result.output
+    assert "undeclared" not in result.output
+
+    (root / ".donkey-kit.toml").write_text(
+        '[donkey.mcp_servers.sku-manager]\ntransport = "streamable-http"\n'
+        'endpoint = "https://sku.acme.com/mcp?api_key=SENTINEL"\n',
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["scan", str(root)])
+    assert result.exit_code == 1
+    assert "streamable-http endpoint invalid (see the invalid-endpoint issue)" in result.output
+    assert "invalid-endpoint" in result.output
+    assert "undeclared" not in result.output
+    assert "SENTINEL" not in result.output
