@@ -265,9 +265,257 @@ def test_invalid_and_non_literal_arguments_are_reported(tmp_path: Path) -> None:
         "invalid-service-id",
         "invalid-skills",
     ]
-    assert [t.server for t in result.tools] == [None, None]
-    (agent,) = result.agents
-    assert (agent.name, agent.skills) == ("ok", ())
+    # Each of these raises when its module is imported, so none is recorded:
+    # a guess (an unattributed tool, an agent with no skills) would scaffold
+    # and publish something that does not exist (#1747).
+    assert result.tools == ()
+    assert result.agents == ()
+
+
+def _issues(result: ScanResult) -> list[tuple[str, str]]:
+    return [(i.kind, i.subject) for i in result.issues]
+
+
+def test_arguments_the_decorator_rejects_are_reported_not_recorded(tmp_path: Path) -> None:
+    source = """\
+        from donkey_kit import Donkey
+
+        donkey = Donkey()
+        OPTS = {"server": "a"}
+
+
+        @donkey.tool(**OPTS)
+        def splat():
+            \"\"\"A tool whose arguments are expanded from a dict.\"\"\"
+
+
+        @donkey.tool("a")
+        def positional():
+            \"\"\"A tool given a positional argument.\"\"\"
+
+
+        @donkey.tool(sever="a")
+        def typo():
+            \"\"\"A tool with a misspelled keyword.\"\"\"
+
+
+        @donkey.tool(approval="yes")
+        def approval():
+            \"\"\"A tool with an approval value the decorator rejects.\"\"\"
+
+
+        @donkey.tool(risk="")
+        def risk():
+            \"\"\"A tool with an empty risk label.\"\"\"
+
+
+        @donkey.tool(approval="required", approval_timeout="soon")
+        def timeout():
+            \"\"\"A tool with an approval timeout that does not parse.\"\"\"
+
+
+        @donkey.tool(approval=APPROVAL)
+        def dynamic_approval():
+            \"\"\"A tool whose approval is a variable.\"\"\"
+
+
+        @donkey.agent(name="a", skills="triage")
+        def string_skills():
+            \"\"\"An agent whose skills are one string, not a list.\"\"\"
+
+
+        @donkey.agent(name="b", role="x")
+        def unknown():
+            \"\"\"An agent with a keyword the decorator does not take.\"\"\"
+
+
+        @donkey.tool(server="ok", approval="required", approval_timeout=TIMEOUT)
+        def fine():
+            \"\"\"A tool whose only non-literal is an unrecorded timeout.\"\"\"
+    """
+    result = scan(_write(tmp_path, {"m.py": source}))
+
+    assert sorted(_issues(result)) == [
+        ("invalid-argument", "approval"),
+        ("invalid-argument", "positional"),
+        ("invalid-argument", "risk"),
+        ("invalid-argument", "timeout"),
+        ("invalid-argument", "typo"),
+        ("invalid-argument", "unknown"),
+        ("invalid-skills", "string_skills"),
+        ("non-literal-argument", "dynamic_approval"),
+        ("non-literal-argument", "splat"),
+    ]
+    assert [t.qualname for t in result.tools] == ["fine"]
+    assert result.agents == ()
+    details = {i.subject: i.detail for i in result.issues}
+    assert "**OPTS" in details["splat"]
+    assert "no sever= argument" in details["typo"]
+
+
+SHADOWED = """\
+    from donkey_kit import Donkey
+
+    donkey = Donkey()
+
+
+    def parameter(donkey):
+        @donkey.tool(server="a")
+        def hidden_by_parameter():
+            \"\"\"A tool on whatever the caller passed in.\"\"\"
+
+
+    def local():
+        donkey = make_something_else()
+
+        @donkey.tool(server="a")
+        def hidden_by_local():
+            \"\"\"A tool on a local that is not a Donkey.\"\"\"
+
+
+    class Holder:
+        donkey = object()
+
+        @donkey.tool(server="a")
+        def hidden_by_class_attribute(self):
+            \"\"\"A tool on a class attribute that is not a Donkey.\"\"\"
+
+
+    def importer():
+        from fastmcp import FastMCP as Donkey
+
+        @Donkey.tool(server="a")
+        def hidden_by_import():
+            \"\"\"A tool on a class that is not donkey_kit's.\"\"\"
+
+
+    def factory():
+        d = Donkey()
+
+        @d.tool(server="a")
+        def local_instance():
+            \"\"\"A tool on a Donkey built in the enclosing function.\"\"\"
+
+
+    @donkey.tool(server="a")
+    def module_level():
+        \"\"\"A tool on the module-level Donkey.\"\"\"
+"""
+
+
+def test_shadowed_receivers_are_ambiguous_not_markers(tmp_path: Path) -> None:
+    result = scan(_write(tmp_path, {"m.py": SHADOWED}))
+
+    assert sorted(_issues(result)) == [
+        ("ambiguous-receiver", "Holder.hidden_by_class_attribute"),
+        ("ambiguous-receiver", "importer.<locals>.hidden_by_import"),
+        ("ambiguous-receiver", "local.<locals>.hidden_by_local"),
+        ("ambiguous-receiver", "parameter.<locals>.hidden_by_parameter"),
+    ]
+    assert [t.qualname for t in result.tools] == [
+        "factory.<locals>.local_instance",
+        "module_level",
+    ]
+
+
+def test_a_rebound_module_receiver_is_ambiguous_everywhere(tmp_path: Path) -> None:
+    gov = """\
+        from donkey_kit import Donkey
+
+        donkey = Donkey()
+        if FLAG:
+            donkey = something_else()
+    """
+    tools = """\
+        from gov import donkey
+
+
+        @donkey.tool(server="a")
+        def imported():
+            \"\"\"A tool on an import of the rebound name.\"\"\"
+    """
+    local = """\
+        from donkey_kit import Donkey
+
+        try:
+            donkey = Donkey()
+        except Exception:
+            donkey = None
+
+
+        @donkey.tool(server="a")
+        def maybe():
+            \"\"\"A tool on a name that may be None.\"\"\"
+    """
+    result = scan(_write(tmp_path, {"gov.py": gov, "tools.py": tools, "local.py": local}))
+
+    assert _issues(result) == [
+        ("ambiguous-receiver", "maybe"),
+        ("ambiguous-receiver", "imported"),
+    ]
+    assert result.tools == ()
+
+
+def test_scoping_follows_python_not_the_whole_file(tmp_path: Path) -> None:
+    source = """\
+        import donkey_kit
+
+
+        def setup():
+            global donkey
+            donkey = donkey_kit.Donkey()
+
+
+        @donkey.tool(server="a")
+        def via_global():
+            \"\"\"A tool on a Donkey bound through a global statement.\"\"\"
+
+
+        def unrelated():
+            from donkey_kit import Donkey
+            other = Donkey()
+
+
+        @other.tool(server="a")
+        def foreign():
+            \"\"\"other is only a Donkey inside unrelated(), not here.\"\"\"
+
+
+        values = [donkey for donkey in range(3)]
+        lam = lambda donkey: donkey
+    """
+    result = scan(_write(tmp_path, {"m.py": source}))
+
+    assert result.issues == ()
+    assert [t.qualname for t in result.tools] == ["via_global"]
+
+
+def test_local_overlay_false_reads_the_project_file_alone(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        {
+            "m.py": """\
+                from donkey_kit import Donkey
+
+                donkey = Donkey()
+
+
+                @donkey.tool(server="hr-tools")
+                def find(name: str) -> str:
+                    \"\"\"Find an employee by name in the HR directory.\"\"\"
+            """,
+            ".donkey-kit.toml": '[donkey.mcp_servers.hr-tools]\ntransport = "streamable-http"\n',
+            ".donkey-kit.local.toml": (
+                '[donkey.mcp_servers.hr-tools]\nendpoint = "https://hr.internal/mcp"\n'
+            ),
+        },
+    )
+
+    (merged,) = scan(tmp_path).mcp_servers
+    (project,) = scan(tmp_path, local_overlay=False).mcp_servers
+
+    assert (merged.transport, merged.endpoint) == ("streamable-http", "https://hr.internal/mcp")
+    assert (project.transport, project.endpoint) == ("streamable-http", None)
 
 
 def test_duplicate_service_ids_and_tools(tmp_path: Path) -> None:

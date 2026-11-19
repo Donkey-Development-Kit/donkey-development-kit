@@ -206,3 +206,11 @@ platform  # unused variable (src/donkey_kit/registry/models.py)
 input_format  # unused variable (src/donkey_kit/registry/models.py)
 _.missing_model_remediation  # public class attribute: ModelNotRoutable's #1547 wording (tests, errors.mdx)
 _.unsupported_provider_remediation  # public class attribute: ModelNotRoutable's #1740 wording (tests, errors.mdx)
+# ast.NodeVisitor dispatches these by node type name; vulture's own ast whitelist
+# predates them (src/donkey_kit/registry/scan.py, _Binder, #1747).
+_.visit_AnnAssign  # unused method (src/donkey_kit/registry/scan.py)
+_.visit_NamedExpr  # unused method (src/donkey_kit/registry/scan.py)
+_.visit_withitem  # unused method (src/donkey_kit/registry/scan.py)
+_.visit_MatchAs  # unused method (src/donkey_kit/registry/scan.py)
+_.visit_MatchStar  # unused method (src/donkey_kit/registry/scan.py)
+_.visit_MatchMapping  # unused method (src/donkey_kit/registry/scan.py)
