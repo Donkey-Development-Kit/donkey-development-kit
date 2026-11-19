@@ -101,6 +101,159 @@ donkey preflight     # checks, read-only, that a service can be put behind its g
 donkey expose        # puts one MCP server or A2A agent behind an existing gateway
 ```
 
+### From code to a publish plan
+
+This walkthrough takes a project from decorated code to a publish plan. Every
+step up to the plan is offline: no credentials are checked and nothing is sent.
+The live checks come after, as a separate gate. The project has one MCP tool
+and one agent:
+
+```python filename="app/main.py"
+from donkey_kit import Donkey
+
+donkey = Donkey.from_env()
+
+@donkey.tool(server="sku-manager")
+def lookup_sku(sku: str) -> dict:
+    """Look up a SKU's price and stock level by its code."""
+    ...
+
+@donkey.agent(name="support-triage", skills=["triage"])
+async def triage(task):
+    """Triage a support ticket and draft a reply for a human to send."""
+    ...
+```
+
+**1. Write the connection config.** Set the values you have, such as
+`ANYPOINT_ORG_ID`, in the environment, then run `donkey init` from the project
+root. It writes the non-secret ones to `.donkey-kit.toml` and names every
+required value still missing, with its environment variable:
+
+```
+$ donkey init
+Wrote /path/to/support-desk/.donkey-kit.toml.
+
+Still missing (set before the SDK can reach the platform):
+  - client_id (env ANYPOINT_CLIENT_ID)
+  - client_secret (env ANYPOINT_CLIENT_SECRET)
+  - llm_proxy_url (env DONKEY_LLM_PROXY_URL)
+  - llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)
+  - llm_proxy_client_secret (env DONKEY_LLM_PROXY_CLIENT_SECRET)
+```
+
+The missing values don't block the offline steps. Secrets never go in this
+file: put them in the environment or a gitignored `.donkey-kit.local.toml`. If
+you set an LLM proxy auth mode (`DONKEY_LLM_PROXY_AUTH`), a model-wallet client
+ID or a dynamic-key header, `init` keeps them too. See
+[`donkey init`](#donkey-init) for the connection modes.
+
+**2. See what the code declares.** `donkey scan` reads the decorators without
+running your code. A gap is named with the table and key that fill it:
+
+```
+$ donkey scan
+  agent  support-triage  (app/main.py:13)
+  mcp    sku-manager  (1 tool: lookup_sku)  transport undeclared (set transport in [donkey.mcp_servers.sku-manager]; `donkey scaffold` adds the table if .donkey-kit.toml lacks it)
+found 1 agent, 1 tool, 1 MCP server
+```
+
+**3. Preview the declarations.** `donkey scaffold --dry-run` prints the tables
+the project still needs and writes nothing. What the code says becomes a key.
+What it can't say is a commented placeholder:
+
+```
+$ donkey scaffold --dry-run
+# agent triage, app/main.py:13
+[donkey.agents.support-triage]
+# protocol = "<a2a_v1 or other>"
+# endpoint = "<the URL the agent is served at; required for a2a_v1>"
+
+# MCP server with tools: lookup_sku
+[donkey.mcp_servers.sku-manager]
+# transport = "<stdio, streamable-http or sse>"
+# endpoint = "<the server's http or https URL; none for stdio>"
+
+# Exchange coordinates for `donkey publish`
+[donkey.publication]
+# version = "<a semantic version, such as 1.0.0>"
+# group_id = "<the Exchange group; the configured org_id when unset>"
+...
+5 tables for .donkey-kit.toml, 6 placeholders to fill in
+readiness, offline from the committed file (live credentials and reachability not checked: donkey doctor, donkey preflight)
+  scan: valid
+  publish: incomplete
+      missing  [donkey.publication] version: a semantic version, such as 1.0.0
+      ...
+```
+
+Add `--json` for the same result as one document (`scaffold_format: 1`): the
+TOML as `toml`, the `candidates` and already-`declared` tables, the number of
+`unresolved` placeholders, the `readiness` report and `written: false`.
+
+**4. Write them, with the values you know.** The deployment facts (the
+version, where each service is served, which protocol the agent speaks) are
+yours to state. Pass the ones you know with `--set`, and scaffold writes them
+as real keys:
+
+```
+$ donkey scaffold --set publication.version=1.0.0 \
+    --set mcp_servers.sku-manager.transport=streamable-http \
+    --set mcp_servers.sku-manager.endpoint=https://sku.example.com/mcp \
+    --set agents.support-triage.protocol=a2a_v1 \
+    --set agents.support-triage.endpoint=https://triage.example.com
+added to .donkey-kit.toml: 5 tables, 1 placeholder to fill in
+readiness, offline from the committed file (live credentials and reachability not checked: donkey doctor, donkey preflight)
+  scan: valid
+  publish: ready
+      note  [donkey.publication] group_id: not declared: publish uses the configured org_id (ANYPOINT_ORG_ID), which is not checked offline
+  expose sku-manager: incomplete
+      missing  [donkey.expose] target: the gateway to deploy to, or pass --target
+  expose support-triage: incomplete
+      missing  [donkey.expose] target: the gateway to deploy to, or pass --target
+```
+
+The tables are appended after what `init` wrote, which stays as it was. A
+placeholder left open, here `group_id`, stays commented. Edit the file to
+fill it in, then uncomment the line. Running `donkey scaffold` again prints
+`nothing to add to .donkey-kit.toml` and leaves the file alone. Readiness only
+counts what the committed file says. `publish: ready` doesn't mean your
+credentials work or your services are up. Exposure stays incomplete until you
+declare a gateway, which this walkthrough doesn't need.
+
+**5. Review the publish plan.** `donkey publish --dry-run` prints each asset
+it would register, with its coordinates and digest, and sends nothing:
+
+```
+$ donkey publish --dry-run
+  mcp    <org-id>:sku-manager:1.0.0  sku-manager  sha256:5bfdcf57…
+  agent  <org-id>:support-triage:1.0.0  support-triage  sha256:515b312e…
+would publish 2 assets (dry run: nothing was sent)
+```
+
+If you skip step 4, the plan says what is missing and how to add it, and exits
+`1`:
+
+```
+1 issue
+  .donkey-kit.toml:0  missing-version  donkey.publication: set version in [donkey.publication] to a semantic version, such as 1.0.0; `donkey scaffold --set publication.version=1.0.0` adds the table with it
+```
+
+The plan still resolves your connection config for the default group ID, so
+`ANYPOINT_ORG_ID` (or `org_id` in the file) must be set. That's the end of the
+offline journey: commit `.donkey-kit.toml`.
+
+**6. The live gate.** These commands need the missing credentials from step 1,
+and they reach the platform:
+
+- `donkey doctor` makes one real governed model request. It can consume
+  tokens or model budget.
+- `donkey preflight --service sku-manager`, and `donkey expose --dry-run`,
+  make only reads, but they read the live control plane and gateway. Read-only
+  isn't offline. They need a `[donkey.expose]` table: add it with
+  `donkey scaffold --expose`.
+- `donkey publish` registers the assets in Exchange, and `donkey verify`
+  checks them against their live side.
+
 ### Global flags
 
 Four global flags precede the subcommand:

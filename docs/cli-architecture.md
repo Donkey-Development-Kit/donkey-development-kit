@@ -155,8 +155,9 @@ and per-service exposure readiness, each a separate status. It reuses
 restating their rules, so it reads the same committed file as the candidates
 and never the overlay, environment or connection config. A group ID the
 resolved `org_id` could supply is therefore a non-required note, and live
-state is always `not-checked`. It must not be marketed as installed until
-published-package acceptance (#1751) lands.
+state is always `not-checked`. The consumer walkthrough and the sibling
+published-package acceptance suite (#1751) cover the installed journey from
+`init` to `publish --dry-run`.
 
 `scaffold --set TABLE.KEY=VALUE` (#1750) turns a placeholder of a proposed
 table into an active key. It is not an editor: it fills only keys in
@@ -210,8 +211,10 @@ The 2026-11-14 review found gaps, not new supported behavior: `init` string
 escaping and destination protection (closed by #1746, which also refuses
 credential-bearing URLs in what `init` writes), credential-bearing public URLs
 elsewhere, decoding errors escaping config handling, static scanner ambiguity, and `doctor`'s
-false-green fallback. Their remediation is recorded in issues #1746 through
-#1751. Passing existing tests does not establish that those cases are safe.
+false-green fallback. Issues #1746 through #1750 remediated them, each with
+regression tests; #1751 repeats the credential, invalid UTF-8 and invalid TOML
+cases against the published package. Other cases still need their own
+tests: passing unrelated tests does not establish that they are safe.
 
 ## Maintaining This Map
 
