@@ -23,10 +23,19 @@ Neither the developer's ``.donkey-kit.local.toml``, the user-wide config nor
 the environment is read, so two checkouts of one commit give the same bytes.
 A table the project file already has is left alone, even when it is only
 partly filled in: it is listed in :attr:`Scaffold.declared`, not proposed.
+
+:meth:`Scaffold.apply` turns the candidates into the project file's next text
+(#1748). It only appends: the authored text is kept byte for byte, comments
+and all, and the whole tables are added after it. The result is parsed back
+and must hold exactly the old tables plus the new ones, or
+:class:`ScaffoldRefused` is raised and nothing is to be written. An inline
+table or a dotted key that a header cannot extend is refused that way rather
+than rewritten. Writing the file is the CLI's job.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import sys
 from collections import Counter
@@ -43,7 +52,14 @@ if sys.version_info >= (3, 11):
 else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
     import tomli as tomllib
 
-__all__ = ["SCAFFOLD_FORMAT", "CandidateTable", "Placeholder", "Scaffold", "build_scaffold"]
+__all__ = [
+    "SCAFFOLD_FORMAT",
+    "CandidateTable",
+    "Placeholder",
+    "Scaffold",
+    "ScaffoldRefused",
+    "build_scaffold",
+]
 
 #: The version of the scaffold's JSON document, bumped when its shape changes
 #: incompatibly, as ``scan_format`` and ``plan_format`` are.
@@ -54,6 +70,11 @@ _HEADER = (
     "# Commented keys are deployment facts the code does not say: replace each",
     "# <placeholder> with the real value, then uncomment the line.",
 )
+
+
+class ScaffoldRefused(ValueError):
+    """The candidates cannot be appended to the project file without changing
+    what it already declares. The message names the table, never file content."""
 
 
 @dataclass(frozen=True)
@@ -118,7 +139,9 @@ class Scaffold:
     has, and ``unattributed`` the tools with no ``server=`` (which belong to
     no table until one is set, #503). ``issues`` are the scan's plus the
     scaffold's own: ``scaffold-conflict`` when a key the candidate needs is
-    already something other than a table.
+    already something other than a table, and ``scaffold-refused`` when the
+    CLI declined to write. ``written`` says whether the candidates were
+    written to ``destination``; a preview never writes.
     """
 
     candidates: tuple[CandidateTable, ...] = ()
@@ -126,6 +149,7 @@ class Scaffold:
     unattributed: tuple[str, ...] = ()
     issues: tuple[ScanIssue, ...] = ()
     destination: str = TOML_NAME
+    written: bool = False
 
     @property
     def unresolved(self) -> int:
@@ -149,11 +173,59 @@ class Scaffold:
             "unresolved": self.unresolved,
             "issues": [i.to_dict() for i in self.issues],
             "toml": self.to_toml(),
+            "written": self.written,
         }
 
     def to_json(self) -> str:
         """Canonical JSON: sorted keys, two-space indent, trailing newline."""
         return json.dumps(self.to_dict(), sort_keys=True, indent=2) + "\n"
+
+    def apply(self, existing: str | None) -> str:
+        """The project file's text with the candidates appended.
+
+        ``existing`` is the file's current text, or ``None`` when there is no
+        file, in which case the result is :meth:`to_toml`. Otherwise it is
+        ``existing`` unchanged followed by the candidate tables, in the file's
+        own line ending. With no candidates, ``existing`` comes back as is.
+
+        Raises:
+            ScaffoldRefused: ``existing`` is not valid TOML, or the appended
+                tables would not parse, or would change a value it already
+                declares (an inline table or a dotted key in the way).
+        """
+        if existing is None:
+            return self.to_toml()
+        if not self.candidates:
+            return existing
+        try:
+            before = tomllib.loads(existing)
+        except tomllib.TOMLDecodeError as exc:
+            raise ScaffoldRefused(f"{self.destination} is not valid TOML ({exc})") from exc
+        newline = "\r\n" if "\r\n" in existing else "\n"
+        addition = self.to_toml().replace("\n", newline)
+        if existing and not existing.endswith("\n"):
+            existing += newline
+        text = existing + (newline if existing else "") + addition
+        try:
+            after = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as exc:
+            raise ScaffoldRefused(
+                f"appending to {self.destination} would not be valid TOML ({exc}); an inline "
+                "table or dotted key is in the way, so add the tables from "
+                "`donkey scaffold --dry-run` by hand"
+            ) from exc
+        expected = copy.deepcopy(before)
+        for candidate in self.candidates:
+            node = expected
+            for part in candidate.table:
+                node = node.setdefault(part, {})
+            node.update(candidate.values)
+        if after != expected:
+            raise ScaffoldRefused(
+                f"appending to {self.destination} would change what it already declares; "
+                "add the tables from `donkey scaffold --dry-run` by hand"
+            )
+        return text
 
 
 def build_scaffold(root: str | Path, *, expose: bool = False) -> Scaffold:

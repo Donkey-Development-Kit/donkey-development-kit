@@ -16,9 +16,12 @@ step. The destination policy (#1746):
   filesystem has no hard links).
 - Replacing an existing file is a same-directory ``os.replace`` that keeps the
   file's permission bits. That makes the switch atomic for readers, but it is
-  not compare-and-swap: an edit another process saves between the read and the
-  replace is lost. Cooperative locking would not stop an editor either, so this
-  limit is documented rather than claimed away.
+  not compare-and-swap. A caller that derived the content from the file's old
+  bytes passes them as ``expected``, and the write is refused if the file no
+  longer holds them just before the switch (``donkey scaffold``, #1748). That
+  narrows the window without closing it: an edit another process saves between
+  that last check and the replace is lost. Cooperative locking would not stop
+  an editor either, so this limit is documented rather than claimed away.
 
 The staged file is removed on every handled failure. Content is written as
 UTF-8 with ``\\n`` line endings.
@@ -96,12 +99,16 @@ def create_new(path: Path, content: str) -> None:
         _discard(staged)
 
 
-def replace(path: Path, content: str) -> None:
+def replace(path: Path, content: str, *, expected: bytes | None = None) -> None:
     """Replace the regular file at ``path`` with ``content``, keeping its mode.
+
+    ``expected``, when given, is the bytes ``content`` was derived from: the
+    replace is refused if the file holds anything else just before the switch.
 
     Raises:
         UnsafeDestination: ``path`` is not an acceptable destination.
-        WriteConflict: ``path`` vanished or changed kind before the replace.
+        WriteConflict: ``path`` vanished, changed kind or no longer holds
+            ``expected`` before the replace.
         OSError: The directory could not be written.
     """
     check_destination(path)
@@ -116,8 +123,14 @@ def replace(path: Path, content: str) -> None:
         # meanwhile must not be replaced (os.replace would follow neither, but a
         # directory makes it fail late, and a link would be silently overwritten).
         check_destination(path)
+        try:
+            current = path.read_bytes() if expected is not None else None
+        except FileNotFoundError:
+            current = None
         if not path.exists():
             raise WriteConflict(f"{path} was removed by something else; nothing written.")
+        if expected is not None and current != expected:
+            raise WriteConflict(f"{path} changed while the write was staged; nothing written.")
         os.replace(staged, path)
     finally:
         _discard(staged)

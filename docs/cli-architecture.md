@@ -58,8 +58,8 @@ Paths below are relative to `python/src/donkey_kit/`.
 | `cli/_files.py`: `check_destination`, `create_new`, `replace` | CLI-only destination policy and staged publication for generated files: no symlink/directory/secret-holder targets, no-clobber creation, mode-preserving same-directory replace. |
 | `cli/scan.py`: `scan` | Render `registry.scan.scan` results without executing application code. |
 | `registry/scan.py`: `scan`, `ScanResult` | AST discovery with lexical receiver resolution, literal argument validation and project service metadata. `local_overlay=False` reads the project file alone. |
-| `cli/scaffold.py`: `scaffold` | Render `registry.scaffold.build_scaffold` as a TOML preview, a summary and versioned JSON. |
-| `registry/scaffold.py`: `build_scaffold`, `Scaffold` | Overlay-free candidate declaration tables for scanned services, with commented placeholders for deployment facts. |
+| `cli/scaffold.py`: `scaffold` | Write `registry.scaffold.build_scaffold`'s candidates through `cli/_files.py`, or render them as a TOML preview, a summary and versioned JSON. |
+| `registry/scaffold.py`: `build_scaffold`, `Scaffold` | Overlay-free candidate declaration tables for scanned services, with commented placeholders for deployment facts; `Scaffold.apply` appends them to the project text and proves the result parses to the old tables plus the new. |
 | `core/toml_text.py`: `basic_string`, `key`, `comment` | Hand-written TOML text for generated files; callers parse the result back. |
 | `registry/publish_plan.py`: `plan_publication`, `PublishPlan` | Offline publication validation and deterministic asset planning. |
 | `registry/expose_plan.py`: `plan_exposure`, `ExposePlan` | Validate and select one service for exposure through an existing gateway. |
@@ -124,7 +124,8 @@ reads no environment variable or user file.
 | --- | --- | --- |
 | `init` | No | Creates missing destination parent directories and writes a connection config file; resolves existing config sources only on the write path. An existing target without `--force` returns before resolution; an unsafe destination is refused first. |
 | `scan` | No | No writes; AST parsing and declaration reads only. |
-| `scaffold --dry-run` | No | No writes; AST parsing and a project-file read only. A bare `scaffold` exits 2 until writing lands (#1748). |
+| `scaffold --dry-run` | No | No writes; AST parsing and a project-file read only. |
+| `scaffold` | No | Creates the scanned root's `.donkey-kit.toml` or appends missing tables to it, through `cli/_files.py`: no symlink or secret destination, no-clobber creation, and a refusal if the file changed while the write was staged. Never touches the local overlay. |
 | `publish --dry-run` | No | No writes; offline publication plan. |
 | `publish` | Yes | Publishes assets and associated metadata. |
 | `verify` | Yes | Remote reads and service comparisons. |
@@ -141,10 +142,13 @@ cleanly without a transport. Agent publication can legitimately use protocol
 Readiness must respect the selected workflow instead of inventing one universal
 required-field list. Unknown or untested facts must stay unknown.
 
-`scaffold --dry-run` (#1747) proposes offline candidates from the scanner.
-Safe declaration writes (#1748) and workflow-scoped readiness (#1749) are still
-milestone 28 plans and must not be marketed as installed until implementation
-and published-package acceptance land.
+`scaffold` proposes offline candidates from the scanner (#1747) and appends
+them to the project file (#1748). The append is text-only, so no TOML writer
+dependency is needed and the authored bytes survive. A representation it cannot
+extend safely, such as an inline table, is refused rather than normalized.
+Workflow-scoped readiness (#1749) is still a milestone 28 plan and must not be
+marketed as installed until implementation and published-package acceptance
+land.
 
 ## Output And Failure Contracts
 
@@ -156,7 +160,9 @@ existing documents in a new envelope.
 
 Declaration failures generally produce the command's JSON document and exit 1.
 `scan` and `scaffold` use exit 2 for a missing path; malformed declarations
-are scan issues with exit 1, and `scaffold`'s unfilled placeholders exit 0. Publication/verification/exposure commands use exit 2 for missing
+are scan issues with exit 1, as is a refused `scaffold` write (a
+`scaffold-refused` issue in the document), and `scaffold`'s unfilled
+placeholders exit 0. Publication/verification/exposure commands use exit 2 for missing
 paths or invalid connection config, without a document. Named exceptions are
 `doctor`, which exits 1 on config failures, and `init`, whose command body has
 no exit-2 path: write failures and refused destinations or values exit 1 to stderr without a JSON document, and escaping `DonkeyError` is handled by
