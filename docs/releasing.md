@@ -47,6 +47,7 @@ of the **milestone being shipped**. The milestone titles are the ground truth
 | `Phase 2 — Differentiate, go beyond (0.2.0)` | `0.2.0` |
 | `Phase 2.1 — Consolidate Phase 2 (0.2.1)` | `0.2.1` |
 | `Phase 2.2 — Consolidate Phase 2 (0.2.2)` | `0.2.2` |
+| `Phase 2.3 — CLI onboarding and scaffolding (0.2.3)` | `0.2.3` |
 | `Phase 3 — Platform capabilities (0.3.0)` | `0.3.0` |
 | `Phase 4 — Enterprise readiness (0.4.0)` | `0.4.0` |
 | `Phase 5 — Complete rollout (1.0.0)` | `1.0.0` |
