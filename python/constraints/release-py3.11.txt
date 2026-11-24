@@ -5,9 +5,9 @@
 #
 backports-tarfile==1.2.0
 build==1.6.1
-certifi==2026.10.23
+certifi==2026.11.20
 cffi==2.1.1
-charset-normalizer==3.5.2
+charset-normalizer==3.5.3
 cryptography==50.0.2
 docutils==0.23
 hatchling==1.33.0
@@ -24,7 +24,7 @@ markdown-it-py==4.3.0
 mdurl==0.1.2
 more-itertools==11.2.1
 nh3==0.3.8
-packaging==26.3
+packaging==26.4
 pathspec==1.1.1
 pluggy==1.7.0
 pycparser==3.12
@@ -36,7 +36,7 @@ requests-toolbelt==1.0.0
 rfc3986==2.0.0
 rich==15.0.0
 secretstorage==3.5.0
-tomlkit==0.15.2
+tomlkit==0.15.3
 trove-classifiers==2026.9.21.13
 twine==7.0.0
 urllib3==2.8.0
