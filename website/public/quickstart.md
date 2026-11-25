@@ -19,13 +19,13 @@ Omni Gateway later is an environment change, not a code change.
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |
 | Local simulator & `simulate()` | Live | [Local simulator](https://docs.donkey-kit.dev/simulator.md) |
 | Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
-| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
+| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `scaffold`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
 | Governed tool access (MCP) | Live | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
 | A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
 | A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
 | On-behalf-of identity: `donkey.as_user()` | Live | [Identity](https://docs.donkey-kit.dev/identity.md) |
 | Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
-| `donkey scan` (agents, tools and MCP servers from code) | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
+| `donkey scan` and `donkey scaffold` (agents, tools and MCP servers from code, and the declarations they need) | Live | [From code to a publish plan](https://docs.donkey-kit.dev/cli.md#from-code-to-a-publish-plan) |
 | Publish to the registry and verify: `donkey publish`, `donkey verify` | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
 | Policy handshake | Roadmap | [Policy handshake](https://docs.donkey-kit.dev/policies.md) |
 
@@ -299,6 +299,9 @@ If `doctor` reports a `404`, read which line it is on:
 - **[Pick your framework](https://docs.donkey-kit.dev/frameworks.md)** — get a native LangGraph, ADK,
   Strands, LlamaIndex, CrewAI, OpenAI Agents SDK, Anthropic SDK or Agent
   Framework object in three lines.
+- **[From code to a publish plan](https://docs.donkey-kit.dev/cli.md#from-code-to-a-publish-plan)** — scan
+  your decorated agents and tools, scaffold their `.donkey-kit.toml`
+  declarations and review the publish plan, all offline.
 - **[Examples](https://docs.donkey-kit.dev/examples.md)** — runnable demos for every capability on this page.
 - **[Scenarios](https://docs.donkey-kit.dev/scenarios.md)** — support triage, a nightly batch and an internal
   copilot, built end to end.

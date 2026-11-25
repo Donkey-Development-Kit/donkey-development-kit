@@ -22,7 +22,7 @@ This is eager command registration, not dynamic plugin discovery.
 ```mermaid
 flowchart TD
     Entry[donkey console script] --> App[Typer parsing and command dispatch]
-    App --> Local[init and scan]
+    App --> Local[init, scan and scaffold]
     App --> Plans[publish and exposure planning]
     App --> Runtime[doctor and local runtime commands]
     Local --> Config[core config and static registry scan]
@@ -54,9 +54,15 @@ Paths below are relative to `python/src/donkey_kit/`.
 | --- | --- |
 | `cli/_app.py`: `app`, `_global`, `main` | Registration, global options, version output and a final `DonkeyError` boundary. |
 | `cli/_common.py`: `document`, `print_issues`, `ci_source` | Publication document adaptation, issue rendering and optional CI attribution. Not a universal output schema. |
-| `cli/init.py`: `init`, `_render_toml` | Resolve connection configuration and render an explicit non-secret allowlist into project TOML. |
+| `cli/init.py`: `init`, `_render_toml`, `_checked` | Resolve connection configuration, render an explicit non-secret allowlist (auth mode included) into escaped project TOML, refuse credential-bearing URLs, and validate the complete candidate before writing. |
+| `cli/_files.py`: `check_destination`, `create_new`, `replace` | CLI-only destination policy and staged publication for generated files: no symlink/directory/secret-holder targets, no-clobber creation, mode-preserving same-directory replace. |
 | `cli/scan.py`: `scan` | Render `registry.scan.scan` results without executing application code. |
-| `registry/scan.py`: `scan`, `ScanResult` | AST discovery, literal declaration validation and project service metadata. |
+| `registry/scan.py`: `scan`, `ScanResult` | AST discovery with lexical receiver resolution, literal argument validation and project service metadata. `local_overlay=False` reads the project file alone. |
+| `cli/scaffold.py`: `scaffold` | Write `registry.scaffold.build_scaffold`'s candidates through `cli/_files.py`, or render them as a TOML preview, a summary and versioned JSON. |
+| `registry/scaffold.py`: `build_scaffold`, `Scaffold` | Overlay-free candidate declaration tables for scanned services, with commented placeholders for deployment facts; `Scaffold.apply` appends them to the project text and proves the result parses to the old tables plus the new. |
+| `registry/readiness.py`: `assess`, `Readiness` | Offline, overlay-free readiness per workflow: scan validity, publication and per-service exposure status, with missing values named by table and key. |
+| `registry/remedy.py`: `scaffold_command`, `set_argument`, `table_name` | One wording for a missing declaration (#1750): the table header and an executable, shell-quoted `donkey scaffold [--expose] [--set ...] [PATH]` command. Planners add the command only when the responsible table is absent. |
+| `core/toml_text.py`: `basic_string`, `key`, `comment` | Hand-written TOML text for generated files; callers parse the result back. |
 | `registry/publish_plan.py`: `plan_publication`, `PublishPlan` | Offline publication validation and deterministic asset planning. |
 | `registry/expose_plan.py`: `plan_exposure`, `ExposePlan` | Validate and select one service for exposure through an existing gateway. |
 | `cli/publish.py`: `publish`, `_publish` | Plan first, then execute publication through a `Runtime` only for a live run. |
@@ -80,7 +86,7 @@ It also owns endpoint provenance and credential trust. A renderer must not
 duplicate these rules or bypass them by reconstructing a runtime configuration.
 
 Current global options go **before** the command. `--config` selects the output
-for `init`, but the input project file for `doctor`. Other commands reject it.
+for `init` (never read as its input), but the input project file for `doctor`. Other commands reject it.
 `--env` applies globally only to `init`; exposure commands have their own local
 `--env`. `--json` is global, and several commands also accept it locally.
 `--version` is eager plain-text output, not a JSON document.
@@ -90,7 +96,12 @@ the `--config` destination does not select its input. It returns successfully
 without resolving configuration or changing an existing file unless `--force`
 requests regeneration.
 Regeneration replaces the entire document, including any unrelated declarations;
-it is not a merge. Its current write is direct, not atomic.
+it is not a merge, and `init` names the dropped tables on stderr. Since #1746 the
+write is staged in the destination directory and published by `os.link`
+(creation: a file that appears meanwhile is never clobbered) or `os.replace`
+(regeneration: atomic for readers, last writer wins against a concurrent editor).
+The final destination component may not be a symlink, a directory or a
+secret-holder name, with or without `--force`; ancestor symlinks are allowed.
 
 For scan/publication/exposure, PATH is a directory or a single Python file.
 Current declaration readers load `.donkey-kit.toml` at that root or file's
@@ -105,13 +116,18 @@ declaration merge. These distinctions must be made
 explicit before adding scaffold output selection: a non-default scan root must
 not silently acquire the working directory's declarations, and an overlay-free
 scaffold must not reuse the current merged readers without separating inputs.
+`scaffold` keeps that separation: it calls `scan(..., local_overlay=False)` and
+parses only the root's project file itself, resolves no connection config, and
+reads no environment variable or user file.
 
 ## Side Effects And Readiness
 
 | Command | Network | Writes or executes |
 | --- | --- | --- |
-| `init` | No | Creates missing destination parent directories and writes a connection config file; resolves existing config sources only on the write path. An existing target without `--force` returns before resolution. |
+| `init` | No | Creates missing destination parent directories and writes a connection config file; resolves existing config sources only on the write path. An existing target without `--force` returns before resolution; an unsafe destination is refused first. |
 | `scan` | No | No writes; AST parsing and declaration reads only. |
+| `scaffold --dry-run` | No | No writes; AST parsing and a project-file read only. |
+| `scaffold` | No | Creates the scanned root's `.donkey-kit.toml` or appends missing tables to it, through `cli/_files.py`: no symlink or secret destination, no-clobber creation, and a refusal if the file changed while the write was staged. Never touches the local overlay. |
 | `publish --dry-run` | No | No writes; offline publication plan. |
 | `publish` | Yes | Publishes assets and associated metadata. |
 | `verify` | Yes | Remote reads and service comparisons. |
@@ -128,34 +144,77 @@ cleanly without a transport. Agent publication can legitimately use protocol
 Readiness must respect the selected workflow instead of inventing one universal
 required-field list. Unknown or untested facts must stay unknown.
 
-`scaffold` does **not** exist in this reviewed revision. Milestone 28 proposes
-offline candidates from the existing scanner, safe declaration writes and
-workflow-scoped readiness. Those plans must not be marketed as installed
-commands until implementation and published-package acceptance land.
+`scaffold` proposes offline candidates from the scanner (#1747) and appends
+them to the project file (#1748). The append is text-only, so no TOML writer
+dependency is needed and the authored bytes survive. A representation it cannot
+extend safely, such as an inline table, is refused rather than normalized.
+Its summary ends with workflow-scoped readiness (#1749,
+`registry/readiness.py`): scan validity, project-wide publication readiness
+and per-service exposure readiness, each a separate status. It reuses
+`plan_publication` and `plan_exposure` with `local_overlay=False` instead of
+restating their rules, so it reads the same committed file as the candidates
+and never the overlay, environment or connection config. A group ID the
+resolved `org_id` could supply is therefore a non-required note, and live
+state is always `not-checked`. The consumer walkthrough and the sibling
+published-package acceptance suite (#1751) cover the installed journey from
+`init` to `publish --dry-run`.
+
+`scaffold --set TABLE.KEY=VALUE` (#1750) turns a placeholder of a proposed
+table into an active key. It is not an editor: it fills only keys in
+`CandidateTable.unresolved`, refuses a table the project file already has, a
+secret-looking key (`looks_like_credential_param`) and anything not proposed,
+and validates values with the planners' own rules (`_SEMVER`,
+`MCP_TRANSPORTS`, `AGENT_PROTOCOLS`, `scan._endpoint_problem`). `InvalidSet`
+names the table and key, never the value, and the CLI exits 2 before writing.
+Because the filled values change what planners read, the CLI assesses
+readiness again after a write that used `--set`.
+
+Missing-declaration messages from scan, publish, verify, preflight and expose
+name the exact table and key; when the table is absent they append one
+`registry/remedy.py` command carrying a `--set` for every key that table
+still lacks, since a second scaffold run would not touch the table once it
+exists. Other failures carry no scaffold advice. Endpoint and provider URLs
+are checked for credentials (`core/endpoints.url_credential_problem`) before
+any other rule that would quote them.
+
+`doctor` confirms only what a typed refusal proves (#1749):
+`ModelNotRoutable` and `UpstreamModelError` fail the model, a
+`PolicyViolation` stays INFO (exit 0) and names the model as routed only from
+the `x-llm-proxy-llm-provider` header, and any other error fails a `probe` line
+with credentials and model not confirmed.
 
 ## Output And Failure Contracts
 
-Commands already have distinct machine contracts: `scan_format`, `plan_format`,
-`publish_format`, `verify_format` and `expose_format`, currently version 1.
+Commands already have distinct machine contracts: `scan_format`,
+`scaffold_format`, `plan_format`, `publish_format`, `verify_format` and
+`expose_format`, currently version 1.
 `init` and `doctor` do not carry those format keys. Do not silently wrap all
 existing documents in a new envelope.
 
 Declaration failures generally produce the command's JSON document and exit 1.
-`scan` uses exit 2 for a missing path; malformed declarations are scan issues
-with exit 1. Publication/verification/exposure commands use exit 2 for missing
-paths or invalid connection config, without a document. Named exceptions are
+`scan` and `scaffold` use exit 2 for a missing path; malformed declarations
+are scan issues with exit 1, as is a refused `scaffold` write (a
+`scaffold-refused` issue in the document), and `scaffold`'s unfilled
+placeholders exit 0; a refused `--set` exits 2. Publication/verification/exposure commands use exit 2 for missing
+paths or invalid connection config, without a document. A config file that
+cannot be read, is not UTF-8 or is not valid TOML is a `ConfigError` from
+`core/config._read_table` (#1750) that names the file and shows no bytes, so it
+takes that exit-2 path instead of a traceback. Named exceptions are
 `doctor`, which exits 1 on config failures, and `init`, whose command body has
-no exit-2 path: write failures exit 1 and escaping `DonkeyError` is handled by
+no exit-2 path: write failures and refused destinations or values exit 1 to stderr without a JSON document, and escaping `DonkeyError` is handled by
 `main`. Parser/global-option usage errors may still exit 2 before those command
 bodies run. The precise command contract wins over a proposed global rule.
 Hidden `status` exits 3; `test` forwards pytest's exit status. `_app.main` handles otherwise
 escaping `DonkeyError` as stderr plus exit 1, not a universal JSON error handler.
 
 The 2026-11-14 review found gaps, not new supported behavior: `init` string
-escaping and destination protection, credential-bearing public URLs, decoding
-errors escaping config handling, static scanner ambiguity, and `doctor`'s
-false-green fallback. Their remediation is recorded in issues #1746 through
-#1751. Passing existing tests does not establish that those cases are safe.
+escaping and destination protection (closed by #1746, which also refuses
+credential-bearing URLs in what `init` writes), credential-bearing public URLs
+elsewhere, decoding errors escaping config handling, static scanner ambiguity, and `doctor`'s
+false-green fallback. Issues #1746 through #1750 remediated them, each with
+regression tests; #1751 repeats the credential, invalid UTF-8 and invalid TOML
+cases against the published package. Other cases still need their own
+tests: passing unrelated tests does not establish that they are safe.
 
 ## Maintaining This Map
 

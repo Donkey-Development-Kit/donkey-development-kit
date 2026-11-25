@@ -26,7 +26,7 @@ def lookup_sku(sku: str, mode: Literal['a'] | None) -> dict:
     """Look up a SKU's price and stock level by its code."""
 
 
-@donkey.tool(server="sku-manager", approval="always", risk="low")
+@donkey.tool(server="sku-manager", approval="required", risk="low")
 def ping() -> str:
     """Check that the server answers."""
 '''
@@ -94,7 +94,7 @@ def test_each_tool_shows_the_governance_it_declares(tmp_path: Path) -> None:
 
     ping = page[page.index("### ping") :]
     lookup = page[page.index("### lookup_sku") : page.index("### ping")]
-    assert "Governed with approval: always, risk: low." in ping
+    assert "Governed with approval: required, risk: low." in ping
     assert "Governed with" not in lookup
 
 

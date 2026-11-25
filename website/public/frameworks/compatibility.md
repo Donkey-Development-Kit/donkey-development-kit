@@ -25,17 +25,17 @@ install takes each framework's newest release.
 
 | Framework | Tier | Extra | Package | Minimum supported | Tested on every PR | Known incompatible |
 |---|---|---|---|---|---|---|
-| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | Conformance-tested | `[langgraph]` | `langgraph` | 0.4 | 1.2.22 | `langgraph==0.5.0` with `langchain-core>=1.0` |
-|  |  |  | `langchain-openai` | 0.3.9 | 1.8.1 |  |
-|  |  |  | `langchain-core` | 0.3.45 | 1.8.2 |  |
-| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `connection_kwargs()` | `[adk]` | `google-adk` | 2.4 | 2.14.1 | None known |
-|  |  |  | `litellm` | 1.84 | 1.110.0 |  |
-| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `connection_kwargs()` | `[strands]` | `strands-agents` | 1.57.1 | 1.65.0 | None known |
+| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | Conformance-tested | `[langgraph]` | `langgraph` | 0.4 | 1.2.24 | `langgraph==0.5.0` with `langchain-core>=1.0` |
+|  |  |  | `langchain-openai` | 0.3.9 | 1.8.5 |  |
+|  |  |  | `langchain-core` | 0.3.45 | 1.8.4 |  |
+| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `connection_kwargs()` | `[adk]` | `google-adk` | 2.4 | 2.15.0 | None known |
+|  |  |  | `litellm` | 1.84 | 1.110.3 |  |
+| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `connection_kwargs()` | `[strands]` | `strands-agents` | 1.57.1 | 1.66.0 | None known |
 | [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `connection_kwargs()` | `[agent_framework]` | `agent-framework` | 1.13 | 1.26.0 | None known |
-| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | Conformance-tested | `[openai-agents]` | `openai-agents` | 0.20 | 0.25.0 | None known |
-|  |  |  | `openai` | 2.45 | 3.55.0 |  |
-| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 2.10.0 | None known |
-| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.41 | None known |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | Conformance-tested | `[openai-agents]` | `openai-agents` | 0.20 | 0.26.0 | None known |
+|  |  |  | `openai` | 2.45 | 3.58.0 |  |
+| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 2.13.0 | None known |
+| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.45 | None known |
 | [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `connection_kwargs()` | `[llamaindex]` | `llama-index-llms-openai-like` | 0.8 | 0.9.0 | None known |
 
 ## Installing several frameworks together

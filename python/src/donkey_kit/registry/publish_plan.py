@@ -50,7 +50,9 @@ from pathlib import Path
 from typing import Any
 
 from ..core.config import LOCAL_TOML_NAME, TOML_NAME
+from ..core.endpoints import url_credential_problem
 from .publication import content_digest
+from .remedy import scaffold_command, set_argument
 from .scan import SCAN_FORMAT, ScanIssue, ScanResult
 
 if sys.version_info >= (3, 11):
@@ -71,6 +73,7 @@ __all__ = [
 # incompatibly, as SCAN_FORMAT is. A publish and a verify print their own (#1427).
 PLAN_FORMAT = 1
 
+_PUBLICATION = ("donkey", "publication")
 _TABLE_KEYS = frozenset({"group_id", "version", "protocol_version", "provider", "assets"})
 _ASSET_KEYS = frozenset(
     {"asset_id", "name", "description", "version", "protocol_version", "provider", "documentation"}
@@ -189,27 +192,47 @@ class PublishPlan:
 
 
 def plan_publication(
-    result: ScanResult, root: str | Path, *, default_group_id: str | None = None
+    result: ScanResult,
+    root: str | Path,
+    *,
+    default_group_id: str | None = None,
+    local_overlay: bool = True,
 ) -> PublishPlan:
     """Plan the Exchange assets for ``result`` (scanned from ``root``) offline.
 
     ``default_group_id`` is the group used when ``[donkey.publication]`` sets
     none: the org ID, which Exchange uses as the default Maven group
-    (docs/verified-apis.md §7). Makes no network call.
+    (docs/verified-apis.md §7). ``local_overlay=False`` reads the project file
+    alone, as :func:`~donkey_kit.registry.scan.scan` can. Makes no network call.
     """
     base = Path(root)
     directory = base.parent if base.is_file() else base
-    declared = _Declaration(directory)
+    declared = _Declaration(directory, local_overlay=local_overlay)
     group_id = declared.group_id or default_group_id
+    missing_version = declared.version is None and not declared.reported_version
+    # Scaffold can add [donkey.publication] only while the file lacks it, and
+    # then with every missing key at once: a second run would leave it alone.
+    sets = []
+    if missing_version:
+        sets.append(set_argument(_PUBLICATION, "version", "1.0.0"))
+    if not group_id:
+        sets.append(set_argument(_PUBLICATION, "group_id", "GROUP_ID"))
+    how = (
+        ""
+        if declared.present or not (result.agents or result.mcp_servers)
+        else f"; `{scaffold_command(root, sets=sets)}` adds the table with it"
+    )
     if not group_id:
         declared.issue(
             "missing-group-id",
             "donkey.publication",
-            "set group_id in [donkey.publication], or configure org_id (ANYPOINT_ORG_ID)",
+            "set group_id in [donkey.publication], or configure org_id (ANYPOINT_ORG_ID)" + how,
         )
-    if declared.version is None and not declared.reported_version:
+    if missing_version:
         declared.issue(
-            "missing-version", "donkey.publication", "set version in [donkey.publication]"
+            "missing-version",
+            "donkey.publication",
+            "set version in [donkey.publication] to a semantic version, such as 1.0.0" + how,
         )
 
     published = result.to_dict()
@@ -307,8 +330,10 @@ class _Declaration:
     file first, the local file merged over it key by key, a user-wide file never.
     """
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, *, local_overlay: bool = True) -> None:
         self.issues: list[ScanIssue] = []
+        # Whether either file has a [donkey.publication] table, valid or not.
+        self.present = False
         self.group_id: str | None = None
         self.version: str | None = None
         self.reported_version = False
@@ -319,7 +344,7 @@ class _Declaration:
         self.documentation_text: dict[str, str] = {}
         self._directory = directory
         self._file = TOML_NAME
-        for name in (TOML_NAME, LOCAL_TOML_NAME):
+        for name in (TOML_NAME, LOCAL_TOML_NAME) if local_overlay else (TOML_NAME,):
             path = directory / name
             if path.is_file():
                 self._read(path, name)
@@ -342,6 +367,7 @@ class _Declaration:
         if table is None:
             return
         self._file = name
+        self.present = True
         if not isinstance(table, dict):
             self.issue("invalid-publication", "donkey.publication", "must be a table", path=name)
             return
@@ -437,20 +463,38 @@ class _Declaration:
         return None
 
     def _provider(self, value: object, subject: str, name: str) -> Provider | None:
-        if isinstance(value, dict) and set(value) == {"organization", "url"}:
-            organization, url = value["organization"], value["url"]
-            if (
-                isinstance(organization, str)
-                and organization.strip()
-                and isinstance(url, str)
-                and url.startswith(("https://", "http://"))
-            ):
-                return Provider(organization, url)
+        expected = (
+            "provider must be a table with exactly organization (a non-empty string) "
+            "and url (an http or https URL)"
+        )
+        if not isinstance(value, dict) or set(value) != {"organization", "url"}:
+            keys = ", ".join(sorted(map(str, value))) if isinstance(value, dict) else None
+            found = f"it has {keys or 'no keys'}" if keys is not None else type(value).__name__
+            self.issue("invalid-publication", subject, f"{expected}, not {found}", path=name)
+            return None
+        organization, url = value["organization"], value["url"]
+        # The URL is published verbatim in the asset's metadata, so one carrying a
+        # credential is refused, and no part of the value is echoed (#1750).
+        credential = url_credential_problem(url) if isinstance(url, str) else None
+        if credential is not None:
+            self.issue(
+                "invalid-publication",
+                subject,
+                f"provider url {credential}; remove it, since the url is published",
+                path=name,
+            )
+            return None
+        if (
+            isinstance(organization, str)
+            and organization.strip()
+            and isinstance(url, str)
+            and url.startswith(("https://", "http://"))
+        ):
+            return Provider(organization, url)
         self.issue(
             "invalid-publication",
             subject,
-            "provider must be a table with exactly organization (a non-empty string) "
-            f"and url (an http or https URL), not {value!r}",
+            f"{expected}, not organization={organization!r}, url={url!r}",
             path=name,
         )
         return None

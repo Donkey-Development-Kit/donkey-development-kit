@@ -304,6 +304,37 @@ async def test_error_cleanup_shares_the_deadline_without_task_leaks(
     assert asyncio.all_tasks() <= before
 
 
+@pytest.mark.parametrize("encoding", ["identity", "gzip"])
+async def test_error_cleanup_starts_the_close_when_the_deadline_is_spent(
+    server: _Server, monkeypatch: pytest.MonkeyPatch, encoding: str
+) -> None:
+    # A zero budget once made `wait_for` cancel the close before it ran (#1785).
+    monkeypatch.setattr(mcp_module, "_ERROR_BODY_TIMEOUT", 0.0)
+
+    class Stream(httpx.AsyncByteStream):
+        closing = False
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            yield b"error"
+
+        async def aclose(self) -> None:
+            self.closing = True
+            await asyncio.Event().wait()
+
+    stream = Stream()
+    response = httpx.Response(
+        403,
+        headers={"content-encoding": encoding},
+        stream=stream,
+        request=httpx.Request("POST", "https://gw.example.test/x/"),
+    )
+    before = asyncio.all_tasks()
+    with pytest.raises(httpx.HTTPStatusError, match="403"):
+        await asyncio.wait_for(mcp_module._read_error(response), 1.0)
+    assert stream.closing
+    assert asyncio.all_tasks() <= before
+
+
 @pytest.mark.parametrize("during_close", [False, True])
 async def test_error_read_cancellation_does_not_wait_for_stalled_cleanup(
     server: _Server, monkeypatch: pytest.MonkeyPatch, during_close: bool

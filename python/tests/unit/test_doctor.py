@@ -30,8 +30,11 @@ from donkey_kit.core.config import ConfigWarning
 from donkey_kit.core.errors import (
     AuthError,
     ConfigError,
+    DonkeyError,
     GatewayUnavailable,
+    ModelNotRoutable,
     PIIDetected,
+    UpstreamModelError,
     UpstreamRequestError,
     classify,
 )
@@ -47,6 +50,8 @@ _AZURE = (
     / "anypoint"
     / "azure_openai_routing"
 )
+#: Live captures from the DDK LLM proxy (docs/verified-apis.md §4).
+_LLM_PROXY = _AZURE.parent / "llm_proxy"
 
 
 @pytest.fixture
@@ -139,13 +144,93 @@ def test_model_not_allowed_diagnosed_from_verified_passthrough(llm_env: None) ->
     assert model.remediation == UpstreamRequestError.remediation
 
 
-def test_non_model_typed_error_leaves_model_ok_and_notes_it(llm_env: None) -> None:
-    """A policy refusal on the probe means auth + model were accepted; it's
-    surfaced on its own [i] line, never mis-attributed to credentials or model."""
+def test_policy_refusal_without_routing_headers_does_not_claim_the_model(
+    llm_env: None,
+) -> None:
+    """A refusal is reported on its own [i] line and doesn't fail doctor, but with
+    no routing header it says nothing about the model (#1749)."""
     checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(PIIDetected("blocked"), None)))
     assert _by_name(checks, "credentials").level is Level.OK
-    assert _by_name(checks, "model").level is Level.OK
+    model = _by_name(checks, "model")
+    assert model.level is Level.SKIP
+    assert "not confirmed" in model.detail
     assert _by_name(checks, "policy").level is Level.INFO
+    assert not doctor.has_failure(checks)
+
+
+def test_routed_policy_refusal_names_the_route(llm_env: None) -> None:
+    """The captured PII refusal carries the routing headers: the model was routed
+    (to openai), and the refusal is informational."""
+    err = classify(_llm_proxy("reject.pii-detected", 403))
+    assert isinstance(err, PIIDetected)
+    checks = run_diagnostics("gpt-5.1", probe=_probe(ProbeResult(err, None)))
+    assert _by_name(checks, "credentials").level is Level.OK
+    model = _by_name(checks, "model")
+    assert model.level is Level.OK
+    assert model.detail == "routed to openai"
+    policy = _by_name(checks, "policy")
+    assert policy.level is Level.INFO
+    assert policy.remediation == err.remediation
+    assert not doctor.has_failure(checks)
+
+
+@pytest.mark.parametrize("name", ["reject.model-not-routable", "reject.model-missing"])
+def test_model_not_routable_fails_the_model(llm_env: None, name: str) -> None:
+    """The gateway's own routing 400 (no x-llm-proxy-* header) is a model failure
+    with its own remediation, and leaves the credentials unconfirmed (#1749)."""
+    err = classify(_llm_proxy(name, 400))
+    assert isinstance(err, ModelNotRoutable)
+    checks = run_diagnostics("gpt-5-mini", probe=_probe(ProbeResult(err, None)))
+
+    assert _by_name(checks, "gateway").level is Level.OK
+    creds = _by_name(checks, "credentials")
+    assert creds.level is Level.SKIP
+    assert "not confirmed" in creds.detail
+    model = _by_name(checks, "model")
+    assert model.level is Level.FAIL
+    assert model.detail.startswith("not routable — ")
+    assert model.remediation == err.remediation
+    assert "accepted" not in model.detail
+    assert doctor.has_failure(checks)
+
+
+def test_upstream_model_error_fails_the_model(llm_env: None) -> None:
+    """A provider 5xx means the model is not usable now: the model line fails with
+    the error's remediation, and nothing unobserved is reported as accepted."""
+    err = UpstreamModelError("The upstream model provider failed (502).")
+    checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(err, None)))
+
+    assert _by_name(checks, "credentials").level is Level.SKIP
+    model = _by_name(checks, "model")
+    assert model.level is Level.FAIL
+    assert "upstream failed" in model.detail
+    assert model.remediation == UpstreamModelError.remediation
+    assert doctor.has_failure(checks)
+
+
+def test_unknown_error_fails_the_probe_and_confirms_nothing(llm_env: None) -> None:
+    """An error doctor cannot read is a failed probe: its own FAIL line with the
+    error's remediation, and credentials and model not confirmed (#1749)."""
+    err = DonkeyError("Unexpected 418 from the gateway.")
+    checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(err, None)))
+
+    assert _by_name(checks, "credentials").level is Level.SKIP
+    assert _by_name(checks, "model").level is Level.SKIP
+    probe = _by_name(checks, "probe")
+    assert probe.level is Level.FAIL
+    assert probe.detail == "DonkeyError: Unexpected 418 from the gateway."
+    assert probe.remediation == DonkeyError.remediation
+    assert doctor.has_failure(checks)
+
+
+def test_non_model_request_error_is_a_failed_probe(llm_env: None) -> None:
+    """A 4xx that doesn't name the model was a policy [i] line before #1749; it is
+    a failed probe, since doctor's own request did not work."""
+    err = UpstreamRequestError("bad temperature", code="invalid_value", param="temperature")
+    checks = run_diagnostics("gpt-4o", probe=_probe(ProbeResult(err, None)))
+    assert _by_name(checks, "model").level is Level.SKIP
+    assert _by_name(checks, "probe").level is Level.FAIL
+    assert not any(c.name == "policy" for c in checks)
 
 
 # --- the live probe's error bridge (#813) --------------------------------------
@@ -210,6 +295,17 @@ def _captured(name: str, status: int) -> httpx.Response:
         status,
         headers={k: v for k, v in headers.items() if k != "content-length"},
         content=body.read_bytes() if body.exists() else b"",
+        request=httpx.Request("POST", "https://gw.example.internal/p/responses"),
+    )
+
+
+def _llm_proxy(name: str, status: int) -> httpx.Response:
+    """A ``llm_proxy`` live capture as the response the client would have received."""
+    headers = parse_headers((_LLM_PROXY / f"{name}.headers.txt").read_text())
+    return httpx.Response(
+        status,
+        headers={k: v for k, v in headers.items() if k != "content-length"},
+        content=(_LLM_PROXY / f"{name}.body.json").read_bytes(),
         request=httpx.Request("POST", "https://gw.example.internal/p/responses"),
     )
 

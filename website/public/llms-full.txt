@@ -291,13 +291,13 @@ Omni Gateway later is an environment change, not a code change.
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |
 | Local simulator & `simulate()` | Live | [Local simulator](https://docs.donkey-kit.dev/simulator.md) |
 | Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
-| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
+| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `scaffold`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
 | Governed tool access (MCP) | Live | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
 | A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
 | A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
 | On-behalf-of identity: `donkey.as_user()` | Live | [Identity](https://docs.donkey-kit.dev/identity.md) |
 | Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
-| `donkey scan` (agents, tools and MCP servers from code) | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
+| `donkey scan` and `donkey scaffold` (agents, tools and MCP servers from code, and the declarations they need) | Live | [From code to a publish plan](https://docs.donkey-kit.dev/cli.md#from-code-to-a-publish-plan) |
 | Publish to the registry and verify: `donkey publish`, `donkey verify` | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
 | Policy handshake | Roadmap | [Policy handshake](https://docs.donkey-kit.dev/policies.md) |
 
@@ -571,6 +571,9 @@ If `doctor` reports a `404`, read which line it is on:
 - **[Pick your framework](https://docs.donkey-kit.dev/frameworks.md)** — get a native LangGraph, ADK,
   Strands, LlamaIndex, CrewAI, OpenAI Agents SDK, Anthropic SDK or Agent
   Framework object in three lines.
+- **[From code to a publish plan](https://docs.donkey-kit.dev/cli.md#from-code-to-a-publish-plan)** — scan
+  your decorated agents and tools, scaffold their `.donkey-kit.toml`
+  declarations and review the publish plan, all offline.
 - **[Examples](https://docs.donkey-kit.dev/examples.md)** — runnable demos for every capability on this page.
 - **[Scenarios](https://docs.donkey-kit.dev/scenarios.md)** — support triage, a nightly batch and an internal
   copilot, built end to end.
@@ -728,7 +731,9 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
   
   
     **Purpose:** `donkey scan` derives a model of your agents, tools and
-    MCP servers from code; `donkey publish` registers it in Exchange, and
+    MCP servers from code; `donkey scaffold` adds the `.donkey-kit.toml`
+    declarations they still need and says what each workflow is missing;
+    `donkey publish` registers them in Exchange, and
     `donkey verify` checks the live servers and agents against what was
     published. **Advantage:** the catalog stays in sync from CI, not by hand.
   
@@ -1120,17 +1125,17 @@ install takes each framework's newest release.
 
 | Framework | Tier | Extra | Package | Minimum supported | Tested on every PR | Known incompatible |
 |---|---|---|---|---|---|---|
-| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | Conformance-tested | `[langgraph]` | `langgraph` | 0.4 | 1.2.22 | `langgraph==0.5.0` with `langchain-core>=1.0` |
-|  |  |  | `langchain-openai` | 0.3.9 | 1.8.1 |  |
-|  |  |  | `langchain-core` | 0.3.45 | 1.8.2 |  |
-| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `connection_kwargs()` | `[adk]` | `google-adk` | 2.4 | 2.14.1 | None known |
-|  |  |  | `litellm` | 1.84 | 1.110.0 |  |
-| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `connection_kwargs()` | `[strands]` | `strands-agents` | 1.57.1 | 1.65.0 | None known |
+| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | Conformance-tested | `[langgraph]` | `langgraph` | 0.4 | 1.2.24 | `langgraph==0.5.0` with `langchain-core>=1.0` |
+|  |  |  | `langchain-openai` | 0.3.9 | 1.8.5 |  |
+|  |  |  | `langchain-core` | 0.3.45 | 1.8.4 |  |
+| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `connection_kwargs()` | `[adk]` | `google-adk` | 2.4 | 2.15.0 | None known |
+|  |  |  | `litellm` | 1.84 | 1.110.3 |  |
+| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `connection_kwargs()` | `[strands]` | `strands-agents` | 1.57.1 | 1.66.0 | None known |
 | [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `connection_kwargs()` | `[agent_framework]` | `agent-framework` | 1.13 | 1.26.0 | None known |
-| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | Conformance-tested | `[openai-agents]` | `openai-agents` | 0.20 | 0.25.0 | None known |
-|  |  |  | `openai` | 2.45 | 3.55.0 |  |
-| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 2.10.0 | None known |
-| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.41 | None known |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | Conformance-tested | `[openai-agents]` | `openai-agents` | 0.20 | 0.26.0 | None known |
+|  |  |  | `openai` | 2.45 | 3.58.0 |  |
+| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `connection_kwargs()` | `[anthropic]` | `anthropic` | 0.116 | 2.13.0 | None known |
+| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `connection_kwargs()` | `[crewai]` | `crewai` | 1.15.3 | 1.15.45 | None known |
 | [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `connection_kwargs()` | `[llamaindex]` | `llama-index-llms-openai-like` | 0.8 | 0.9.0 | None known |
 
 ## Installing several frameworks together
@@ -7880,11 +7885,165 @@ donkey mock          # the local simulator — --scenario scripts failures
 donkey dev my:agent  # serves an @donkey.agent behind a simulated A2A ingress
 donkey test          # a thin front end to pytest --donkey-conformance
 donkey scan          # finds your agents, tools and MCP servers, without running your code
+donkey scaffold      # adds the .donkey-kit.toml tables they still need
 donkey publish       # registers them in Exchange; --dry-run prints the plan and sends nothing
 donkey verify        # checks published MCP servers and agents against their live side; reads only
 donkey preflight     # checks, read-only, that a service can be put behind its gateway
 donkey expose        # puts one MCP server or A2A agent behind an existing gateway
 ```
+
+### From code to a publish plan
+
+This walkthrough takes a project from decorated code to a publish plan. Every
+step up to the plan is offline: no credentials are checked and nothing is sent.
+The live checks come after, as a separate gate. The project has one MCP tool
+and one agent:
+
+```python filename="app/main.py"
+from donkey_kit import Donkey
+
+donkey = Donkey.from_env()
+
+@donkey.tool(server="sku-manager")
+def lookup_sku(sku: str) -> dict:
+    """Look up a SKU's price and stock level by its code."""
+    ...
+
+@donkey.agent(name="support-triage", skills=["triage"])
+async def triage(task):
+    """Triage a support ticket and draft a reply for a human to send."""
+    ...
+```
+
+**1. Write the connection config.** Set the values you have, such as
+`ANYPOINT_ORG_ID`, in the environment, then run `donkey init` from the project
+root. It writes the non-secret ones to `.donkey-kit.toml` and names every
+required value still missing, with its environment variable:
+
+```
+$ donkey init
+Wrote /path/to/support-desk/.donkey-kit.toml.
+
+Still missing (set before the SDK can reach the platform):
+  - client_id (env ANYPOINT_CLIENT_ID)
+  - client_secret (env ANYPOINT_CLIENT_SECRET)
+  - llm_proxy_url (env DONKEY_LLM_PROXY_URL)
+  - llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)
+  - llm_proxy_client_secret (env DONKEY_LLM_PROXY_CLIENT_SECRET)
+```
+
+The missing values don't block the offline steps. Secrets never go in this
+file: put them in the environment or a gitignored `.donkey-kit.local.toml`. If
+you set an LLM proxy auth mode (`DONKEY_LLM_PROXY_AUTH`), a model-wallet client
+ID or a dynamic-key header, `init` keeps them too. See
+[`donkey init`](#donkey-init) for the connection modes.
+
+**2. See what the code declares.** `donkey scan` reads the decorators without
+running your code. A gap is named with the table and key that fill it:
+
+```
+$ donkey scan
+  agent  support-triage  (app/main.py:13)
+  mcp    sku-manager  (1 tool: lookup_sku)  transport undeclared (set transport in [donkey.mcp_servers.sku-manager]; `donkey scaffold` adds the table if .donkey-kit.toml lacks it)
+found 1 agent, 1 tool, 1 MCP server
+```
+
+**3. Preview the declarations.** `donkey scaffold --dry-run` prints the tables
+the project still needs and writes nothing. What the code says becomes a key.
+What it can't say is a commented placeholder:
+
+```
+$ donkey scaffold --dry-run
+# agent triage, app/main.py:13
+[donkey.agents.support-triage]
+# protocol = "<a2a_v1 or other>"
+# endpoint = "<the URL the agent is served at; required for a2a_v1>"
+
+# MCP server with tools: lookup_sku
+[donkey.mcp_servers.sku-manager]
+# transport = "<stdio, streamable-http or sse>"
+# endpoint = "<the server's http or https URL; none for stdio>"
+
+# Exchange coordinates for `donkey publish`
+[donkey.publication]
+# version = "<a semantic version, such as 1.0.0>"
+# group_id = "<the Exchange group; the configured org_id when unset>"
+...
+5 tables for .donkey-kit.toml, 6 placeholders to fill in
+readiness, offline from the committed file (live credentials and reachability not checked: donkey doctor, donkey preflight)
+  scan: valid
+  publish: incomplete
+      missing  [donkey.publication] version: a semantic version, such as 1.0.0
+      ...
+```
+
+Add `--json` for the same result as one document (`scaffold_format: 1`): the
+TOML as `toml`, the `candidates` and already-`declared` tables, the number of
+`unresolved` placeholders, the `readiness` report and `written: false`.
+
+**4. Write them, with the values you know.** The deployment facts (the
+version, where each service is served, which protocol the agent speaks) are
+yours to state. Pass the ones you know with `--set`, and scaffold writes them
+as real keys:
+
+```
+$ donkey scaffold --set publication.version=1.0.0 \
+    --set mcp_servers.sku-manager.transport=streamable-http \
+    --set mcp_servers.sku-manager.endpoint=https://sku.example.com/mcp \
+    --set agents.support-triage.protocol=a2a_v1 \
+    --set agents.support-triage.endpoint=https://triage.example.com
+added to .donkey-kit.toml: 5 tables, 1 placeholder to fill in
+readiness, offline from the committed file (live credentials and reachability not checked: donkey doctor, donkey preflight)
+  scan: valid
+  publish: ready
+      note  [donkey.publication] group_id: not declared: publish uses the configured org_id (ANYPOINT_ORG_ID), which is not checked offline
+  expose sku-manager: incomplete
+      missing  [donkey.expose] target: the gateway to deploy to, or pass --target
+  expose support-triage: incomplete
+      missing  [donkey.expose] target: the gateway to deploy to, or pass --target
+```
+
+The tables are appended after what `init` wrote, which stays as it was. A
+placeholder left open, here `group_id`, stays commented. Edit the file to
+fill it in, then uncomment the line. Running `donkey scaffold` again prints
+`nothing to add to .donkey-kit.toml` and leaves the file alone. Readiness only
+counts what the committed file says. `publish: ready` doesn't mean your
+credentials work or your services are up. Exposure stays incomplete until you
+declare a gateway, which this walkthrough doesn't need.
+
+**5. Review the publish plan.** `donkey publish --dry-run` prints each asset
+it would register, with its coordinates and digest, and sends nothing:
+
+```
+$ donkey publish --dry-run
+  mcp    <org-id>:sku-manager:1.0.0  sku-manager  sha256:5bfdcf57…
+  agent  <org-id>:support-triage:1.0.0  support-triage  sha256:515b312e…
+would publish 2 assets (dry run: nothing was sent)
+```
+
+If you skip step 4, the plan says what is missing and how to add it, and exits
+`1`:
+
+```
+1 issue
+  .donkey-kit.toml:0  missing-version  donkey.publication: set version in [donkey.publication] to a semantic version, such as 1.0.0; `donkey scaffold --set publication.version=1.0.0` adds the table with it
+```
+
+The plan still resolves your connection config for the default group ID, so
+`ANYPOINT_ORG_ID` (or `org_id` in the file) must be set. That's the end of the
+offline journey: commit `.donkey-kit.toml`.
+
+**6. The live gate.** These commands need the missing credentials from step 1,
+and they reach the platform:
+
+- `donkey doctor` makes one real governed model request. It can consume
+  tokens or model budget.
+- `donkey preflight --service sku-manager`, and `donkey expose --dry-run`,
+  make only reads, but they read the live control plane and gateway. Read-only
+  isn't offline. They need a `[donkey.expose]` table: add it with
+  `donkey scaffold --expose`.
+- `donkey publish` registers the assets in Exchange, and `donkey verify`
+  checks them against their live side.
 
 ### Global flags
 
@@ -7898,8 +8057,9 @@ donkey --env Sandbox init         # write this Anypoint environment into the gen
 donkey --json init                # machine-readable output where a command supports it
 ```
 
-`--config` selects the file `init` writes or the project file `doctor` reads;
-`doctor` still applies the normal per-field precedence: explicit kwargs (when
+`--config` selects the file `init` writes or the project file `doctor` reads.
+For `init` it is only the destination: `init` still resolves its values from
+the working directory, as described [below](#donkey-init). `doctor` still applies the normal per-field precedence: explicit kwargs (when
 calling the config loader in code), environment variables, the named file's
 local overlay, the named file, user config, then defaults. `--env` applies to
 `init` only; set `ANYPOINT_ENV` for `doctor`. Other commands reject these flags
@@ -7926,7 +8086,7 @@ typer now rejects them as unknown commands (exit `2`).
 
 ### JSON output
 
-Each document that `scan`, `publish`, `verify`, `preflight` and `expose` print
+Each document that `scan`, `scaffold`, `publish`, `verify`, `preflight` and `expose` print
 with `--json` carries its own format key. A script reads the key before it reads
 the rest. The number goes up only when the shape changes in a way that breaks an
 existing reader:
@@ -7934,6 +8094,7 @@ existing reader:
 | Command | Format key | What it prints |
 |---|---|---|
 | `donkey scan` | `scan_format: 1` | The scan model. |
+| `donkey scaffold` | `scaffold_format: 1` | The candidate tables, their TOML (`toml`), what is already declared, whether they were `written`, and the issues. |
 | `donkey publish --dry-run` | `plan_format: 1` | The plan: the assets a publish would register, and the issues. |
 | `donkey publish` | `publish_format: 1` | The plan's assets, each with a `status` and a `detail`, and the issues. |
 | `donkey verify` | `verify_format: 1` | The plan's assets, each with a `status`, a `detail` and its `differences`, and the issues. |
@@ -7944,7 +8105,25 @@ the command got as far as reading the declaration. Nothing is sent then. A
 `publish` or `verify` reports every asset `not_attempted`, an `expose`
 report has `ok: false` and no steps, and every document lists the issues.
 The issues also go to stderr, and the command exits `1`. A missing path or
-invalid config exits `2` with no document.
+invalid config exits `2` with no document. That includes a `.donkey-kit.toml`
+that is not UTF-8 or not valid TOML: the message names the file and shows none
+of its bytes.
+
+When an issue is a missing declaration, its message names the table and key to
+set. If the table isn't in `.donkey-kit.toml` yet, it also gives the
+`donkey scaffold` command that adds it, with every key that table still lacks
+as a `--set` (see [Filling a placeholder](#filling-a-placeholder-with---set)):
+
+```
+  .donkey-kit.toml:0  missing-version  donkey.publication: set version in [donkey.publication] to a semantic version, such as 1.0.0; `donkey scaffold --set publication.version=1.0.0 --set publication.group_id=GROUP_ID` adds the table with it
+```
+
+Replace each upper-case value, such as `GROUP_ID`, before you run it. Once the
+table exists, the message says only which key to set in it, since scaffold
+never changes a table you already have. Other issues, such as an invalid value,
+get no scaffold advice. An endpoint or provider URL that carries a credential
+(a user name or password, or a query or fragment parameter such as `api_key`)
+is refused, and the message never shows the URL.
 
 ### Command reference
 
@@ -7955,7 +8134,7 @@ Global options go before the command (`donkey --json init`):
 | Option | Default | Meaning |
 |---|---|---|
 | `--version` | off | Print the donkey-kit version and exit. |
-| `--config` | none | Where `init` writes .donkey-kit.toml, or the project config file `doctor` reads. |
+| `--config` | none | Where `init` writes .donkey-kit.toml (output only, never read), or the project config file `doctor` reads. |
 | `--env` | none | Anypoint environment `init` writes (e.g. Sandbox). init only. |
 | `--json` | off | Emit machine-readable JSON where the command supports it. |
 
@@ -7992,7 +8171,7 @@ Global options go before the command (`donkey --json init`):
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--force` | off | Regenerate even if the file already exists. |
+| `--force` | off | Regenerate the whole file even if it exists. Not a merge: other tables are dropped. |
 
 `donkey mock`: Run the local gateway simulator.
 
@@ -8021,6 +8200,17 @@ Global options go before the command (`donkey --json init`):
 | `--if-changed` / `--always` | on | Skip an asset whose latest published version has the same digest. |
 | `--json` | off | Emit the plan, or what was published, as JSON. |
 
+`donkey scaffold`: Add the .donkey-kit.toml tables the scanned services need and report readiness.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--dry-run` | off | Print the candidate tables instead of writing .donkey-kit.toml. |
+| `--expose` | off | Also propose the [donkey.expose] tables `donkey expose` reads. |
+| `--service` | none | Only this service ID's tables and exposure readiness; repeat for more. Repeatable. |
+| `--set` | none | Fill a placeholder of a table scaffold adds, such as publication.version=1.0.0; repeat for more. Repeatable. |
+| `--json` | off | Emit the scaffold as one JSON document. |
+
 `donkey scan`: Find @donkey.agent and @donkey.tool markers statically and report them.
 
 | Option | Default | Meaning |
@@ -8044,22 +8234,51 @@ Global options go before the command (`donkey --json init`):
 ### `donkey init`
 
 Resolves your current configuration (env vars → config files → defaults; see
-[Precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence)) and writes a **commented** `.donkey-kit.toml` with the values it
-found.
+[Precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence)), from the working directory,
+and writes a **commented** `.donkey-kit.toml` with the non-secret connection
+values it found.
 
 - **Names every missing required field at once** — control plane *and* LLM
   proxy — using the same validation the SDK runs at call time, so `init` and a
   real request never disagree about what is required.
+- **Keeps your connection mode.** Besides the IDs and URLs, it writes the
+  LLM proxy auth mode (`llm_proxy_auth`, only when you set one), the
+  model-wallet selector (`llm_proxy_wallet_client_id`) and the dynamic-key
+  header name (`llm_proxy_key_header`), so the generated file can express a
+  `jwt`, `bearer` or Dynamic API Key setup. In `jwt` and `bearer` mode the token
+  itself comes from an `AuthProvider` you pass in code
+  (`Donkey(llm_auth=...)`); it is never a config value, so CLI commands that
+  call the proxy can't use those modes.
 - **Never writes a secret.** `client_secret`, `llm_proxy_client_secret`, and
   `llm_proxy_key` are emitted as commented pointers, not values. Put them in a
   gitignored `.donkey-kit.local.toml` next to the file, or in environment
-  variables. A URL in `.donkey-kit.toml`, including a loopback one, only
+  variables. A `base_url` or `llm_proxy_url` that carries a credential (a user
+  name or password, or a query parameter such as `api_key` or `token`), or that
+  can't be parsed, is refused rather than written, and the message names the
+  field and where it was set, never its value.
+  A URL in `.donkey-kit.toml`, including a loopback one, only
   receives credentials from those two files unless you opt in; see
   [Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
   The file's comments also say that URLs must use `https://`, that `localhost`
   is accepted over plain `http://`, and that `DONKEY_ALLOW_HTTP=1` in the
   environment (not in the file) allows plain `http://` to other hosts.
-- **Idempotent.** An existing file is left untouched unless you pass `--force`.
+- **Idempotent.** An existing file is left untouched, and `init` exits `0`,
+  unless you pass `--force`.
+- **`--force` regenerates the whole file.** It is not a merge: tables `init`
+  doesn't generate, such as `[donkey.agents]`, `[donkey.publication]` or
+  `[donkey.expose]`, are not carried over, and `init` names the ones it dropped
+  on stderr. Don't use `--force` on a file holding declarations you wrote by
+  hand.
+
+Where it writes: the global `--config` path, else `./.donkey-kit.toml`. Missing
+parent directories are created. The file appears complete or not at all, and a
+replaced file keeps its permissions. `init` exits `1`, writes nothing and prints
+no JSON document when the destination is a symlink (including a dangling
+one), a directory, or a file that holds secrets (`.donkey-kit.local.toml`,
+`.env`, `.env.*`, `.envrc`, `donkey.lock.local`), and when a file appears at the
+destination while `init` is writing. `--force` overrides none of these refusals.
+Replacing an existing file is atomic for readers, but if another program saves
+the same file at that moment, the last write wins.
 
 ```bash
 donkey init --force
@@ -8085,6 +8304,19 @@ outside. `doctor` makes one real governed call and tells them apart:
   `/chat/completions` once and reports the route as working if that answers.
   Call it with `client.chat.completions.create(...)` on `donkey.llm.client()`,
   or with your framework's chat-completions client.
+
+Any other refusal confirms only what it proves, so a refused call never shows
+the model as working:
+
+- **Model not routable** — the gateway refused the model before calling any
+  upstream. The `model` line fails and `credentials` shows as not confirmed.
+- **Upstream failure** — the provider failed the call. The `model` line fails.
+- **Policy refusal** — a gateway policy, such as PII detection, refused the
+  probe. That is an informational line and `doctor` exits `0`. The credentials
+  were accepted, but the model is reported as routed only when the response
+  names the provider it was routed to.
+- **Anything else** — a `probe` line fails with the error, and neither the
+  credentials nor the model are confirmed.
 
 Each verdict prints the same remediation string the matching typed exception
 carries, so the fix is in the output rather than in a runbook. The budget line
@@ -8238,16 +8470,37 @@ found 1 agent, 2 tools, 1 MCP server
 
 - A marker counts only when its receiver is a `Donkey`: the class imported from
   `donkey_kit`, an instance built with `Donkey(...)` or `Donkey.from_env()`, or
-  such an instance imported from another module in the repository. Other
-  frameworks' `@mcp.tool()` decorators are ignored.
+  such an instance imported from another module in the repository, resolved
+  by Python's scoping rules. Other frameworks' `@mcp.tool()` decorators are
+  ignored. A receiver scan cannot be sure of, such as a name bound both to a
+  `Donkey` and to something else, or a parameter called `donkey` that hides the
+  module's, is an `ambiguous-receiver` issue rather than a guess.
 - Decorator arguments are read only when they are **literals**.
-  `server=SERVER_ID` is reported as a `non-literal-argument` issue rather than
-  guessed.
+  `server=SERVER_ID` or `**options` is reported as a `non-literal-argument`
+  issue rather than guessed. An argument the decorator would reject when the
+  module is imported, such as a positional argument, an unknown keyword, or an
+  `approval`, `risk` or `approval_timeout` value it does not accept, is an
+  `invalid-argument` issue. A marker with either issue is left out of the model.
 - A tool without `server=` is listed as **unattributed**. Scan never infers a
   server from a module or function name.
 - How each MCP server is reached, its transport and endpoint, comes from a
   `[donkey.mcp_servers.<id>]` table in `.donkey-kit.toml`, never from code. A
   server without one is shown as `transport undeclared`, which is not an issue.
+  The line names the key to set and the `donkey scaffold` command that adds the
+  table. A value the scan rejects, such as an unknown transport or an endpoint
+  with a credential in it, is shown as `transport invalid` or `endpoint
+  invalid` instead, next to the `invalid-transport` or `invalid-endpoint`
+  issue that says why. The rejected value is never printed:
+
+  ```
+  $ donkey scan .
+    agent  support-triage  (app/main.py:13)
+    mcp    sku-manager  (1 tool: lookup_sku)  streamable-http endpoint invalid (see the invalid-endpoint issue)
+  found 1 agent, 1 tool, 1 MCP server
+  1 issue
+    .donkey-kit.toml:0  invalid-endpoint  mcp server sku-manager: endpoint has a query parameter 'api_key' that looks like a credential; the governed transport supplies credentials, so remove them from the URL
+  ```
+
   See [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
 - An agent's protocol and endpoint come the same way from a
   `[donkey.agents.<name>]` table. See
@@ -8267,6 +8520,149 @@ line numbers, so moving code around does not change it.
 
 Scan is the first half of [Scan & publish](https://docs.donkey-kit.dev/publishing.md): the model it builds is
 the input `donkey publish` reads.
+
+### `donkey scaffold`
+
+Adds the `.donkey-kit.toml` tables your scanned services still need: an
+`[donkey.agents.<name>]` or `[donkey.mcp_servers.<id>]` table for each service,
+and the `[donkey.publication]` tables `donkey publish` reads. With `--expose` it
+adds the `[donkey.expose]` tables too. It builds on the same static scan, so it
+never imports or runs your code, needs no credentials and makes no network
+call.
+
+```
+$ donkey scaffold --dry-run
+# Generated by `donkey scaffold` from a static scan: no code was imported or run.
+# Commented keys are deployment facts the code does not say: replace each
+# <placeholder> with the real value, then uncomment the line.
+
+# MCP server with tools: lookup_sku
+[donkey.mcp_servers.sku-manager]
+# transport = "<stdio, streamable-http or sse>"
+# endpoint = "<the server's http or https URL; none for stdio>"
+...
+5 tables for .donkey-kit.toml, 6 placeholders to fill in
+```
+
+- What the code says becomes a key. What it cannot say, such as an endpoint, a
+  protocol, a version or a gateway, is a commented placeholder. Scaffold never
+  invents a deployment fact.
+- It reads only the code and the committed `.donkey-kit.toml`. It never reads
+  your `.donkey-kit.local.toml`, your user config or environment variables, so
+  every checkout of a commit gets the same output.
+- A table the project file already has is left alone, even if it is only partly
+  filled in, and is listed as already declared.
+- It exits `0` even when placeholders are left to fill in, `1` when the scan
+  reports an issue or the write is refused, and `2` when the path does not
+  exist, `--service` names a service the scan didn't find, or a `--set` is
+  refused.
+
+`donkey scaffold` writes the tables to the `.donkey-kit.toml` next to the code
+it scanned, not the one in your working directory:
+
+- With no file there, it creates one. Otherwise it **appends** the missing
+  tables after what you wrote, which it keeps byte for byte, comments and line
+  endings included. It never rewrites or reorders your text.
+- Running it again adds nothing and leaves the file as it is.
+- It writes nothing when the scan reports an issue. It also refuses, leaving the
+  file untouched, when the file is not valid TOML, when the file is a symlink,
+  when an inline table or dotted key means the appended tables would not parse
+  or would change a value, and when the file changes while the write is being
+  prepared. Each refusal is a `scaffold-refused` issue that says why; add the
+  tables from `--dry-run` by hand in that case.
+- The write is staged beside the file and switched in one step, so a reader
+  never sees half a file. An edit saved in the instant between the final check
+  and the switch is still lost, so don't run it while you have unsaved edits to
+  the file open.
+- The summary goes to stderr. `--json`, or the global `donkey --json scaffold`,
+  prints one document (`scaffold_format: 1`) with the TOML as `toml` and
+  `written: true` when it wrote it.
+
+`--dry-run` writes nothing: it prints the TOML to stdout and the summary to
+stderr, and its JSON document says `written: false`.
+
+#### What each workflow still needs
+
+A file that parses is not yet one you can publish or expose: a commented
+placeholder declares nothing, and an MCP server scans cleanly without a
+transport. So the summary ends with a readiness report that keeps three facts
+apart: whether the scan is valid, whether `donkey publish` has what it needs,
+and, for each service, whether `donkey expose` does. Each missing value is named
+by its table and key:
+
+```
+readiness, offline from the committed file (live credentials and reachability not checked: donkey doctor, donkey preflight)
+  scan: valid
+  publish: incomplete
+      missing  [donkey.publication] version: a semantic version, such as 1.0.0
+      note  [donkey.mcp_servers.sku-manager] transport: not declared: the server is published without a transport
+      note  [donkey.publication] group_id: not declared: publish uses the configured org_id (ANYPOINT_ORG_ID), which is not checked offline
+  expose sku-manager: incomplete; publish is not ready, and expose publishes first
+      missing  [donkey.expose] target: the gateway to deploy to, or pass --target
+      missing  [donkey.expose.services.sku-manager] upstream: the URL the gateway reaches it on, or set endpoint in [donkey.mcp_servers.sku-manager]
+```
+
+| Status | Meaning |
+| --- | --- |
+| `ready` | Everything the workflow reads is declared. Live state is still not checked. |
+| `incomplete` | A required value is missing. Each one is a `missing` line. |
+| `invalid` | A declaration is wrong. The line says what to fix. |
+| `blocked` | The scan reports an issue, so the workflow can't be assessed until you fix it. |
+| `not-exposable` | The gateway doesn't front this service: an agent declared with a protocol other than `a2a_v1`. |
+
+- `note` lines are gaps that don't stop the workflow, such as a group ID the
+  configured `org_id` supplies at publish time.
+- A value still shaped like a placeholder, such as `"<org id>"`, counts as
+  missing.
+- A value the scan rejects is reported as invalid, never as not declared: the
+  workflow is `blocked` by its `invalid-*` issue, and a line that depends on
+  it says to fix the value rather than set it.
+- Publication covers the whole project, since one publish registers every
+  service. Exposure is assessed per service, so one service can be ready while
+  another is not exposable.
+- It reads the committed `.donkey-kit.toml` only and makes no network call. It
+  never says a service is verified: run `donkey doctor`, `donkey preflight` and
+  `donkey expose --dry-run` for the credentials, the gateway and the upstreams.
+- An incomplete workflow doesn't change the exit code.
+
+`--service ID` limits the proposed service tables and the exposure report to
+that service; repeat it for more. The shared `[donkey.publication]` and
+`[donkey.expose]` tables and the publication report stay project-wide. An ID the
+scan didn't find exits `2` and lists the IDs it did find.
+
+The JSON document carries the same report as `readiness`: `scan` (`valid` or
+`invalid`), `publication` and one `exposure` entry per service, each with a
+`status`, its `missing` values (`table`, `key`, `detail`, `required`) and its
+`problems`, plus `live: "not-checked"`.
+
+#### Filling a placeholder with `--set`
+
+`--set TABLE.KEY=VALUE` writes a value you know into a table scaffold adds, as
+a real key instead of a commented placeholder. Repeat it for more. The
+`donkey.` prefix is optional:
+
+```
+$ donkey scaffold --set publication.version=1.0.0 \
+    --set mcp_servers.sku-manager.transport=streamable-http \
+    --set mcp_servers.sku-manager.endpoint=https://sku-manager.acme.com/mcp
+```
+
+- It fills only a placeholder scaffold itself leaves open: `protocol` and
+  `endpoint` for an agent, `transport` and `endpoint` for an MCP server,
+  `version` and `group_id` for `[donkey.publication]`, and with `--expose`,
+  `target` and each service's `upstream`.
+- Each value is checked the way `donkey publish` and `donkey expose` check it:
+  a semantic version, a known transport or protocol, an http or https URL with
+  no credential in it, no endpoint for a `stdio` server, and an endpoint for an
+  `a2a_v1` agent.
+- Setting an agent's `protocol` to `a2a_v1` with `--expose` also proposes its
+  `[donkey.expose.services.<name>]` table.
+- It refuses a table that `.donkey-kit.toml` already has (edit the file
+  instead), a key that looks like a secret (keep secrets in the environment or
+  `.env`), and a key or table scaffold doesn't propose. A refused `--set` exits
+  `2`, writes nothing and never echoes the value.
+- After a write, the readiness report counts the values you set. A
+  `--dry-run` reports the committed file's readiness and says so.
 
 ### `donkey publish`
 

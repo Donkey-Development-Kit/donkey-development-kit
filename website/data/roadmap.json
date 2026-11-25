@@ -1,6 +1,6 @@
 {
   "repo": "Donkey-Development-Kit/donkey-development-kit",
-  "generatedAt": "2026-11-15T15:15:21.298Z",
+  "generatedAt": "2026-11-19T14:07:23.351Z",
   "milestones": [
     {
       "number": 11,
@@ -3929,30 +3929,16 @@
     {
       "number": 23,
       "title": "Phase 2.2 — Consolidate Phase 2 (0.2.2)",
-      "state": "open",
+      "state": "closed",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/23",
-      "open": 8,
-      "closed": 32,
+      "open": 0,
+      "closed": 44,
       "issues": [
-        {
-          "number": 579,
-          "title": "simulator: serve /v1/systemone in donkey mock and simulate()",
-          "state": "open",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/579",
-          "epic": false
-        },
         {
           "number": 580,
           "title": "spike: run system-one-adapter over a governed DDK proxy (the OpenAI-compatible route)",
           "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/580",
-          "epic": false
-        },
-        {
-          "number": 1160,
-          "title": "Track Omni's typed GenAI trace tags and per-request redirects",
-          "state": "open",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1160",
           "epic": false
         },
         {
@@ -3979,23 +3965,9 @@
         {
           "number": 1403,
           "title": "epic: verify Model Proxy Oct-2026 updates to existing policies (model-based-routing 1.0.5, v1 transcoders)",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1403",
           "epic": true
-        },
-        {
-          "number": 1406,
-          "title": "verify: Bedrock OpenAI upstream — forced include_usage stream chunk, request-id, error envelope",
-          "state": "open",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1406",
-          "epic": false
-        },
-        {
-          "number": 1407,
-          "title": "verify: xAI and Mistral upstreams — error envelopes, request-id and rate-limit headers",
-          "state": "open",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1407",
-          "epic": false
         },
         {
           "number": 1409,
@@ -4009,13 +3981,6 @@
           "title": "testing: simulator fixtures for model-based-routing 1.0.5 and v2 transcoder updates",
           "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1412",
-          "epic": false
-        },
-        {
-          "number": 1595,
-          "title": "verify: route a Model Proxy to a custom LLM provider end to end (v2 chain)",
-          "state": "open",
-          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1595",
           "epic": false
         },
         {
@@ -4203,15 +4168,78 @@
         {
           "number": 1764,
           "title": "Nightly framework matrix failing",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1764",
           "epic": false
         },
         {
           "number": 1768,
           "title": "Include Phase 2.2 in the roadmap and refresh its snapshot",
-          "state": "open",
+          "state": "closed",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1768",
+          "epic": false
+        },
+        {
+          "number": 1771,
+          "title": "framework-release: langchain-core 1.8.0 → 1.8.1",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1771",
+          "epic": false
+        },
+        {
+          "number": 1773,
+          "title": "Weekly live-contract check failing (openai-model-routing)",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1773",
+          "epic": false
+        },
+        {
+          "number": 1776,
+          "title": "framework-release: litellm 1.109.1 → 1.110.0",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1776",
+          "epic": false
+        },
+        {
+          "number": 1777,
+          "title": "framework-release: anthropic 2.8.0 → 2.10.0",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1777",
+          "epic": false
+        },
+        {
+          "number": 1778,
+          "title": "framework-release: langchain-core 1.8.0 → 1.8.2",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1778",
+          "epic": false
+        },
+        {
+          "number": 1779,
+          "title": "framework-release: langchain-openai 1.8.0 → 1.8.1",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1779",
+          "epic": false
+        },
+        {
+          "number": 1780,
+          "title": "framework-release: openai 3.51.0 → 3.55.0",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1780",
+          "epic": false
+        },
+        {
+          "number": 1781,
+          "title": "framework-release: openai-agents 0.24.0 → 0.25.0",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1781",
+          "epic": false
+        },
+        {
+          "number": 1782,
+          "title": "chore(release): bump version to 0.2.2",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1782",
           "epic": false
         }
       ]
@@ -4222,7 +4250,7 @@
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/13",
       "open": 11,
-      "closed": 0,
+      "closed": 1,
       "issues": [
         {
           "number": 19,
@@ -4299,6 +4327,13 @@
           "title": "scanner: publish REST APIs (OpenAPI / RAML) through the self-managed scanner",
           "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1110",
+          "epic": false
+        },
+        {
+          "number": 1785,
+          "title": "MCP error cleanup skips the stream close once the deadline is spent",
+          "state": "closed",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1785",
           "epic": false
         }
       ]
@@ -5003,7 +5038,7 @@
       "title": "Upstream gaps",
       "state": "open",
       "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/milestone/17",
-      "open": 16,
+      "open": 20,
       "closed": 1,
       "issues": [
         {
@@ -5056,6 +5091,13 @@
           "epic": false
         },
         {
+          "number": 1160,
+          "title": "Track Omni's typed GenAI trace tags and per-request redirects",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1160",
+          "epic": false
+        },
+        {
           "number": 1177,
           "title": "refusals: detect the F5 Guardrails block, which returns HTTP 200",
           "state": "open",
@@ -5091,6 +5133,20 @@
           "epic": false
         },
         {
+          "number": 1406,
+          "title": "verify: Bedrock OpenAI upstream — forced include_usage stream chunk, request-id, error envelope",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1406",
+          "epic": false
+        },
+        {
+          "number": 1407,
+          "title": "verify: xAI and Mistral upstreams — error envelopes, request-id and rate-limit headers",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1407",
+          "epic": false
+        },
+        {
           "number": 1410,
           "title": "upstream: keep a client-visible served-provider and routing signal on llm-gw-v2 proxies",
           "state": "open",
@@ -5102,6 +5158,13 @@
           "title": "adapters: warn once when the OpenAI Agents SDK's own tracing is on",
           "state": "open",
           "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1485",
+          "epic": false
+        },
+        {
+          "number": 1595,
+          "title": "verify: route a Model Proxy to a custom LLM provider end to end (v2 chain)",
+          "state": "open",
+          "url": "https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1595",
           "epic": false
         },
         {

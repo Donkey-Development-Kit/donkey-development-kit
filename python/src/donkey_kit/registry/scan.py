@@ -6,7 +6,10 @@ finds the ``@donkey.agent`` and ``@donkey.tool`` markers (``core/toolspec.py``).
 It **never imports or executes user code**: a marker counts only when its
 receiver is statically a ``Donkey`` (the class imported from ``donkey_kit``, an
 instance built from it, or such an instance imported from another scanned
-module), and decorator arguments are read only when they are literals.
+module), resolved by Python's scoping rules, and decorator arguments are read
+only when they are literals. A receiver the scan cannot be sure of (a name
+also bound to something else, or a parameter hiding a module-level
+``donkey``) is reported as ``ambiguous-receiver``, never guessed.
 
 The :class:`ScanResult` is the single input to both publish targets, direct
 Exchange publish (#218) and the self-managed scanner bundles (#1104/#1105), which
@@ -39,12 +42,14 @@ import os
 import sys
 from collections import Counter
 from collections.abc import Iterator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
-from urllib.parse import parse_qsl, urlsplit
+from typing import Any, Literal
+from urllib.parse import urlsplit
 
+from ..core.approvals import parse_timeout
 from ..core.config import LOCAL_TOML_NAME, TOML_NAME
+from ..core.endpoints import url_credential_problem
 from ..core.toolspec import validate_service_id
 from .publication import check_description_quality, content_digest
 
@@ -157,8 +162,14 @@ class ScanIssue:
 
     ``kind`` is one of ``missing``, ``tautological`` or ``too-short`` (the
     description checks, BG §2.5), ``invalid-service-id``, ``invalid-skills``,
-    ``non-literal-argument``, ``duplicate-service-id``, ``duplicate-tool``,
-    ``syntax-error`` or ``unreadable``. A ``[donkey.mcp_servers]`` declaration
+    ``invalid-argument`` (a positional or unknown argument, or a literal the
+    decorator rejects: an ``approval``, ``risk`` or ``approval_timeout`` it
+    would raise on), ``non-literal-argument`` (including ``**kwargs``),
+    ``ambiguous-receiver`` (a ``@x.tool`` whose ``x`` is bound both to a
+    ``Donkey`` and to something else, or hides an outer one),
+    ``duplicate-service-id``, ``duplicate-tool``, ``syntax-error`` or
+    ``unreadable``. A marker with an argument issue is not recorded: the
+    decorator would raise when its module is imported. A ``[donkey.mcp_servers]`` declaration
     adds ``invalid-mcp-server`` (a malformed entry or an unknown key),
     ``invalid-transport``, ``invalid-endpoint`` and ``unknown-server`` (an ID no
     tool names). A ``[donkey.agents]`` declaration adds ``invalid-agent`` (a
@@ -201,6 +212,16 @@ class ScanResult:
     def unattributed(self) -> tuple[ScannedTool, ...]:
         """The tools with no ``server=``: reported, never guessed (#503)."""
         return tuple(t for t in self.tools if t.server is None)
+
+    def rejected(self, table: Literal["agent", "mcp server"], name: str, key: str) -> bool:
+        """Whether ``[donkey.agents.<name>]`` or ``[donkey.mcp_servers.<name>]``
+        declares ``key`` with a value scan rejected (#1802).
+
+        The model carries ``None`` for a rejected value, the same as for an
+        undeclared key, so a reader that would say "undeclared" asks this first.
+        """
+        kind, subject = f"invalid-{key}", f"{table} {name}"
+        return any(i.kind == kind and i.subject == subject for i in self.issues)
 
     def digest(self) -> str:
         """A content digest over what would be published (BG §2.5).
@@ -272,9 +293,14 @@ class ScanResult:
         }
 
 
-def scan(root: str | Path) -> ScanResult:
+def scan(root: str | Path, *, local_overlay: bool = True) -> ScanResult:
     """Statically scan ``root`` (a directory or one ``.py`` file) for agents,
     tools and MCP servers (BG §2.5, #217). Never imports the scanned code.
+
+    ``local_overlay=False`` reads the declarations from the project
+    ``.donkey-kit.toml`` alone, leaving out the developer's
+    ``.donkey-kit.local.toml``: what ``donkey scaffold`` builds on, so its
+    output is the same in every checkout (#1747).
 
     Raises:
         FileNotFoundError: ``root`` does not exist.
@@ -303,28 +329,31 @@ def scan(root: str | Path) -> ScanResult:
 
     # A Donkey instance can be re-exported through several modules
     # (app/gov.py -> app/__init__.py -> tools.py), so resolve to a fixpoint.
-    exported = {name: mod.instance_names() for name, mod in modules.items()}
-    changed = True
-    while changed:
+    # Each pass only adds names or turns one ambiguous, so it ends; the bound
+    # is a guard, not a limit any repository reaches.
+    exported: dict[str, dict[str, str]] = {name: {} for name in modules}
+    for _ in range(2 * len(modules) + 2):
         changed = False
         for name, mod in modules.items():
-            imported = mod.receivers(name, exported).instances - exported[name]
-            if imported:
-                exported[name] |= imported
+            found = mod.exports(name, exported)
+            if found != exported[name]:
+                exported[name] = found
                 changed = True
+        if not changed:
+            break
 
     agents: list[ScannedAgent] = []
     tools: list[ScannedTool] = []
     for name, mod in modules.items():
-        found = _Collector(mod.path, mod.receivers(name, exported))
-        found.visit(mod.tree)
-        agents.extend(found.agents)
-        tools.extend(found.tools)
-        issues.extend(found.issues)
+        collector = _Collector(mod, _Resolver(mod.package(name), exported))
+        collector.visit(mod.tree)
+        agents.extend(collector.agents)
+        tools.extend(collector.tools)
+        issues.extend(collector.issues)
 
     agents.sort(key=lambda a: (a.path, a.line))
     tools.sort(key=lambda t: (t.path, t.line))
-    declared = _Declarations(origin)
+    declared = _Declarations(origin, local_overlay=local_overlay)
     servers = declared.apply(_servers(tools))
     agents = declared.apply_agents(agents)
     issues.extend(declared.issues)
@@ -353,25 +382,195 @@ def _module_name(rel: str) -> str:
     return ".".join(parts)
 
 
-def _is_donkey_call(node: ast.expr, classes: set[str], aliases: set[str]) -> bool:
-    """``Donkey(...)`` or ``Donkey.from_env(...)``, through any import alias."""
-    if not isinstance(node, ast.Call):
-        return False
-    func = node.func
-    if isinstance(func, ast.Attribute) and not _is_class_ref(func, aliases, classes):
-        func = func.value
-    return _is_class_ref(func, aliases, classes)
+# The keywords each marker accepts: what ``Donkey.tool`` and ``Donkey.agent``
+# take (donkey.py). Any other keyword is a TypeError when the module imports.
+_TOOL_KEYWORDS = frozenset({"approval", "risk", "approval_timeout", "server"})
+_AGENT_KEYWORDS = frozenset({"name", "skills"})
+# The keywords whose value the scan records, so one it cannot read is an issue.
+# approval_timeout is checked when it is a literal and otherwise not needed.
+_RECORDED = frozenset({"approval", "risk", "server", "name", "skills"})
+
+# What a name may be bound to, as far as a static scan can tell: the Donkey
+# class, the donkey_kit module, a Donkey instance, or one of those in some
+# bindings and something else in others. ``None`` is anything else.
+_CLASS, _MODULE, _INSTANCE, _AMBIGUOUS = "class", "module", "instance", "ambiguous"
+_DONKEYISH = frozenset({_CLASS, _INSTANCE, _AMBIGUOUS})
 
 
-def _is_class_ref(node: ast.expr, aliases: set[str], classes: set[str]) -> bool:
-    if isinstance(node, ast.Name):
-        return node.id in classes
-    return (
-        isinstance(node, ast.Attribute)
-        and node.attr == "Donkey"
-        and isinstance(node.value, ast.Name)
-        and node.value.id in aliases
-    )
+@dataclass
+class _Binding:
+    """One statement that binds a name: an import (``node`` and ``alias``), an
+    assignment of ``value``, or anything else (all three ``None``)."""
+
+    node: ast.Import | ast.ImportFrom | None = None
+    alias: ast.alias | None = None
+    value: ast.expr | None = None
+
+
+@dataclass
+class _Scope:
+    """A module, class or function scope and the names bound directly in it."""
+
+    kind: str  # "module", "class" or "function"
+    parent: _Scope | None
+    bindings: dict[str, list[_Binding]] = field(default_factory=dict)
+    declared_global: set[str] = field(default_factory=set)
+    declared_nonlocal: set[str] = field(default_factory=set)
+
+
+_Definition = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+
+
+class _Binder(ast.NodeVisitor):
+    """Collects the names one scope binds, without entering nested scopes.
+
+    A nested function or class binds its own name here and is kept in
+    :attr:`children` to be scoped on its own. A comprehension's targets belong
+    to the comprehension, but a ``:=`` inside one binds here, as Python does.
+    """
+
+    def __init__(self, scope: _Scope) -> None:
+        self.scope = scope
+        self.children: list[_Definition] = []
+
+    def bind(self, name: str, binding: _Binding | None = None) -> None:
+        self.scope.bindings.setdefault(name, []).append(binding or _Binding())
+
+    def target(self, node: ast.expr, value: ast.expr | None) -> None:
+        if isinstance(node, ast.Name):
+            self.bind(node.id, _Binding(value=value))
+        elif isinstance(node, ast.Tuple | ast.List):
+            for element in node.elts:
+                self.target(element, None)
+        elif isinstance(node, ast.Starred):
+            self.target(node.value, None)
+
+    def _definition(self, node: _Definition) -> None:
+        # Decorators are evaluated here, before the name is bound.
+        for expr in node.decorator_list:
+            self.visit(expr)
+        self.bind(node.name)
+        self.children.append(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._definition(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._definition(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._definition(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        pass  # its own scope, and it cannot hold a decorated definition
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        for target in node.targets:
+            self.target(target, node.value)
+        self.visit(node.value)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is not None:  # a bare annotation binds nothing
+            self.target(node.target, node.value)
+            self.visit(node.value)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self.target(node.target, None)
+        self.visit(node.value)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self.target(node.target, None)
+        self.visit(node.value)
+
+    def visit_For(self, node: ast.For) -> None:
+        self.target(node.target, None)
+        self.generic_visit(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self.target(node.target, None)
+        self.generic_visit(node)
+
+    def visit_withitem(self, node: ast.withitem) -> None:
+        if node.optional_vars is not None:
+            self.target(node.optional_vars, None)
+        self.visit(node.context_expr)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.name:
+            self.bind(node.name)
+        self.generic_visit(node)
+
+    def visit_Delete(self, node: ast.Delete) -> None:
+        for target in node.targets:
+            self.target(target, None)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            # ``import a.b`` binds ``a``.
+            self.bind(alias.asname or alias.name.split(".")[0], _Binding(node, alias))
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            if alias.name != "*":
+                self.bind(alias.asname or alias.name, _Binding(node, alias))
+
+    def visit_Global(self, node: ast.Global) -> None:
+        self.scope.declared_global.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self.scope.declared_nonlocal.update(node.names)
+
+    def visit_MatchAs(self, node: ast.MatchAs) -> None:
+        if node.name:
+            self.bind(node.name)
+        self.generic_visit(node)
+
+    def visit_MatchStar(self, node: ast.MatchStar) -> None:
+        if node.name:
+            self.bind(node.name)
+
+    def visit_MatchMapping(self, node: ast.MatchMapping) -> None:
+        if node.rest:
+            self.bind(node.rest)
+        self.generic_visit(node)
+
+
+def _scopes(tree: ast.Module) -> tuple[_Scope, dict[ast.AST, _Scope]]:
+    """The module's scope, and the scope of every function and class in it."""
+    by_node: dict[ast.AST, _Scope] = {}
+
+    def build(node: ast.Module | _Definition, kind: str, parent: _Scope | None) -> _Scope:
+        scope = _Scope(kind, parent)
+        binder = _Binder(scope)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            args = node.args
+            for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs, args.vararg, args.kwarg):
+                if arg is not None:
+                    binder.bind(arg.arg)
+        for statement in node.body:
+            binder.visit(statement)
+        by_node[node] = scope
+        for child in binder.children:
+            build(child, "class" if isinstance(child, ast.ClassDef) else "function", scope)
+        return scope
+
+    module = build(tree, "module", None)
+    # A name declared global or nonlocal is bound in the scope it names.
+    for scope in by_node.values():
+        for name in sorted(scope.declared_global | scope.declared_nonlocal):
+            moved = scope.bindings.pop(name, [])
+            home = module if name in scope.declared_global else _enclosing(scope, name)
+            if home is not None and moved:
+                home.bindings.setdefault(name, []).extend(moved)
+    return module, by_node
+
+
+def _enclosing(scope: _Scope, name: str) -> _Scope | None:
+    """The function scope a ``nonlocal name`` in ``scope`` refers to."""
+    outer = scope.parent
+    while outer is not None and (outer.kind != "function" or name not in outer.bindings):
+        outer = outer.parent
+    return outer
 
 
 @dataclass
@@ -379,77 +578,144 @@ class _Module:
     path: str
     tree: ast.Module
 
-    def _imports(self) -> tuple[set[str], set[str]]:
-        """Local names bound to the ``Donkey`` class, and to the ``donkey_kit`` module."""
-        classes: set[str] = set()
-        aliases: set[str] = set()
-        for node in ast.walk(self.tree):
-            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("donkey_kit"):
-                classes.update(a.asname or a.name for a in node.names if a.name == "Donkey")
-            elif isinstance(node, ast.Import):
-                aliases.update(a.asname or a.name for a in node.names if a.name == "donkey_kit")
-        return classes, aliases
+    def __post_init__(self) -> None:
+        self.scope, self.scopes = _scopes(self.tree)
 
-    def instance_names(self) -> set[str]:
-        """Names this module binds to a ``Donkey`` instance."""
-        classes, aliases = self._imports()
-        names: set[str] = set()
-        for node in ast.walk(self.tree):
-            if isinstance(node, ast.Assign) and _is_donkey_call(node.value, classes, aliases):
-                names.update(t.id for t in node.targets if isinstance(t, ast.Name))
-            elif (
-                isinstance(node, ast.AnnAssign)
-                and isinstance(node.target, ast.Name)
-                and node.value is not None
-                and _is_donkey_call(node.value, classes, aliases)
-            ):
-                names.add(node.target.id)
-        return names
+    def package(self, module: str) -> list[str]:
+        """The package a relative import in this module is resolved against."""
+        parts = module.split(".") if module else []
+        return parts if self.path.endswith("__init__.py") else parts[:-1]
 
-    def receivers(self, module: str, exported: dict[str, set[str]]) -> _Receivers:
-        """What ``X`` may be in a ``@X.tool`` / ``@X.agent`` decorator here."""
-        classes, aliases = self._imports()
-        instances = self.instance_names()
-        package = (
-            module.split(".")[:-1] if not self.path.endswith("__init__.py") else module.split(".")
-        )
-        for node in ast.walk(self.tree):
-            if not isinstance(node, ast.ImportFrom):
-                continue
-            if node.level:  # from .gov import donkey
-                anchor = package[: len(package) - (node.level - 1)] if node.level > 1 else package
-                source = ".".join([*anchor, node.module] if node.module else anchor)
-            else:
-                source = node.module or ""
-            for alias in node.names:
-                if alias.name in exported.get(source, set()):
-                    instances.add(alias.asname or alias.name)
-        return _Receivers(classes, aliases, instances)
+    def exports(self, module: str, exported: dict[str, dict[str, str]]) -> dict[str, str]:
+        """Module-level names bound to a ``Donkey`` instance, or ambiguously to one."""
+        resolver = _Resolver(self.package(module), exported)
+        found = {name: resolver.kind(self.scope, name) for name in sorted(self.scope.bindings)}
+        return {name: kind for name, kind in found.items() if kind in (_INSTANCE, _AMBIGUOUS)}
 
 
-@dataclass(frozen=True)
-class _Receivers:
-    classes: set[str]
-    aliases: set[str]
-    instances: set[str]
+class _Resolver:
+    """What a name means in a scope, by Python's lexical rules, statically.
 
-    def marker(self, decorator: ast.expr) -> tuple[str, ast.Call | None] | None:
-        """``("tool" | "agent", call-or-None)`` when ``decorator`` is a marker."""
-        call = decorator if isinstance(decorator, ast.Call) else None
-        target = call.func if call else decorator
-        if not isinstance(target, ast.Attribute) or target.attr not in ("tool", "agent"):
-            return None
-        recv = target.value
-        known = _is_class_ref(recv, self.aliases, self.classes) or (
-            isinstance(recv, ast.Name) and recv.id in self.instances
-        )
-        return (target.attr, call) if known else None
+    A name is the ``Donkey`` class, the ``donkey_kit`` module or a ``Donkey``
+    instance only when *every* binding of it in the scope that owns it says so.
+    A name bound both to one of those and to something else is ambiguous: which
+    one a decorator sees depends on control flow a static scan does not run.
+    """
+
+    def __init__(self, package: list[str], exported: dict[str, dict[str, str]]) -> None:
+        self.package = package
+        self.exported = exported
+        self._active: set[tuple[int, str]] = set()
+        self._memo: dict[tuple[int, str], str | None] = {}
+
+    @staticmethod
+    def _visible(scope: _Scope, name: str) -> Iterator[_Scope]:
+        """The scopes a lookup of ``name`` in ``scope`` searches, innermost first.
+
+        A class body is visible to its own statements, not to nested scopes,
+        and ``global name`` sends the lookup straight to the module.
+        """
+        current: _Scope | None = scope
+        first = True
+        while current is not None:
+            if name in current.declared_global:
+                while current.parent is not None:
+                    current = current.parent
+                yield current
+                return
+            if first or current.kind != "class":
+                yield current
+            first = False
+            current = current.parent
+
+    def lookup(self, scope: _Scope, name: str) -> tuple[str | None, str | None]:
+        """``(what name is in scope, what an outer binding it shadows is)``.
+
+        The second is the kind of the nearest outer Donkey-like binding, and is
+        set only when the visible binding is not Donkey-like: a parameter named
+        ``donkey`` hiding the module's ``donkey = Donkey()`` gives
+        ``(None, "instance")``.
+        """
+        owners = (s for s in self._visible(scope, name) if name in s.bindings)
+        owner = next(owners, None)
+        if owner is None:
+            return None, None
+        kind = self.kind(owner, name)
+        if kind is not None:
+            return kind, None
+        for outer in owners:
+            shadowed = self.kind(outer, name)
+            if shadowed in _DONKEYISH:
+                return None, shadowed
+        return None, None
+
+    def kind(self, scope: _Scope, name: str) -> str | None:
+        key = (id(scope), name)
+        if key in self._memo:
+            return self._memo[key]
+        if key in self._active:  # D = D.from_env(): a name defined by itself
+            return _AMBIGUOUS
+        self._active.add(key)
+        try:
+            kinds = {self._binding(scope, b) for b in scope.bindings.get(name, [])}
+        finally:
+            self._active.discard(key)
+        result = None if kinds <= {None} else kinds.pop() if len(kinds) == 1 else _AMBIGUOUS
+        self._memo[key] = result
+        return result
+
+    def _binding(self, scope: _Scope, binding: _Binding) -> str | None:
+        node, alias = binding.node, binding.alias
+        if isinstance(node, ast.Import) and alias is not None:
+            bound = alias.name if alias.asname else alias.name.split(".")[0]
+            return _MODULE if bound == "donkey_kit" else None
+        if isinstance(node, ast.ImportFrom) and alias is not None:
+            source = self._source(node)
+            if not node.level and alias.name == "Donkey" and source.split(".")[0] == "donkey_kit":
+                return _CLASS
+            return self.exported.get(source, {}).get(alias.name)
+        if binding.value is not None and self.is_donkey_call(scope, binding.value):
+            return _INSTANCE
+        return None
+
+    def _source(self, node: ast.ImportFrom) -> str:
+        if not node.level:  # from donkey_kit import Donkey
+            return node.module or ""
+        package = self.package  # from .gov import donkey
+        anchor = package[: len(package) - (node.level - 1)] if node.level > 1 else package
+        return ".".join([*anchor, node.module] if node.module else anchor)
+
+    def class_ref(self, scope: _Scope, node: ast.expr) -> str | None:
+        """``_CLASS`` when ``node`` is the ``Donkey`` class (``Donkey`` or
+        ``donkey_kit.Donkey``), ``_AMBIGUOUS`` when it may be, else ``None``."""
+        if isinstance(node, ast.Name):
+            kind, _ = self.lookup(scope, node.id)
+            return kind if kind in (_CLASS, _AMBIGUOUS) else None
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == "Donkey"
+            and isinstance(node.value, ast.Name)
+        ):
+            kind, _ = self.lookup(scope, node.value.id)
+            return {_MODULE: _CLASS, _AMBIGUOUS: _AMBIGUOUS}.get(kind or "")
+        return None
+
+    def is_donkey_call(self, scope: _Scope, node: ast.expr) -> bool:
+        """``Donkey(...)`` or ``Donkey.from_env(...)``, through any import alias."""
+        if not isinstance(node, ast.Call):
+            return False
+        func = node.func
+        if isinstance(func, ast.Attribute) and self.class_ref(scope, func) is None:
+            func = func.value
+        return self.class_ref(scope, func) == _CLASS
 
 
 class _Collector(ast.NodeVisitor):
-    def __init__(self, path: str, receivers: _Receivers) -> None:
-        self.path = path
-        self.receivers = receivers
+    def __init__(self, module: _Module, resolver: _Resolver) -> None:
+        self.path = module.path
+        self.module = module
+        self.resolver = resolver
+        self.chain: list[_Scope] = [module.scope]
         self.scope: list[str] = []
         self.agents: list[ScannedAgent] = []
         self.tools: list[ScannedTool] = []
@@ -457,7 +723,9 @@ class _Collector(ast.NodeVisitor):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self.scope.append(node.name)
+        self.chain.append(self.module.scopes[node])
         self.generic_visit(node)
+        self.chain.pop()
         self.scope.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -466,40 +734,160 @@ class _Collector(ast.NodeVisitor):
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self._function(node)
 
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        pass  # not scoped by _Binder, and it cannot hold a decorated definition
+
     def _function(self, node: _FuncDef) -> None:
         qualname = ".".join([*self.scope, node.name])
         for decorator in node.decorator_list:
-            found = self.receivers.marker(decorator)
+            found = self._marker(decorator, qualname, node.lineno)
             if found is None:
                 continue
             kind, call = found
-            kwargs = self._literal_kwargs(call, qualname, node.lineno)
+            kwargs = self._arguments(kind, call, qualname, node.lineno)
+            if kwargs is None:
+                continue
             if kind == "tool":
                 self._tool(node, qualname, kwargs)
             else:
                 self._agent(node, qualname, kwargs)
         self.scope.extend([node.name, "<locals>"])
+        self.chain.append(self.module.scopes[node])
         self.generic_visit(node)
+        self.chain.pop()
         del self.scope[-2:]
+
+    def _marker(
+        self, decorator: ast.expr, qualname: str, line: int
+    ) -> tuple[str, ast.Call | None] | None:
+        """``("tool" | "agent", call-or-None)`` when ``decorator`` is a marker.
+
+        The receiver must statically be a ``Donkey``. One the scan cannot be
+        sure of is reported and skipped, never guessed: a name bound both to a
+        ``Donkey`` and to something else, or a parameter or local that hides an
+        outer ``Donkey`` of the same name.
+        """
+        call = decorator if isinstance(decorator, ast.Call) else None
+        target = call.func if call else decorator
+        if not isinstance(target, ast.Attribute) or target.attr not in ("tool", "agent"):
+            return None
+        recv, scope = target.value, self.chain[-1]
+        kind = self.resolver.class_ref(scope, recv)
+        shadowed: str | None = None
+        if kind is None and isinstance(recv, ast.Name):
+            kind, shadowed = self.resolver.lookup(scope, recv.id)
+        if kind in (_CLASS, _INSTANCE):
+            return target.attr, call
+        if kind == _AMBIGUOUS or shadowed is not None:
+            name = ast.unparse(recv)
+            why = (
+                "is bound both to a Donkey and to something else"
+                if kind == _AMBIGUOUS
+                else "is bound here to something else (a parameter, a local or an import) "
+                "that hides an outer Donkey of the same name"
+            )
+            self._issue(
+                "ambiguous-receiver",
+                qualname,
+                line,
+                f"{name!r} {why}, so a static scan cannot tell whether "
+                f"@{name}.{target.attr} is a marker; decorate with a Donkey instance "
+                "bound once, at module level",
+            )
+        return None
 
     def _issue(self, kind: str, subject: str, line: int, detail: str) -> None:
         self.issues.append(ScanIssue(kind, subject, self.path, line, detail))
 
-    def _literal_kwargs(self, call: ast.Call | None, qualname: str, line: int) -> dict[str, object]:
+    def _arguments(
+        self, kind: str, call: ast.Call | None, qualname: str, line: int
+    ) -> dict[str, object] | None:
+        """The marker's literal keyword arguments, or ``None`` when one is
+        something the decorator rejects or the scan cannot read. The marker is
+        then reported and not recorded, never half-read."""
+        if call is None:
+            return {}
+        what = f"@donkey.{kind}"
+        ok = True
+        if call.args:
+            self._issue("invalid-argument", qualname, line, f"{what} takes keyword arguments only")
+            ok = False
+        allowed = _TOOL_KEYWORDS if kind == "tool" else _AGENT_KEYWORDS
         values: dict[str, object] = {}
-        for kw in call.keywords if call else []:
+        for kw in call.keywords:
             if kw.arg is None:
-                continue
-            try:
-                values[kw.arg] = ast.literal_eval(kw.value)
-            except (ValueError, TypeError, SyntaxError):
                 self._issue(
                     "non-literal-argument",
                     qualname,
                     line,
-                    f"{kw.arg}= is not a literal, so a static scan cannot read it",
+                    f"**{ast.unparse(kw.value)} expands keyword arguments a static scan "
+                    f"cannot read; pass {what}'s arguments as literal keywords",
                 )
-        return values
+                ok = False
+            elif kw.arg not in allowed:
+                self._issue(
+                    "invalid-argument",
+                    qualname,
+                    line,
+                    f"{what} has no {kw.arg}= argument; it takes {', '.join(sorted(allowed))}",
+                )
+                ok = False
+            else:
+                try:
+                    values[kw.arg] = ast.literal_eval(kw.value)
+                except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+                    if kw.arg in _RECORDED:
+                        self._issue(
+                            "non-literal-argument",
+                            qualname,
+                            line,
+                            f"{kw.arg}= is not a literal, so a static scan cannot read it",
+                        )
+                        ok = False
+        valid = self._valid_tool if kind == "tool" else self._valid_agent
+        return values if valid(values, qualname, line) and ok else None
+
+    def _valid_tool(self, values: dict[str, object], qualname: str, line: int) -> bool:
+        """The checks ``Donkey.tool`` runs at import time (donkey.py)."""
+        problems: list[str] = []
+        approval, risk = values.get("approval"), values.get("risk")
+        if approval is not None and approval != "required":
+            problems.append(f'approval must be "required" or None, not {approval!r}')
+        if risk is not None and (not isinstance(risk, str) or not risk.strip()):
+            problems.append(f"risk must be a non-empty label such as 'financial', not {risk!r}")
+        if "approval_timeout" in values:
+            try:
+                parse_timeout(values["approval_timeout"])  # type: ignore[arg-type]
+            except (ValueError, TypeError) as exc:
+                problems.append(str(exc))
+        for problem in problems:
+            self._issue("invalid-argument", qualname, line, problem)
+        server = values.get("server")
+        server_ok = server is None or self._service_id(server, "server", qualname, line)
+        return not problems and bool(server_ok)
+
+    def _valid_agent(self, values: dict[str, object], qualname: str, line: int) -> bool:
+        """The checks ``Donkey.agent`` runs at import time (donkey.py)."""
+        ok = True
+        if "name" not in values:
+            self._issue("invalid-service-id", qualname, line, "@donkey.agent needs a literal name=")
+            ok = False
+        elif self._service_id(values["name"], "name", qualname, line) is None:
+            ok = False
+        skills = values.get("skills", ())
+        if (
+            not isinstance(skills, list | tuple)
+            or not all(isinstance(s, str) and s.strip() for s in skills)
+            or len(set(skills)) != len(skills)
+        ):
+            self._issue(
+                "invalid-skills",
+                qualname,
+                line,
+                f"skills must be a list of distinct skill IDs, not {skills!r}",
+            )
+            ok = False
+        return ok
 
     def _service_id(self, value: object, what: str, qualname: str, line: int) -> str | None:
         try:
@@ -509,10 +897,7 @@ class _Collector(ast.NodeVisitor):
             return None
 
     def _tool(self, node: _FuncDef, qualname: str, kwargs: dict[str, object]) -> None:
-        server = kwargs.get("server")
-        if server is not None:
-            server = self._service_id(server, "server", qualname, node.lineno)
-        approval, risk = kwargs.get("approval"), kwargs.get("risk")
+        server, approval, risk = kwargs.get("server"), kwargs.get("approval"), kwargs.get("risk")
         self.tools.append(
             ScannedTool(
                 name=node.name,
@@ -531,31 +916,11 @@ class _Collector(ast.NodeVisitor):
         )
 
     def _agent(self, node: _FuncDef, qualname: str, kwargs: dict[str, object]) -> None:
-        if "name" not in kwargs:
-            self._issue(
-                "invalid-service-id", qualname, node.lineno, "@donkey.agent needs a literal name="
-            )
-            return
-        name = self._service_id(kwargs["name"], "name", qualname, node.lineno)
         skills = kwargs.get("skills", ())
-        # The same rule @donkey.agent enforces at import time (donkey.py).
-        if (
-            not isinstance(skills, list | tuple)
-            or not all(isinstance(s, str) and s.strip() for s in skills)
-            or len(set(skills)) != len(skills)
-        ):
-            self._issue(
-                "invalid-skills",
-                qualname,
-                node.lineno,
-                f"skills must be a list of distinct skill IDs, not {skills!r}",
-            )
-            skills = ()
-        if name is None:
-            return
+        assert isinstance(skills, list | tuple)  # checked by _valid_agent
         self.agents.append(
             ScannedAgent(
-                name=name,
+                name=str(kwargs["name"]),
                 qualname=qualname,
                 path=self.path,
                 line=node.lineno,
@@ -603,7 +968,7 @@ class _Declarations:
     Everything wrong with a declaration is a :class:`ScanIssue`, never a raise.
     """
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, *, local_overlay: bool = True) -> None:
         self.issues: list[ScanIssue] = []
         # Table -> service ID -> key -> (value, the file that set it).
         self.entries: dict[str, dict[str, dict[str, tuple[object, str]]]] = {
@@ -612,7 +977,7 @@ class _Declarations:
         }
         # Table -> service ID -> the first file that declares it.
         self.declared_in: dict[str, dict[str, str]] = {"mcp_servers": {}, "agents": {}}
-        for name in (TOML_NAME, LOCAL_TOML_NAME):
+        for name in (TOML_NAME, LOCAL_TOML_NAME) if local_overlay else (TOML_NAME,):
             path = directory / name
             if path.is_file():
                 self._read(path, name)
@@ -762,7 +1127,8 @@ class _Declarations:
                 "invalid-agent",
                 subject,
                 entry["protocol"][1],
-                "an a2a_v1 agent needs an endpoint: its agent card names the URL it is served at",
+                f"an a2a_v1 agent needs an endpoint: set endpoint in [donkey.agents.{agent.name}] "
+                "to the URL it is served at, which its agent card names",
             )
         return replace(agent, protocol=protocol, endpoint=endpoint)
 
@@ -773,46 +1139,26 @@ def _endpoint_problem(value: object, transport: str | None) -> str | None:
         return "a stdio server is started as a process and has no endpoint; remove it"
     if not isinstance(value, str):
         return f"endpoint must be an http or https URL, not {value!r}"
+    # The credential check comes first, and its reason never holds the value: the
+    # endpoint is published verbatim, and a malformed URL may still carry a
+    # credential, so neither may be echoed (#1750).
     try:
         parts = urlsplit(value)
         _ = parts.port  # raises ValueError on a malformed port
     except ValueError:
-        parts = None
-    if parts is None or parts.scheme not in ("http", "https") or not parts.hostname:
+        return (
+            "endpoint must be an http or https URL, and this one does not parse "
+            "(it is not shown, in case it carries a credential)"
+        )
+    credential = url_credential_problem(value)
+    if credential is not None:
+        return (
+            f"endpoint {credential}; the governed transport supplies credentials, "
+            "so remove them from the URL"
+        )
+    if parts.scheme not in ("http", "https") or not parts.hostname:
         return f"endpoint must be an http or https URL, not {value!r}"
-    if parts.username is not None or parts.password is not None:
-        # Never echo the value: it carries a credential.
-        return "endpoint must not carry credentials; the governed transport supplies them"
-    for name, _ in parse_qsl(parts.query, keep_blank_values=True):
-        if _looks_like_credential(name):
-            # The endpoint is published verbatim, so a credential here would be public.
-            return (
-                f"endpoint must not carry credentials: its query parameter {name!r} looks "
-                "like one, and the governed transport supplies them"
-            )
     return None
-
-
-# Query parameter names that carry a credential, compared lower-cased with "-"
-# and "_" removed: an exact name, or a fragment anywhere in the name.
-_CREDENTIAL_PARAMS = frozenset({"auth", "key", "pwd", "sig"})
-_CREDENTIAL_FRAGMENTS = (
-    "accesskey",
-    "apikey",
-    "authorization",
-    "clientid",
-    "credential",
-    "passwd",
-    "password",
-    "secret",
-    "signature",
-    "token",
-)
-
-
-def _looks_like_credential(name: str) -> bool:
-    key = name.lower().replace("-", "").replace("_", "")
-    return key in _CREDENTIAL_PARAMS or any(f in key for f in _CREDENTIAL_FRAGMENTS)
 
 
 def _description_issues(
