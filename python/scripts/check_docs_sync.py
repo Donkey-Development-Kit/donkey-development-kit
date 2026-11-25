@@ -78,7 +78,7 @@ SURFACES: tuple[Surface, ...] = (
     Surface(("core/telemetry.py", "core/cost.py"), ("telemetry.mdx",)),
     Surface(("core/lastcall.py",), ("reference/last-call.mdx",)),
     Surface(("llm/*.py",), ("quickstart.mdx", "feature-overview.mdx")),
-    Surface(("simulator/*.py",), ("simulator.mdx",)),
+    Surface(("simulator/*.py",), ("simulator/index.mdx", "simulator/mcp.mdx", "simulator/a2a.mdx")),
     Surface(("conformance/*.py",), ("testing.mdx",)),
     Surface(("donkey.py",), ("quickstart.mdx", "testing.mdx", "reference/configuration.mdx")),
     Surface(("integrations/__init__.py", "integrations/_base.py"), ("frameworks/index.mdx",)),

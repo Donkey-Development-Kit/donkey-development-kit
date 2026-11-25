@@ -1049,7 +1049,7 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 | `core/telemetry.py`, `core/cost.py` | `telemetry.mdx` |
 | `core/lastcall.py` | `reference/last-call.mdx` |
 | `llm/*` | `quickstart.mdx`, `feature-overview.mdx` |
-| `simulator/*` | `simulator.mdx` |
+| `simulator/*` | `simulator/index.mdx`, `simulator/mcp.mdx`, `simulator/a2a.mdx` |
 | `conformance/*` | `testing.mdx` |
 | `donkey.py` (the `Donkey` facade: `from_env`, `run`, `simulate()`, `tools`) | `quickstart.mdx`, `testing.mdx`, `reference/configuration.mdx` |
 | `integrations/<fw>.py` | `frameworks/<fw>.mdx` + `examples/<fw>.mdx` (note `openai_agents.py` → `frameworks/openai.mdx`, `examples/openai-agents.mdx`); `frameworks/index.mdx` if the roster or an adapter's depth changes |

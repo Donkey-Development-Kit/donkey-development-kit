@@ -1559,7 +1559,7 @@ class Donkey:
         Supported bindings and their version floors are those of
         :func:`donkey_kit.simulator.mcp.simulate_mcp`; ADK and CrewAI are refused.
 
-        Docs: https://docs.donkey-kit.dev/simulator
+        Docs: https://docs.donkey-kit.dev/simulator/mcp
         """
         from .simulator.mcp import simulate_declared
 
@@ -1605,7 +1605,7 @@ class Donkey:
         call raises ``ConfigError``. Set that variable to ``false`` before
         importing ``a2a``, or build with ``allow_a2a_sdk_telemetry=True``.
 
-        Docs: https://docs.donkey-kit.dev/simulator
+        Docs: https://docs.donkey-kit.dev/simulator/a2a
         """
         from .simulator.a2a import simulate_declared
 

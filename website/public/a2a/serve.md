@@ -386,7 +386,7 @@ donkey dev my_agent:handle --protocol-version 0.3.0 --agent-version 2.4.0 \
   --scenario request_limit:limit=3,window=60s
 ```
 
-The [scenario/version/method matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay) lists which
+The [scenario/version/method matrix](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay) lists which
 captures can be replayed. v0.3 supports PII and rate refusals on `message/send`
 only; `injection` with `0.3.0` fails at startup.
 

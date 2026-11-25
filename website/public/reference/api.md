@@ -374,7 +374,7 @@ donkey.simulate_mcp(
 
 Inject a captured gateway refusal into MCP tool calls, no gateway.
 
-Guide: [`/simulator`](https://docs.donkey-kit.dev/simulator.md)
+Guide: [`/simulator/mcp`](https://docs.donkey-kit.dev/simulator/mcp.md)
 
 ### `donkey.simulate_a2a()`
 
@@ -391,7 +391,7 @@ donkey.simulate_a2a(
 
 Inject a captured gateway refusal into outbound A2A calls, no gateway.
 
-Guide: [`/simulator`](https://docs.donkey-kit.dev/simulator.md)
+Guide: [`/simulator/a2a`](https://docs.donkey-kit.dev/simulator/a2a.md)
 
 ### `donkey.flush_telemetry()`
 

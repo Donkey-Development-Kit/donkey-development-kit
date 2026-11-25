@@ -42,6 +42,15 @@ export const MOVED_ANCHORS = {
     'why-not-have-users-call-the-a2a-sdk-directly': '/a2a/serve',
     'why-the-agent-still-runs-a-listener': '/a2a/serve',
   },
+  // #1830: the simulator's MCP and A2A sections moved to their own pages.
+  '/simulator': {
+    'a2a-ingress-replay': '/simulator/a2a',
+    'low-level-helper-for-a-hand-built-toolset': '/simulator/mcp',
+    'mcp-tool-fault-injection': '/simulator/mcp',
+    'outbound-a2a-fault-injection': '/simulator/a2a',
+    'packaged-mcp-captures': '/simulator/mcp',
+    'reusable-offline-baseline': '/simulator/mcp',
+  },
 }
 
 // Strip the basePath prefix, query, hash, trailing slash and `.html`, and

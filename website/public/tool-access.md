@@ -70,8 +70,8 @@ Other sections cover MCP where it meets their topic:
 
 - **Typed refusals:** [JSON-RPC refusal matching](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching)
   and [MCP PII metadata](https://docs.donkey-kit.dev/errors.md#mcp-pii-metadata).
-- **Local simulator:** [MCP tool fault injection](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection)
-  and [packaged MCP captures](https://docs.donkey-kit.dev/simulator.md#packaged-mcp-captures).
+- **Local simulator:** [MCP tool fault injection](https://docs.donkey-kit.dev/simulator/mcp.md#mcp-tool-fault-injection)
+  and [packaged MCP captures](https://docs.donkey-kit.dev/simulator/mcp.md#packaged-mcp-captures).
 - **Human-in-the-loop:** [discovered tools](https://docs.donkey-kit.dev/hitl.md#discovered-tools-local-round-trip),
   [waiting while listing MCP tools](https://docs.donkey-kit.dev/hitl.md#waiting-while-listing-mcp-tools) and
   [step-up on a tool call](https://docs.donkey-kit.dev/hitl.md#step-up-on-a-tool-call).

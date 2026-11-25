@@ -3369,8 +3369,8 @@ Other sections cover MCP where it meets their topic:
 
 - **Typed refusals:** [JSON-RPC refusal matching](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching)
   and [MCP PII metadata](https://docs.donkey-kit.dev/errors.md#mcp-pii-metadata).
-- **Local simulator:** [MCP tool fault injection](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection)
-  and [packaged MCP captures](https://docs.donkey-kit.dev/simulator.md#packaged-mcp-captures).
+- **Local simulator:** [MCP tool fault injection](https://docs.donkey-kit.dev/simulator/mcp.md#mcp-tool-fault-injection)
+  and [packaged MCP captures](https://docs.donkey-kit.dev/simulator/mcp.md#packaged-mcp-captures).
 - **Human-in-the-loop:** [discovered tools](https://docs.donkey-kit.dev/hitl.md#discovered-tools-local-round-trip),
   [waiting while listing MCP tools](https://docs.donkey-kit.dev/hitl.md#waiting-while-listing-mcp-tools) and
   [step-up on a tool call](https://docs.donkey-kit.dev/hitl.md#step-up-on-a-tool-call).
@@ -3733,7 +3733,7 @@ Status: Live. Shipped, and verified against a real governed gateway.
 
 For offline failure tests of newly bound LangGraph, LlamaIndex, Anthropic,
 Microsoft Agent Framework, OpenAI Agents SDK and Strands
-tools, see [MCP tool fault injection](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection).
+tools, see [MCP tool fault injection](https://docs.donkey-kit.dev/simulator/mcp.md#mcp-tool-fault-injection).
 It requires an explicit offline backend and does not intercept existing bindings
 or bypass governance checks. Agent Framework simulation requires stable
 `agent-framework-core>=1.24.0` and `mcp>=2.3.0`; OpenAI Agents SDK simulation
@@ -4354,7 +4354,7 @@ change, review it, then run `donkey.tools.lock()` again.
 
 ## Test drift offline
 
-Inside a [`donkey.simulate_mcp()`](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection)
+Inside a [`donkey.simulate_mcp()`](https://docs.donkey-kit.dev/simulator/mcp.md#mcp-tool-fault-injection)
 block, `discover(locked=True)` checks the declared servers against the lock
 with the same rules as the table above. Declare the servers your lock pins,
 then change a descriptor or leave a server out to make the test raise
@@ -4431,7 +4431,7 @@ reimplementing the policies in your agent.
   checks. A captured refusal does not establish every configuration of a policy.
 
 To exercise response handling offline, use the
-[packaged MCP captures](https://docs.donkey-kit.dev/simulator.md#packaged-mcp-captures) with raw `httpx.MockTransport`.
+[packaged MCP captures](https://docs.donkey-kit.dev/simulator/mcp.md#packaged-mcp-captures) with raw `httpx.MockTransport`.
 This is separate from model-route simulation and does not establish a live
 framework round-trip.
 
@@ -4674,8 +4674,8 @@ Other sections cover A2A where it meets their topic:
 
 - **Typed refusals:** [JSON-RPC refusal matching](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching)
   covers the A2A refusal shapes `classify()` types.
-- **Local simulator:** [outbound A2A fault injection](https://docs.donkey-kit.dev/simulator.md#outbound-a2a-fault-injection)
-  and [A2A ingress replay](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
+- **Local simulator:** [outbound A2A fault injection](https://docs.donkey-kit.dev/simulator/a2a.md#outbound-a2a-fault-injection)
+  and [A2A ingress replay](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay).
 - **Human-in-the-loop:** [A2A Authorization-Code Challenges](https://docs.donkey-kit.dev/hitl.md#a2a-authorization-code-challenges).
 - **Observability:** [outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans) and
   [correlation across agent hops](https://docs.donkey-kit.dev/telemetry.md#across-agent-hops).
@@ -5090,7 +5090,7 @@ donkey dev my_agent:handle --protocol-version 0.3.0 --agent-version 2.4.0 \
   --scenario request_limit:limit=3,window=60s
 ```
 
-The [scenario/version/method matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay) lists which
+The [scenario/version/method matrix](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay) lists which
 captures can be replayed. v0.3 supports PII and rate refusals on `message/send`
 only; `injection` with `0.3.0` fails at startup.
 
@@ -5416,7 +5416,7 @@ v1 ingress replay; `--protocol-version 0.3.0` selects legacy PII/rate
 `message/send` captures, not this outbound authorization-code challenge.
 Its local unsupported-call HTTP `400` is not a gateway policy refusal.
 With scenarios configured, legacy streaming fails locally; without them it
-passes through to the agent. See the [replay matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
+passes through to the agent. See the [replay matrix](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay).
 The CLI flag selects the local listener/ingress, not this outbound facade,
 which still selects the official compatibility transport from the remote card.
 
@@ -5589,7 +5589,7 @@ annotations and the official SDK's own instrumentation.
 replaying selected v1 ingress Azure Prompt Shield, PII and token-rate refusals
 for both send methods. `--protocol-version 0.3.0` uses the existing legacy PII
 and token-rate captures for `message/send` only. See the
-[scenario/version/method matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
+[scenario/version/method matrix](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay).
 
 Legacy `injection` is rejected at startup. Legacy `message/stream` with any
 configured scenarios returns local plain-text HTTP `400` before advancing a
@@ -5623,7 +5623,7 @@ not promote any of these claims.
 
 - [Call other A2A agents](https://docs.donkey-kit.dev/a2a/call.md): scoped credentials and call examples.
 - [Typed errors](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching): discriminators and diagnostics.
-- [A2A ingress replay](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay): offline scenarios.
+- [A2A ingress replay](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay): offline scenarios.
 - [Outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans): tracing boundaries.
 
 ---
@@ -9420,6 +9420,13 @@ Because each body is the *same fixture* the SDK's error classifier is tested
 against, a sentinel request surfaces in your agent as the typed exception — a
 [`PIIDetected`](https://docs.donkey-kit.dev/errors.md), not a raw `403`.
 
+This page covers the model routes. Two more pages cover the other surfaces:
+
+- [MCP faults & captures](https://docs.donkey-kit.dev/simulator/mcp.md): refuse MCP tool calls with
+  `donkey.simulate_mcp()`, and replay the packaged MCP gateway captures.
+- [A2A faults & replay](https://docs.donkey-kit.dev/simulator/a2a.md): refuse outbound A2A calls with
+  `donkey.simulate_a2a()`, and replay captured A2A ingress refusals.
+
 ## Routes
 
 The simulator serves the two OpenAI-format model routes and the two native
@@ -9464,6 +9471,237 @@ behavior rather than producing a server error: the OpenAI-format routes treat
 it as an empty payload (a default happy-path `200` when no scenario intervenes),
 while the native Anthropic and Gemini routes return their captured invalid-JSON
 `400`. This is not a new gateway rejection shape or a configurable depth limit.
+
+## Choosing a port or host
+
+`donkey mock` binds `127.0.0.1:8080` by default. Two flags move it:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--port` | `8080` | TCP port to bind. Pass another value if `8080` is in use. |
+| `--host` | `127.0.0.1` | Interface to bind. `0.0.0.0` exposes it beyond localhost. |
+
+```bash
+donkey mock --port 9000 --host 0.0.0.0
+```
+
+  Binding `0.0.0.0` makes the simulator reachable from other machines on your
+  network. It is a fixture replay that enforces no policy and ignores
+  credentials, so only expose it on a network you trust.
+
+Point your client at the same address: set
+`DONKEY_LLM_PROXY_URL=http://127.0.0.1:<port>` (for the example above,
+`http://127.0.0.1:9000`). The SDK accepts plain `http://` for loopback hosts
+(`localhost`, `127.0.0.0/8`, `::1`); `http://0.0.0.0:…` is refused. To reach the
+simulator from another machine or container by LAN address or hostname (for
+example `http://simulator:9000`), set `DONKEY_ALLOW_HTTP=1` in that client's
+environment; the SDK then emits a `ConfigWarning` naming the endpoint. See
+[Endpoints must use `https://`](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
+
+  Behind an HTTP proxy (`HTTP_PROXY` or `ALL_PROXY` set, as on many corporate
+  machines and CI runners), the client sends loopback requests to the proxy
+  too, and the proxy usually cannot reach your simulator. Add the simulator's
+  host to `NO_PROXY`, for example `NO_PROXY=127.0.0.1,localhost`.
+
+The simulator's port is **not** read from an environment variable or
+`.donkey-kit.toml` — the `--port`/`--host` flags (or the `serve()` keyword
+arguments below) are the only way to change it.
+
+Set the simulator URL in the environment (or in code), as above. If you keep it
+in `.donkey-kit.toml` instead, put the credentials in `.donkey-kit.local.toml`
+next to it: a URL from the working directory's config files, loopback included,
+only receives credentials from those files. See
+[Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
+
+  If you run the simulator's ASGI app under `uvicorn` yourself instead of
+  through `donkey mock`, remember uvicorn's own default port is `8000`, not
+  `8080`. Using `donkey mock` (or `serve()`) gives you the documented `8080`
+  default.
+
+### Running the simulator from Python
+
+`donkey mock` is a thin wrapper over `serve()`. To boot the simulator from your
+own code, call it directly (the `[local]` extra must be installed):
+
+```python
+from donkey_kit.simulator import serve
+
+serve(host="127.0.0.1", port=9000)
+```
+
+`serve(*, host="127.0.0.1", port=8080, config=None)` is keyword-only and blocks
+until the process is stopped. Pass a `SimulatorConfig` (also importable from
+`donkey_kit.simulator`) as `config=` to script the same fault-injection
+scenarios the `--scenario` flag builds. If the `[local]` extra is missing,
+`serve()` raises `ImportError`.
+
+## Budget windows on the happy path
+
+Happy-path `200` responses carry a synthesised `x-llm-proxy-ratelimit` budget
+window that decrements on every call, so the pacing logic from
+[Budget & pacing](https://docs.donkey-kit.dev/budget.md) runs end-to-end against the simulator. For a real
+windowed counter that resets and emits the `429` on exhaustion, use the
+[`budget` scenario](#scenario-scripting). The request window
+(`donkey.budget.requests`) is filled only by the
+[`request_limit` scenario](#request_limitlimitrequestswindowduration).
+
+## Scenario scripting
+
+The sentinel lets *you* decide which call fails. A **scenario** lets the
+simulator decide, on a rule you set once at boot, so failures fire on their own
+and deterministically across a whole run. Pass `--scenario` once per rule; the
+grammar is `<name>:<key=value,key=value>`.
+
+```bash
+donkey mock --port 8080 \
+  --scenario pii_block:every=5 \
+  --scenario budget:limit=20000,window=60s \
+  --scenario request_limit:limit=3,window=60s \
+  --scenario injection:on-pattern="ignore previous"
+```
+
+When more than one is set, they are evaluated `injection` → `pii_block` →
+`request_limit` → `budget`, and the first that fires wins. The `donkey-sim/<shape>` sentinel
+takes precedence over all of them — it is an explicit "force this exact shape"
+override.
+
+  The sentinel is for one-off failures; a scenario runs across a whole session.
+  Use both together to cover specific calls and background failure rates.
+
+### `pii_block:every=N`
+
+Serves the captured `pii-detected` **403** on every Nth model call, on any model
+route; the
+other calls get the happy path.
+
+```bash
+donkey mock --scenario pii_block:every=5
+```
+
+Every fifth call raises a typed [`PIIDetected`](https://docs.donkey-kit.dev/errors.md) in your agent, so your
+masking logic runs in your own terminal before the pull request is opened.
+
+### `budget:limit=<tokens>,window=<duration>`
+
+Runs a **real, wall-clock-windowed token counter**. Shrink an hour-long window
+to a minute and your [pacing and resume logic](https://docs.donkey-kit.dev/budget.md) is exercised in ninety
+seconds.
+
+```bash
+donkey mock --scenario budget:limit=20000,window=60s
+```
+
+Each call deducts the happy-path completion's reported token usage (override
+with `cost=<tokens>`). While budget remains, the `200` carries the
+`x-llm-proxy-ratelimit` prose header, decreasing as you spend. Once the window
+is spent, calls receive the captured `token-rate-limit` **429**, with
+`x-token-remaining` and `x-token-reset` recomputed from the counter and the
+milliseconds left in the window, until the window rolls over. `duration`
+accepts `ms`, `s`, or `m` (a bare number is seconds).
+
+  The numeric `x-token-*` headers appear only on the `429`, and the prose
+  `x-llm-proxy-ratelimit` header only on the `200` — matching the real gateway.
+  The simulator never emits a header shape the gateway does not.
+
+### `ciba:pending=[,then=approve|deny]`
+
+Plays the OAuth2 OBO policy's CIBA step-up. The first `N` calls get the captured `401`
+`authorization_pending` (a typed [`GatewayApprovalPending`](https://docs.donkey-kit.dev/errors.md), with its
+`retry_after`). Then the user "answers": with `then=approve` (the default) every later call
+goes through, and with `then=deny` it gets the `403` `access_denied`
+([`GatewayApprovalDenied`](https://docs.donkey-kit.dev/errors.md)).
+
+```bash
+donkey mock --scenario ciba:pending=2,then=approve
+```
+
+The count is the scenario's own. The simulator does not model the live policy's per-user
+cache or its silent expiry, so test your own deadline separately. The two answers were
+captured on an A2A `message/send` and an MCP `tools/call`, not on an LLM proxy route; the
+simulator serves the same bytes on its model routes so your error handling can be tested
+offline.
+
+### `request_limit:limit=<requests>,window=<duration>`
+
+Runs a **request counter** for the gateway's `rate-limiting` policy, which
+counts requests rather than tokens. It composes with the `budget` scenario.
+
+```bash
+donkey mock --scenario request_limit:limit=3,window=60s
+```
+
+Each `200` carries the `x-ratelimit-limit` / `-remaining` / `-reset` trio from
+the live counter, so `donkey.budget.requests` and
+[`pace()`](https://docs.donkey-kit.dev/budget.md) run end-to-end. Once the window is spent, calls receive the
+captured request-rate-limit `429`, a typed
+[`RequestRateLimitExceeded`](https://docs.donkey-kit.dev/errors.md). The window is fixed: it starts when the
+simulator starts and rolls every `window`; the first call does not start it.
+`duration` takes the same units as `budget` (`ms`, `s`, `m`; a bare number is seconds).
+
+### `injection:on-pattern=<substring>`
+
+Serves the `injection-protection` **400** on any request whose `input`,
+`messages`, or `instructions` text contains the substring (case-insensitive).
+
+```bash
+donkey mock --scenario injection:on-pattern="ignore previous"
+```
+
+The request surfaces as a typed [`PromptInjectionBlocked`](https://docs.donkey-kit.dev/errors.md) (via the
+`x-injection-protection: blocked` discriminator), so the refusal branch of a
+guardrailed bot is exercised before it faces a real attack.
+
+## How the simulator works
+
+  **Every simulator response carries `x-donkey-simulator: true`** — including
+  framework-generated `405`/`500` responses — so a simulated response is never
+  confused with a real gateway in a log, a trace, or a screenshot.
+
+- **It replays; it does not evaluate policy.** The simulator tests how your
+  agent handles a refusal, never *which* prompts get refused. You choose the
+  refusal (the `donkey-sim/<shape>` sentinel or a `--scenario` rule); the
+  simulator never inspects a prompt and decides it violates a policy, and it
+  ignores authentication. Testing whether a prompt would be blocked by your
+  deployed policy configuration requires the real gateway.
+- **It works with any client.** A stock, non-SDK client — plain `httpx` or
+  `openai.OpenAI(base_url="http://localhost:8080", …)` — receives the
+  byte-identical rejection bodies and exact discriminator headers.
+- **Its fixtures are the SDK's test fixtures.** The simulator serves the same
+  files the error classifier is tested against, so the simulator and the
+  [error taxonomy](https://docs.donkey-kit.dev/errors.md) cannot drift apart. The wheel ships a sha256
+  integrity manifest of every fixture, so a changed byte fails loudly rather
+  than silently altering what the simulator replays.
+- **It is pure Python — not Omni/Flex Gateway running in Local Mode.**
+  `pip install "donkey-kit[local]"` adds Starlette and Uvicorn; no Docker
+  required. DDK does not support Local Mode as a deployment target (see the
+  [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md)); real-gateway
+  behavior is exercised against a hosted (Connected Mode) proxy instead.
+
+## Related
+
+- [MCP faults & captures](https://docs.donkey-kit.dev/simulator/mcp.md) and
+  [A2A faults & replay](https://docs.donkey-kit.dev/simulator/a2a.md) — the simulator for tool calls and
+  agent-to-agent calls.
+- [Simulated ingress](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) — `donkey dev`, which replays
+  method-specific A2A captures on inbound calls to your agent.
+- [Testing & conformance](https://docs.donkey-kit.dev/testing.md) — `simulate()` for in-process unit tests,
+  and the `gateway` pytest fixture that runs this simulator on an ephemeral port.
+- [Error taxonomy](https://docs.donkey-kit.dev/errors.md) — the typed exceptions each shape maps to.
+- [CLI](https://docs.donkey-kit.dev/cli.md) — the full `donkey` command reference.
+
+---
+
+Source: https://docs.donkey-kit.dev/simulator/mcp.md
+
+# MCP faults & captures
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+The [local simulator](https://docs.donkey-kit.dev/simulator.md) replays model-route refusals. This page covers
+its MCP counterpart: refusing an MCP **tool call** in-process with
+`donkey.simulate_mcp()`, and replaying the packaged MCP gateway captures
+against your own client. For the policies these captures come from, see
+[MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md).
 
 ## MCP tool fault injection
 
@@ -9753,190 +9991,31 @@ captures untyped. Despite its name, `pii-response-sse.json` is HTTP 403
 envelope, not raw SSE bytes. See [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
 for the evidence boundaries and framework-specific refusal behavior.
 
-## Choosing a port or host
+## Next steps
 
-`donkey mock` binds `127.0.0.1:8080` by default. Two flags move it:
+- [Local simulator](https://docs.donkey-kit.dev/simulator.md): model-route sentinels, scenarios and the server.
+- [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md): what each MCP policy does.
+- [Testing & conformance](https://docs.donkey-kit.dev/testing.md): `simulate()` and the `gateway` pytest fixture.
 
-| Flag | Default | Meaning |
-|---|---|---|
-| `--port` | `8080` | TCP port to bind. Pass another value if `8080` is in use. |
-| `--host` | `127.0.0.1` | Interface to bind. `0.0.0.0` exposes it beyond localhost. |
+---
 
-```bash
-donkey mock --port 9000 --host 0.0.0.0
-```
+Source: https://docs.donkey-kit.dev/simulator/a2a.md
 
-  Binding `0.0.0.0` makes the simulator reachable from other machines on your
-  network. It is a fixture replay that enforces no policy and ignores
-  credentials, so only expose it on a network you trust.
+# A2A faults & replay
 
-Point your client at the same address: set
-`DONKEY_LLM_PROXY_URL=http://127.0.0.1:<port>` (for the example above,
-`http://127.0.0.1:9000`). The SDK accepts plain `http://` for loopback hosts
-(`localhost`, `127.0.0.0/8`, `::1`); `http://0.0.0.0:…` is refused. To reach the
-simulator from another machine or container by LAN address or hostname (for
-example `http://simulator:9000`), set `DONKEY_ALLOW_HTTP=1` in that client's
-environment; the SDK then emits a `ConfigWarning` naming the endpoint. See
-[Endpoints must use `https://`](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
+Status: Live. Shipped, and verified against a real governed gateway.
 
-  Behind an HTTP proxy (`HTTP_PROXY` or `ALL_PROXY` set, as on many corporate
-  machines and CI runners), the client sends loopback requests to the proxy
-  too, and the proxy usually cannot reach your simulator. Add the simulator's
-  host to `NO_PROXY`, for example `NO_PROXY=127.0.0.1,localhost`.
-
-The simulator's port is **not** read from an environment variable or
-`.donkey-kit.toml` — the `--port`/`--host` flags (or the `serve()` keyword
-arguments below) are the only way to change it.
-
-Set the simulator URL in the environment (or in code), as above. If you keep it
-in `.donkey-kit.toml` instead, put the credentials in `.donkey-kit.local.toml`
-next to it: a URL from the working directory's config files, loopback included,
-only receives credentials from those files. See
-[Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
-
-  If you run the simulator's ASGI app under `uvicorn` yourself instead of
-  through `donkey mock`, remember uvicorn's own default port is `8000`, not
-  `8080`. Using `donkey mock` (or `serve()`) gives you the documented `8080`
-  default.
-
-### Running the simulator from Python
-
-`donkey mock` is a thin wrapper over `serve()`. To boot the simulator from your
-own code, call it directly (the `[local]` extra must be installed):
-
-```python
-from donkey_kit.simulator import serve
-
-serve(host="127.0.0.1", port=9000)
-```
-
-`serve(*, host="127.0.0.1", port=8080, config=None)` is keyword-only and blocks
-until the process is stopped. Pass a `SimulatorConfig` (also importable from
-`donkey_kit.simulator`) as `config=` to script the same fault-injection
-scenarios the `--scenario` flag builds. If the `[local]` extra is missing,
-`serve()` raises `ImportError`.
-
-## Budget windows on the happy path
-
-Happy-path `200` responses carry a synthesised `x-llm-proxy-ratelimit` budget
-window that decrements on every call, so the pacing logic from
-[Budget & pacing](https://docs.donkey-kit.dev/budget.md) runs end-to-end against the simulator. For a real
-windowed counter that resets and emits the `429` on exhaustion, use the
-[`budget` scenario](#scenario-scripting). The request window
-(`donkey.budget.requests`) is filled only by the
-[`request_limit` scenario](#request_limitlimitrequestswindowduration).
-
-## Scenario scripting
-
-The sentinel lets *you* decide which call fails. A **scenario** lets the
-simulator decide, on a rule you set once at boot, so failures fire on their own
-and deterministically across a whole run. Pass `--scenario` once per rule; the
-grammar is `<name>:<key=value,key=value>`.
-
-```bash
-donkey mock --port 8080 \
-  --scenario pii_block:every=5 \
-  --scenario budget:limit=20000,window=60s \
-  --scenario request_limit:limit=3,window=60s \
-  --scenario injection:on-pattern="ignore previous"
-```
-
-When more than one is set, they are evaluated `injection` → `pii_block` →
-`request_limit` → `budget`, and the first that fires wins. The `donkey-sim/<shape>` sentinel
-takes precedence over all of them — it is an explicit "force this exact shape"
-override.
-
-  The sentinel is for one-off failures; a scenario runs across a whole session.
-  Use both together to cover specific calls and background failure rates.
-
-### `pii_block:every=N`
-
-Serves the captured `pii-detected` **403** on every Nth model call, on any model
-route; the
-other calls get the happy path.
-
-```bash
-donkey mock --scenario pii_block:every=5
-```
-
-Every fifth call raises a typed [`PIIDetected`](https://docs.donkey-kit.dev/errors.md) in your agent, so your
-masking logic runs in your own terminal before the pull request is opened.
-
-### `budget:limit=<tokens>,window=<duration>`
-
-Runs a **real, wall-clock-windowed token counter**. Shrink an hour-long window
-to a minute and your [pacing and resume logic](https://docs.donkey-kit.dev/budget.md) is exercised in ninety
-seconds.
-
-```bash
-donkey mock --scenario budget:limit=20000,window=60s
-```
-
-Each call deducts the happy-path completion's reported token usage (override
-with `cost=<tokens>`). While budget remains, the `200` carries the
-`x-llm-proxy-ratelimit` prose header, decreasing as you spend. Once the window
-is spent, calls receive the captured `token-rate-limit` **429**, with
-`x-token-remaining` and `x-token-reset` recomputed from the counter and the
-milliseconds left in the window, until the window rolls over. `duration`
-accepts `ms`, `s`, or `m` (a bare number is seconds).
-
-  The numeric `x-token-*` headers appear only on the `429`, and the prose
-  `x-llm-proxy-ratelimit` header only on the `200` — matching the real gateway.
-  The simulator never emits a header shape the gateway does not.
-
-### `ciba:pending=[,then=approve|deny]`
-
-Plays the OAuth2 OBO policy's CIBA step-up. The first `N` calls get the captured `401`
-`authorization_pending` (a typed [`GatewayApprovalPending`](https://docs.donkey-kit.dev/errors.md), with its
-`retry_after`). Then the user "answers": with `then=approve` (the default) every later call
-goes through, and with `then=deny` it gets the `403` `access_denied`
-([`GatewayApprovalDenied`](https://docs.donkey-kit.dev/errors.md)).
-
-```bash
-donkey mock --scenario ciba:pending=2,then=approve
-```
-
-The count is the scenario's own. The simulator does not model the live policy's per-user
-cache or its silent expiry, so test your own deadline separately. The two answers were
-captured on an A2A `message/send` and an MCP `tools/call`, not on an LLM proxy route; the
-simulator serves the same bytes on its model routes so your error handling can be tested
-offline.
-
-### `request_limit:limit=<requests>,window=<duration>`
-
-Runs a **request counter** for the gateway's `rate-limiting` policy, which
-counts requests rather than tokens. It composes with the `budget` scenario.
-
-```bash
-donkey mock --scenario request_limit:limit=3,window=60s
-```
-
-Each `200` carries the `x-ratelimit-limit` / `-remaining` / `-reset` trio from
-the live counter, so `donkey.budget.requests` and
-[`pace()`](https://docs.donkey-kit.dev/budget.md) run end-to-end. Once the window is spent, calls receive the
-captured request-rate-limit `429`, a typed
-[`RequestRateLimitExceeded`](https://docs.donkey-kit.dev/errors.md). The window is fixed: it starts when the
-simulator starts and rolls every `window`; the first call does not start it.
-`duration` takes the same units as `budget` (`ms`, `s`, `m`; a bare number is seconds).
-
-### `injection:on-pattern=<substring>`
-
-Serves the `injection-protection` **400** on any request whose `input`,
-`messages`, or `instructions` text contains the substring (case-insensitive).
-
-```bash
-donkey mock --scenario injection:on-pattern="ignore previous"
-```
-
-The request surfaces as a typed [`PromptInjectionBlocked`](https://docs.donkey-kit.dev/errors.md) (via the
-`x-injection-protection: blocked` discriminator), so the refusal branch of a
-guardrailed bot is exercised before it faces a real attack.
+The [local simulator](https://docs.donkey-kit.dev/simulator.md) replays model-route refusals. This page covers
+its A2A counterparts: refusing an outbound call made through `donkey.a2a` with
+`donkey.simulate_a2a()`, and replaying captured A2A ingress refusals. For the
+policies these captures come from, see
+[A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md).
 
 ## Outbound A2A fault injection
 
 `donkey.simulate_a2a()` is the A2A counterpart of
 [`simulate()`](https://docs.donkey-kit.dev/testing.md) and
-[`simulate_mcp()`](#mcp-tool-fault-injection). It makes an agent you **call**
+[`simulate_mcp()`](https://docs.donkey-kit.dev/simulator/mcp.md#mcp-tool-fault-injection). It makes an agent you **call**
 through [`donkey.a2a`](https://docs.donkey-kit.dev/a2a/call.md) get a captured gateway refusal, with
 no gateway and no Exchange. Like `donkey.a2a`, it is provisional.
 
@@ -10052,40 +10131,11 @@ stream refusals before RPC decoding or ID checks. This is HTTP refusal evidence,
 not a guarantee of successful correlation for other clients. The table lists
 DDK classifications; the stock SDK does not raise those DDK types.
 
-## How the simulator works
+## Next steps
 
-  **Every simulator response carries `x-donkey-simulator: true`** — including
-  framework-generated `405`/`500` responses — so a simulated response is never
-  confused with a real gateway in a log, a trace, or a screenshot.
-
-- **It replays; it does not evaluate policy.** The simulator tests how your
-  agent handles a refusal, never *which* prompts get refused. You choose the
-  refusal (the `donkey-sim/<shape>` sentinel or a `--scenario` rule); the
-  simulator never inspects a prompt and decides it violates a policy, and it
-  ignores authentication. Testing whether a prompt would be blocked by your
-  deployed policy configuration requires the real gateway.
-- **It works with any client.** A stock, non-SDK client — plain `httpx` or
-  `openai.OpenAI(base_url="http://localhost:8080", …)` — receives the
-  byte-identical rejection bodies and exact discriminator headers.
-- **Its fixtures are the SDK's test fixtures.** The simulator serves the same
-  files the error classifier is tested against, so the simulator and the
-  [error taxonomy](https://docs.donkey-kit.dev/errors.md) cannot drift apart. The wheel ships a sha256
-  integrity manifest of every fixture, so a changed byte fails loudly rather
-  than silently altering what the simulator replays.
-- **It is pure Python — not Omni/Flex Gateway running in Local Mode.**
-  `pip install "donkey-kit[local]"` adds Starlette and Uvicorn; no Docker
-  required. DDK does not support Local Mode as a deployment target (see the
-  [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md)); real-gateway
-  behavior is exercised against a hosted (Connected Mode) proxy instead.
-
-## Related
-
-- [Simulated ingress](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) — `donkey dev`, which replays
-  method-specific A2A captures on inbound calls to your agent.
-- [Testing & conformance](https://docs.donkey-kit.dev/testing.md) — `simulate()` for in-process unit tests,
-  and the `gateway` pytest fixture that runs this simulator on an ephemeral port.
-- [Error taxonomy](https://docs.donkey-kit.dev/errors.md) — the typed exceptions each shape maps to.
-- [CLI](https://docs.donkey-kit.dev/cli.md) — the full `donkey` command reference.
+- [Local simulator](https://docs.donkey-kit.dev/simulator.md): model-route sentinels, scenarios and the server.
+- [A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md): what each A2A policy does.
+- [Call other agents](https://docs.donkey-kit.dev/a2a/call.md): the `donkey.a2a` facade these faults exercise.
 
 ---
 
@@ -10154,11 +10204,11 @@ Asking for a refusal no gateway response produces — for example a client-side
 
 `simulate()` covers model calls only. To refuse an MCP **tool call** (a PII
 block, schema rejection, catalog poisoning block or access denial), use
-[`donkey.simulate_mcp("pii-request", servers=...)`](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection).
+[`donkey.simulate_mcp("pii-request", servers=...)`](https://docs.donkey-kit.dev/simulator/mcp.md#mcp-tool-fault-injection).
 Inside that block, `donkey.tools.discover()` returns the servers you declare,
 so no gateway or Exchange is needed.
 For an outbound **A2A** call through `donkey.a2a`, use
-[`donkey.simulate_a2a("pii-send", agents=[...])`](https://docs.donkey-kit.dev/simulator.md#outbound-a2a-fault-injection).
+[`donkey.simulate_a2a("pii-send", agents=[...])`](https://docs.donkey-kit.dev/simulator/a2a.md#outbound-a2a-fault-injection).
 
 ## The conformance plugin — run it against your agent
 
@@ -10960,7 +11010,7 @@ reject. With no scenarios it passes through. Known wrong-version call methods
 and explicit mismatched version headers on calls get the same local `400`,
 not an invented gateway refusal. Every response carries
 `x-donkey-simulator: true`. See the
-[scenario/version/method matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
+[scenario/version/method matrix](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay).
 
 `--host` defaults to `127.0.0.1`. A host that isn't loopback, such as
 `0.0.0.0`, still binds, but `donkey dev` prints a warning on stderr. Nothing
@@ -14030,7 +14080,7 @@ the SDK does not wrap — demo 04 drives `donkey.langgraph.chat_model("gpt-4o")`
 through `simulate(PIIDetected)` and gets the same taxonomy back.
 
 For MCP response handling, use the separate
-[packaged MCP capture replay example](https://docs.donkey-kit.dev/simulator.md#packaged-mcp-captures).
+[packaged MCP capture replay example](https://docs.donkey-kit.dev/simulator/mcp.md#packaged-mcp-captures).
 It uses raw `httpx.MockTransport`, not `donkey.simulate()` injection into bound tools.
 
 **Learn more:** [Local simulator](https://docs.donkey-kit.dev/simulator.md) · [Testing & conformance](https://docs.donkey-kit.dev/testing.md)
@@ -18244,7 +18294,7 @@ donkey.simulate_mcp(
 
 Inject a captured gateway refusal into MCP tool calls, no gateway.
 
-Guide: [`/simulator`](https://docs.donkey-kit.dev/simulator.md)
+Guide: [`/simulator/mcp`](https://docs.donkey-kit.dev/simulator/mcp.md)
 
 ### `donkey.simulate_a2a()`
 
@@ -18261,7 +18311,7 @@ donkey.simulate_a2a(
 
 Inject a captured gateway refusal into outbound A2A calls, no gateway.
 
-Guide: [`/simulator`](https://docs.donkey-kit.dev/simulator.md)
+Guide: [`/simulator/a2a`](https://docs.donkey-kit.dev/simulator/a2a.md)
 
 ### `donkey.flush_telemetry()`
 

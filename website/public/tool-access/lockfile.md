@@ -139,7 +139,7 @@ change, review it, then run `donkey.tools.lock()` again.
 
 ## Test drift offline
 
-Inside a [`donkey.simulate_mcp()`](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection)
+Inside a [`donkey.simulate_mcp()`](https://docs.donkey-kit.dev/simulator/mcp.md#mcp-tool-fault-injection)
 block, `discover(locked=True)` checks the declared servers against the lock
 with the same rules as the table above. Declare the servers your lock pins,
 then change a descriptor or leave a server out to make the test raise

@@ -61,6 +61,8 @@
   "scenarios/support-triage-agents-sdk.md",
   "scenarios/support-triage.md",
   "simulator.md",
+  "simulator/a2a.md",
+  "simulator/mcp.md",
   "telemetry.md",
   "testing.md",
   "tool-access.md",

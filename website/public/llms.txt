@@ -55,9 +55,14 @@
 
 - [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md): (status: live) OpenTelemetry GenAI spans, per-run correlation IDs, and cost-attribution tags — in the dashboard you already run.
 
+## Local simulator
+
+- [Overview](https://docs.donkey-kit.dev/simulator.md): (status: live) Run a local server that replays real gateway rejections, so you can build and test failure handling without a governed gateway.
+- [MCP faults & captures](https://docs.donkey-kit.dev/simulator/mcp.md): (status: live) Refuse MCP tool calls on cue with simulate_mcp(), and replay packaged MCP gateway captures, so tool-refusal handling is tested without a governed gateway.
+- [A2A faults & replay](https://docs.donkey-kit.dev/simulator/a2a.md): (status: live) Refuse outbound A2A calls on cue with simulate_a2a(), and replay captured A2A ingress refusals in front of your own agent, without a governed gateway.
+
 ## Build, test & ship
 
-- [Local simulator](https://docs.donkey-kit.dev/simulator.md): (status: live) Run a local server that replays real gateway rejections, so you can build and test failure handling without a governed gateway.
 - [Testing & conformance](https://docs.donkey-kit.dev/testing.md): (status: live) Test your agent's failure handling — in-process refusal injection, a pytest conformance suite you run against your own agent, and an out-of-process gateway fixture.
 - [CLI & decorators](https://docs.donkey-kit.dev/cli.md): (status: live) The @donkey.governed, @donkey.tool and @donkey.agent decorators, and the donkey CLI — init, doctor, mock, dev, test, scan, publish, verify and expose.
 - [Scan & publish](https://docs.donkey-kit.dev/publishing.md): (status: live) donkey scan derives a deterministic model of your agents, tools and MCP servers from code; publishing registers it with Exchange / Agent Registry from CI, complementing Agent Scanners.

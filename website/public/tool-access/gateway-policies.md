@@ -21,7 +21,7 @@ reimplementing the policies in your agent.
   checks. A captured refusal does not establish every configuration of a policy.
 
 To exercise response handling offline, use the
-[packaged MCP captures](https://docs.donkey-kit.dev/simulator.md#packaged-mcp-captures) with raw `httpx.MockTransport`.
+[packaged MCP captures](https://docs.donkey-kit.dev/simulator/mcp.md#packaged-mcp-captures) with raw `httpx.MockTransport`.
 This is separate from model-route simulation and does not establish a live
 framework round-trip.
 

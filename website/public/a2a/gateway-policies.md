@@ -157,7 +157,7 @@ annotations and the official SDK's own instrumentation.
 replaying selected v1 ingress Azure Prompt Shield, PII and token-rate refusals
 for both send methods. `--protocol-version 0.3.0` uses the existing legacy PII
 and token-rate captures for `message/send` only. See the
-[scenario/version/method matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
+[scenario/version/method matrix](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay).
 
 Legacy `injection` is rejected at startup. Legacy `message/stream` with any
 configured scenarios returns local plain-text HTTP `400` before advancing a
@@ -191,5 +191,5 @@ not promote any of these claims.
 
 - [Call other A2A agents](https://docs.donkey-kit.dev/a2a/call.md): scoped credentials and call examples.
 - [Typed errors](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching): discriminators and diagnostics.
-- [A2A ingress replay](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay): offline scenarios.
+- [A2A ingress replay](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay): offline scenarios.
 - [Outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans): tracing boundaries.

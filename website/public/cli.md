@@ -638,7 +638,7 @@ reject. With no scenarios it passes through. Known wrong-version call methods
 and explicit mismatched version headers on calls get the same local `400`,
 not an invented gateway refusal. Every response carries
 `x-donkey-simulator: true`. See the
-[scenario/version/method matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
+[scenario/version/method matrix](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay).
 
 `--host` defaults to `127.0.0.1`. A host that isn't loopback, such as
 `0.0.0.0`, still binds, but `donkey dev` prints a warning on stderr. Nothing

@@ -239,7 +239,7 @@ v1 ingress replay; `--protocol-version 0.3.0` selects legacy PII/rate
 `message/send` captures, not this outbound authorization-code challenge.
 Its local unsupported-call HTTP `400` is not a gateway policy refusal.
 With scenarios configured, legacy streaming fails locally; without them it
-passes through to the agent. See the [replay matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
+passes through to the agent. See the [replay matrix](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay).
 The CLI flag selects the local listener/ingress, not this outbound facade,
 which still selects the official compatibility transport from the remote card.
 

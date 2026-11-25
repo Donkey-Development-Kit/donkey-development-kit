@@ -39,8 +39,8 @@ Other sections cover A2A where it meets their topic:
 
 - **Typed refusals:** [JSON-RPC refusal matching](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching)
   covers the A2A refusal shapes `classify()` types.
-- **Local simulator:** [outbound A2A fault injection](https://docs.donkey-kit.dev/simulator.md#outbound-a2a-fault-injection)
-  and [A2A ingress replay](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
+- **Local simulator:** [outbound A2A fault injection](https://docs.donkey-kit.dev/simulator/a2a.md#outbound-a2a-fault-injection)
+  and [A2A ingress replay](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay).
 - **Human-in-the-loop:** [A2A Authorization-Code Challenges](https://docs.donkey-kit.dev/hitl.md#a2a-authorization-code-challenges).
 - **Observability:** [outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans) and
   [correlation across agent hops](https://docs.donkey-kit.dev/telemetry.md#across-agent-hops).
