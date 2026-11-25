@@ -21,6 +21,9 @@ terminal before it ever runs on a customer's data.
   *failure-injection rules* (`pii_block`, `budget`, `injection`). The pages
   below use those rules as the engine, but the job is the story.
 
+To see one capability at a time, with the script that shows it, go to
+[Examples](https://docs.donkey-kit.dev/examples.md).
+
 ## What's runnable, and what's honest about being blocked
 
 Support triage runs **completely** today — it is the Phase-1 acceptance

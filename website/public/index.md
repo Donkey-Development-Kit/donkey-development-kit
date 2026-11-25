@@ -245,7 +245,16 @@ wiring each one.
     Every capability, its purpose, and what it saves you.
   
   
-    Install and quickstart for each of the eight supported frameworks.
+    Install and quickstart for each of the eight supported frameworks, and the gateway policies on model calls.
+  
+  
+    Discover governed MCP tools, bind them to your framework, and see what the gateway enforces on each call.
+  
+  
+    Make your agent callable by other agents, call governed A2A agents, and see their gateway policies.
+  
+  
+    Every gateway refusal as a typed exception, and how to handle each one.
   
   
     Runnable demos, from a first governed call to a full LangGraph agent.

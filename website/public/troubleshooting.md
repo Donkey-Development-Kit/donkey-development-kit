@@ -6,6 +6,11 @@ Start with `donkey doctor`. It makes one real governed call and tells apart the
 failures that look the same from your code. The sections below explain each
 line it prints, then cover the problems `doctor` can't see.
 
+Some problems belong to one surface. If the symptom is about a model call, see
+[Models](https://docs.donkey-kit.dev/frameworks.md) and its [gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md).
+For a tool, see [MCP tools](https://docs.donkey-kit.dev/tool-access.md) and its [gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md).
+For an agent-to-agent call, see [A2A agents](https://docs.donkey-kit.dev/a2a.md) and its [gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md).
+
 ```bash
 pip install "donkey-kit[cli]"
 donkey doctor                  # or: donkey doctor --model <model-id> --json

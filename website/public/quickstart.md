@@ -302,6 +302,8 @@ If `doctor` reports a `404`, read which line it is on:
 - **[From code to a publish plan](https://docs.donkey-kit.dev/cli/ship.md#from-code-to-a-publish-plan)** — scan
   your decorated agents and tools, scaffold their `.donkey-kit.toml`
   declarations and review the publish plan, all offline.
+- **[Model gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md)** — what each gateway
+  policy does to a model call, and the typed exception your code gets for it.
 - **[Examples](https://docs.donkey-kit.dev/examples.md)** — runnable demos for every capability on this page.
 - **[Scenarios](https://docs.donkey-kit.dev/scenarios.md)** — support triage, a nightly batch and an internal
   copilot, built end to end.
