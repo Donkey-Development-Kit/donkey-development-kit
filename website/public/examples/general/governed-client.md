@@ -233,7 +233,7 @@ header pair rather than a bearer token. There is deliberately no `id=` on
 correlation. Use `donkey.run(id=...)` when you need to pin a business id (see
 [Telemetry](https://docs.donkey-kit.dev/examples/general/telemetry.md)).
 
-**Learn more:** [Introduction](https://docs.donkey-kit.dev/) · [Model access](https://docs.donkey-kit.dev/frameworks.md) · [CLI & decorators](https://docs.donkey-kit.dev/cli.md)
+**Learn more:** [Introduction](https://docs.donkey-kit.dev/) · [Model access](https://docs.donkey-kit.dev/frameworks.md) · [CLI](https://docs.donkey-kit.dev/cli.md) · [decorators](https://docs.donkey-kit.dev/decorators.md)
 
 **Source:**
 [narrative demo 01](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/01_governed_client) ·

@@ -291,13 +291,13 @@ Omni Gateway later is an environment change, not a code change.
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |
 | Local simulator & `simulate()` | Live | [Local simulator](https://docs.donkey-kit.dev/simulator.md) |
 | Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
-| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `scaffold`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
+| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `scaffold`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI](https://docs.donkey-kit.dev/cli.md) and [decorators](https://docs.donkey-kit.dev/decorators.md) |
 | Governed tool access (MCP) | Live | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
 | A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) |
 | A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) |
 | On-behalf-of identity: `donkey.as_user()` | Live | [Identity](https://docs.donkey-kit.dev/identity.md) |
 | Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
-| `donkey scan` and `donkey scaffold` (agents, tools and MCP servers from code, and the declarations they need) | Live | [From code to a publish plan](https://docs.donkey-kit.dev/cli.md#from-code-to-a-publish-plan) |
+| `donkey scan` and `donkey scaffold` (agents, tools and MCP servers from code, and the declarations they need) | Live | [From code to a publish plan](https://docs.donkey-kit.dev/cli/ship.md#from-code-to-a-publish-plan) |
 | Publish to the registry and verify: `donkey publish`, `donkey verify` | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
 | Policy handshake | Roadmap | [Policy handshake](https://docs.donkey-kit.dev/policies.md) |
 
@@ -496,7 +496,7 @@ Or fold it into one line with a decorator:
 async def handle_ticket(ticket): ...
 ```
 
-See [CLI & decorators](https://docs.donkey-kit.dev/cli.md).
+See [CLI](https://docs.donkey-kit.dev/cli.md) and [decorators](https://docs.donkey-kit.dev/decorators.md).
 
 ## Test the refusal branch Live
 
@@ -564,14 +564,14 @@ If `doctor` reports a `404`, read which line it is on:
 - **`responses` says "/responses not served on this route"** — the proxy
   works, but its upstream (an Azure OpenAI route, for example) does not serve
   the Responses API. Use the Chat Completions API on that route; see
-  [`donkey doctor`](https://docs.donkey-kit.dev/cli.md#donkey-doctor).
+  [`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md#donkey-doctor).
 
 ## Next steps
 
 - **[Pick your framework](https://docs.donkey-kit.dev/frameworks.md)** — get a native LangGraph, ADK,
   Strands, LlamaIndex, CrewAI, OpenAI Agents SDK, Anthropic SDK or Agent
   Framework object in three lines.
-- **[From code to a publish plan](https://docs.donkey-kit.dev/cli.md#from-code-to-a-publish-plan)** — scan
+- **[From code to a publish plan](https://docs.donkey-kit.dev/cli/ship.md#from-code-to-a-publish-plan)** — scan
   your decorated agents and tools, scaffold their `.donkey-kit.toml`
   declarations and review the publish plan, all offline.
 - **[Examples](https://docs.donkey-kit.dev/examples.md)** — runnable demos for every capability on this page.
@@ -3542,8 +3542,8 @@ Other sections cover MCP where it meets their topic:
   bound `ToolSet`, and [Identity](https://docs.donkey-kit.dev/identity.md) for `donkey.as_user()`.
 - **Scan & publish:** [publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers)
   and [declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
-- **CLI:** [`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan), [`donkey publish`](https://docs.donkey-kit.dev/cli.md#donkey-publish)
-  and [`donkey mock`](https://docs.donkey-kit.dev/cli.md#donkey-mock).
+- **CLI:** [`donkey scan`](https://docs.donkey-kit.dev/cli/ship.md#donkey-scan), [`donkey publish`](https://docs.donkey-kit.dev/cli/ship.md#donkey-publish)
+  and [`donkey mock`](https://docs.donkey-kit.dev/cli/local.md#donkey-mock).
 - **Reference:** [connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#per-operation) and the
   [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md#current-boundary).
 
@@ -4845,7 +4845,7 @@ Other sections cover A2A where it meets their topic:
   [correlation across agent hops](https://docs.donkey-kit.dev/correlation.md#across-agent-hops).
 - **Scan & publish:** [publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents) and
   [declaring how an agent is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-agent-is-reached).
-- **CLI:** [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose) and [`donkey dev`](https://docs.donkey-kit.dev/cli.md#donkey-dev).
+- **CLI:** [`donkey expose`](https://docs.donkey-kit.dev/cli/ship.md#donkey-expose) and [`donkey dev`](https://docs.donkey-kit.dev/cli/local.md#donkey-dev).
 - **Reference:** [connected-app scopes for `donkey expose`](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose),
   the [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md#current-boundary),
   and the Python API for [`donkey.serve()`](https://docs.donkey-kit.dev/reference/api.md#donkeyserve) and
@@ -4959,7 +4959,7 @@ no second description of your agent to keep in sync:
 | `version` | `donkey.serve(version=...)` or `donkey dev --agent-version`, `"0.0.0"` by default |
 | `supportedInterfaces[0].url` | `donkey.serve(url=...)`, or `http://{host}:{port}/` |
 
-[`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan) reads the same marker, which is why the two
+[`donkey scan`](https://docs.donkey-kit.dev/cli/ship.md#donkey-scan) reads the same marker, which is why the two
 can't drift. A handler without `@donkey.agent` is rejected with a `TypeError`.
 
 ### What the handler gets and returns
@@ -5219,7 +5219,7 @@ It stays narrow, so it never turns into a provisioning tool:
   infrastructure-as-code. If one is missing, `donkey expose` tells you which
   one, and where to create it, rather than creating it.
 
-See [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose) for the step statuses and exit
+See [`donkey expose`](https://docs.donkey-kit.dev/cli/ship.md#donkey-expose) for the step statuses and exit
 codes, and [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose) for the
 connected app it runs with.
 
@@ -6079,7 +6079,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider), "Missing 'model' field in request", or "Unsupported provider '…'. No fallback configuration." | **No** — a client configuration mistake, terminal; the upstream was never called. | For a bare model name, use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. For a missing model, send the model where the proxy's format expects it (the `model` body field for OpenAI ingress, the URL path for native Gemini ingress), with the client that matches the proxy's format. For an unsupported provider (`.provider`), use a provider the proxy routes to, or ask the proxy owner to add a route or a fallback for it. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries a `503`, and a `502` / `504` too unless the request was a model call (set `retry_model_calls_on_gateway_errors` to include those); a persistent `5xx` is safe for you to retry once you accept a possible second charge. | Transient provider failure — retry, then escalate if it persists. |
-| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://docs.donkey-kit.dev/cli.md). |
+| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md). |
 | `ApprovalError` | client-side base of `ApprovalRejected` (a reviewer refused a [framework-paused](https://docs.donkey-kit.dev/hitl.md#the-framework-approval-helpers) tool) and `GatewayApprovalDenied` (the user refused the gateway's step-up). Catch it to handle both refusals at once. | **No** — the call was refused at its approval step. | Tell the user or the agent that the action was not authorized; don't retry it unchanged. |
 | `ApprovalNotFound` | client-side, also a `KeyError`: `donkey.approvals.get`, `resolve` or `reject` of an id this `Donkey` holds no pending approval for. It was already decided, [another `Donkey` recorded it](https://docs.donkey-kit.dev/hitl.md#resolving), or the process restarted. `.approval_id` is the id. | **No** — the same id is never pending again. | Decide each approval once, on the `Donkey` that recorded it. After a restart, call the tool again to ask for a fresh decision. |
 | `DescriptorMismatch` | client-side, also a `ValueError`, from `donkey_kit.experimental`: `derive_descriptor(..., mode="auto:check")` derived a descriptor that differs from the committed file. | **No** — the code and the file disagree until one changes. | Regenerate the committed descriptor with `mode="auto"` if the change is intended, or fix the tool definition. |
@@ -6130,7 +6130,7 @@ block, `typed_refusals()` or `@donkey.governed`, it reaches you the way
 
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
-[`donkey doctor`](https://docs.donkey-kit.dev/cli.md) also prints. Control-plane token failures override that
+[`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md) also prints. Control-plane token failures override that
 default with guidance for the provider that failed: connected-app errors point
 to the Anypoint credentials and scopes, while an exhausted `ChainedAuth` points
 to each configured provider's credential or token source. A registry read the
@@ -6193,7 +6193,7 @@ a canonical default. For the refusals:
 
 The text names the **action you can take**, not the policy that fired. Because
 each default lives on the exception class, it is a single source of wording that
-[`donkey doctor`](https://docs.donkey-kit.dev/cli.md) reuses for its own failure output, so the CLI and the
+[`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md) reuses for its own failure output, so the CLI and the
 exception never disagree.
 
 ## Refusal messages don't repeat blocked content
@@ -6202,7 +6202,7 @@ The LLM PII policy's rejection text repeats every value it flagged. `PIIDetected
 builds its own message instead, from the entity types, their count and their
 character offsets. So `str(exc)`, `repr(exc)` and `exc.args` never contain the
 blocked value, and neither does a log line, a traceback or
-[`donkey doctor`](https://docs.donkey-kit.dev/cli.md):
+[`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md):
 
 ```
 Request blocked: personally identifiable information detected (403): 1 entity (Email at chars 12-32). Values withheld; the gateway's text is on .gateway_message.
@@ -7664,7 +7664,7 @@ async def on_decision(approval_id: str, reviewer: str, approved: bool) -> None:
 
 `@donkey.tool` takes three optional keywords. Bare `@donkey.tool` is unchanged:
 it marks the tool and returns the same function (see
-[CLI & decorators](https://docs.donkey-kit.dev/cli.md#donkeytool)).
+[CLI & decorators](https://docs.donkey-kit.dev/decorators.md#donkeytool)).
 
 | Keyword | Default | Meaning |
 |---|---|---|
@@ -10320,7 +10320,7 @@ declares one. With `--donkey-conformance`, the plugin runs the suite
 exclusively in place of normal test collection; without the flag it is inert.
 `--agent` is a deprecated alias for `--donkey-agent`.
 You can also run it through the CLI with `donkey test --agent my_app.agent:build`
-(see [CLI](https://docs.donkey-kit.dev/cli.md#donkey-test)).
+(see [CLI](https://docs.donkey-kit.dev/cli/local.md#donkey-test)).
 
 ### Exemptions
 
@@ -10414,19 +10414,15 @@ All three read the **same rejection fixtures**, so they cannot drift apart.
 
 ---
 
-Source: https://docs.donkey-kit.dev/cli.md
+Source: https://docs.donkey-kit.dev/decorators.md
 
-# CLI & decorators
+# Decorators
 
 Status: Live. Shipped, and verified against a real governed gateway.
 
-Two on-ramps to the SDK: decorators that govern a function in one line, and a
-CLI for setup, diagnosis, local simulation, conformance testing, and scanning,
-publishing, verifying and exposing your agents and tools.
+<span id="decorators" />
 
-## Decorators
-
-### `@donkey.governed`
+## `@donkey.governed`
 
 Runs a function inside a [`donkey.run()`](https://docs.donkey-kit.dev/correlation.md) scope:
 
@@ -10445,7 +10441,7 @@ and typed refusals — the four things you would otherwise set up per call site.
   collapsed into one correlation. When you need a specific id, use
   `donkey.run(id=…)` directly.
 
-### `@donkey.tool`
+## `@donkey.tool`
 
 ```python
 @donkey.tool
@@ -10478,7 +10474,7 @@ always set by you and never inferred from a module path or function name. A
 tool without `server=` is reported as **unattributed**, not guessed. Anything
 else raises `ValueError` at decoration time.
 
-### `@donkey.agent`
+## `@donkey.agent`
 
 ```python
 @donkey.agent(name="support-triage", skills=["triage", "draft-reply"])
@@ -10495,9 +10491,23 @@ agent's service ID, with the same kebab-case rule as `server=`. The docstring is
 required, because it is the agent's description. A blank or repeated skill
 raises `ValueError`.
 
-[`donkey scan`](#donkey-scan) reads the `@donkey.tool` and `@donkey.agent`
+[`donkey scan`](https://docs.donkey-kit.dev/cli/ship.md#donkey-scan) reads the `@donkey.tool` and `@donkey.agent`
 markers, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md) generates its A2A agent card from the same
 `@donkey.agent` record, so the scan and the card can't drift.
+
+## Next steps
+
+- [CLI](https://docs.donkey-kit.dev/cli.md): the `donkey` commands that take a decorated agent from code to a publish plan.
+- [Local simulator](https://docs.donkey-kit.dev/simulator.md): rehearse the governed calls a decorated function makes, offline.
+- [Typed refusals](https://docs.donkey-kit.dev/errors.md): every exception a governed call can raise.
+
+---
+
+Source: https://docs.donkey-kit.dev/cli.md
+
+# CLI
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 ## The CLI
 
@@ -10519,159 +10529,6 @@ donkey preflight     # checks, read-only, that a service can be put behind its g
 donkey expose        # puts one MCP server or A2A agent behind an existing gateway
 ```
 
-### From code to a publish plan
-
-This walkthrough takes a project from decorated code to a publish plan. Every
-step up to the plan is offline: no credentials are checked and nothing is sent.
-The live checks come after, as a separate gate. The project has one MCP tool
-and one agent:
-
-```python filename="app/main.py"
-from donkey_kit import Donkey
-
-donkey = Donkey.from_env()
-
-@donkey.tool(server="sku-manager")
-def lookup_sku(sku: str) -> dict:
-    """Look up a SKU's price and stock level by its code."""
-    ...
-
-@donkey.agent(name="support-triage", skills=["triage"])
-async def triage(task):
-    """Triage a support ticket and draft a reply for a human to send."""
-    ...
-```
-
-**1. Write the connection config.** Set the values you have, such as
-`ANYPOINT_ORG_ID`, in the environment, then run `donkey init` from the project
-root. It writes the non-secret ones to `.donkey-kit.toml` and names every
-required value still missing, with its environment variable:
-
-```
-$ donkey init
-Wrote /path/to/support-desk/.donkey-kit.toml.
-
-Still missing (set before the SDK can reach the platform):
-  - client_id (env ANYPOINT_CLIENT_ID)
-  - client_secret (env ANYPOINT_CLIENT_SECRET)
-  - llm_proxy_url (env DONKEY_LLM_PROXY_URL)
-  - llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)
-  - llm_proxy_client_secret (env DONKEY_LLM_PROXY_CLIENT_SECRET)
-```
-
-The missing values don't block the offline steps. Secrets never go in this
-file: put them in the environment or a gitignored `.donkey-kit.local.toml`. If
-you set an LLM proxy auth mode (`DONKEY_LLM_PROXY_AUTH`), a model-wallet client
-ID or a dynamic-key header, `init` keeps them too. See
-[`donkey init`](#donkey-init) for the connection modes.
-
-**2. See what the code declares.** `donkey scan` reads the decorators without
-running your code. A gap is named with the table and key that fill it:
-
-```
-$ donkey scan
-  agent  support-triage  (app/main.py:13)
-  mcp    sku-manager  (1 tool: lookup_sku)  transport undeclared (set transport in [donkey.mcp_servers.sku-manager]; `donkey scaffold` adds the table if .donkey-kit.toml lacks it)
-found 1 agent, 1 tool, 1 MCP server
-```
-
-**3. Preview the declarations.** `donkey scaffold --dry-run` prints the tables
-the project still needs and writes nothing. What the code says becomes a key.
-What it can't say is a commented placeholder:
-
-```
-$ donkey scaffold --dry-run
-# agent triage, app/main.py:13
-[donkey.agents.support-triage]
-# protocol = "<a2a_v1 or other>"
-# endpoint = "<the URL the agent is served at; required for a2a_v1>"
-
-# MCP server with tools: lookup_sku
-[donkey.mcp_servers.sku-manager]
-# transport = "<stdio, streamable-http or sse>"
-# endpoint = "<the server's http or https URL; none for stdio>"
-
-# Exchange coordinates for `donkey publish`
-[donkey.publication]
-# version = "<a semantic version, such as 1.0.0>"
-# group_id = "<the Exchange group; the configured org_id when unset>"
-...
-5 tables for .donkey-kit.toml, 6 placeholders to fill in
-readiness, offline from the committed file (live credentials and reachability not checked: donkey doctor, donkey preflight)
-  scan: valid
-  publish: incomplete
-      missing  [donkey.publication] version: a semantic version, such as 1.0.0
-      ...
-```
-
-Add `--json` for the same result as one document (`scaffold_format: 1`): the
-TOML as `toml`, the `candidates` and already-`declared` tables, the number of
-`unresolved` placeholders, the `readiness` report and `written: false`.
-
-**4. Write them, with the values you know.** The deployment facts (the
-version, where each service is served, which protocol the agent speaks) are
-yours to state. Pass the ones you know with `--set`, and scaffold writes them
-as real keys:
-
-```
-$ donkey scaffold --set publication.version=1.0.0 \
-    --set mcp_servers.sku-manager.transport=streamable-http \
-    --set mcp_servers.sku-manager.endpoint=https://sku.example.com/mcp \
-    --set agents.support-triage.protocol=a2a_v1 \
-    --set agents.support-triage.endpoint=https://triage.example.com
-added to .donkey-kit.toml: 5 tables, 1 placeholder to fill in
-readiness, offline from the committed file (live credentials and reachability not checked: donkey doctor, donkey preflight)
-  scan: valid
-  publish: ready
-      note  [donkey.publication] group_id: not declared: publish uses the configured org_id (ANYPOINT_ORG_ID), which is not checked offline
-  expose sku-manager: incomplete
-      missing  [donkey.expose] target: the gateway to deploy to, or pass --target
-  expose support-triage: incomplete
-      missing  [donkey.expose] target: the gateway to deploy to, or pass --target
-```
-
-The tables are appended after what `init` wrote, which stays as it was. A
-placeholder left open, here `group_id`, stays commented. Edit the file to
-fill it in, then uncomment the line. Running `donkey scaffold` again prints
-`nothing to add to .donkey-kit.toml` and leaves the file alone. Readiness only
-counts what the committed file says. `publish: ready` doesn't mean your
-credentials work or your services are up. Exposure stays incomplete until you
-declare a gateway, which this walkthrough doesn't need.
-
-**5. Review the publish plan.** `donkey publish --dry-run` prints each asset
-it would register, with its coordinates and digest, and sends nothing:
-
-```
-$ donkey publish --dry-run
-  mcp    <org-id>:sku-manager:1.0.0  sku-manager  sha256:5bfdcf57…
-  agent  <org-id>:support-triage:1.0.0  support-triage  sha256:515b312e…
-would publish 2 assets (dry run: nothing was sent)
-```
-
-If you skip step 4, the plan says what is missing and how to add it, and exits
-`1`:
-
-```
-1 issue
-  .donkey-kit.toml:0  missing-version  donkey.publication: set version in [donkey.publication] to a semantic version, such as 1.0.0; `donkey scaffold --set publication.version=1.0.0` adds the table with it
-```
-
-The plan still resolves your connection config for the default group ID, so
-`ANYPOINT_ORG_ID` (or `org_id` in the file) must be set. That's the end of the
-offline journey: commit `.donkey-kit.toml`.
-
-**6. The live gate.** These commands need the missing credentials from step 1,
-and they reach the platform:
-
-- `donkey doctor` makes one real governed model request. It can consume
-  tokens or model budget.
-- `donkey preflight --service sku-manager`, and `donkey expose --dry-run`,
-  make only reads, but they read the live control plane and gateway. Read-only
-  isn't offline. They need a `[donkey.expose]` table: add it with
-  `donkey scaffold --expose`.
-- `donkey publish` registers the assets in Exchange, and `donkey verify`
-  checks them against their live side.
-
 ### Global flags
 
 Four global flags precede the subcommand:
@@ -10686,7 +10543,7 @@ donkey --json init                # machine-readable output where a command supp
 
 `--config` selects the file `init` writes or the project file `doctor` reads.
 For `init` it is only the destination: `init` still resolves its values from
-the working directory, as described [below](#donkey-init). `doctor` still applies the normal per-field precedence: explicit kwargs (when
+the working directory, as described [below](https://docs.donkey-kit.dev/cli/setup.md#donkey-init). `doctor` still applies the normal per-field precedence: explicit kwargs (when
 calling the config loader in code), environment variables, the named file's
 local overlay, the named file, user config, then defaults. `--env` applies to
 `init` only; set `ANYPOINT_ENV` for `doctor`. Other commands reject these flags
@@ -10739,7 +10596,7 @@ of its bytes.
 When an issue is a missing declaration, its message names the table and key to
 set. If the table isn't in `.donkey-kit.toml` yet, it also gives the
 `donkey scaffold` command that adds it, with every key that table still lacks
-as a `--set` (see [Filling a placeholder](#filling-a-placeholder-with---set)):
+as a `--set` (see [Filling a placeholder](https://docs.donkey-kit.dev/cli/ship.md#filling-a-placeholder-with---set)):
 
 ```
   .donkey-kit.toml:0  missing-version  donkey.publication: set version in [donkey.publication] to a semantic version, such as 1.0.0; `donkey scaffold --set publication.version=1.0.0 --set publication.group_id=GROUP_ID` adds the table with it
@@ -10858,7 +10715,33 @@ Global options go before the command (`donkey --json init`):
 | `path` | `.` | The repository (or one .py file) to verify. |
 | `--json` | off | Emit the plan with each asset's outcome as JSON. |
 
-### `donkey init`
+### Where each command is documented
+
+| Stage | Commands | Page |
+| --- | --- | --- |
+| Set up | `donkey init`, `donkey doctor` | [Set up](https://docs.donkey-kit.dev/cli/setup.md) |
+| Develop locally | `donkey mock`, `donkey dev`, `donkey test` | [Develop locally](https://docs.donkey-kit.dev/cli/local.md) |
+| Ship | `donkey scan`, `donkey scaffold`, `donkey publish`, `donkey verify`, `donkey expose` | [Ship](https://docs.donkey-kit.dev/cli/ship.md) |
+
+## Planned commands Roadmap
+
+These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and are not available in the
+CLI yet:
+
+- `donkey serve` — serve your agent over A2A from the command line. In code,
+  `donkey.serve()` does it today. See [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md).
+
+  Run `donkey --help` to see the commands available in your installed version.
+
+---
+
+Source: https://docs.donkey-kit.dev/cli/setup.md
+
+# Set up
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+## `donkey init`
 
 Resolves your current configuration (env vars → config files → defaults; see
 [Precedence](https://docs.donkey-kit.dev/reference/configuration.md#precedence)), from the working directory,
@@ -10912,7 +10795,7 @@ donkey init --force
 donkey --json init    # {"path": "...", "written": true, "missing": [...]}
 ```
 
-### `donkey doctor`
+## `donkey doctor`
 
 A governed call can fail for several reasons that look identical from the
 outside. `doctor` makes one real governed call and tells them apart:
@@ -11001,7 +10884,20 @@ donkey doctor --model gpt-4o     # model to test against the allow-list (default
 donkey doctor --json             # machine-readable checks
 ```
 
-### `donkey mock`
+## Next steps
+
+- [Develop locally](https://docs.donkey-kit.dev/cli/local.md): run the agent against the simulator and the test suite.
+- [Configuration](https://docs.donkey-kit.dev/reference/configuration.md): every setting `init` and `doctor` read.
+
+---
+
+Source: https://docs.donkey-kit.dev/cli/local.md
+
+# Develop locally
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+## `donkey mock`
 
 Runs the [local simulator](https://docs.donkey-kit.dev/simulator.md), which replays captured gateway
 rejections. Needs the `[local]` extra.
@@ -11013,7 +10909,7 @@ donkey mock --port 8080 --host 127.0.0.1 \
   --scenario request_limit:limit=3,window=60s
 ```
 
-The flags are listed in the [command reference](#command-reference). The
+The flags are listed in the [command reference](https://docs.donkey-kit.dev/cli.md#command-reference). The
 `--scenario` rule syntax is in [Scenario scripting](https://docs.donkey-kit.dev/simulator.md#scenario-scripting).
 
 The port isn't read from an environment variable or `.donkey-kit.toml`; these
@@ -11023,7 +10919,7 @@ programmatic entry point and the `0.0.0.0` caveat.
 
 An invalid `--scenario` exits with code `2`.
 
-### `donkey dev`
+## `donkey dev`
 
 Serves a `@donkey.agent` handler over A2A behind a simulated gateway ingress,
 which rejects inbound calls with the simulator's fixtures. Needs the `[a2a]`
@@ -11063,7 +10959,7 @@ not an invented gateway refusal. Every response carries
 authenticates the caller, so anyone who can reach the port can call the agent.
 The ingress answers a request body over 4 MiB with a `413`.
 
-### `donkey test`
+## `donkey test`
 
 A thin front end to `pytest --donkey-conformance` — it does not re-implement the
 runner. Point it at your agent factory and pass any trailing pytest arguments
@@ -11077,7 +10973,174 @@ donkey test --agent my.pkg:make_agent --donkey-mode server   # over a real port;
 
 See [Testing & conformance](https://docs.donkey-kit.dev/testing.md) for what the suite checks.
 
-### `donkey scan`
+## Next steps
+
+- [Local simulator](https://docs.donkey-kit.dev/simulator.md): the scenarios `donkey mock` scripts.
+- [Testing & conformance](https://docs.donkey-kit.dev/testing.md): the offline test helpers `donkey test` runs.
+- [Ship](https://docs.donkey-kit.dev/cli/ship.md): the commands that publish what you built here.
+
+---
+
+Source: https://docs.donkey-kit.dev/cli/ship.md
+
+# Ship
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+## From code to a publish plan
+
+This walkthrough takes a project from decorated code to a publish plan. Every
+step up to the plan is offline: no credentials are checked and nothing is sent.
+The live checks come after, as a separate gate. The project has one MCP tool
+and one agent:
+
+```python filename="app/main.py"
+from donkey_kit import Donkey
+
+donkey = Donkey.from_env()
+
+@donkey.tool(server="sku-manager")
+def lookup_sku(sku: str) -> dict:
+    """Look up a SKU's price and stock level by its code."""
+    ...
+
+@donkey.agent(name="support-triage", skills=["triage"])
+async def triage(task):
+    """Triage a support ticket and draft a reply for a human to send."""
+    ...
+```
+
+**1. Write the connection config.** Set the values you have, such as
+`ANYPOINT_ORG_ID`, in the environment, then run `donkey init` from the project
+root. It writes the non-secret ones to `.donkey-kit.toml` and names every
+required value still missing, with its environment variable:
+
+```
+$ donkey init
+Wrote /path/to/support-desk/.donkey-kit.toml.
+
+Still missing (set before the SDK can reach the platform):
+  - client_id (env ANYPOINT_CLIENT_ID)
+  - client_secret (env ANYPOINT_CLIENT_SECRET)
+  - llm_proxy_url (env DONKEY_LLM_PROXY_URL)
+  - llm_proxy_client_id (env DONKEY_LLM_PROXY_CLIENT_ID)
+  - llm_proxy_client_secret (env DONKEY_LLM_PROXY_CLIENT_SECRET)
+```
+
+The missing values don't block the offline steps. Secrets never go in this
+file: put them in the environment or a gitignored `.donkey-kit.local.toml`. If
+you set an LLM proxy auth mode (`DONKEY_LLM_PROXY_AUTH`), a model-wallet client
+ID or a dynamic-key header, `init` keeps them too. See
+[`donkey init`](https://docs.donkey-kit.dev/cli/setup.md#donkey-init) for the connection modes.
+
+**2. See what the code declares.** `donkey scan` reads the decorators without
+running your code. A gap is named with the table and key that fill it:
+
+```
+$ donkey scan
+  agent  support-triage  (app/main.py:13)
+  mcp    sku-manager  (1 tool: lookup_sku)  transport undeclared (set transport in [donkey.mcp_servers.sku-manager]; `donkey scaffold` adds the table if .donkey-kit.toml lacks it)
+found 1 agent, 1 tool, 1 MCP server
+```
+
+**3. Preview the declarations.** `donkey scaffold --dry-run` prints the tables
+the project still needs and writes nothing. What the code says becomes a key.
+What it can't say is a commented placeholder:
+
+```
+$ donkey scaffold --dry-run
+# agent triage, app/main.py:13
+[donkey.agents.support-triage]
+# protocol = "<a2a_v1 or other>"
+# endpoint = "<the URL the agent is served at; required for a2a_v1>"
+
+# MCP server with tools: lookup_sku
+[donkey.mcp_servers.sku-manager]
+# transport = "<stdio, streamable-http or sse>"
+# endpoint = "<the server's http or https URL; none for stdio>"
+
+# Exchange coordinates for `donkey publish`
+[donkey.publication]
+# version = "<a semantic version, such as 1.0.0>"
+# group_id = "<the Exchange group; the configured org_id when unset>"
+...
+5 tables for .donkey-kit.toml, 6 placeholders to fill in
+readiness, offline from the committed file (live credentials and reachability not checked: donkey doctor, donkey preflight)
+  scan: valid
+  publish: incomplete
+      missing  [donkey.publication] version: a semantic version, such as 1.0.0
+      ...
+```
+
+Add `--json` for the same result as one document (`scaffold_format: 1`): the
+TOML as `toml`, the `candidates` and already-`declared` tables, the number of
+`unresolved` placeholders, the `readiness` report and `written: false`.
+
+**4. Write them, with the values you know.** The deployment facts (the
+version, where each service is served, which protocol the agent speaks) are
+yours to state. Pass the ones you know with `--set`, and scaffold writes them
+as real keys:
+
+```
+$ donkey scaffold --set publication.version=1.0.0 \
+    --set mcp_servers.sku-manager.transport=streamable-http \
+    --set mcp_servers.sku-manager.endpoint=https://sku.example.com/mcp \
+    --set agents.support-triage.protocol=a2a_v1 \
+    --set agents.support-triage.endpoint=https://triage.example.com
+added to .donkey-kit.toml: 5 tables, 1 placeholder to fill in
+readiness, offline from the committed file (live credentials and reachability not checked: donkey doctor, donkey preflight)
+  scan: valid
+  publish: ready
+      note  [donkey.publication] group_id: not declared: publish uses the configured org_id (ANYPOINT_ORG_ID), which is not checked offline
+  expose sku-manager: incomplete
+      missing  [donkey.expose] target: the gateway to deploy to, or pass --target
+  expose support-triage: incomplete
+      missing  [donkey.expose] target: the gateway to deploy to, or pass --target
+```
+
+The tables are appended after what `init` wrote, which stays as it was. A
+placeholder left open, here `group_id`, stays commented. Edit the file to
+fill it in, then uncomment the line. Running `donkey scaffold` again prints
+`nothing to add to .donkey-kit.toml` and leaves the file alone. Readiness only
+counts what the committed file says. `publish: ready` doesn't mean your
+credentials work or your services are up. Exposure stays incomplete until you
+declare a gateway, which this walkthrough doesn't need.
+
+**5. Review the publish plan.** `donkey publish --dry-run` prints each asset
+it would register, with its coordinates and digest, and sends nothing:
+
+```
+$ donkey publish --dry-run
+  mcp    <org-id>:sku-manager:1.0.0  sku-manager  sha256:5bfdcf57…
+  agent  <org-id>:support-triage:1.0.0  support-triage  sha256:515b312e…
+would publish 2 assets (dry run: nothing was sent)
+```
+
+If you skip step 4, the plan says what is missing and how to add it, and exits
+`1`:
+
+```
+1 issue
+  .donkey-kit.toml:0  missing-version  donkey.publication: set version in [donkey.publication] to a semantic version, such as 1.0.0; `donkey scaffold --set publication.version=1.0.0` adds the table with it
+```
+
+The plan still resolves your connection config for the default group ID, so
+`ANYPOINT_ORG_ID` (or `org_id` in the file) must be set. That's the end of the
+offline journey: commit `.donkey-kit.toml`.
+
+**6. The live gate.** These commands need the missing credentials from step 1,
+and they reach the platform:
+
+- `donkey doctor` makes one real governed model request. It can consume
+  tokens or model budget.
+- `donkey preflight --service sku-manager`, and `donkey expose --dry-run`,
+  make only reads, but they read the live control plane and gateway. Read-only
+  isn't offline. They need a `[donkey.expose]` table: add it with
+  `donkey scaffold --expose`.
+- `donkey publish` registers the assets in Exchange, and `donkey verify`
+  checks them against their live side.
+
+## `donkey scan`
 
 Reads your repository's source and reports every `@donkey.agent`, every
 `@donkey.tool`, and the MCP servers those tools name with `server=`. The scan is
@@ -11148,7 +11211,7 @@ line numbers, so moving code around does not change it.
 Scan is the first half of [Scan & publish](https://docs.donkey-kit.dev/publishing.md): the model it builds is
 the input `donkey publish` reads.
 
-### `donkey scaffold`
+## `donkey scaffold`
 
 Adds the `.donkey-kit.toml` tables your scanned services still need: an
 `[donkey.agents.<name>]` or `[donkey.mcp_servers.<id>]` table for each service,
@@ -11208,7 +11271,7 @@ it scanned, not the one in your working directory:
 `--dry-run` writes nothing: it prints the TOML to stdout and the summary to
 stderr, and its JSON document says `written: false`.
 
-#### What each workflow still needs
+## What each workflow still needs
 
 A file that parses is not yet one you can publish or expose: a commented
 placeholder declares nothing, and an MCP server scans cleanly without a
@@ -11262,7 +11325,7 @@ The JSON document carries the same report as `readiness`: `scan` (`valid` or
 `status`, its `missing` values (`table`, `key`, `detail`, `required`) and its
 `problems`, plus `live: "not-checked"`.
 
-#### Filling a placeholder with `--set`
+## Filling a placeholder with `--set`
 
 `--set TABLE.KEY=VALUE` writes a value you know into a table scaffold adds, as
 a real key instead of a commented placeholder. Repeat it for more. The
@@ -11291,7 +11354,7 @@ $ donkey scaffold --set publication.version=1.0.0 \
 - After a write, the readiness report counts the values you set. A
   `--dry-run` reports the committed file's readiness and says so.
 
-### `donkey publish`
+## `donkey publish`
 
 ```bash
 donkey publish --dry-run .   # the assets a publish would register; no network call
@@ -11321,7 +11384,7 @@ or when an asset is `failed` or `incomplete` (what was published before stays
 published), and `2` on a missing path, invalid config or missing credentials.
 See [Scan & publish](https://docs.donkey-kit.dev/publishing.md#when-a-publish-fails).
 
-### `donkey verify`
+## `donkey verify`
 
 ```bash
 donkey verify .          # each published MCP server and A2A agent against its live side
@@ -11351,7 +11414,7 @@ code.
 Run it in CI after a deploy to catch a server that changed without a new
 published version.
 
-### `donkey expose`
+## `donkey expose`
 
 ```bash
 donkey preflight --service sku-manager          # what expose would do; reads only
@@ -11416,15 +11479,10 @@ credentials. With `--json` both print the report (`expose_format: 1`), with
 the declaration's issues when it has any. The connected-app scopes they need are in
 [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose).
 
-## Planned commands Roadmap
+## Next steps
 
-These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md) and are not available in the
-CLI yet:
-
-- `donkey serve` — serve your agent over A2A from the command line. In code,
-  `donkey.serve()` does it today. See [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md).
-
-  Run `donkey --help` to see the commands available in your installed version.
+- [Scan & publish](https://docs.donkey-kit.dev/publishing.md): the publish flow in depth, including CI pipelines.
+- [Overview & reference](https://docs.donkey-kit.dev/cli.md): every global flag, exit code and JSON document.
 
 ---
 
@@ -11441,7 +11499,7 @@ collision check and `descriptor="auto"` derivation are on the
 [Roadmap](https://docs.donkey-kit.dev/roadmap.md); their sections are badged and show the planned design.
 
 `donkey scan` walks your repository and finds every
-[`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus
+[`@donkey.agent`](https://docs.donkey-kit.dev/decorators.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/decorators.md#donkeytool), plus
 the MCP servers those tools name with `server=`. It produces one deterministic
 model of them. Publishing registers that model with Exchange / Agent
 Registry, and the [GitHub Action](#from-github-actions) runs both on every merge
@@ -11484,7 +11542,7 @@ The model is deterministic: the same code always gives the same JSON, and its
 like a change. Scan also reports **issues** and exits `1` when it finds one:
 a missing or tautological description, an invalid service ID, a non-literal
 decorator argument it cannot read, or a service ID used twice. That way CI
-fails before anything is published. See [`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan) for
+fails before anything is published. See [`donkey scan`](https://docs.donkey-kit.dev/cli/ship.md#donkey-scan) for
 the full rules.
 
 ### Declaring how an MCP server is reached
@@ -12185,7 +12243,7 @@ catalog is loud without taking down production traffic. With
 lists every difference. `API` publications are not verified and raise
 `NotImplementedError`.
 
-[`donkey verify`](https://docs.donkey-kit.dev/cli.md#donkey-verify) runs the same check from CI, for every MCP
+[`donkey verify`](https://docs.donkey-kit.dev/cli/ship.md#donkey-verify) runs the same check from CI, for every MCP
 server and `a2a_v1` agent in the repository.
 
 Both read the live side at a gateway URL that discovery read from the control
@@ -12200,7 +12258,7 @@ exits `1`. See
 
 ## Related
 
-- [CLI & decorators](https://docs.donkey-kit.dev/cli.md) — mark tools with `@donkey.tool` today.
+- [Decorators](https://docs.donkey-kit.dev/decorators.md) — mark tools with `@donkey.tool` today.
 - [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) — serve and expose the agent whose card you publish.
 - [Tool access](https://docs.donkey-kit.dev/tool-access.md) — discover and bind published tools from Exchange.
 
@@ -12247,7 +12305,7 @@ The lines, in the order they appear:
 | `policy` | Never (info). A policy refused the probe itself, such as a spent budget. | Read the typed refusal. See [Typed refusals](https://docs.donkey-kit.dev/errors.md). |
 | `budget` | Never (info). | The reading is only as fresh as the last response, because the proxy has no budget-query endpoint. `observed … ago` says how old it is. |
 
-The [CLI page](https://docs.donkey-kit.dev/cli.md#donkey-doctor) has sample output for a healthy proxy and
+The [CLI page](https://docs.donkey-kit.dev/cli/setup.md#donkey-doctor) has sample output for a healthy proxy and
 for an Azure OpenAI route.
 
 ## Failures that look alike
@@ -13375,7 +13433,7 @@ header pair rather than a bearer token. There is deliberately no `id=` on
 correlation. Use `donkey.run(id=...)` when you need to pin a business id (see
 [Telemetry](https://docs.donkey-kit.dev/examples/general/telemetry.md)).
 
-**Learn more:** [Introduction](https://docs.donkey-kit.dev/) · [Model access](https://docs.donkey-kit.dev/frameworks.md) · [CLI & decorators](https://docs.donkey-kit.dev/cli.md)
+**Learn more:** [Introduction](https://docs.donkey-kit.dev/) · [Model access](https://docs.donkey-kit.dev/frameworks.md) · [CLI](https://docs.donkey-kit.dev/cli.md) · [decorators](https://docs.donkey-kit.dev/decorators.md)
 
 **Source:**
 [narrative demo 01](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/01_governed_client) ·
@@ -14924,9 +14982,9 @@ DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
 governed catalog. The gateway returns 404 for `GET /models` because
 model-based routing only routes requests that already carry `model` in the
 body. When a live call fails — wrong URL, wrong credentials, or a model the
-allow-list does not include — [`donkey doctor`](https://docs.donkey-kit.dev/cli.md) tells those apart.
+allow-list does not include — [`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md) tells those apart.
 
-**Learn more:** [Model access](https://docs.donkey-kit.dev/frameworks.md) · [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) · [CLI & decorators](https://docs.donkey-kit.dev/cli.md)
+**Learn more:** [Model access](https://docs.donkey-kit.dev/frameworks.md) · [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) · [CLI](https://docs.donkey-kit.dev/cli.md) · [decorators](https://docs.donkey-kit.dev/decorators.md)
 
 **Source:**
 [narrative demo 07](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/07_model_handles) ·
@@ -17536,9 +17594,9 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Publication: `Publication.verify()` | Token request, then the Exchange version read and its `mcp-metadata` or card download, the `explain()` and `resolve_mcp()` or `resolve_agent()` reads, and the server's `tools/list` or the agent's card through the gateway | Available for MCP servers and agents; `API` raises `NotImplementedError` before sending. See [Verifying at runtime](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify). |
 | Publication: `Publication.preview()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |
-| `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose). |
+| `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](https://docs.donkey-kit.dev/cli/ship.md#donkey-expose). |
 | `donkey preflight`, `donkey expose --dry-run` | Token request, then the same reads, and no writes | Available |
-| `donkey verify` | Token request, then the `Publication.verify()` reads for each MCP server and `a2a_v1` agent | Available for MCP servers and `a2a_v1` agents; other agents are skipped. See [`donkey verify`](https://docs.donkey-kit.dev/cli.md#donkey-verify). |
+| `donkey verify` | Token request, then the `Publication.verify()` reads for each MCP server and `a2a_v1` agent | Available for MCP servers and `a2a_v1` agents; other agents are skipped. See [`donkey verify`](https://docs.donkey-kit.dev/cli/ship.md#donkey-verify). |
 | Hidden command `donkey status` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 
@@ -17791,7 +17849,7 @@ ConfigWarning: llm_proxy_url uses plain http:// to llm.example.test because DONK
 The warning quotes the value as you set it, for example
 `DONKEY_ALLOW_HTTP=true is set`. `donkey doctor` adds a `plain http` line while
 it is on. See
-[CLI](https://docs.donkey-kit.dev/cli.md#donkey-doctor).
+[CLI](https://docs.donkey-kit.dev/cli/setup.md#donkey-doctor).
 
 #### A URL from the project files gets credentials from the project files only
 
@@ -17877,7 +17935,7 @@ holds back, for example
 `donkey doctor` prints each endpoint's host and where it came from (`env`,
 `project file`, `local overlay`, `user file` or `default`), and reports this
 error on its `config` line without sending a request. See
-[CLI](https://docs.donkey-kit.dev/cli.md#donkey-doctor).
+[CLI](https://docs.donkey-kit.dev/cli/setup.md#donkey-doctor).
 
 ## Programmatic
 

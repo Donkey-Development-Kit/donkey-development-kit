@@ -283,7 +283,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `UpstreamRequestError` | non-`429` `4xx`, nested `error` with `code`/`type`/`param` (object **or** Gemini list envelope) | **No** — a client-side request mistake passed through the gateway, terminal. | Fix the flagged model or parameter (`.code` / `.param`); if `model_not_found`, request the model in API Manager. |
 | `ModelNotRoutable` | `400`, flat `error` saying the model "is not in the known unique model map" (model-based routing with more than one provider), "Missing 'model' field in request", or "Unsupported provider '…'. No fallback configuration." | **No** — a client configuration mistake, terminal; the upstream was never called. | For a bare model name, use the `provider/model` form, e.g. `openai/gpt-5-mini` instead of `gpt-5-mini`. For a missing model, send the model where the proxy's format expects it (the `model` body field for OpenAI ingress, the URL path for native Gemini ingress), with the client that matches the proxy's format. For an unsupported provider (`.provider`), use a provider the proxy routes to, or ask the proxy owner to add a route or a fallback for it. |
 | `UpstreamModelError` | `5xx` | **Yes** — the transport already retries a `503`, and a `502` / `504` too unless the request was a model call (set `retry_model_calls_on_gateway_errors` to include those); a persistent `5xx` is safe for you to retry once you accept a possible second charge. | Transient provider failure — retry, then escalate if it persists. |
-| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://docs.donkey-kit.dev/cli.md). |
+| `GatewayUnavailable` | transport failure — DNS, refused connection, TLS, timeout — with **no** HTTP response | **Not automatically** — terminal here; you may retry or fall back. | Check host reachability, `.base_url`, and network egress; run [`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md). |
 | `ApprovalError` | client-side base of `ApprovalRejected` (a reviewer refused a [framework-paused](https://docs.donkey-kit.dev/hitl.md#the-framework-approval-helpers) tool) and `GatewayApprovalDenied` (the user refused the gateway's step-up). Catch it to handle both refusals at once. | **No** — the call was refused at its approval step. | Tell the user or the agent that the action was not authorized; don't retry it unchanged. |
 | `ApprovalNotFound` | client-side, also a `KeyError`: `donkey.approvals.get`, `resolve` or `reject` of an id this `Donkey` holds no pending approval for. It was already decided, [another `Donkey` recorded it](https://docs.donkey-kit.dev/hitl.md#resolving), or the process restarted. `.approval_id` is the id. | **No** — the same id is never pending again. | Decide each approval once, on the `Donkey` that recorded it. After a restart, call the tool again to ask for a fresh decision. |
 | `DescriptorMismatch` | client-side, also a `ValueError`, from `donkey_kit.experimental`: `derive_descriptor(..., mode="auto:check")` derived a descriptor that differs from the committed file. | **No** — the code and the file disagree until one changes. | Regenerate the committed descriptor with `mode="auto"` if the change is intended, or fix the tool definition. |
@@ -334,7 +334,7 @@ block, `typed_refusals()` or `@donkey.governed`, it reaches you the way
 
 `AuthError.remediation` follows the plane that failed. Errors classified from
 an LLM-proxy response use the canonical consumer-credential guidance that
-[`donkey doctor`](https://docs.donkey-kit.dev/cli.md) also prints. Control-plane token failures override that
+[`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md) also prints. Control-plane token failures override that
 default with guidance for the provider that failed: connected-app errors point
 to the Anypoint credentials and scopes, while an exhausted `ChainedAuth` points
 to each configured provider's credential or token source. A registry read the
@@ -397,7 +397,7 @@ a canonical default. For the refusals:
 
 The text names the **action you can take**, not the policy that fired. Because
 each default lives on the exception class, it is a single source of wording that
-[`donkey doctor`](https://docs.donkey-kit.dev/cli.md) reuses for its own failure output, so the CLI and the
+[`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md) reuses for its own failure output, so the CLI and the
 exception never disagree.
 
 ## Refusal messages don't repeat blocked content
@@ -406,7 +406,7 @@ The LLM PII policy's rejection text repeats every value it flagged. `PIIDetected
 builds its own message instead, from the entity types, their count and their
 character offsets. So `str(exc)`, `repr(exc)` and `exc.args` never contain the
 blocked value, and neither does a log line, a traceback or
-[`donkey doctor`](https://docs.donkey-kit.dev/cli.md):
+[`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md):
 
 ```
 Request blocked: personally identifiable information detected (403): 1 entity (Email at chars 12-32). Values withheld; the gateway's text is on .gateway_message.

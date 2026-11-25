@@ -131,7 +131,7 @@ declares one. With `--donkey-conformance`, the plugin runs the suite
 exclusively in place of normal test collection; without the flag it is inert.
 `--agent` is a deprecated alias for `--donkey-agent`.
 You can also run it through the CLI with `donkey test --agent my_app.agent:build`
-(see [CLI](https://docs.donkey-kit.dev/cli.md#donkey-test)).
+(see [CLI](https://docs.donkey-kit.dev/cli/local.md#donkey-test)).
 
 ### Exemptions
 

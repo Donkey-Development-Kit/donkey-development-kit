@@ -53,7 +53,7 @@ async def on_decision(approval_id: str, reviewer: str, approved: bool) -> None:
 
 `@donkey.tool` takes three optional keywords. Bare `@donkey.tool` is unchanged:
 it marks the tool and returns the same function (see
-[CLI & decorators](https://docs.donkey-kit.dev/cli.md#donkeytool)).
+[CLI & decorators](https://docs.donkey-kit.dev/decorators.md#donkeytool)).
 
 | Keyword | Default | Meaning |
 |---|---|---|

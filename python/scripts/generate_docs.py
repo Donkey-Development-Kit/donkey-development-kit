@@ -14,7 +14,7 @@ Targets:
 * ``website/content/reference/configuration.mdx`` — the ``settings-index``
   region: every ``DonkeyConfig`` field with its env var, config-file key and
   default, from the field table in ``core/config.py``.
-* ``website/content/cli.mdx`` — the ``cli-reference`` region: every visible
+* ``website/content/cli/index.mdx`` — the ``cli-reference`` region: every visible
   ``donkey`` command and option, from the typer app. Needs the ``[cli]`` extra.
 * ``website/content/frameworks/index.mdx`` — the ``adapter-capabilities``
   region: each adapter's extra and each factory's ``capabilities()``, from the
@@ -1616,7 +1616,7 @@ TARGETS: tuple[Target, ...] = (
     ),
     Target(
         "cli-reference",
-        REPO / "website" / "content" / "cli.mdx",
+        REPO / "website" / "content" / "cli" / "index.mdx",
         "cli-reference",
         cli_reference,
         needs=("typer",),

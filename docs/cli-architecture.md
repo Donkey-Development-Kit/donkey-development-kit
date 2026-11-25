@@ -221,7 +221,7 @@ tests: passing unrelated tests does not establish that they are safe.
 Update this explanation when registration, paths, dependency boundaries,
 workflow effects or output contracts change. CLI changes should explicitly
 review this map alongside the consumer docs to prevent the dated baseline from
-silently drifting. Update consumer examples in `website/content/cli.mdx` by
+silently drifting. Update consumer examples in `website/content/cli/` by
 hand, and regenerate only its `cli-reference` command-reference region with
 `python/scripts/generate_docs.py`. Published-surface changes also
 need the sibling acceptance harness; contributor docs are not a substitute.

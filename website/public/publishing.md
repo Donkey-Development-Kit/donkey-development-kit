@@ -9,7 +9,7 @@ collision check and `descriptor="auto"` derivation are on the
 [Roadmap](https://docs.donkey-kit.dev/roadmap.md); their sections are badged and show the planned design.
 
 `donkey scan` walks your repository and finds every
-[`@donkey.agent`](https://docs.donkey-kit.dev/cli.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/cli.md#donkeytool), plus
+[`@donkey.agent`](https://docs.donkey-kit.dev/decorators.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/decorators.md#donkeytool), plus
 the MCP servers those tools name with `server=`. It produces one deterministic
 model of them. Publishing registers that model with Exchange / Agent
 Registry, and the [GitHub Action](#from-github-actions) runs both on every merge
@@ -52,7 +52,7 @@ The model is deterministic: the same code always gives the same JSON, and its
 like a change. Scan also reports **issues** and exits `1` when it finds one:
 a missing or tautological description, an invalid service ID, a non-literal
 decorator argument it cannot read, or a service ID used twice. That way CI
-fails before anything is published. See [`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan) for
+fails before anything is published. See [`donkey scan`](https://docs.donkey-kit.dev/cli/ship.md#donkey-scan) for
 the full rules.
 
 ### Declaring how an MCP server is reached
@@ -753,7 +753,7 @@ catalog is loud without taking down production traffic. With
 lists every difference. `API` publications are not verified and raise
 `NotImplementedError`.
 
-[`donkey verify`](https://docs.donkey-kit.dev/cli.md#donkey-verify) runs the same check from CI, for every MCP
+[`donkey verify`](https://docs.donkey-kit.dev/cli/ship.md#donkey-verify) runs the same check from CI, for every MCP
 server and `a2a_v1` agent in the repository.
 
 Both read the live side at a gateway URL that discovery read from the control
@@ -768,6 +768,6 @@ exits `1`. See
 
 ## Related
 
-- [CLI & decorators](https://docs.donkey-kit.dev/cli.md) — mark tools with `@donkey.tool` today.
+- [Decorators](https://docs.donkey-kit.dev/decorators.md) — mark tools with `@donkey.tool` today.
 - [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) — serve and expose the agent whose card you publish.
 - [Tool access](https://docs.donkey-kit.dev/tool-access.md) — discover and bind published tools from Exchange.

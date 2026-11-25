@@ -1007,7 +1007,7 @@ confused adopter instead of at review time.
 Some facts are generated, so they can't drift: `python scripts/generate_docs.py`
 (from `python/`) writes the PyPI README (`python/README.md`, from the root
 `README.md`), the settings index in `reference/configuration.mdx`, the CLI
-command reference in `cli.mdx`, the adapter capabilities table in
+command reference in `cli/index.mdx`, the adapter capabilities table in
 `frameworks/index.mdx`, and the whole Python API page (`reference/api.mdx`).
 Edit the code, the docstring or the root README, run the script, and commit the
 result; never edit a `BEGIN GENERATED` region by hand.
@@ -1045,7 +1045,7 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 | `core/_verify.py`, `docs/verified-apis.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
 | `core/budget.py` | `budget.mdx` |
 | `core/reactions.py`, `core/transport/*` `_on_refusal` | `refusal-handlers.mdx` |
-| `core/approvals.py`, `core/toolspec.py` (`@donkey.tool(approval=...)`, `donkey.approvals`) | `hitl.mdx`, `cli.mdx` |
+| `core/approvals.py`, `core/toolspec.py` (`@donkey.tool(approval=...)`, `donkey.approvals`) | `hitl.mdx`, `decorators.mdx` |
 | `core/telemetry.py` | `telemetry.mdx`, `correlation.mdx` |
 | `core/cost.py` | `cost-attribution.mdx` |
 | `core/lastcall.py` | `reference/last-call.mdx`, `frameworks/routing.mdx` |
@@ -1059,7 +1059,7 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 | `tools/session.py` | `tool-access/binding.mdx` |
 | `a2a/_server.py` (the `donkey.serve()` listener) | `a2a/serve.mdx` |
 | `a2a/client.py` (`donkey.a2a.send()` / `stream()`) | `a2a/call.mdx` |
-| `cli/*` (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `expose`, `preflight`, the blocked `status`) | `cli.mdx` (the site has no provisioning section; don't add one, the control plane is refused, ADR 0008 in `docs/adr/`) |
+| `cli/*` (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `expose`, `preflight`, the blocked `status`) | `cli/index.mdx`, `cli/setup.mdx`, `cli/local.mdx`, `cli/ship.mdx` (the site has no provisioning section; don't add one, the control plane is refused, ADR 0008 in `docs/adr/`) |
 | `experimental.py` | `reference/unsupported-boundary.mdx`, plus the page of the surface whose types moved (`publishing.mdx`, `tool-access/discovery.mdx`) |
 | `README.md` (install/status/extras) | `quickstart.mdx`, `index.mdx` |
 

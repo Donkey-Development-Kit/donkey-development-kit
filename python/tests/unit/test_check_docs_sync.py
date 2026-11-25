@@ -45,7 +45,7 @@ _SRC = "python/src/donkey_kit/"
         (f"{_SRC}integrations/openai_agents.py", "website/content/frameworks/openai.mdx"),
         (f"{_SRC}integrations/_base.py", "website/content/frameworks/index.mdx"),
         (f"{_SRC}core/config.py", "website/content/reference/configuration.mdx"),
-        (f"{_SRC}cli/doctor.py", "website/content/cli.mdx"),
+        (f"{_SRC}cli/doctor.py", "website/content/cli/setup.mdx"),
         (f"{_SRC}donkey.py", "website/content/testing.mdx"),
         ("docs/verified-apis.md", "website/content/reference/unsupported-boundary.mdx"),
         ("README.md", "website/content/quickstart.mdx"),

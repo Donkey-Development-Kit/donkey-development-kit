@@ -37,7 +37,7 @@ The lines, in the order they appear:
 | `policy` | Never (info). A policy refused the probe itself, such as a spent budget. | Read the typed refusal. See [Typed refusals](https://docs.donkey-kit.dev/errors.md). |
 | `budget` | Never (info). | The reading is only as fresh as the last response, because the proxy has no budget-query endpoint. `observed … ago` says how old it is. |
 
-The [CLI page](https://docs.donkey-kit.dev/cli.md#donkey-doctor) has sample output for a healthy proxy and
+The [CLI page](https://docs.donkey-kit.dev/cli/setup.md#donkey-doctor) has sample output for a healthy proxy and
 for an Azure OpenAI route.
 
 ## Failures that look alike

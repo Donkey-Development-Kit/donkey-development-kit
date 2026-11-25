@@ -271,9 +271,9 @@ DonkeyConfig(llm_proxy_url="https://…").validated(need="llm")
 governed catalog. The gateway returns 404 for `GET /models` because
 model-based routing only routes requests that already carry `model` in the
 body. When a live call fails — wrong URL, wrong credentials, or a model the
-allow-list does not include — [`donkey doctor`](https://docs.donkey-kit.dev/cli.md) tells those apart.
+allow-list does not include — [`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md) tells those apart.
 
-**Learn more:** [Model access](https://docs.donkey-kit.dev/frameworks.md) · [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) · [CLI & decorators](https://docs.donkey-kit.dev/cli.md)
+**Learn more:** [Model access](https://docs.donkey-kit.dev/frameworks.md) · [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) · [CLI](https://docs.donkey-kit.dev/cli.md) · [decorators](https://docs.donkey-kit.dev/decorators.md)
 
 **Source:**
 [narrative demo 07](https://github.com/Donkey-Development-Kit/donkey-development-kit-demos/tree/main/demos/claude-made/07_model_handles) ·

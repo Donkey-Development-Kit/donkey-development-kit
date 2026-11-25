@@ -42,7 +42,8 @@ export default {
   },
   simulator: 'Local simulator',
   testing: 'Testing & conformance',
-  cli: 'CLI & decorators',
+  decorators: 'Decorators',
+  cli: 'CLI',
   publishing: 'Scan & publish',
   troubleshooting: 'Troubleshooting',
   '-- learn': {

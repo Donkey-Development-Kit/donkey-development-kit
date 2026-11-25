@@ -589,9 +589,9 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Publication: `Publication.verify()` | Token request, then the Exchange version read and its `mcp-metadata` or card download, the `explain()` and `resolve_mcp()` or `resolve_agent()` reads, and the server's `tools/list` or the agent's card through the gateway | Available for MCP servers and agents; `API` raises `NotImplementedError` before sending. See [Verifying at runtime](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify). |
 | Publication: `Publication.preview()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |
-| `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose). |
+| `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](https://docs.donkey-kit.dev/cli/ship.md#donkey-expose). |
 | `donkey preflight`, `donkey expose --dry-run` | Token request, then the same reads, and no writes | Available |
-| `donkey verify` | Token request, then the `Publication.verify()` reads for each MCP server and `a2a_v1` agent | Available for MCP servers and `a2a_v1` agents; other agents are skipped. See [`donkey verify`](https://docs.donkey-kit.dev/cli.md#donkey-verify). |
+| `donkey verify` | Token request, then the `Publication.verify()` reads for each MCP server and `a2a_v1` agent | Available for MCP servers and `a2a_v1` agents; other agents are skipped. See [`donkey verify`](https://docs.donkey-kit.dev/cli/ship.md#donkey-verify). |
 | Hidden command `donkey status` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
 | Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
 
@@ -844,7 +844,7 @@ ConfigWarning: llm_proxy_url uses plain http:// to llm.example.test because DONK
 The warning quotes the value as you set it, for example
 `DONKEY_ALLOW_HTTP=true is set`. `donkey doctor` adds a `plain http` line while
 it is on. See
-[CLI](https://docs.donkey-kit.dev/cli.md#donkey-doctor).
+[CLI](https://docs.donkey-kit.dev/cli/setup.md#donkey-doctor).
 
 #### A URL from the project files gets credentials from the project files only
 
@@ -930,7 +930,7 @@ holds back, for example
 `donkey doctor` prints each endpoint's host and where it came from (`env`,
 `project file`, `local overlay`, `user file` or `default`), and reports this
 error on its `config` line without sending a request. See
-[CLI](https://docs.donkey-kit.dev/cli.md#donkey-doctor).
+[CLI](https://docs.donkey-kit.dev/cli/setup.md#donkey-doctor).
 
 ## Programmatic
 

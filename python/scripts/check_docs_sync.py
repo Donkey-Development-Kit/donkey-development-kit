@@ -74,7 +74,7 @@ SURFACES: tuple[Surface, ...] = (
         files=("docs/verified-apis.md", "docs/unsupported-boundary.md"),
     ),
     Surface(("core/budget.py",), ("budget.mdx",)),
-    Surface(("core/approvals.py", "core/toolspec.py"), ("hitl.mdx", "cli.mdx")),
+    Surface(("core/approvals.py", "core/toolspec.py"), ("hitl.mdx", "decorators.mdx")),
     Surface(("core/telemetry.py",), ("telemetry.mdx", "correlation.mdx")),
     Surface(("core/cost.py",), ("cost-attribution.mdx",)),
     Surface(("core/lastcall.py",), ("reference/last-call.mdx", "frameworks/routing.mdx")),
@@ -104,7 +104,7 @@ SURFACES: tuple[Surface, ...] = (
     Surface(("tools/session.py",), ("tool-access/binding.mdx",)),
     Surface(("a2a/_server.py",), ("a2a/serve.mdx",)),
     Surface(("a2a/client.py",), ("a2a/call.mdx",)),
-    Surface(("cli/*.py",), ("cli.mdx",)),
+    Surface(("cli/*.py",), ("cli/index.mdx", "cli/setup.mdx", "cli/local.mdx", "cli/ship.mdx")),
     Surface(("experimental.py",), ("reference/unsupported-boundary.mdx",)),
     Surface((), ("quickstart.mdx", "index.mdx"), files=("README.md",)),
 )

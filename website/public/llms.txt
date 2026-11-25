@@ -67,7 +67,17 @@
 ## Build, test & ship
 
 - [Testing & conformance](https://docs.donkey-kit.dev/testing.md): (status: live) Test your agent's failure handling — in-process refusal injection, a pytest conformance suite you run against your own agent, and an out-of-process gateway fixture.
-- [CLI & decorators](https://docs.donkey-kit.dev/cli.md): (status: live) The @donkey.governed, @donkey.tool and @donkey.agent decorators, and the donkey CLI — init, doctor, mock, dev, test, scan, publish, verify and expose.
+- [Decorators](https://docs.donkey-kit.dev/decorators.md): (status: live) The @donkey.governed, @donkey.tool and @donkey.agent decorators, and what each one does to the function it wraps.
+
+## CLI
+
+- [Overview & reference](https://docs.donkey-kit.dev/cli.md): (status: live) The donkey CLI, with global flags, exit codes, JSON output and the generated command reference. Each command is on the page for its workflow stage.
+- [Set up](https://docs.donkey-kit.dev/cli/setup.md): (status: live) donkey init and donkey doctor set up a project's connection and configuration, and check that the setup is right.
+- [Develop locally](https://docs.donkey-kit.dev/cli/local.md): (status: live) donkey mock, donkey dev and donkey test run your agent against the local simulator, a dev card and the offline test suite.
+- [Ship](https://docs.donkey-kit.dev/cli/ship.md): (status: live) From code to a publish plan, then donkey scan, scaffold, publish, verify and expose, the commands that take an agent from code to Exchange.
+
+## Build, test & ship
+
 - [Scan & publish](https://docs.donkey-kit.dev/publishing.md): (status: live) donkey scan derives a deterministic model of your agents, tools and MCP servers from code; publishing registers it with Exchange / Agent Registry from CI, complementing Agent Scanners.
 - [Troubleshooting](https://docs.donkey-kit.dev/troubleshooting.md): (status: live) How to read donkey doctor output, tell apart failures that look the same, explain an UNAVAILABLE donkey.last_call, and fix a 401 in JWT mode.
 

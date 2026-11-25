@@ -46,7 +46,7 @@ Other sections cover A2A where it meets their topic:
   [correlation across agent hops](https://docs.donkey-kit.dev/correlation.md#across-agent-hops).
 - **Scan & publish:** [publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents) and
   [declaring how an agent is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-agent-is-reached).
-- **CLI:** [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose) and [`donkey dev`](https://docs.donkey-kit.dev/cli.md#donkey-dev).
+- **CLI:** [`donkey expose`](https://docs.donkey-kit.dev/cli/ship.md#donkey-expose) and [`donkey dev`](https://docs.donkey-kit.dev/cli/local.md#donkey-dev).
 - **Reference:** [connected-app scopes for `donkey expose`](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose),
   the [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md#current-boundary),
   and the Python API for [`donkey.serve()`](https://docs.donkey-kit.dev/reference/api.md#donkeyserve) and

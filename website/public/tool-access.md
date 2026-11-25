@@ -79,8 +79,8 @@ Other sections cover MCP where it meets their topic:
   bound `ToolSet`, and [Identity](https://docs.donkey-kit.dev/identity.md) for `donkey.as_user()`.
 - **Scan & publish:** [publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers)
   and [declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
-- **CLI:** [`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan), [`donkey publish`](https://docs.donkey-kit.dev/cli.md#donkey-publish)
-  and [`donkey mock`](https://docs.donkey-kit.dev/cli.md#donkey-mock).
+- **CLI:** [`donkey scan`](https://docs.donkey-kit.dev/cli/ship.md#donkey-scan), [`donkey publish`](https://docs.donkey-kit.dev/cli/ship.md#donkey-publish)
+  and [`donkey mock`](https://docs.donkey-kit.dev/cli/local.md#donkey-mock).
 - **Reference:** [connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#per-operation) and the
   [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md#current-boundary).
 

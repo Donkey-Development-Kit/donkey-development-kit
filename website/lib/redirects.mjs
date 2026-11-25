@@ -67,6 +67,26 @@ export const MOVED_ANCHORS = {
     'typescript-parity-roadmap': '/frameworks/routing',
     'when-last_call-is-unavailable': '/frameworks/routing',
   },
+  // #1833: the CLI page's decorator and workflow sections moved to their own pages.
+  '/cli': {
+    'decorators': '/decorators',
+    'donkey-dev': '/cli/local',
+    'donkey-doctor': '/cli/setup',
+    'donkey-expose': '/cli/ship',
+    'donkey-init': '/cli/setup',
+    'donkey-mock': '/cli/local',
+    'donkey-publish': '/cli/ship',
+    'donkey-scaffold': '/cli/ship',
+    'donkey-scan': '/cli/ship',
+    'donkey-test': '/cli/local',
+    'donkey-verify': '/cli/ship',
+    'donkeyagent': '/decorators',
+    'donkeygoverned': '/decorators',
+    'donkeytool': '/decorators',
+    'filling-a-placeholder-with---set': '/cli/ship',
+    'from-code-to-a-publish-plan': '/cli/ship',
+    'what-each-workflow-still-needs': '/cli/ship',
+  },
 }
 
 // Strip the basePath prefix, query, hash, trailing slash and `.html`, and

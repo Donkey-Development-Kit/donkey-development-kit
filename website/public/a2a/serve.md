@@ -91,7 +91,7 @@ no second description of your agent to keep in sync:
 | `version` | `donkey.serve(version=...)` or `donkey dev --agent-version`, `"0.0.0"` by default |
 | `supportedInterfaces[0].url` | `donkey.serve(url=...)`, or `http://{host}:{port}/` |
 
-[`donkey scan`](https://docs.donkey-kit.dev/cli.md#donkey-scan) reads the same marker, which is why the two
+[`donkey scan`](https://docs.donkey-kit.dev/cli/ship.md#donkey-scan) reads the same marker, which is why the two
 can't drift. A handler without `@donkey.agent` is rejected with a `TypeError`.
 
 ### What the handler gets and returns
@@ -351,7 +351,7 @@ It stays narrow, so it never turns into a provisioning tool:
   infrastructure-as-code. If one is missing, `donkey expose` tells you which
   one, and where to create it, rather than creating it.
 
-See [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose) for the step statuses and exit
+See [`donkey expose`](https://docs.donkey-kit.dev/cli/ship.md#donkey-expose) for the step statuses and exit
 codes, and [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose) for the
 connected app it runs with.
 

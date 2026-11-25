@@ -1,0 +1,238 @@
+---
+description: The donkey CLI, with global flags, exit codes, JSON output and the generated command reference. Each command is on the page for its workflow stage.
+status: live
+---
+
+import { Callout } from 'nextra/components'
+import { Badge, Output } from '../../components'
+
+# CLI
+
+## The CLI
+
+```bash
+pip install "donkey-kit[cli]"
+```
+
+```bash
+donkey init          # writes a commented .donkey-kit.toml, names every missing env var at once
+donkey doctor        # checks creds, reaches the gateway, reports budget state
+donkey mock          # the local simulator — --scenario scripts failures
+donkey dev my:agent  # serves an @donkey.agent behind a simulated A2A ingress
+donkey test          # a thin front end to pytest --donkey-conformance
+donkey scan          # finds your agents, tools and MCP servers, without running your code
+donkey scaffold      # adds the .donkey-kit.toml tables they still need
+donkey publish       # registers them in Exchange; --dry-run prints the plan and sends nothing
+donkey verify        # checks published MCP servers and agents against their live side; reads only
+donkey preflight     # checks, read-only, that a service can be put behind its gateway
+donkey expose        # puts one MCP server or A2A agent behind an existing gateway
+```
+
+### Global flags
+
+Four global flags precede the subcommand:
+
+```bash
+donkey --version                  # print the donkey-kit version and exit
+donkey --config ./cfg.toml init   # write the generated config file to a non-default path
+donkey --config ./cfg.toml doctor # diagnose against this project config file
+donkey --env Sandbox init         # write this Anypoint environment into the generated file
+donkey --json init                # machine-readable output where a command supports it
+```
+
+`--config` selects the file `init` writes or the project file `doctor` reads.
+For `init` it is only the destination: `init` still resolves its values from
+the working directory, as described [below](/cli/setup#donkey-init). `doctor` still applies the normal per-field precedence: explicit kwargs (when
+calling the config loader in code), environment variables, the named file's
+local overlay, the named file, user config, then defaults. `--env` applies to
+`init` only; set `ANYPOINT_ENV` for `doctor`. Other commands reject these flags
+with exit `2` rather than silently ignore them.
+
+`--version` prints the version alone, such as `0.2.0`, and exits `0` without
+running a command. It prints the same plain line with `--json`, since it is not
+one of the [JSON documents](#json-output). The card version of `donkey dev` is
+its own flag, `--agent-version`.
+
+### Exit codes
+
+Every command exits non-zero on failure, so any of them drops into CI as a
+preflight. A command that needs an optional extra (`donkey mock` → `[local]`,
+`donkey test` → `[test]`, `donkey doctor` → `[llm]`) prints the exact
+`pip install` line and exits `1` — never a stack trace. The one command still
+blocked, the hidden `donkey status`, exits `3` with `blocked on verification`,
+so a script can tell "blocked" from "failed".
+
+The CLI lives in the `donkey_kit.cli` package. Earlier releases also shipped
+hidden provisioning commands (`validate`, `plan`, `apply`, `drift`, `lint`,
+`generate`); they were removed with the refused provisioning control plane, and
+typer now rejects them as unknown commands (exit `2`).
+
+### JSON output
+
+Each document that `scan`, `scaffold`, `publish`, `verify`, `preflight` and `expose` print
+with `--json` carries its own format key. A script reads the key before it reads
+the rest. The number goes up only when the shape changes in a way that breaks an
+existing reader:
+
+| Command | Format key | What it prints |
+|---|---|---|
+| `donkey scan` | `scan_format: 1` | The scan model. |
+| `donkey scaffold` | `scaffold_format: 1` | The candidate tables, their TOML (`toml`), what is already declared, whether they were `written`, and the issues. |
+| `donkey publish --dry-run` | `plan_format: 1` | The plan: the assets a publish would register, and the issues. |
+| `donkey publish` | `publish_format: 1` | The plan's assets, each with a `status` and a `detail`, and the issues. |
+| `donkey verify` | `verify_format: 1` | The plan's assets, each with a `status`, a `detail` and its `differences`, and the issues. |
+| `donkey preflight`, `donkey expose` | `expose_format: 1` | `ok`, `dry_run`, the `url`, one entry per step, and the issues. |
+
+A declaration issue still prints the document, so stdout is JSON whenever
+the command got as far as reading the declaration. Nothing is sent then. A
+`publish` or `verify` reports every asset `not_attempted`, an `expose`
+report has `ok: false` and no steps, and every document lists the issues.
+The issues also go to stderr, and the command exits `1`. A missing path or
+invalid config exits `2` with no document. That includes a `.donkey-kit.toml`
+that is not UTF-8 or not valid TOML: the message names the file and shows none
+of its bytes.
+
+When an issue is a missing declaration, its message names the table and key to
+set. If the table isn't in `.donkey-kit.toml` yet, it also gives the
+`donkey scaffold` command that adds it, with every key that table still lacks
+as a `--set` (see [Filling a placeholder](/cli/ship#filling-a-placeholder-with---set)):
+
+```
+  .donkey-kit.toml:0  missing-version  donkey.publication: set version in [donkey.publication] to a semantic version, such as 1.0.0; `donkey scaffold --set publication.version=1.0.0 --set publication.group_id=GROUP_ID` adds the table with it
+```
+
+Replace each upper-case value, such as `GROUP_ID`, before you run it. Once the
+table exists, the message says only which key to set in it, since scaffold
+never changes a table you already have. Other issues, such as an invalid value,
+get no scaffold advice. An endpoint or provider URL that carries a credential
+(a user name or password, or a query or fragment parameter such as `api_key`)
+is refused, and the message never shows the URL.
+
+### Command reference
+
+{/* BEGIN GENERATED: cli-reference (edit python/scripts/generate_docs.py, then run it) */}
+Generated from the CLI itself; `donkey <command> --help` prints the same.
+
+Global options go before the command (`donkey --json init`):
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--version` | off | Print the donkey-kit version and exit. |
+| `--config` | none | Where `init` writes .donkey-kit.toml (output only, never read), or the project config file `doctor` reads. |
+| `--env` | none | Anypoint environment `init` writes (e.g. Sandbox). init only. |
+| `--json` | off | Emit machine-readable JSON where the command supports it. |
+
+`donkey dev`: Serve an agent over A2A behind a simulated gateway ingress.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `target` | none | The @donkey.agent handler, as module:attribute. |
+| `--port` | `8000` | TCP port to bind. |
+| `--host` | `127.0.0.1` | Host/interface to bind. |
+| `--agent-version` | `0.0.0` | The agent version the card advertises. |
+| `--protocol-version` | `1.0` | A2A protocol to serve: 0.3.0 or 1.0 (default). |
+| `--scenario` | none | Inbound rejection rule, repeatable. e.g. 'pii_block:every=5', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous'. |
+
+`donkey doctor`: Diagnose governed access: config, credentials, gateway, model, budget.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--model` | `gpt-4o` | Model id to test against the proxy allow-list. |
+| `--json` | off | Emit machine-readable JSON. |
+
+`donkey expose`: Expose one MCP server or A2A agent through an existing gateway.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--service` | none | The service ID to expose; optional when the project has exactly one. |
+| `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
+| `--target` | none | The gateway's name; overrides the declared target. |
+| `--dry-run` | off | Only read: print what would be created, and change nothing. |
+| `--json` | off | Emit the report as JSON. |
+
+`donkey init`: Bootstrap a commented `.donkey-kit.toml` from the resolved config.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--force` | off | Regenerate the whole file even if it exists. Not a merge: other tables are dropped. |
+
+`donkey mock`: Run the local gateway simulator.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--port` | `8080` | TCP port to bind. |
+| `--host` | `127.0.0.1` | Host/interface to bind. |
+| `--scenario` | none | Fault-injection rule, repeatable. e.g. 'pii_block:every=5', 'budget:limit=20000,window=60s', 'request_limit:limit=3,window=60s', 'injection:on-pattern=ignore previous', 'ciba:pending=2,then=approve'. |
+
+`donkey preflight`: Check, read-only, that a service can be exposed.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--service` | none | The service ID to expose; optional when the project has exactly one. |
+| `--env` | none | The Anypoint environment (ANYPOINT_ENV). |
+| `--target` | none | The gateway's name; overrides the declared target. |
+| `--json` | off | Emit the report as JSON. |
+
+`donkey publish`: Publish code-first assets to Exchange.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to publish. |
+| `--dry-run` | off | Print the assets and digests it would publish; no network call. |
+| `--if-changed` / `--always` | on | Skip an asset whose latest published version has the same digest. |
+| `--json` | off | Emit the plan, or what was published, as JSON. |
+
+`donkey scaffold`: Add the .donkey-kit.toml tables the scanned services need and report readiness.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--dry-run` | off | Print the candidate tables instead of writing .donkey-kit.toml. |
+| `--expose` | off | Also propose the [donkey.expose] tables `donkey expose` reads. |
+| `--service` | none | Only this service ID's tables and exposure readiness; repeat for more. Repeatable. |
+| `--set` | none | Fill a placeholder of a table scaffold adds, such as publication.version=1.0.0; repeat for more. Repeatable. |
+| `--json` | off | Emit the scaffold as one JSON document. |
+
+`donkey scan`: Find @donkey.agent and @donkey.tool markers statically and report them.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to scan. |
+| `--json` | off | Emit the canonical scan model as JSON. |
+
+`donkey test`: Run the conformance suite against your agent.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--agent` | none | Import path to your agent factory, e.g. my.pkg:make_agent. |
+
+`donkey verify`: Check published MCP servers and A2A agents against their live side, read-only.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `path` | `.` | The repository (or one .py file) to verify. |
+| `--json` | off | Emit the plan with each asset's outcome as JSON. |
+{/* END GENERATED: cli-reference */}
+
+
+### Where each command is documented
+
+| Stage | Commands | Page |
+| --- | --- | --- |
+| Set up | `donkey init`, `donkey doctor` | [Set up](/cli/setup) |
+| Develop locally | `donkey mock`, `donkey dev`, `donkey test` | [Develop locally](/cli/local) |
+| Ship | `donkey scan`, `donkey scaffold`, `donkey publish`, `donkey verify`, `donkey expose` | [Ship](/cli/ship) |
+
+## Planned commands <Badge tone="roadmap">Roadmap</Badge>
+
+These commands are part of the [Roadmap](/roadmap) and are not available in the
+CLI yet:
+
+- `donkey serve` — serve your agent over A2A from the command line. In code,
+  `donkey.serve()` does it today. See [A2A agents](/a2a/serve).
+
+<Callout type="info">
+  Run `donkey --help` to see the commands available in your installed version.
+</Callout>

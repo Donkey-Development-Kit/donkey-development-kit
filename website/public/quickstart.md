@@ -19,13 +19,13 @@ Omni Gateway later is an environment change, not a code change.
 | OpenTelemetry spans & cost attribution | Live | [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md) |
 | Local simulator & `simulate()` | Live | [Local simulator](https://docs.donkey-kit.dev/simulator.md) |
 | Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
-| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `scaffold`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
+| CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `scaffold`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI](https://docs.donkey-kit.dev/cli.md) and [decorators](https://docs.donkey-kit.dev/decorators.md) |
 | Governed tool access (MCP) | Live | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
 | A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) |
 | A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) |
 | On-behalf-of identity: `donkey.as_user()` | Live | [Identity](https://docs.donkey-kit.dev/identity.md) |
 | Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
-| `donkey scan` and `donkey scaffold` (agents, tools and MCP servers from code, and the declarations they need) | Live | [From code to a publish plan](https://docs.donkey-kit.dev/cli.md#from-code-to-a-publish-plan) |
+| `donkey scan` and `donkey scaffold` (agents, tools and MCP servers from code, and the declarations they need) | Live | [From code to a publish plan](https://docs.donkey-kit.dev/cli/ship.md#from-code-to-a-publish-plan) |
 | Publish to the registry and verify: `donkey publish`, `donkey verify` | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
 | Policy handshake | Roadmap | [Policy handshake](https://docs.donkey-kit.dev/policies.md) |
 
@@ -224,7 +224,7 @@ Or fold it into one line with a decorator:
 async def handle_ticket(ticket): ...
 ```
 
-See [CLI & decorators](https://docs.donkey-kit.dev/cli.md).
+See [CLI](https://docs.donkey-kit.dev/cli.md) and [decorators](https://docs.donkey-kit.dev/decorators.md).
 
 ## Test the refusal branch Live
 
@@ -292,14 +292,14 @@ If `doctor` reports a `404`, read which line it is on:
 - **`responses` says "/responses not served on this route"** — the proxy
   works, but its upstream (an Azure OpenAI route, for example) does not serve
   the Responses API. Use the Chat Completions API on that route; see
-  [`donkey doctor`](https://docs.donkey-kit.dev/cli.md#donkey-doctor).
+  [`donkey doctor`](https://docs.donkey-kit.dev/cli/setup.md#donkey-doctor).
 
 ## Next steps
 
 - **[Pick your framework](https://docs.donkey-kit.dev/frameworks.md)** — get a native LangGraph, ADK,
   Strands, LlamaIndex, CrewAI, OpenAI Agents SDK, Anthropic SDK or Agent
   Framework object in three lines.
-- **[From code to a publish plan](https://docs.donkey-kit.dev/cli.md#from-code-to-a-publish-plan)** — scan
+- **[From code to a publish plan](https://docs.donkey-kit.dev/cli/ship.md#from-code-to-a-publish-plan)** — scan
   your decorated agents and tools, scaffold their `.donkey-kit.toml`
   declarations and review the publish plan, all offline.
 - **[Examples](https://docs.donkey-kit.dev/examples.md)** — runnable demos for every capability on this page.

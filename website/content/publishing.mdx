@@ -15,7 +15,7 @@ collision check and `descriptor="auto"` derivation are on the
 [Roadmap](/roadmap); their sections are badged and show the planned design.
 
 `donkey scan` walks your repository and finds every
-[`@donkey.agent`](/cli#donkeyagent) and [`@donkey.tool`](/cli#donkeytool), plus
+[`@donkey.agent`](/decorators#donkeyagent) and [`@donkey.tool`](/decorators#donkeytool), plus
 the MCP servers those tools name with `server=`. It produces one deterministic
 model of them. Publishing registers that model with Exchange / Agent
 Registry, and the [GitHub Action](#from-github-actions) runs both on every merge
@@ -60,7 +60,7 @@ The model is deterministic: the same code always gives the same JSON, and its
 like a change. Scan also reports **issues** and exits `1` when it finds one:
 a missing or tautological description, an invalid service ID, a non-literal
 decorator argument it cannot read, or a service ID used twice. That way CI
-fails before anything is published. See [`donkey scan`](/cli#donkey-scan) for
+fails before anything is published. See [`donkey scan`](/cli/ship#donkey-scan) for
 the full rules.
 
 ### Declaring how an MCP server is reached
@@ -768,7 +768,7 @@ catalog is loud without taking down production traffic. With
 lists every difference. `API` publications are not verified and raise
 `NotImplementedError`.
 
-[`donkey verify`](/cli#donkey-verify) runs the same check from CI, for every MCP
+[`donkey verify`](/cli/ship#donkey-verify) runs the same check from CI, for every MCP
 server and `a2a_v1` agent in the repository.
 
 Both read the live side at a gateway URL that discovery read from the control
@@ -783,6 +783,6 @@ exits `1`. See
 
 ## Related
 
-- [CLI & decorators](/cli) — mark tools with `@donkey.tool` today.
+- [Decorators](/decorators) — mark tools with `@donkey.tool` today.
 - [A2A agents](/a2a/serve) — serve and expose the agent whose card you publish.
 - [Tool access](/tool-access) — discover and bind published tools from Exchange.
