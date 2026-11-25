@@ -11,6 +11,11 @@ Start with `donkey doctor`. It makes one real governed call and tells apart the
 failures that look the same from your code. The sections below explain each
 line it prints, then cover the problems `doctor` can't see.
 
+Some problems belong to one surface. If the symptom is about a model call, see
+[Models](/frameworks) and its [gateway policies](/frameworks/gateway-policies).
+For a tool, see [MCP tools](/tool-access) and its [gateway policies](/tool-access/gateway-policies).
+For an agent-to-agent call, see [A2A agents](/a2a) and its [gateway policies](/a2a/gateway-policies).
+
 ```bash
 pip install "donkey-kit[cli]"
 donkey doctor                  # or: donkey doctor --model <model-id> --json
@@ -42,7 +47,7 @@ The lines, in the order they appear:
 | `policy` | Never (info). A policy refused the probe itself, such as a spent budget. | Read the typed refusal. See [Typed refusals](/errors). |
 | `budget` | Never (info). | The reading is only as fresh as the last response, because the proxy has no budget-query endpoint. `observed … ago` says how old it is. |
 
-The [CLI page](/cli#donkey-doctor) has sample output for a healthy proxy and
+The [CLI page](/cli/setup#donkey-doctor) has sample output for a healthy proxy and
 for an Azure OpenAI route.
 
 ## Failures that look alike
@@ -57,7 +62,7 @@ for an Azure OpenAI route.
 
 `DONKEY_LLM_PROXY_URL` is the proxy base with a trailing slash:
 `https://<ingress-gw>/<instance>/`. See
-[Governed model access](/reference/configuration#governed-model-access).
+[Governed model access](/reference/configuration/auth#governed-model-access).
 
 ### `401` and `403`
 
@@ -89,7 +94,7 @@ CrewAI retries any `429` three times inside its own code. See the
 
 `UpstreamModelError` is a provider failure. The SDK retries a `503`, and
 retries a `502` or `504` on a model call only with
-[`retry_model_calls_on_gateway_errors`](/reference/configuration#behaviour).
+[`retry_model_calls_on_gateway_errors`](/reference/configuration/attribution#behaviour).
 If it persists, the provider is down: retry later or fall back.
 
 ## `donkey.last_call` says `UNAVAILABLE`
@@ -109,7 +114,7 @@ reports `UNAVAILABLE`, and `surface` names the adapter.
 | `UNAVAILABLE` | The adapter named in `surface` sends outside the SDK. | Use an adapter whose `capabilities().observes_last_call` is `True` (see [the table](/frameworks#what-each-factory-gets-capabilities)), or read the gateway's own logs. |
 
 See [`last_call` fields](/reference/last-call) and
-[When `last_call` is unavailable](/telemetry#when-last_call-is-unavailable).
+[When `last_call` is unavailable](/frameworks/routing#when-last_call-is-unavailable).
 
 ## A `401` in JWT mode
 
@@ -135,8 +140,8 @@ Work through these in order:
    requests and `donkey.crewai` raises `ConfigError` in `jwt` mode. Use
    client-id auth with CrewAI.
 
-See [JWT / model-wallet auth mode](/reference/configuration#jwt--model-wallet-auth-mode)
-and [Auth providers](/reference/configuration#auth-providers).
+See [JWT / model-wallet auth mode](/reference/configuration/auth#jwt--model-wallet-auth-mode)
+and [Auth providers](/reference/configuration/auth#auth-providers).
 
 <Callout type="info">
   Still stuck? Run `donkey --json doctor`, remove any secrets from the output,

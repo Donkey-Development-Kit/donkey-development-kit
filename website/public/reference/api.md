@@ -116,7 +116,7 @@ donkey.current_run: RunLedger | None
 
 A snapshot of the bound `donkey.run()` block's ledger, or `None` outside a run.
 
-Guide: [`/telemetry#run-ledger`](https://docs.donkey-kit.dev/telemetry.md#run-ledger)
+Guide: [`/correlation#run-ledger`](https://docs.donkey-kit.dev/correlation.md#run-ledger)
 
 ### `donkey.openai()`
 
@@ -152,7 +152,7 @@ donkey.a2a: A2AFacade
 
 Governed outbound A2A sends and context-managed streams.
 
-Guide: [`/tool-access/a2a`](https://docs.donkey-kit.dev/tool-access/a2a.md)
+Guide: [`/a2a/call`](https://docs.donkey-kit.dev/a2a/call.md)
 
 ### `donkey.tools`
 
@@ -200,7 +200,7 @@ donkey.run_from_headers(
 
 Join the caller's run: `run`, with the id read from an inbound request's headers.
 
-Guide: [`/telemetry`](https://docs.donkey-kit.dev/telemetry.md)
+Guide: [`/correlation`](https://docs.donkey-kit.dev/correlation.md)
 
 ### `donkey.correlation_headers()`
 
@@ -299,7 +299,7 @@ donkey.agent(*, name: str, skills: Sequence[str] = ()) -> Callable[[Callable], C
 
 Mark a callable as an agent entry point, recording its name, skills and docstring in an introspectable registry.
 
-Guide: [`/a2a`](https://docs.donkey-kit.dev/a2a.md)
+Guide: [`/a2a/serve`](https://docs.donkey-kit.dev/a2a/serve.md)
 
 ### `donkey.serve()`
 
@@ -316,7 +316,7 @@ donkey.serve(
 
 Serve a `@donkey.agent` handler over A2A on `host:port`, blocking until the server stops.
 
-Guide: [`/a2a`](https://docs.donkey-kit.dev/a2a.md)
+Guide: [`/a2a/serve`](https://docs.donkey-kit.dev/a2a/serve.md)
 
 ### `donkey.approvals`
 
@@ -374,7 +374,7 @@ donkey.simulate_mcp(
 
 Inject a captured gateway refusal into MCP tool calls, no gateway.
 
-Guide: [`/simulator`](https://docs.donkey-kit.dev/simulator.md)
+Guide: [`/simulator/mcp`](https://docs.donkey-kit.dev/simulator/mcp.md)
 
 ### `donkey.simulate_a2a()`
 
@@ -391,7 +391,7 @@ donkey.simulate_a2a(
 
 Inject a captured gateway refusal into outbound A2A calls, no gateway.
 
-Guide: [`/simulator`](https://docs.donkey-kit.dev/simulator.md)
+Guide: [`/simulator/a2a`](https://docs.donkey-kit.dev/simulator/a2a.md)
 
 ### `donkey.flush_telemetry()`
 

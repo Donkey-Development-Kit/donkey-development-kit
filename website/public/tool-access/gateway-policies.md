@@ -7,6 +7,13 @@ reject a call, or transform its result. Configure enforcement on the MCP API
 instance in API Manager; DDK consumes the gateway-visible contract rather than
 reimplementing the policies in your agent.
 
+  **Three things are called "policy" in these docs.** *Gateway policies* are
+  what the gateway enforces on each surface: see the [Models](https://docs.donkey-kit.dev/frameworks/gateway-policies.md), [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
+  and [A2A agents](https://docs.donkey-kit.dev/a2a/gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
+  teach `classify()` the refusal shape your own gateway policy returns. The
+  *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in
+  force; the gateway always wins.
+
   **Partial evidence, not an end-to-end policy certification.** Gateway captures
   establish the wire behavior described below. Typed PII surfacing across
   frameworks is checked by local capture replay, not live framework calls to
@@ -14,7 +21,7 @@ reimplementing the policies in your agent.
   checks. A captured refusal does not establish every configuration of a policy.
 
 To exercise response handling offline, use the
-[packaged MCP captures](https://docs.donkey-kit.dev/simulator.md#packaged-mcp-captures) with raw `httpx.MockTransport`.
+[packaged MCP captures](https://docs.donkey-kit.dev/simulator/mcp.md#packaged-mcp-captures) with raw `httpx.MockTransport`.
 This is separate from model-route simulation and does not establish a live
 framework round-trip.
 

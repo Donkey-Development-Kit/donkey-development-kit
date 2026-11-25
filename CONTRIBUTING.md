@@ -888,7 +888,7 @@ build plan has the rationale behind each rule:
   committed `.donkey-kit.toml`; the SDK warns if it finds one there. A URL read
   from either working-directory file only receives credentials from those same
   files (loopback hosts included), unless `DONKEY_TRUST_PROJECT_CONFIG=1` is set (see
-  `website/content/reference/configuration.mdx`). In `jwt` mode an
+  `website/content/reference/configuration/index.mdx`). In `jwt` mode an
   `llm_proxy_url` from those files always needs the environment or the opt-in,
   because the JWT never comes from a file. Both working-directory files must be
   regular files or links that stay inside the working directory. The LLM proxy authenticates on
@@ -1006,8 +1006,8 @@ confused adopter instead of at review time.
 
 Some facts are generated, so they can't drift: `python scripts/generate_docs.py`
 (from `python/`) writes the PyPI README (`python/README.md`, from the root
-`README.md`), the settings index in `reference/configuration.mdx`, the CLI
-command reference in `cli.mdx`, the adapter capabilities table in
+`README.md`), the settings index in `reference/configuration/index.mdx`, the CLI
+command reference in `cli/index.mdx`, the adapter capabilities table in
 `frameworks/index.mdx`, and the whole Python API page (`reference/api.mdx`).
 Edit the code, the docstring or the root README, run the script, and commit the
 result; never edit a `BEGIN GENERATED` region by hand.
@@ -1040,24 +1040,28 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 
 | Code surface | Docs page(s) |
 | --- | --- |
-| `core/errors.py` | `errors.mdx` |
-| `core/config.py`, `core/auth.py`, `core/endpoints.py` | `reference/configuration.mdx` |
+| `core/errors.py` | `errors.mdx`, `frameworks/gateway-policies.mdx` |
+| `core/config.py`, `core/endpoints.py` | `reference/configuration/index.mdx` |
+| `core/auth.py` | `reference/configuration/auth.mdx` |
 | `core/_verify.py`, `docs/verified-apis.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
 | `core/budget.py` | `budget.mdx` |
 | `core/reactions.py`, `core/transport/*` `_on_refusal` | `refusal-handlers.mdx` |
-| `core/approvals.py`, `core/toolspec.py` (`@donkey.tool(approval=...)`, `donkey.approvals`) | `hitl.mdx`, `cli.mdx` |
-| `core/telemetry.py`, `core/cost.py` | `telemetry.mdx` |
-| `core/lastcall.py` | `reference/last-call.mdx` |
+| `core/approvals.py`, `core/toolspec.py` (`@donkey.tool(approval=...)`, `donkey.approvals`) | `hitl/index.mdx`, `decorators.mdx` |
+| `core/telemetry.py` | `telemetry.mdx`, `correlation.mdx` |
+| `core/cost.py` | `cost-attribution.mdx` |
+| `core/lastcall.py` | `reference/last-call.mdx`, `frameworks/routing.mdx` |
 | `llm/*` | `quickstart.mdx`, `feature-overview.mdx` |
-| `simulator/*` | `simulator.mdx` |
+| `simulator/*` | `simulator/index.mdx`, `simulator/mcp.mdx`, `simulator/a2a.mdx` |
 | `conformance/*` | `testing.mdx` |
-| `donkey.py` (the `Donkey` facade: `from_env`, `run`, `simulate()`, `tools`) | `quickstart.mdx`, `testing.mdx`, `reference/configuration.mdx` |
+| `donkey.py` (the `Donkey` facade: `from_env`, `run`, `simulate()`, `tools`) | `quickstart.mdx`, `testing.mdx`, `reference/configuration/index.mdx` |
 | `integrations/<fw>.py` | `frameworks/<fw>.mdx` + `examples/<fw>.mdx` (note `openai_agents.py` → `frameworks/openai.mdx`, `examples/openai-agents.mdx`); `frameworks/index.mdx` if the roster or an adapter's depth changes |
 | `registry/criteria.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
-| `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |
+| `registry/publication.py`, `registry/exchange.py` | `publishing/publication.mdx`, `publishing/index.mdx` |
 | `tools/session.py` | `tool-access/binding.mdx` |
-| `cli/*` (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `expose`, `preflight`, the blocked `status`) | `cli.mdx` (the site has no provisioning section; don't add one, the control plane is refused, ADR 0008 in `docs/adr/`) |
-| `experimental.py` | `reference/unsupported-boundary.mdx`, plus the page of the surface whose types moved (`publishing.mdx`, `tool-access/discovery.mdx`) |
+| `a2a/_server.py` (the `donkey.serve()` listener) | `a2a/serve.mdx` |
+| `a2a/client.py` (`donkey.a2a.send()` / `stream()`) | `a2a/call.mdx` |
+| `cli/*` (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `expose`, `preflight`, the blocked `status`) | `cli/index.mdx`, `cli/setup.mdx`, `cli/local.mdx`, `cli/ship.mdx` (the site has no provisioning section; don't add one, the control plane is refused, ADR 0008 in `docs/adr/`) |
+| `experimental.py` | `reference/unsupported-boundary.mdx`, plus the page of the surface whose types moved (`publishing/publication.mdx`, `tool-access/discovery.mdx`) |
 | `README.md` (install/status/extras) | `quickstart.mdx`, `index.mdx` |
 
 `docs/verified-apis.md` is not "engineering-internal" for this purpose: when

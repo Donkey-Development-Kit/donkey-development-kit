@@ -7,6 +7,13 @@ DDK types the refusals the Omni Gateway's own policies produce (see
 wrote, sends its own refusal shape. DDK cannot know that shape, so by default it
 reaches your code as `UpstreamRequestError` or the generic `PolicyViolation`.
 
+  **Three things are called "policy" in these docs.** *Gateway policies* are
+  what the gateway enforces on each surface: see the [Models](https://docs.donkey-kit.dev/frameworks/gateway-policies.md), [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
+  and [A2A agents](https://docs.donkey-kit.dev/a2a/gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
+  teach `classify()` the refusal shape your own gateway policy returns. The
+  *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in
+  force; the gateway always wins.
+
 `classify.register(match=..., raises=...)` maps one such shape to a
 `PolicyViolation` subclass that you define, with your own remediation. After
 that, the refusal is raised as your type, a [refusal handler](https://docs.donkey-kit.dev/refusal-handlers.md)

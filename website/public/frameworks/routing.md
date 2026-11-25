@@ -1,0 +1,159 @@
+# Routing & fallback
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+<span id="routing--resilience" />
+
+The gateway can fail over between providers when one degrades ("Enhanced
+Resilience for Intelligent Routing"). It reports what it *did* with each request
+on the response — which provider and model served it, how it routed, and whether
+that was a **fallback**. DDK reads those signals off the shared transport, so
+you get them with **no framework required** — the raw `donkey.llm.client()` path
+benefits just as the deep adapters do.
+
+Every governed call through the SDK's shared HTTP client exposes them on
+`donkey.last_call`, beside the usage and identity fields:
+
+```python
+donkey = Donkey.from_env()
+await donkey.openai().responses.create(model="gpt-5.1", input="…")
+
+r = donkey.last_call
+r.requested_model    # "gpt-5.1"  — what you asked for
+r.served_model       # "gpt-5.1"  — or a substitute after failover
+r.served_provider    # "openai"
+r.routing_type       # "ModelBased" — or "Semantic" on a semantic-routing proxy
+r.fallback           # False      — True if the gateway failed over
+r.substituted        # False      — served_model != requested_model
+r.matched_topic      # None       — the topic a Semantic proxy matched (else None)
+r.routing_score      # None       — that match's similarity score (else None)
+```
+
+On a **semantic-routing** proxy (`routing_type == "Semantic"`), the gateway also
+reports *why* it picked a provider: the topic your prompt matched and the
+similarity score behind that match. Those land on `r.matched_topic` /
+`r.routing_score`. On a model-based proxy both are `None` — the gateway emits no
+semantic header, and DDK never fabricates a value for a signal it did not
+observe.
+
+They also land on the span (`gen_ai.response.model`, `donkey.routing.type`,
+`donkey.routing.fallback`, and — on a semantic route —
+`donkey.routing.matched_topic` / `donkey.routing.score`) — the most useful thing
+to have on hand when latency spikes: it tells an operator whether a slow call was
+routed normally or recovered from a degraded provider.
+
+For the complete list of `last_call` fields — observability status, gateway
+identity, routing, and token usage — see the [`last_call` field
+reference](https://docs.donkey-kit.dev/reference/last-call.md).
+
+The same record also carries the call's identity and usage: `request_id` (the
+upstream provider's id), `api_instance_id` and `environment_id` (which gateway
+instance served it), and the token counts including cached and reasoning
+tokens. The [gateway identity example](https://docs.donkey-kit.dev/examples/general/gateway-identity.md) walks
+through every field.
+
+## When `last_call` is unavailable
+
+`donkey.last_call` is populated only when the governed response passes through
+the SDK's shared HTTP client, and only in the context that made the call.
+CrewAI routes outside that client: its native OpenAI provider builds its own,
+so no response reaches the record and the run's correlation ID isn't sent.
+
+LlamaIndex, Microsoft Agent Framework and ADK's `model()` send through the
+shared client, so a call populates the record in its own context and carries
+the run's correlation ID. A cold read on a `Donkey` that resolved only these
+adapters reports `UNOBSERVED`, and `OBSERVED` after a call
+([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)).
+ADK's `gemini()` uses the shared client too (see
+[Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini) for reading `last_call` inside
+an ADK run).
+
+For a `Donkey` that resolved only CrewAI:
+
+```python
+r = donkey.last_call
+r.status       # LastCallStatus.UNAVAILABLE
+r.available    # False
+r.surface      # "crewai"
+```
+
+This is different from `UNOBSERVED`, which means the current context has not
+yet received a governed response. On an unavailable surface the SDK cannot
+observe any response-derived `last_call` field, including gateway identity,
+routing, fallback, and usage. If multiple non-observing adapters were resolved,
+`surface` lists their names.
+
+An agent runner that sends the model call from a task of its own leaves its
+caller reading `UNOBSERVED`, even though the SDK observed the call: the record
+lands in that task. The OpenAI Agents SDK's `Runner` sends a run's first turn
+that way (and every turn of `run_streamed`), and ADK's `Runner` runs the whole
+agent that way. Read `last_call` in the framework's model hook, which runs in the
+call's own task: `RunHooks.on_llm_end` for the
+[OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md#donkeylast_call), `after_model_callback`
+for [ADK](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). Calling the model directly (Strands'
+`Agent.invoke_async`, `AsyncAnthropic.messages.create`, a model's own async
+method) records in the caller's context.
+
+## Two behaviours worth knowing
+
+**The SDK never double-retries a fallback.** DDK retries `502/503/504` with
+backoff (a `502`/`504` on a model call only with
+`retry_model_calls_on_gateway_errors`), but if the gateway already failed over internally, a `503` it marked as
+a fallback is **not** retried again — a second recovery layer stacked on a
+working first one just multiplies latency against an outage the gateway already
+handled.
+
+**Opt in to model determinism.** A silent substitution is surfaced passively on
+`last_call.substituted` by default. When a substitution is not acceptable — your
+evaluation, cost model and token assumptions are all pinned to one model — opt
+into a hard error:
+
+```python
+donkey = Donkey.from_env(on_model_substitution="raise")
+# raises ModelSubstituted when the served model differs from the requested one
+```
+
+`on_model_substitution` resolves along the standard precedence (kwarg → env
+`DONKEY_ON_MODEL_SUBSTITUTION` → `.donkey-kit.toml` → default) and **defaults to
+`"off"`**.
+
+On a model-based routing proxy you address models as `provider/model` (for
+example `openai/gpt-5-mini`), and the gateway reports the served model without
+the prefix (`gpt-5-mini`), with the provider in its own header. A prefix that
+names the served provider is not counted as a difference, so asking for
+`openai/gpt-5-mini` and being served `gpt-5-mini` by `openai` is not a
+substitution. The same model served by a different provider still is. On a
+proxy with more than one provider, a bare name the gateway cannot pin to one
+provider is rejected with a `400` before any upstream call, and DDK raises
+[`ModelNotRoutable`](https://docs.donkey-kit.dev/errors.md).
+
+## Semantic caching & semantic routing Live
+
+Omni Gateway can answer a request from its **semantic cache** (a similar
+prompt was answered before, so no provider round-trip and no token cost) and
+can **route semantically** (pick the model by matching the prompt to a
+topic). Both happen at the gateway. DDK caches nothing and computes no
+embeddings itself; it lets you steer the gateway's cache per request — skip it,
+not store a response, or override the TTL or similarity threshold via
+[`donkey.cache(...)`](https://docs.donkey-kit.dev/budget.md#semantic-cache-steering) — and reports what
+happened:
+
+- the cache outcome (`hit`, `miss`, `bypass`, `no-store`) and similarity score
+  on `donkey.last_call.cache_status` / `.cache_score` and the span
+  (`donkey.cache.status` / `donkey.cache.score`);
+- the matched routing topic and its score, beside the routing fields above.
+
+A cache `hit` is a verbatim replay with no provider round-trip, so it never
+advances the [token budget](https://docs.donkey-kit.dev/budget.md) — the replayed `usage` is not fresh spend.
+
+## TypeScript parity Roadmap
+
+The same signals will surface as `donkey.lastRouting.servedModel` / `.fallback`
+in the TypeScript SDK.
+
+## Next steps
+
+- [Gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md): every model policy the gateway can apply, and the typed exception each one raises.
+- [`last_call` fields](https://docs.donkey-kit.dev/reference/last-call.md): the routing, fallback, substitution and cache fields in full.
+- [Typed refusals](https://docs.donkey-kit.dev/errors.md): `ModelNotRoutable` and the other refusals a routed call can raise.
+- [OpenTelemetry spans](https://docs.donkey-kit.dev/telemetry.md): the span attributes these signals are recorded on.

@@ -31,6 +31,9 @@ have no harness: they use the same environment you already use for the SDK.
 Frameworks pin conflicting dependencies, so one virtual environment per
 framework is the safe default; each framework page has its install line.
 
+To see the same capabilities joined into end-to-end jobs, read
+[Scenarios](https://docs.donkey-kit.dev/scenarios.md).
+
 ## Setup
 
 ### Create a virtual environment

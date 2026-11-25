@@ -307,7 +307,7 @@ class ToolsFacade:
             AuthError: The gateway refused the credential.
             ToolInvocationError: The server could not list its tools.
 
-        Docs: https://docs.donkey-kit.dev/publishing#verifying-at-runtime-verify
+        Docs: https://docs.donkey-kit.dev/publishing/publication#verifying-at-runtime-verify
         """
         return await self._discovery.live_tools(ref)
 
@@ -333,7 +333,7 @@ class ToolsFacade:
                 control plane the working directory's config files named (ADR 0019).
             AuthError: The gateway refused the credential.
 
-        Docs: https://docs.donkey-kit.dev/publishing#verifying-at-runtime-verify
+        Docs: https://docs.donkey-kit.dev/publishing/publication#verifying-at-runtime-verify
         """
         return await self._discovery.agent_card(ref)
 
@@ -672,7 +672,7 @@ class Donkey:
         adapter used routes outside it, ``available`` is false: unavailable, not
         empty.
 
-        Docs: https://docs.donkey-kit.dev/telemetry#run-ledger
+        Docs: https://docs.donkey-kit.dev/correlation#run-ledger
         """
         return current_run_ledger(self._unobservable_surface())
 
@@ -734,7 +734,7 @@ class Donkey:
         Provisional (ADR 0020): may change in a minor release with a migration
         note. ADR 0022 also makes its root-exported ``A2AFacade`` provisional.
 
-        Docs: https://docs.donkey-kit.dev/tool-access/a2a
+        Docs: https://docs.donkey-kit.dev/a2a/call
         """
         return self._a2a
 
@@ -858,7 +858,7 @@ class Donkey:
         does not carry, such as your own MCP or A2A client, pass it
         :meth:`correlation_headers`.
 
-        Docs: https://docs.donkey-kit.dev/telemetry
+        Docs: https://docs.donkey-kit.dev/correlation
         """
         from .core.inbound import correlation_id_from_headers
 
@@ -1337,7 +1337,7 @@ class Donkey:
                 blank or repeated, or the callable has no docstring (it is the
                 agent's description).
 
-        Docs: https://docs.donkey-kit.dev/a2a
+        Docs: https://docs.donkey-kit.dev/a2a/serve
         """
         validate_service_id(name, what="name")
         if isinstance(skills, str):
@@ -1404,7 +1404,7 @@ class Donkey:
             TypeError: ``handler`` is not marked with ``@donkey.agent``.
             ImportError: The ``[a2a]`` extra is not installed.
 
-        Docs: https://docs.donkey-kit.dev/a2a
+        Docs: https://docs.donkey-kit.dev/a2a/serve
         """
         from .a2a import serve
 
@@ -1559,7 +1559,7 @@ class Donkey:
         Supported bindings and their version floors are those of
         :func:`donkey_kit.simulator.mcp.simulate_mcp`; ADK and CrewAI are refused.
 
-        Docs: https://docs.donkey-kit.dev/simulator
+        Docs: https://docs.donkey-kit.dev/simulator/mcp
         """
         from .simulator.mcp import simulate_declared
 
@@ -1605,7 +1605,7 @@ class Donkey:
         call raises ``ConfigError``. Set that variable to ``false`` before
         importing ``a2a``, or build with ``allow_a2a_sdk_telemetry=True``.
 
-        Docs: https://docs.donkey-kit.dev/simulator
+        Docs: https://docs.donkey-kit.dev/simulator/a2a
         """
         from .simulator.a2a import simulate_declared
 

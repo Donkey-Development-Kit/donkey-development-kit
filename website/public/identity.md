@@ -65,8 +65,8 @@ each other. Each thread of a threaded server starts with no user bound, so one
 request's user never reaches another request's thread.
 
 The sync client runs in the default `client-id` auth mode only. In the
-[`jwt`](https://docs.donkey-kit.dev/reference/configuration.md#jwt--model-wallet-auth-mode) and
-[`bearer`](https://docs.donkey-kit.dev/reference/configuration.md#bearer-token-auth-mode) modes a blocking
+[`jwt`](https://docs.donkey-kit.dev/reference/configuration/auth.md#jwt--model-wallet-auth-mode) and
+[`bearer`](https://docs.donkey-kit.dev/reference/configuration/auth.md#bearer-token-auth-mode) modes a blocking
 call raises a `ConfigError`, so use `async with` there.
 
 ## Configuring the header
@@ -85,7 +85,7 @@ JWT Validation and on-behalf-of policies read. You can override it:
   pass it in. Pass an access token, not an OIDC ID token: an ID token is issued
   to your app, not to the gateway.
 
-In the `jwt` and `bearer` [auth modes](https://docs.donkey-kit.dev/reference/configuration.md#bearer-token-auth-mode)
+In the `jwt` and `bearer` [auth modes](https://docs.donkey-kit.dev/reference/configuration/auth.md#bearer-token-auth-mode)
 the data-plane token already rides in `Authorization`, so `as_user()` raises a
 `ConfigError` until you set `user_token_header` to the header your gateway
 reads the user token from.

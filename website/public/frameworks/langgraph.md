@@ -183,7 +183,7 @@ A human-in-the-loop `interrupt()` and a typed refusal don't interfere: the
 graph pauses cleanly at the interrupt, and on resume a refusal in a downstream
 model node still surfaces as its typed exception.
 
-A [`@donkey.tool(approval="required")`](https://docs.donkey-kit.dev/hitl.md#in-a-langgraph-graph) tool uses
+A [`@donkey.tool(approval="required")`](https://docs.donkey-kit.dev/hitl/frameworks.md#in-a-langgraph-graph) tool uses
 this pause: inside a graph with a checkpointer it calls `interrupt()` instead of
 raising `ApprovalRequired`. `pending_approvals(result)` from
 `donkey_kit.integrations.langgraph` returns each paused call as an `Approval`,

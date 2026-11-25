@@ -120,6 +120,25 @@ cd website
 npm run generate:llms
 ```
 
+### Moving or splitting a page
+
+Published `donkey-kit` releases link to docs URLs in their docstrings and error
+messages, so a URL that has ever shipped keeps working. The site is a static
+export with no server redirects, so record every move in
+`website/lib/redirects.mjs`:
+
+- **A page moved to a new URL:** add `'/old/path': '/new/path'` to
+  `PAGE_REDIRECTS`. The build writes a stub at the old path that forwards to
+  the new one and keeps the `#fragment`.
+- **A page was split and its URL stayed:** a section that moved to another page
+  needs `MOVED_ANCHORS['/page'] = { 'section-id': '/new/page' }`. Take the ids
+  from the built page before you change it (`rg -o ' id="[^"]+"' out/<page>.html`),
+  not from memory.
+
+Then update every in-site link to the new location, because `npm run
+check:links` fails on a link that still points at a moved route or section. Also
+update the docs URLs in `python/src`, the READMEs and `docs/`.
+
 <Callout type="info">
   **Verification discipline.** DDK never documents or codes against an
   endpoint, header or class name that has not been confirmed against the real

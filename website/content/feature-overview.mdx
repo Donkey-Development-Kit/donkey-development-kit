@@ -1,5 +1,5 @@
 ---
-description: Every DDK capability at a glance — its purpose, its goal, and what it saves developers — grouped by pillar.
+description: Every DDK capability at a glance — its purpose, its goal, and what it saves developers — grouped by surface (models, MCP tools, A2A agents) and then by concern.
 status: live
 ---
 
@@ -23,7 +23,11 @@ Everything below hangs off a single shared transport inside your process — the
 one place where every request enters and every response leaves. Each capability
 attaches there once, so you never wire it call by call.
 
-## Model access
+The first three sections follow the three surfaces an agent reaches through the
+gateway: **models**, **MCP tools** and **A2A agents**. Each has its own gateway
+policies page. The sections after them cut across all three.
+
+## Models
 
 <CardGrid columns={2}>
   <Card title="Native framework objects" href="/frameworks" icon="◆" badge="Live" badgeTone="live">
@@ -57,6 +61,47 @@ Every adapter offers the same governed connection three ways — a factory on a
 shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
 (`from donkey_kit.integrations.langgraph import chat_model`), or
 `connection_kwargs()` when you want to build the native object yourself.
+
+Model calls also carry the model policies: [Model gateway policies](/frameworks/gateway-policies)
+lists each one and what your code sees, and [Routing & fallback](/frameworks/routing)
+covers how the gateway picks the provider.
+
+## MCP tools
+
+<CardGrid columns={2}>
+  <Card title="Governed tool access" href="/tool-access" icon="⬡" badge="Live" badgeTone="live">
+    **Purpose:** discover governed MCP tools from the catalog and bind them as
+    native framework tools. **Advantage:** allow/deny filtering and approval
+    gates, and a `donkey.lock` that turns catalog drift into a typed error —
+    only governed tools reach your agent.
+  </Card>
+</CardGrid>
+
+The MCP policies the gateway enforces on tool calls are on
+[MCP gateway policies](/tool-access/gateway-policies).
+
+## A2A agents
+
+<CardGrid columns={2}>
+  <Card title="A2A agents" href="/a2a" icon="⇄" badge="Offline-verified" badgeTone="neutral">
+    **Purpose:** `donkey.serve()` makes your agent callable by other agents in
+    one line, on the official `a2a-sdk`; `donkey expose` puts it behind a
+    gateway instance with its policies; `donkey dev` puts a simulated gateway in
+    front of it on your laptop. **Advantage:** the agent card is generated from your code, and
+    inbound tasks are governed with the same correlation, spans and
+    refusals.
+  </Card>
+  <Card title="Outbound A2A" href="/a2a/call" badge="Offline-verified" badgeTone="neutral">
+    **Purpose:** `donkey.a2a.send()` and context-managed `stream()` delegate
+    using official SDK requests and responses. **Advantage:** registry-pinned
+    gateway routing, per-request credentials and local stream cleanup.
+    Provisional API; successful gateway send and SSE are not yet live-verified
+    by this implementation. Framework agent-as-tool binding remains planned.
+  </Card>
+</CardGrid>
+
+The A2A policies the gateway enforces are on
+[A2A gateway policies](/a2a/gateway-policies).
 
 ## Governance
 
@@ -110,19 +155,24 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     produce a span, streaming produces exactly one, and prompt content stays
     out by default. Zero-config OTLP export.
   </Card>
-  <Card title="Correlation & cost attribution" href="/telemetry" icon="⌗" badge="Live" badgeTone="live">
-    **Purpose:** `donkey.run(id=…, team=…, project=…)` binds one correlation
-    ID and validated cost tags to every call in a task. **Advantage:** your
-    log line, your span and the gateway's audit record join on the same ID.
+  <Card title="Correlation IDs" href="/correlation" icon="⌗" badge="Live" badgeTone="live">
+    **Purpose:** `donkey.run(id=…)` binds one correlation ID to every call in a
+    task. **Advantage:** your log line, your span and the gateway's audit record
+    join on the same ID.
   </Card>
-  <Card title="Gateway identity per call" href="/telemetry" icon="⌖" badge="Live" badgeTone="live">
+  <Card title="Cost attribution" href="/cost-attribution" icon="¤" badge="Live" badgeTone="live">
+    **Purpose:** `donkey.run(team=…, project=…)` binds validated cost tags to
+    every call in a task. **Advantage:** spend is attributed to the team, project
+    or environment that caused it, in the gateway's own records.
+  </Card>
+  <Card title="Gateway identity per call" href="/reference/last-call" icon="⌖" badge="Live" badgeTone="live">
     **Purpose:** `donkey.last_call` records which gateway served the call,
     how it was routed and what it used. **Advantage:** detect a model
     substitution — or make it raise — instead of discovering it in a bill.
   </Card>
 </CardGrid>
 
-## Developer tooling
+## Build, test & ship
 
 <CardGrid columns={2}>
   <Card title="Local simulator" href="/simulator" icon="▣" badge="Live" badgeTone="live">
@@ -142,30 +192,6 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     credentials from wrong URL from model-not-allowed; one decorator gives a
     function a run scope, span and typed refusals.
   </Card>
-  <Card title="Use with your coding agent" href="/use-with-your-agent" icon="✦" badge="Live" badgeTone="live">
-    **Purpose:** the docs are published as `llms.txt` and per-page markdown.
-    **Advantage:** Cursor, Claude Code and other assistants write correct DDK
-    code from the source.
-  </Card>
-</CardGrid>
-
-## Registry & catalog
-
-<CardGrid columns={2}>
-  <Card title="Governed tool access" href="/tool-access" icon="⬡" badge="Live" badgeTone="live">
-    **Purpose:** discover governed MCP tools from the catalog and bind them as
-    native framework tools. **Advantage:** allow/deny filtering and approval
-    gates, and a `donkey.lock` that turns catalog drift into a typed error —
-    only governed tools reach your agent.
-  </Card>
-  <Card title="A2A agents" href="/a2a" icon="⇄" badge="Offline-verified" badgeTone="neutral">
-    **Purpose:** `donkey.serve()` makes your agent callable by other agents in
-    one line, on the official `a2a-sdk`; `donkey expose` puts it behind a
-    gateway instance with its policies; `donkey dev` puts a simulated gateway in
-    front of it on your laptop. **Advantage:** the agent card is generated from your code, and
-    inbound tasks are governed with the same correlation, spans and
-    refusals.
-  </Card>
   <Card title="Scan & publish" href="/publishing" icon="⇧" badge="Live" badgeTone="live">
     **Purpose:** `donkey scan` derives a model of your agents, tools and
     MCP servers from code; `donkey scaffold` adds the `.donkey-kit.toml`
@@ -174,14 +200,33 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     `donkey verify` checks the live servers and agents against what was
     published. **Advantage:** the catalog stays in sync from CI, not by hand.
   </Card>
-<Card title="Outbound A2A" href="/tool-access/a2a" badge="Offline-verified" badgeTone="neutral">
-    **Purpose:** `donkey.a2a.send()` and context-managed `stream()` delegate
-    using official SDK requests and responses. **Advantage:** registry-pinned
-    gateway routing, per-request credentials and local stream cleanup.
-    Provisional API; successful gateway send and SSE are not yet live-verified
-    by this implementation. Framework agent-as-tool binding remains planned.
-</Card>
+  <Card title="Use with your coding agent" href="/use-with-your-agent" icon="✦" badge="Live" badgeTone="live">
+    **Purpose:** the docs are published as `llms.txt` and per-page markdown.
+    **Advantage:** Cursor, Claude Code and other assistants write correct DDK
+    code from the source.
+  </Card>
 </CardGrid>
+
+## Gateway policies at a glance
+
+Each surface has its own gateway policies page. This matrix lines up the policy
+families the gateway enforces on each one. A link goes to the section that
+documents that policy on the surface's page; **—** means that surface's policies
+page has no section for the family. The status badges live on the linked pages,
+so this table makes no status claims of its own.
+
+| Policy family | Models | MCP tools | A2A agents |
+|---|---|---|---|
+| Who may call | [Client ID enforcement](/frameworks/gateway-policies#client-id-enforcement) | [Global access](/tool-access/gateway-policies#mcp-global-access), [attribute-based access](/tool-access/gateway-policies#mcp-attribute-based-access-control) | — |
+| Token and request limits | [Token rate limiting](/frameworks/gateway-policies#token-rate-limiting), [request rate limiting](/frameworks/gateway-policies#request-rate-limiting) | — | [Token rate limit](/a2a/gateway-policies#captured-outcomes) |
+| Personal data | [PII detection](/frameworks/gateway-policies#pii-detection) | [MCP PII detector](/tool-access/gateway-policies#mcp-pii-detector) | [PII detector](/a2a/gateway-policies#captured-outcomes) |
+| Prompt injection and content safety | [Injection protection](/frameworks/gateway-policies#injection-protection-and-regex-prompt-guard), [content safety](/frameworks/gateway-policies#content-safety-and-guardrails) | — | [Azure content guardrails](/a2a/gateway-policies#captured-outcomes) |
+| Schema and tool poisoning | — | [Schema validation and tool poisoning](/tool-access/gateway-policies#mcp-schema-validation-and-tool-poisoning) | [Schema validation](/a2a/gateway-policies#captured-outcomes) |
+| Approval and step-up | [OAuth2 OBO and CIBA](/frameworks/gateway-policies#oauth2-obo-step-up-ciba) | [Approval on `invoke_tool`](/tool-access/gateway-policies#mcp-tools-progressive-disclosure) | [Challenges and replay](/a2a/gateway-policies#challenges-and-replay) |
+| Kill switch | [Agent kill switch](/frameworks/gateway-policies#agent-kill-switch) | — | — |
+| Routing and caching | [Model-based routing](/frameworks/gateway-policies#model-based-routing-and-fallback), [semantic caching](/frameworks/gateway-policies#semantic-caching) | — | — |
+| Tool discovery and payload size | — | [Progressive disclosure](/tool-access/gateway-policies#mcp-tools-progressive-disclosure), [payload optimization](/tool-access/gateway-policies#mcp-payload-optimization) | — |
+| Protocol version | — | — | [Protocol versions](/a2a/gateway-policies#protocol-versions) |
 
 ## What DDK leaves to the platform
 

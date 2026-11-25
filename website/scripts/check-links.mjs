@@ -13,6 +13,8 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { dirname, join, posix, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { MOVED_ANCHORS, PAGE_REDIRECTS, idFromHash, normalisePath } from '../lib/redirects.mjs'
+
 const OUT = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'out'))
 const BASE = (process.env.DOCS_BASE_PATH ?? '').replace(/\/+$/, '')
 
@@ -78,8 +80,12 @@ const ERROR_PAGES = new Set(['/404.html', '/_not-found.html'])
 
 const broken = []
 let checked = 0
+const STUB_MARK = 'name="ddk-redirect-stub"'
 for (const page of pages) {
   const html = await readFile(page, 'utf8')
+  // Redirect stubs (scripts/write-redirects.mjs) are for legacy traffic; the
+  // rule that content must not link to a moved route does not apply to them.
+  const isStub = html.includes(STUB_MARK)
   const pageUrl = '/' + relative(OUT, page).split(/[\\/]/).join('/')
   const pageDir = posix.dirname(pageUrl)
   for (const m of html.matchAll(ATTR)) {
@@ -99,6 +105,18 @@ for (const page of pages) {
         broken.push(`${pageUrl}: ${raw} (missing the ${BASE} base path)`)
         continue
       }
+      if (!isStub) {
+        const route = normalisePath(abs)
+        if (PAGE_REDIRECTS[route]) {
+          broken.push(`${pageUrl}: ${raw} (moved page: link to ${PAGE_REDIRECTS[route]} instead)`)
+          continue
+        }
+        const movedTo = hash ? MOVED_ANCHORS[route]?.[idFromHash(hash)] : undefined
+        if (movedTo) {
+          broken.push(`${pageUrl}: ${raw} (section moved: link to ${movedTo}#${hash} instead)`)
+          continue
+        }
+      }
       target = await resolveFile(abs)
       if (!target) {
         broken.push(`${pageUrl}: ${raw} (no such file in out/)`)
@@ -108,6 +126,23 @@ for (const page of pages) {
     if (hash && !(ERROR_PAGES.has(pageUrl) && hash === 'nextra-skip-nav') && target.endsWith('.html') && decode(hash) !== 'top') {
       if (!(await idsOf(target)).has(decode(hash))) broken.push(`${pageUrl}: ${raw} (no #${hash} anchor in target)`)
     }
+  }
+}
+
+// The redirect registry (lib/redirects.mjs) must agree with the export: every
+// page redirect has a stub and a real target; every moved anchor has a real
+// target page that carries the id.
+for (const [from, to] of Object.entries(PAGE_REDIRECTS)) {
+  if (!(await resolveFile(to))) broken.push(`redirect ${from} -> ${to} (target is not exported)`)
+  const stub = join(OUT, `${from.replace(/^\/+/, '')}.html`)
+  if (!(await isFile(stub))) broken.push(`redirect ${from} (no stub written at ${relative(OUT, stub)})`)
+}
+for (const [from, anchors] of Object.entries(MOVED_ANCHORS)) {
+  if (!(await resolveFile(from))) broken.push(`moved anchors ${from} (source page is not exported)`)
+  for (const [id, to] of Object.entries(anchors)) {
+    const file = await resolveFile(to)
+    if (!file) broken.push(`moved anchor ${from}#${id} -> ${to} (target is not exported)`)
+    else if (!(await idsOf(file)).has(id)) broken.push(`moved anchor ${from}#${id} -> ${to} (no #${id} in target)`)
   }
 }
 

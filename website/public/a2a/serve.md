@@ -1,12 +1,6 @@
----
-description: Make your agent callable by other agents over A2A — serve it in one line, expose it through the gateway, and develop against a gateway on your laptop.
-status: offline-verified
----
+# Serve & expose an A2A agent
 
-import { Callout, Steps } from 'nextra/components'
-import { Badge } from '../components'
-
-# A2A agents
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
 Three steps take an agent from "runs on my laptop" to "callable by other agents,
 through the gateway": **serve** it, **expose** it, and **develop** against a
@@ -46,8 +40,6 @@ your agent.
 
 ## `donkey.serve()` — the listener, in one line
 
-<Steps>
-
 ### Install the extra
 
 ```bash
@@ -65,12 +57,10 @@ from donkey_kit import A2AResult, A2ATask, Donkey
 
 donkey = Donkey()
 
-
 @donkey.agent(name="support-triage", skills=["triage", "draft-reply"])
 async def handle(task: A2ATask) -> A2AResult:
     """Triages a support ticket and drafts a reply."""
     return A2AResult(text=f"triaged: {task.input}", data={"priority": "high"})
-
 
 donkey.serve(handle)  # A2A server on 127.0.0.1:8000, card generated
 ```
@@ -88,8 +78,6 @@ curl -s http://127.0.0.1:8000/ \
                               "parts": [{"text": "printer on fire"}]}}}'
 ```
 
-</Steps>
-
 ### What the card says
 
 The card is built from your `@donkey.agent` marker and nothing else, so there is
@@ -103,7 +91,7 @@ no second description of your agent to keep in sync:
 | `version` | `donkey.serve(version=...)` or `donkey dev --agent-version`, `"0.0.0"` by default |
 | `supportedInterfaces[0].url` | `donkey.serve(url=...)`, or `http://{host}:{port}/` |
 
-[`donkey scan`](/cli#donkey-scan) reads the same marker, which is why the two
+[`donkey scan`](https://docs.donkey-kit.dev/cli/ship.md#donkey-scan) reads the same marker, which is why the two
 can't drift. A handler without `@donkey.agent` is rejected with a `TypeError`.
 
 ### What the handler gets and returns
@@ -195,12 +183,10 @@ defaults to `"1.0"`; an unsupported version or scenario raises `ScenarioError`.
 This selection is local behavior, not live gateway verification or a change
 to `donkey publish` / `donkey expose` registration.
 
-<Callout type="info">
   **What "Offline-verified" means here.** `donkey.serve()` has been run end to
   end on a real port: a plain `curl` fetched the generated card and got a
   completed task back. It has not yet been run behind a governed gateway, which
   is what `donkey expose` adds.
-</Callout>
 
 ## Why the agent still runs a listener
 
@@ -213,11 +199,9 @@ limits, public exposure, and registration. Those are the gateway's job. Omni
 Gateway is an Envoy-based data plane whose policies compile to WASM; it runs as
 a separate process in front of your agent, not as a library inside it.
 
-<Callout type="warning">
   **Enforcement stays outside the agent's process.** If the enforcement point
   lived inside the agent, the agent's own code could bypass it. The gateway's
   value depends on being outside the thing it governs.
-</Callout>
 
 ## Governed inbound
 
@@ -256,7 +240,7 @@ its message. With `telemetry` off, no span is opened, but the run is still bound
 
 **Typed refusals, as a well-formed A2A failure.** When a downstream call is
 refused, the framework's wrapped error is re-raised as its typed `DonkeyError`
-first (the [typed-refusal bridge](/errors)). The task then fails with a status
+first (the [typed-refusal bridge](https://docs.donkey-kit.dev/errors.md)). The task then fails with a status
 message of two parts: a text part, and an `error` data part the caller can
 branch on:
 
@@ -278,7 +262,7 @@ branch on:
 ```
 
 `refusal` is `true` for a governance refusal (a `PolicyViolation`), and `false`
-for any other failure. Any other failure reads `the agent failed: <ExceptionType>`
+for any other failure. Any other failure reads `the agent failed: `
 and carries the same `error` part. `call_id` appears when the failure was a
 governed call's. The refusal's `remediation`, gateway response body, exception
 message and traceback are not emitted in the failed parts or the executor's
@@ -288,13 +272,11 @@ log: they can name your configuration or repeat the request's content.
 `telemetry=`, `correlation_header=` and `refusals=donkey_kit.typed_refusals()` to
 match `donkey.serve()`, which fills them from the client's configuration.
 
-<Callout type="info">
   **Not inbound enforcement.** Nothing here blocks an inbound task. Inbound
   policy (auth, rate limits, PII screening of the caller's message) is the
   gateway's job, in front of the agent.
-</Callout>
 
-## `donkey expose` — the ingress, registered from code <Badge tone="live" ledger="§12.5 `POST /apimanager/xapi/v1/…/apis/{apiId}/policies/outbound-policies`; §12.5 `POST /proxies/xapi/v1/…/apis/{apiId}/deployments`">Live</Badge>
+## `donkey expose` — the ingress, registered from code Live
 
 ```
 $ donkey expose --service support-triage
@@ -363,14 +345,14 @@ It stays narrow, so it never turns into a provisioning tool:
   write. Each step reports its own result.
 - `--json` prints the report as JSON, with `expose_format: 1`. It does so
   even when the declaration has an issue, and then lists the issues and no
-  steps. See [JSON output](/cli#json-output).
+  steps. See [JSON output](https://docs.donkey-kit.dev/cli.md#json-output).
 - Gateways, environments, LLM proxies, organization-wide policy and
   connected-app scopes belong to your platform team and its
   infrastructure-as-code. If one is missing, `donkey expose` tells you which
   one, and where to create it, rather than creating it.
 
-See [`donkey expose`](/cli#donkey-expose) for the step statuses and exit
-codes, and [Connected-app scopes](/reference/scopes#for-donkey-expose) for the
+See [`donkey expose`](https://docs.donkey-kit.dev/cli/ship.md#donkey-expose) for the step statuses and exit
+codes, and [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose) for the
 connected app it runs with.
 
 ## `donkey dev` — a gateway in front of your laptop
@@ -404,7 +386,7 @@ donkey dev my_agent:handle --protocol-version 0.3.0 --agent-version 2.4.0 \
   --scenario request_limit:limit=3,window=60s
 ```
 
-The [scenario/version/method matrix](/simulator#a2a-ingress-replay) lists which
+The [scenario/version/method matrix](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay) lists which
 captures can be replayed. v0.3 supports PII and rate refusals on `message/send`
 only; `injection` with `0.3.0` fails at startup.
 
@@ -412,7 +394,7 @@ only; `injection` with `0.3.0` fails at startup.
   `SendStreamingMessage` is a call; for `0.3.0`, `message/send` or
   `message/stream`. The supported `--scenario` rules run on text parts, and a rule that
   fires answers with a rejection before the agent sees the call. The rules are
-  the [simulator's](/simulator#scenario-scripting) `injection`, `pii_block` and
+  the [simulator's](https://docs.donkey-kit.dev/simulator.md#scenario-scripting) `injection`, `pii_block` and
   `request_limit`. Here `request_limit` counts calls only to trigger replay of
   the captured token-rate refusal; it does not count tokens or add headers to
   passing calls. `budget` is refused because it counts model tokens, and `ciba`
@@ -448,7 +430,6 @@ only; `injection` with `0.3.0` fails at startup.
   agent doesn't authenticate callers, so anyone who can reach the port can call
   the agent.
 
-<Callout type="warning">
   **Replay is not policy evaluation or protocol emulation.** You choose when a
   capture is returned; the matching substring is not an Azure policy verdict.
   Response bodies retain the captured ID (v1 string `"1393"`, v0.3 PII numeric
@@ -464,7 +445,6 @@ only; `injection` with `0.3.0` fails at startup.
   only `x-quality-status: pending`. That observation does not establish evaluator
   failure semantics, an internal cause, v1 evaluation or successful SSE.
   The ingress simulates neither outbound A2A calls nor authorization-code flows.
-</Callout>
 
 The stock v1 `a2a-sdk` 1.2.2 JSON-RPC transport generates UUID request IDs. In the
 tested send and stream calls, it raises `A2AClientError` caused by
@@ -477,12 +457,12 @@ exception types.
 `donkey dev` doesn't run a real Omni Gateway locally. A self-managed gateway in
 Local Mode doesn't support the A2A policies, and it has to register with an
 Anypoint control plane. See
-[Local Mode is not supported](/reference/unsupported-boundary#local-mode-is-not-supported).
+[Local Mode is not supported](https://docs.donkey-kit.dev/reference/unsupported-boundary.md#local-mode-is-not-supported).
 To test against real policies, use a hosted gateway.
 
 ## Related
 
-- [A2A agent tools](/tool-access/a2a) — call *other* A2A agents as tools.
-- [Scan & publish](/publishing) — register your agent card with Agent Registry.
-- [Local simulator](/simulator) — the fixture-replay server behind simulated ingress.
-- [API reference](/reference/api#donkeyserve) — every `donkey.serve()` argument.
+- [Call other A2A agents](https://docs.donkey-kit.dev/a2a/call.md) — call *other* governed A2A agents from your agent.
+- [Scan & publish](https://docs.donkey-kit.dev/publishing.md) — register your agent card with Agent Registry.
+- [Local simulator](https://docs.donkey-kit.dev/simulator.md) — the fixture-replay server behind simulated ingress.
+- [API reference](https://docs.donkey-kit.dev/reference/api.md#donkeyserve) — every `donkey.serve()` argument.

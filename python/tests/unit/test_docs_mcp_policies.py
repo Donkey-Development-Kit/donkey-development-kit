@@ -19,7 +19,7 @@ def test_mcp_policy_page_is_navigable_from_affected_surfaces() -> None:
     page = _CONTENT / "tool-access" / "gateway-policies.mdx"
     assert page.is_file()
     nav = (_CONTENT / "tool-access" / "_meta.js").read_text(encoding="utf-8")
-    assert "'gateway-policies': 'MCP gateway policies'" in nav
+    assert "'gateway-policies': 'Gateway policies'" in nav
     for relative in (
         "tool-access/discovery.mdx",
         "tool-access/binding.mdx",

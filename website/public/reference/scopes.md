@@ -5,7 +5,7 @@ Status: Live. Shipped, and verified against a real governed gateway.
 Which scopes does the connected app behind `ANYPOINT_CLIENT_ID` /
 `ANYPOINT_CLIENT_SECRET` need? This page lists them per operation. Model calls
 need none of them: they use the LLM proxy's own credentials (see
-[Anypoint control plane](https://docs.donkey-kit.dev/reference/configuration.md#anypoint-control-plane)).
+[Anypoint control plane](https://docs.donkey-kit.dev/reference/configuration/control-plane.md#anypoint-control-plane)).
 
 Create the app as **App acts on its own behalf (client credentials)** in
 Access Management. No operation needs an app that acts on behalf of a user, or

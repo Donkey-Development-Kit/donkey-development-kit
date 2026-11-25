@@ -13,9 +13,9 @@ from donkey_kit import PIIDetected
 from donkey_kit.simulator.fixtures import fixture_bytes
 
 _CONTENT = Path(__file__).resolve().parents[3] / "website" / "content"
-_PAGE = _CONTENT / "simulator.mdx"
+_PAGE = _CONTENT / "simulator" / "mcp.mdx"
 _HEADING = "## Packaged MCP captures"
-_LINK = "/simulator#packaged-mcp-captures"
+_LINK = "/simulator/mcp#packaged-mcp-captures"
 
 pytestmark = pytest.mark.skipif(
     not _CONTENT.is_dir(), reason="the repository docs are not included in the sdist"

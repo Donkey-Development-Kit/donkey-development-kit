@@ -132,7 +132,7 @@ class Publication:
     a laptop, CI publishes the exported spec, and :meth:`verify` is the read-only
     runtime drift check. See the module docstring.
 
-    Docs: https://docs.donkey-kit.dev/publishing
+    Docs: https://docs.donkey-kit.dev/publishing/publication
     """
 
     asset_type: PublicationAssetType

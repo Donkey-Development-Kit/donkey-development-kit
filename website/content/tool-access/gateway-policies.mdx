@@ -13,6 +13,15 @@ instance in API Manager; DDK consumes the gateway-visible contract rather than
 reimplementing the policies in your agent.
 
 <Callout type="info">
+  **Three things are called "policy" in these docs.** *Gateway policies* are
+  what the gateway enforces on each surface: see the [Models](/frameworks/gateway-policies), [MCP tools](/tool-access/gateway-policies)
+  and [A2A agents](/a2a/gateway-policies) pages. *[Custom policies](/custom-policies)*
+  teach `classify()` the refusal shape your own gateway policy returns. The
+  *[policy handshake](/policies)* is a planned, advisory read of the policies in
+  force; the gateway always wins.
+</Callout>
+
+<Callout type="info">
   **Partial evidence, not an end-to-end policy certification.** Gateway captures
   establish the wire behavior described below. Typed PII surfacing across
   frameworks is checked by local capture replay, not live framework calls to
@@ -21,7 +30,7 @@ reimplementing the policies in your agent.
 </Callout>
 
 To exercise response handling offline, use the
-[packaged MCP captures](/simulator#packaged-mcp-captures) with raw `httpx.MockTransport`.
+[packaged MCP captures](/simulator/mcp#packaged-mcp-captures) with raw `httpx.MockTransport`.
 This is separate from model-route simulation and does not establish a live
 framework round-trip.
 

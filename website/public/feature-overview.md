@@ -11,7 +11,11 @@ Everything below hangs off a single shared transport inside your process — the
 one place where every request enters and every response leaves. Each capability
 attaches there once, so you never wire it call by call.
 
-## Model access
+The first three sections follow the three surfaces an agent reaches through the
+gateway: **models**, **MCP tools** and **A2A agents**. Each has its own gateway
+policies page. The sections after them cut across all three.
+
+## Models
 
   
     **Purpose:** point any of eight agent frameworks at your governed Omni
@@ -43,6 +47,43 @@ Every adapter offers the same governed connection three ways — a factory on a
 shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
 (`from donkey_kit.integrations.langgraph import chat_model`), or
 `connection_kwargs()` when you want to build the native object yourself.
+
+Model calls also carry the model policies: [Model gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md)
+lists each one and what your code sees, and [Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md)
+covers how the gateway picks the provider.
+
+## MCP tools
+
+  
+    **Purpose:** discover governed MCP tools from the catalog and bind them as
+    native framework tools. **Advantage:** allow/deny filtering and approval
+    gates, and a `donkey.lock` that turns catalog drift into a typed error —
+    only governed tools reach your agent.
+  
+
+The MCP policies the gateway enforces on tool calls are on
+[MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md).
+
+## A2A agents
+
+  
+    **Purpose:** `donkey.serve()` makes your agent callable by other agents in
+    one line, on the official `a2a-sdk`; `donkey expose` puts it behind a
+    gateway instance with its policies; `donkey dev` puts a simulated gateway in
+    front of it on your laptop. **Advantage:** the agent card is generated from your code, and
+    inbound tasks are governed with the same correlation, spans and
+    refusals.
+  
+  
+    **Purpose:** `donkey.a2a.send()` and context-managed `stream()` delegate
+    using official SDK requests and responses. **Advantage:** registry-pinned
+    gateway routing, per-request credentials and local stream cleanup.
+    Provisional API; successful gateway send and SSE are not yet live-verified
+    by this implementation. Framework agent-as-tool binding remains planned.
+  
+
+The A2A policies the gateway enforces are on
+[A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md).
 
 ## Governance
 
@@ -94,9 +135,14 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     out by default. Zero-config OTLP export.
   
   
-    **Purpose:** `donkey.run(id=…, team=…, project=…)` binds one correlation
-    ID and validated cost tags to every call in a task. **Advantage:** your
-    log line, your span and the gateway's audit record join on the same ID.
+    **Purpose:** `donkey.run(id=…)` binds one correlation ID to every call in a
+    task. **Advantage:** your log line, your span and the gateway's audit record
+    join on the same ID.
+  
+  
+    **Purpose:** `donkey.run(team=…, project=…)` binds validated cost tags to
+    every call in a task. **Advantage:** spend is attributed to the team, project
+    or environment that caused it, in the gateway's own records.
   
   
     **Purpose:** `donkey.last_call` records which gateway served the call,
@@ -104,7 +150,7 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     substitution — or make it raise — instead of discovering it in a bill.
   
 
-## Developer tooling
+## Build, test & ship
 
   
     **Purpose:** `donkey mock` replays real gateway responses and refusal
@@ -124,28 +170,6 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     function a run scope, span and typed refusals.
   
   
-    **Purpose:** the docs are published as `llms.txt` and per-page markdown.
-    **Advantage:** Cursor, Claude Code and other assistants write correct DDK
-    code from the source.
-  
-
-## Registry & catalog
-
-  
-    **Purpose:** discover governed MCP tools from the catalog and bind them as
-    native framework tools. **Advantage:** allow/deny filtering and approval
-    gates, and a `donkey.lock` that turns catalog drift into a typed error —
-    only governed tools reach your agent.
-  
-  
-    **Purpose:** `donkey.serve()` makes your agent callable by other agents in
-    one line, on the official `a2a-sdk`; `donkey expose` puts it behind a
-    gateway instance with its policies; `donkey dev` puts a simulated gateway in
-    front of it on your laptop. **Advantage:** the agent card is generated from your code, and
-    inbound tasks are governed with the same correlation, spans and
-    refusals.
-  
-  
     **Purpose:** `donkey scan` derives a model of your agents, tools and
     MCP servers from code; `donkey scaffold` adds the `.donkey-kit.toml`
     declarations they still need and says what each workflow is missing;
@@ -153,12 +177,32 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
     `donkey verify` checks the live servers and agents against what was
     published. **Advantage:** the catalog stays in sync from CI, not by hand.
   
+  
+    **Purpose:** the docs are published as `llms.txt` and per-page markdown.
+    **Advantage:** Cursor, Claude Code and other assistants write correct DDK
+    code from the source.
+  
 
-    **Purpose:** `donkey.a2a.send()` and context-managed `stream()` delegate
-    using official SDK requests and responses. **Advantage:** registry-pinned
-    gateway routing, per-request credentials and local stream cleanup.
-    Provisional API; successful gateway send and SSE are not yet live-verified
-    by this implementation. Framework agent-as-tool binding remains planned.
+## Gateway policies at a glance
+
+Each surface has its own gateway policies page. This matrix lines up the policy
+families the gateway enforces on each one. A link goes to the section that
+documents that policy on the surface's page; **—** means that surface's policies
+page has no section for the family. The status badges live on the linked pages,
+so this table makes no status claims of its own.
+
+| Policy family | Models | MCP tools | A2A agents |
+|---|---|---|---|
+| Who may call | [Client ID enforcement](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#client-id-enforcement) | [Global access](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-global-access), [attribute-based access](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-attribute-based-access-control) | — |
+| Token and request limits | [Token rate limiting](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#token-rate-limiting), [request rate limiting](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#request-rate-limiting) | — | [Token rate limit](https://docs.donkey-kit.dev/a2a/gateway-policies.md#captured-outcomes) |
+| Personal data | [PII detection](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#pii-detection) | [MCP PII detector](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-pii-detector) | [PII detector](https://docs.donkey-kit.dev/a2a/gateway-policies.md#captured-outcomes) |
+| Prompt injection and content safety | [Injection protection](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#injection-protection-and-regex-prompt-guard), [content safety](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#content-safety-and-guardrails) | — | [Azure content guardrails](https://docs.donkey-kit.dev/a2a/gateway-policies.md#captured-outcomes) |
+| Schema and tool poisoning | — | [Schema validation and tool poisoning](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-schema-validation-and-tool-poisoning) | [Schema validation](https://docs.donkey-kit.dev/a2a/gateway-policies.md#captured-outcomes) |
+| Approval and step-up | [OAuth2 OBO and CIBA](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#oauth2-obo-step-up-ciba) | [Approval on `invoke_tool`](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-tools-progressive-disclosure) | [Challenges and replay](https://docs.donkey-kit.dev/a2a/gateway-policies.md#challenges-and-replay) |
+| Kill switch | [Agent kill switch](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#agent-kill-switch) | — | — |
+| Routing and caching | [Model-based routing](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#model-based-routing-and-fallback), [semantic caching](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#semantic-caching) | — | — |
+| Tool discovery and payload size | — | [Progressive disclosure](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-tools-progressive-disclosure), [payload optimization](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-payload-optimization) | — |
+| Protocol version | — | — | [Protocol versions](https://docs.donkey-kit.dev/a2a/gateway-policies.md#protocol-versions) |
 
 ## What DDK leaves to the platform
 

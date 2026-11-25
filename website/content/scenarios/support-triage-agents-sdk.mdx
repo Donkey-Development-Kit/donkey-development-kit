@@ -29,7 +29,7 @@ the LangGraph demo, so you can compare the two frameworks line for line.
   the refusal surfaces out of `Runner.run` as a typed [`PIIDetected`](/errors),
   not the OpenAI client's generic `PermissionDeniedError`.
 - **Correlation reaches the agent for free.** Each ticket runs inside a
-  [`donkey.run(id=...)`](/telemetry) block. The agent's dynamic `instructions`
+  [`donkey.run(id=...)`](/correlation) block. The agent's dynamic `instructions`
   log the run id without it being passed through the run context, because
   `Runner.run` resolves instructions and runs `function_tool`s inside the
   caller's context. Every model request carries the id on the wire too.
@@ -123,7 +123,7 @@ newest Agents SDK release.
   trip included: an `@donkey.tool(approval="required")` wrapped with
   `openai_agents.function_tool` pauses `Runner.run` on the SDK's own
   `needs_approval` and resumes from the `RunState` (#213). See
-  [Human approval](/hitl#in-an-openai-agents-sdk-run).
+  [Human approval](/hitl/frameworks#in-an-openai-agents-sdk-run).
 </Callout>
 
 <Callout type="info">

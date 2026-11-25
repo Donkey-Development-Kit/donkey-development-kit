@@ -11,10 +11,10 @@ Targets:
 * ``python/README.md`` — the PyPI description, written whole from the
   repository ``README.md`` with every relative link made absolute (PyPI does
   not resolve them). Edit the root ``README.md``, never this copy.
-* ``website/content/reference/configuration.mdx`` — the ``settings-index``
+* ``website/content/reference/configuration/index.mdx`` — the ``settings-index``
   region: every ``DonkeyConfig`` field with its env var, config-file key and
   default, from the field table in ``core/config.py``.
-* ``website/content/cli.mdx`` — the ``cli-reference`` region: every visible
+* ``website/content/cli/index.mdx`` — the ``cli-reference`` region: every visible
   ``donkey`` command and option, from the typer app. Needs the ``[cli]`` extra.
 * ``website/content/frameworks/index.mdx`` — the ``adapter-capabilities``
   region: each adapter's extra and each factory's ``capabilities()``, from the
@@ -276,7 +276,8 @@ def settings_index() -> str:
     ]
     intro = (
         "Every `DonkeyConfig` field except `cost` (set per dimension, see\n"
-        "[Cost-attribution tags](#cost-attribution-tags)), in the order the SDK reads\n"
+        "[Cost-attribution tags](/reference/configuration/attribution#cost-attribution-tags)), "
+        "in the order the SDK reads\n"
         f"them. The config-file key goes in the `[donkey]` table of `{config.TOML_NAME}`.\n"
         "This table is generated from the field table in `core/config.py`.\n"
     )
@@ -1566,6 +1567,11 @@ _README = REPO / "README.md"
 _ARCHITECTURE = REPO / "ARCHITECTURE.md"
 
 
+#: Pages under ``frameworks/`` that document no adapter, so take no status from §8.
+#: ``index`` and the compatibility page have targets of their own.
+_NON_ADAPTER_PAGES = frozenset({"index", COMPATIBILITY_PAGE.stem, "gateway-policies", "routing"})
+
+
 def _framework_page_targets() -> tuple[Target, ...]:
     """One target per framework page; a page with no roster row fails its render."""
     if not FRAMEWORK_PAGES.is_dir():
@@ -1578,7 +1584,7 @@ def _framework_page_targets() -> tuple[Target, ...]:
             functools.partial(framework_page, path),
         )
         for path in sorted(FRAMEWORK_PAGES.glob("*.mdx"))
-        if path.stem not in ("index", COMPATIBILITY_PAGE.stem)
+        if path.stem not in _NON_ADAPTER_PAGES
     )
 
 
@@ -1605,13 +1611,13 @@ TARGETS: tuple[Target, ...] = (
     Target("pypi-readme", REPO / "python" / "README.md", None, _pypi_readme),
     Target(
         "settings-index",
-        REPO / "website" / "content" / "reference" / "configuration.mdx",
+        REPO / "website" / "content" / "reference" / "configuration" / "index.mdx",
         "settings-index",
         settings_index,
     ),
     Target(
         "cli-reference",
-        REPO / "website" / "content" / "cli.mdx",
+        REPO / "website" / "content" / "cli" / "index.mdx",
         "cli-reference",
         cli_reference,
         needs=("typer",),

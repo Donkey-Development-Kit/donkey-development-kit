@@ -57,7 +57,7 @@ class AuthProvider(Protocol):
     the data plane in the ``jwt`` and ``bearer`` modes. The two credentials are
     separate and never conflated.
 
-    Docs: https://docs.donkey-kit.dev/reference/configuration#auth-providers
+    Docs: https://docs.donkey-kit.dev/reference/configuration/auth#auth-providers
     """
 
     async def token(self) -> str:

@@ -139,7 +139,7 @@ gateway does not allow is refused too.
 
 A handled call that ends in a success returns that success, from the new
 request. Every other outcome reaches your code as the refusal it was, typed
-inside [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids), `typed_refusals()` or
+inside [`donkey.run()`](https://docs.donkey-kit.dev/correlation.md), `typed_refusals()` or
 `@donkey.governed` exactly as in [Typed refusals](https://docs.donkey-kit.dev/errors.md). So keep catching
 the refusals you care about: an escalated `PIIDetected` still raises, after the
 handler has queued it.

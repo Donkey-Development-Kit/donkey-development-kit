@@ -122,7 +122,7 @@ donkey.current_run: RunLedger | None
 
 A snapshot of the bound `donkey.run()` block's ledger, or `None` outside a run.
 
-Guide: [`/telemetry#run-ledger`](/telemetry#run-ledger)
+Guide: [`/correlation#run-ledger`](/correlation#run-ledger)
 
 ### `donkey.openai()`
 
@@ -158,7 +158,7 @@ donkey.a2a: A2AFacade
 
 Governed outbound A2A sends and context-managed streams.
 
-Guide: [`/tool-access/a2a`](/tool-access/a2a)
+Guide: [`/a2a/call`](/a2a/call)
 
 ### `donkey.tools`
 
@@ -206,7 +206,7 @@ donkey.run_from_headers(
 
 Join the caller's run: `run`, with the id read from an inbound request's headers.
 
-Guide: [`/telemetry`](/telemetry)
+Guide: [`/correlation`](/correlation)
 
 ### `donkey.correlation_headers()`
 
@@ -305,7 +305,7 @@ donkey.agent(*, name: str, skills: Sequence[str] = ()) -> Callable[[Callable], C
 
 Mark a callable as an agent entry point, recording its name, skills and docstring in an introspectable registry.
 
-Guide: [`/a2a`](/a2a)
+Guide: [`/a2a/serve`](/a2a/serve)
 
 ### `donkey.serve()`
 
@@ -322,7 +322,7 @@ donkey.serve(
 
 Serve a `@donkey.agent` handler over A2A on `host:port`, blocking until the server stops.
 
-Guide: [`/a2a`](/a2a)
+Guide: [`/a2a/serve`](/a2a/serve)
 
 ### `donkey.approvals`
 
@@ -380,7 +380,7 @@ donkey.simulate_mcp(
 
 Inject a captured gateway refusal into MCP tool calls, no gateway.
 
-Guide: [`/simulator`](/simulator)
+Guide: [`/simulator/mcp`](/simulator/mcp)
 
 ### `donkey.simulate_a2a()`
 
@@ -397,7 +397,7 @@ donkey.simulate_a2a(
 
 Inject a captured gateway refusal into outbound A2A calls, no gateway.
 
-Guide: [`/simulator`](/simulator)
+Guide: [`/simulator/a2a`](/simulator/a2a)
 
 ### `donkey.flush_telemetry()`
 

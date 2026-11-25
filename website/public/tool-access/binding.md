@@ -4,7 +4,7 @@ Status: Live. Shipped, and verified against a real governed gateway.
 
 For offline failure tests of newly bound LangGraph, LlamaIndex, Anthropic,
 Microsoft Agent Framework, OpenAI Agents SDK and Strands
-tools, see [MCP tool fault injection](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection).
+tools, see [MCP tool fault injection](https://docs.donkey-kit.dev/simulator/mcp.md#mcp-tool-fault-injection).
 It requires an explicit offline backend and does not intercept existing bindings
 or bypass governance checks. Agent Framework simulation requires stable
 `agent-framework-core>=1.24.0` and `mcp>=2.3.0`; OpenAI Agents SDK simulation
@@ -103,7 +103,7 @@ tools = await donkey.tools.discover(tags=["hr"], auth=BearerAuth(my_provider))
   once, then raises `AuthError`. A gateway step-up answer is the exception: it
   raises `GatewayApprovalPending` or `GatewayApprovalDenied` at once and keeps
   the credential. To wait for the user instead, see
-  [`wait_for_gateway_approval()`](https://docs.donkey-kit.dev/hitl.md#waiting-while-listing-mcp-tools).
+  [`wait_for_gateway_approval()`](https://docs.donkey-kit.dev/hitl/gateway-step-up.md#waiting-while-listing-mcp-tools).
 - Discovery reads the server URLs from the control plane at `base_url`, so the
   credential follows `base_url`'s rule. If `base_url` comes from the working
   directory's `.donkey-kit.toml` or `.donkey-kit.local.toml` and isn't a
@@ -275,7 +275,7 @@ WARNING donkey_kit.tools.session: langgraph() binds 34 tool descriptors, about 9
 ```
 
 The defaults follow the model vendors' published guidance on tool count and
-descriptor size; see [Tool-set size warnings](https://docs.donkey-kit.dev/reference/configuration.md#tool-set-size-warnings)
+descriptor size; see [Tool-set size warnings](https://docs.donkey-kit.dev/reference/configuration/attribution.md#tool-set-size-warnings)
 for the sources and how to change or turn off each threshold.
 
   The SDK also logs how many tool descriptors a `ToolSet` exposes out of the
@@ -477,5 +477,5 @@ remain ambiguous, not typed policy refusals. Successful results and
 ## Related
 
 - [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md) — produce the `ToolSet`.
-- [A2A agent tools](https://docs.donkey-kit.dev/tool-access/a2a.md) — bind a remote agent the same way.
+- [A2A agent tools](https://docs.donkey-kit.dev/a2a/call.md) — bind a remote agent the same way.
 - [Frameworks](https://docs.donkey-kit.dev/frameworks.md) — governed model access per framework.

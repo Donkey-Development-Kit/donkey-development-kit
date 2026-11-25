@@ -6,13 +6,31 @@ status: live
 import { Callout } from 'nextra/components'
 import { Badge, Card, CardGrid } from '../../components'
 
-# Model access
+# Models
+
+This section covers governed model calls: the framework adapters, the version
+ranges each one is tested against, and how the gateway's policies on model
+calls reach your code.
 
 Governed model access from eight agent frameworks. Each adapter returns the
 framework's **own native object**, pointed at your Omni Gateway LLM proxy with
 consumer auth and attribution headers already set. Nothing wraps the object you
 get back, and every page shows the plain-framework code you can switch to at
 any time.
+
+In this section:
+
+- [Gateway policies](/frameworks/gateway-policies): what each policy on an LLM
+  proxy does to a model call, and the typed exception or field your code gets.
+- [Routing & fallback](/frameworks/routing): which provider served
+  a call, fallback, and how DDK's retries stay out of a gateway failover's way.
+- [Version compatibility](/frameworks/compatibility): the framework versions
+  each adapter supports and is tested on.
+- The framework adapters, from [LangGraph](/frameworks/langgraph) to
+  [LlamaIndex](/frameworks/llamaindex), listed [below](#supported-frameworks).
+
+For governed tools and agent-to-agent calls, see [MCP tools](/tool-access) and
+[A2A agents](/a2a).
 
 <Callout type="info">
   **Using TypeScript or another language?** The SDK is Python. From TypeScript
@@ -302,7 +320,7 @@ framework's constructor accepts. With **header injection**, the proxy auth and
 attribution headers are sent. With **transport injection**, the SDK's shared
 HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 `donkey.last_call`, the `jwt`-mode JWT, and
-[credentials only to checked endpoints](/reference/configuration#credentials-go-only-to-checked-endpoints).
+[credentials only to checked endpoints](/reference/configuration/control-plane#credentials-go-only-to-checked-endpoints).
 
 | Framework | Header injection | Transport injection | Notes |
 |---|---|---|---|
@@ -341,8 +359,8 @@ Transport injection also decides whether `jwt` mode works: the rotating JWT is
 attached only by the SDK's shared async client. CrewAI can't carry it, so it
 raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
 also raise `ConfigError` instead of sending. See the
-[`jwt` mode note](/reference/configuration#jwt--model-wallet-auth-mode).
-[`bearer` mode](/reference/configuration#bearer-token-auth-mode) has the same
+[`jwt` mode note](/reference/configuration/auth#jwt--model-wallet-auth-mode).
+[`bearer` mode](/reference/configuration/auth#bearer-token-auth-mode) has the same
 reach; there, CrewAI raises `ConfigError` instead of sending no token.
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,

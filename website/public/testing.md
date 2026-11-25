@@ -61,11 +61,11 @@ Asking for a refusal no gateway response produces — for example a client-side
 
 `simulate()` covers model calls only. To refuse an MCP **tool call** (a PII
 block, schema rejection, catalog poisoning block or access denial), use
-[`donkey.simulate_mcp("pii-request", servers=...)`](https://docs.donkey-kit.dev/simulator.md#mcp-tool-fault-injection).
+[`donkey.simulate_mcp("pii-request", servers=...)`](https://docs.donkey-kit.dev/simulator/mcp.md#mcp-tool-fault-injection).
 Inside that block, `donkey.tools.discover()` returns the servers you declare,
 so no gateway or Exchange is needed.
 For an outbound **A2A** call through `donkey.a2a`, use
-[`donkey.simulate_a2a("pii-send", agents=[...])`](https://docs.donkey-kit.dev/simulator.md#outbound-a2a-fault-injection).
+[`donkey.simulate_a2a("pii-send", agents=[...])`](https://docs.donkey-kit.dev/simulator/a2a.md#outbound-a2a-fault-injection).
 
 ## The conformance plugin — run it against your agent
 
@@ -131,7 +131,7 @@ declares one. With `--donkey-conformance`, the plugin runs the suite
 exclusively in place of normal test collection; without the flag it is inert.
 `--agent` is a deprecated alias for `--donkey-agent`.
 You can also run it through the CLI with `donkey test --agent my_app.agent:build`
-(see [CLI](https://docs.donkey-kit.dev/cli.md#donkey-test)).
+(see [CLI](https://docs.donkey-kit.dev/cli/local.md#donkey-test)).
 
 ### Exemptions
 

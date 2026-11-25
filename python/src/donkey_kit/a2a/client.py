@@ -196,7 +196,7 @@ class A2AFacade:
     Provisional (ADR 0020): may change in a minor release with a migration
     note. ADR 0022 makes this facade an exception to the stable-root rule.
     No OAuth completion, retries, resubscription or remote cancellation is performed.
-    Docs: https://docs.donkey-kit.dev/tool-access/a2a
+    Docs: https://docs.donkey-kit.dev/a2a/call
     """
 
     def __init__(
@@ -408,7 +408,7 @@ class A2AFacade:
             GatewayAuthRequired: A captured v0.3 task challenge needs caller-owned OAuth.
             ToolInvocationError: SDK protocol parsing or invocation fails.
 
-        Docs: https://docs.donkey-kit.dev/tool-access/a2a
+        Docs: https://docs.donkey-kit.dev/a2a/call
         """
         async with self._transport(ref, auth, criteria) as (transport, responses):
             with _protocol_errors(responses):
@@ -434,7 +434,7 @@ class A2AFacade:
         response and span, even after a break; it never cancels the remote task.
         Arguments and failures are the same as :meth:`send`.
 
-        Docs: https://docs.donkey-kit.dev/tool-access/a2a
+        Docs: https://docs.donkey-kit.dev/a2a/call
         """
         async with self._transport(ref, auth, criteria) as (transport, responses):
             stream = transport.send_message_streaming(message)

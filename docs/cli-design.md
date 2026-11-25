@@ -112,7 +112,7 @@ concurrent threads because they mutate interpreter state; see
 [Diataxis](https://diataxis.fr/) separates tutorial, how-to, reference and
 explanation. Apply that distinction without multiplying pages unnecessarily:
 
-- `website/content/cli.mdx`: consumer CLI page and generated command
+- `website/content/cli/index.mdx`: consumer CLI page and generated command
   reference. Its "From code to a publish plan" section (#1751) is the
   onboarding tutorial: `init`, `scan`, `scaffold --dry-run`, `scaffold --set`,
   readiness, remediation and `publish --dry-run` offline, then the live gate.

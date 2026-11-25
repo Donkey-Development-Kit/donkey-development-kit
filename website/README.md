@@ -77,7 +77,7 @@ by hand:
 
 - `content/reference/api.mdx`, the whole Python API page, from the public
   docstrings and signatures;
-- the `BEGIN GENERATED` regions in `content/reference/configuration.mdx`
+- the `BEGIN GENERATED` regions in `content/reference/configuration/index.mdx`
   (settings index), `content/cli.mdx` (command reference) and
   `content/frameworks/index.mdx` (adapter capabilities).
 

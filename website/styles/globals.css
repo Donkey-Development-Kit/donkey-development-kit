@@ -308,24 +308,19 @@ body {
 
 /* ---------------------------------------------------------------- tables */
 
+/* A table whose unbreakable cells (code spans) are wider than the prose column
+   must scroll inside its own box; `overflow: hidden` on a table does not clip
+   it, so the table otherwise runs under the "On This Page" rail. */
 .af-prose table {
-  display: table;
+  display: block;
   width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: separate;
   border-spacing: 0;
   border: 1px solid var(--af-border);
   border-radius: var(--af-radius);
-  overflow: hidden;
   font-size: 0.9rem;
-}
-
-@media (max-width: 767px) {
-  .af-prose table {
-    display: block;
-    width: 100%;
-    max-width: 100%;
-    overflow-x: auto;
-  }
 }
 
 .af-prose th {

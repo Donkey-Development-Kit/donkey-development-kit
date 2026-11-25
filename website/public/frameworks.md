@@ -1,12 +1,30 @@
-# Model access
+# Models
 
 Status: Live. Shipped, and verified against a real governed gateway.
+
+This section covers governed model calls: the framework adapters, the version
+ranges each one is tested against, and how the gateway's policies on model
+calls reach your code.
 
 Governed model access from eight agent frameworks. Each adapter returns the
 framework's **own native object**, pointed at your Omni Gateway LLM proxy with
 consumer auth and attribution headers already set. Nothing wraps the object you
 get back, and every page shows the plain-framework code you can switch to at
 any time.
+
+In this section:
+
+- [Gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md): what each policy on an LLM
+  proxy does to a model call, and the typed exception or field your code gets.
+- [Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md): which provider served
+  a call, fallback, and how DDK's retries stay out of a gateway failover's way.
+- [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md): the framework versions
+  each adapter supports and is tested on.
+- The framework adapters, from [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) to
+  [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md), listed [below](#supported-frameworks).
+
+For governed tools and agent-to-agent calls, see [MCP tools](https://docs.donkey-kit.dev/tool-access.md) and
+[A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
   **Using TypeScript or another language?** The SDK is Python. From TypeScript
   or any other language, call the proxy's OpenAI-compatible HTTP API directly —
@@ -284,7 +302,7 @@ framework's constructor accepts. With **header injection**, the proxy auth and
 attribution headers are sent. With **transport injection**, the SDK's shared
 HTTP client is also used, which adds per-run correlation IDs, retries, spans,
 `donkey.last_call`, the `jwt`-mode JWT, and
-[credentials only to checked endpoints](https://docs.donkey-kit.dev/reference/configuration.md#credentials-go-only-to-checked-endpoints).
+[credentials only to checked endpoints](https://docs.donkey-kit.dev/reference/configuration/control-plane.md#credentials-go-only-to-checked-endpoints).
 
 | Framework | Header injection | Transport injection | Notes |
 |---|---|---|---|
@@ -323,8 +341,8 @@ Transport injection also decides whether `jwt` mode works: the rotating JWT is
 attached only by the SDK's shared async client. CrewAI can't carry it, so it
 raises `ConfigError` in `jwt` mode. Sync calls such as LangGraph's `invoke()`
 also raise `ConfigError` instead of sending. See the
-[`jwt` mode note](https://docs.donkey-kit.dev/reference/configuration.md#jwt--model-wallet-auth-mode).
-[`bearer` mode](https://docs.donkey-kit.dev/reference/configuration.md#bearer-token-auth-mode) has the same
+[`jwt` mode note](https://docs.donkey-kit.dev/reference/configuration/auth.md#jwt--model-wallet-auth-mode).
+[`bearer` mode](https://docs.donkey-kit.dev/reference/configuration/auth.md#bearer-token-auth-mode) has the same
 reach; there, CrewAI raises `ConfigError` instead of sending no token.
 
 A URL override passed to a factory (`base_url`, `api_base`, `openai_api_base`,
