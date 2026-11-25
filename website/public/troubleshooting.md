@@ -104,7 +104,7 @@ reports `UNAVAILABLE`, and `surface` names the adapter.
 | `UNAVAILABLE` | The adapter named in `surface` sends outside the SDK. | Use an adapter whose `capabilities().observes_last_call` is `True` (see [the table](https://docs.donkey-kit.dev/frameworks.md#what-each-factory-gets-capabilities)), or read the gateway's own logs. |
 
 See [`last_call` fields](https://docs.donkey-kit.dev/reference/last-call.md) and
-[When `last_call` is unavailable](https://docs.donkey-kit.dev/telemetry.md#when-last_call-is-unavailable).
+[When `last_call` is unavailable](https://docs.donkey-kit.dev/frameworks/routing.md#when-last_call-is-unavailable).
 
 ## A `401` in JWT mode
 

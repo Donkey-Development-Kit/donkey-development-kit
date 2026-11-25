@@ -325,7 +325,7 @@ closed the client it was given), and a call whose pooled connections belong to
 an event loop that has closed. The SDK's own connection pools are per event
 loop, so a second `asyncio.run()` on one `Donkey` works; this one comes from a
 transport you passed in and reused across `asyncio.run()` calls. Its
-`.remediation` names the fix for each. Outside a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids)
+`.remediation` names the fix for each. Outside a [`donkey.run()`](https://docs.donkey-kit.dev/correlation.md)
 block, `typed_refusals()` or `@donkey.governed`, it reaches you the way
 `GatewayUnavailable` does: `openai` before 3 and `anthropic` wrap it in an
 `APIConnectionError` (read the `ConfigError` from `e.__cause__`), and `openai`
@@ -451,7 +451,7 @@ logs and to the gateway's own record:
 
 | Attribute | What it is | Provenance |
 | --- | --- | --- |
-| `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
+| `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](https://docs.donkey-kit.dev/correlation.md) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
 | `.call_id` | The **per-call** id, unique per logical request and stable across that request's retries | The `X-Donkey-Request-Id` request header the client sent. Present **even when the request fails before any response** (a transport error). |
 | `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure, `request-id` for a native Anthropic proxy). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
 
@@ -468,8 +468,8 @@ A lost gateway becomes an `APIConnectionError` with the `GatewayUnavailable`
 hidden on its `__cause__` under `openai` before 3 and under `anthropic`, while
 `openai` 3 and later raises `GatewayUnavailable` as it is. LangChain re-wraps
 these again, and Strands and Agent Framework wrap them in their own types. Inside a
-[`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) block or a
-[`@donkey.governed`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) function, none of that reaches
+[`donkey.run()`](https://docs.donkey-kit.dev/correlation.md) block or a
+[`@donkey.governed`](https://docs.donkey-kit.dev/correlation.md) function, none of that reaches
 you: a refusal or a lost gateway leaves the block as its typed `DonkeyError`,
 so one `except` covers every framework.
 

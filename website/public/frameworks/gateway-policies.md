@@ -233,7 +233,7 @@ upstream call and DDK raises `ModelNotRoutable`. That happens for a bare model
 name on a proxy with more than one provider (use `provider/model`, for example
 `openai/gpt-5-mini`), a missing model, or a provider with no route and no
 fallback. `.model` and `.provider` say which. See
-[Routing & resilience](https://docs.donkey-kit.dev/telemetry.md#routing--resilience) for how DDK's retries
+[Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md) for how DDK's retries
 stay out of the way of a gateway failover.
 
 ## Semantic routing
@@ -244,7 +244,7 @@ A semantic-routing proxy picks the provider from the topic the prompt matches.
 `last_call.routing_type` is `"Semantic"`, and `last_call.matched_topic` and
 `.routing_score` say which topic won and how closely. Both stay `None` on a
 model-based proxy. See
-[Semantic caching & semantic routing](https://docs.donkey-kit.dev/telemetry.md#semantic-caching--semantic-routing-live).
+[Semantic caching & semantic routing](https://docs.donkey-kit.dev/frameworks/routing.md#semantic-caching--semantic-routing-live).
 
 ## Semantic caching
 

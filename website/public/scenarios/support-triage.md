@@ -24,7 +24,7 @@ credentials, no real gateway — exercising four governance pieces at once.
   LangGraph run as a typed [`PIIDetected`](https://docs.donkey-kit.dev/errors.md), not a framework-wrapped
   generic error.
 - **Correlation reaches every node for free.** Each ticket runs inside a
-  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/telemetry.md) block; the run id shows up in a graph
+  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/correlation.md) block; the run id shows up in a graph
   node's own logs without being threaded through graph state, because LangGraph
   runs nodes on context-copying `asyncio` tasks.
 - **Every governed call emits an OTel span** — refusals included — exported to a

@@ -672,7 +672,7 @@ class Donkey:
         adapter used routes outside it, ``available`` is false: unavailable, not
         empty.
 
-        Docs: https://docs.donkey-kit.dev/telemetry#run-ledger
+        Docs: https://docs.donkey-kit.dev/correlation#run-ledger
         """
         return current_run_ledger(self._unobservable_surface())
 
@@ -858,7 +858,7 @@ class Donkey:
         does not carry, such as your own MCP or A2A client, pass it
         :meth:`correlation_headers`.
 
-        Docs: https://docs.donkey-kit.dev/telemetry
+        Docs: https://docs.donkey-kit.dev/correlation
         """
         from .core.inbound import correlation_id_from_headers
 

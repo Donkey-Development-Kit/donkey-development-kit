@@ -50,7 +50,7 @@ even on a cold read.
   reports `UNAVAILABLE` with the surface named. LlamaIndex, MS Agent Framework
   and ADK's `model()` send through the shared client, so a cold read is
   `UNOBSERVED` and a read after a call is `OBSERVED`. See
-  [When `last_call` is unavailable](https://docs.donkey-kit.dev/telemetry.md#when-last_call-is-unavailable).
+  [When `last_call` is unavailable](https://docs.donkey-kit.dev/frameworks/routing.md#when-last_call-is-unavailable).
 
 ## Gateway identity
 
@@ -68,7 +68,7 @@ for quoting to a provider's support team.
 What the gateway *did* with the request — which provider and model served it, how
 it routed, and whether that was a failover. Read live off the shared transport,
 so the raw `donkey.llm.client()` path gets them with no framework required. See
-[Routing & resilience](https://docs.donkey-kit.dev/telemetry.md#routing--resilience) for the operational story,
+[Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md) for the operational story,
 or [Which provider served this?](https://docs.donkey-kit.dev/frameworks/langgraph.md#which-provider-served-this)
 for why a LangGraph message's own `model_provider` field disagrees with these.
 

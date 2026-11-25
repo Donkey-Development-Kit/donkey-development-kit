@@ -16,7 +16,7 @@ In this section:
 
 - [Gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md): what each policy on an LLM
   proxy does to a model call, and the typed exception or field your code gets.
-- [Routing & resilience](https://docs.donkey-kit.dev/telemetry.md#routing--resilience): which provider served
+- [Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md): which provider served
   a call, fallback, and how DDK's retries stay out of a gateway failover's way.
 - [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md): the framework versions
   each adapter supports and is tested on.

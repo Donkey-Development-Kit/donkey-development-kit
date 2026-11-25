@@ -1,0 +1,116 @@
+# Cost attribution
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+<span id="cost-attribution-tags" />
+
+A small, fixed set of tags (`team`, `project`, `env`, `enduser.id`) set once
+and recorded on every model call's span:
+
+```python
+donkey = Donkey.from_env(team="support", project="triage-v2", env="prod")
+
+async with donkey.run(id=ticket.id, enduser_id=agent_user.id):
+    await triage_agent.run(ticket)
+```
+
+The tags resolve in this order: `Donkey.from_env(team=…)` kwargs, then
+`DONKEY_COST_*` env vars, then a `[donkey.cost]` table in the config files (see
+[Configuration](https://docs.donkey-kit.dev/reference/configuration.md#cost-attribution-tags)). Per-run
+overrides layer on top: `donkey.run(team=…, project=…, env=…, enduser_id=…)`
+wins **per field** for its block, and the rest fall back to the configured
+tags. The key set is **fixed**: an unknown dimension is a configuration error,
+never a silently dropped tag. Values are **validated** (fixed keys, bounded
+length), so nobody stuffs a JSON blob into a span attribute or header.
+
+## Where the tags go
+
+| Carrier | Names | When | Goes to |
+|---|---|---|---|
+| Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id` | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so CrewAI, which has only header injection, records none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
+| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Model requests to the LLM proxy only. See the note below. |
+
+Each header carries the tag's value unchanged (for example
+`X-Anypoint-Cost-Enduser-Id: user-42`). A tag that isn't set is sent under
+neither carrier.
+
+The Anypoint LLM Gateway doesn't read cost tags from request headers: it meters
+cost from token usage per API instance and consuming client application. So the
+span attributes are the carrier that matters. Turn the headers on only when
+something of your own reads them.
+
+  **With `send_cost_headers` on, the headers go only on model requests to the
+  LLM proxy.** The connected-app token request and other Anypoint
+  control-plane requests never carry them, so the end-user ID doesn't reach
+  those hosts. Adapters with transport injection also send per-run
+  `donkey.run(...)` values; adapters that get only a `default_headers` snapshot
+  send the configured tags.
+
+  **The end-user ID reaches your trace backend regardless of
+  `send_cost_headers`.** If `enduser_id` is set, every model-call span carries
+  `donkey.cost.enduser.id`, and any exporter you've configured receives it. To
+  keep it out of traces, don't set `enduser_id` (`DONKEY_COST_ENDUSER_ID`,
+  `"enduser.id"` in `[donkey.cost]`, or `donkey.run(enduser_id=…)`), drop the
+  attribute in your collector, or turn spans off with `DONKEY_TELEMETRY=false`.
+
+## Per-request attribution
+
+One process often serves several tenants or teams: a shared agent platform, a
+multi-tenant SaaS agent, or one job that spans two cost centres. Keep one
+`Donkey` (one client, pool, auth cache and budget) and say per request which
+group a call belongs to:
+
+```python
+async def handle(tenant: str, prompt: str):
+    with donkey.attribution(business_group=tenant):
+        return await model.ainvoke(prompt)
+```
+
+`donkey.attribution(business_group=…, team=…, project=…, env=…, enduser_id=…)`
+attributes every governed call in its block, on both the async and the blocking
+client. The business group replaces the configured `business_group` for the
+block. The precedence is this scope, then the `Donkey` config, then
+`DONKEY_BUSINESS_GROUP`, then the config file. The cost tags merge per field
+over any already bound by an enclosing block.
+
+It doesn't start a run, so the correlation ID stays the same and one run can
+span two cost centres:
+
+```python
+async with donkey.run(id=job.id):
+    with donkey.attribution(business_group="risk-eu"):
+        await score(job)
+    with donkey.attribution(business_group="risk-us"):
+        await score(job)
+```
+
+`donkey.run(business_group=…)` and `@donkey.governed(business_group=…)` take
+the same argument when the group belongs to the whole run. Like the run ID, the
+binding is contextvar-based: it reaches framework-spawned tasks, concurrent
+tasks never see each other's group, and nested blocks restore the outer value
+on exit. The value is validated like a cost tag, and an invalid one raises
+`ConfigError` where you set it.
+
+  **Adapters that get only a `default_headers` snapshot don't follow the
+  scope.** They captured the configured business group when they were built, so
+  they keep sending it. Adapters with transport injection send the scoped value.
+  The header name, `X-Anypoint-Business-Group`, is still an unverified
+  placeholder; see [Configuration](https://docs.donkey-kit.dev/reference/configuration.md#optional-attribution).
+
+## The question this answers
+
+Finance asks what the support agent cost last month versus the HR bot. Without
+tags, both agents share one `client_id` and there is no way to split the bill.
+With tags it is a group-by.
+
+For compliance — *"prove the HR bot's answer to user X on date Y went through
+the content-safety policy"* — the correlation ID on the log line joins to the
+gateway record, and the span carries `donkey.cost.enduser.id` and `donkey.policy.type`. An
+EU AI Act Article 12 log request becomes one query, not an investigation.
+
+## Next steps
+
+- [Correlation IDs](https://docs.donkey-kit.dev/correlation.md): the per-run id that joins a call's tags to its log lines and gateway record.
+- [Configuration](https://docs.donkey-kit.dev/reference/configuration.md#optional-attribution): where the tags and the attribution headers are set.
+- [Budget & pacing](https://docs.donkey-kit.dev/budget.md): the token and request windows the gateway enforces per consumer.
+- [OpenTelemetry spans](https://docs.donkey-kit.dev/telemetry.md): the span attributes these tags are recorded on.

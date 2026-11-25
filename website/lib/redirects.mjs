@@ -51,6 +51,22 @@ export const MOVED_ANCHORS = {
     'packaged-mcp-captures': '/simulator/mcp',
     'reusable-offline-baseline': '/simulator/mcp',
   },
+  // #1831: correlation, cost attribution and routing moved off the telemetry page.
+  '/telemetry': {
+    'across-agent-hops': '/correlation',
+    'correlation-ids': '/correlation',
+    'run-ledger': '/correlation',
+    'the-decorator-form': '/correlation',
+    'cost-attribution-tags': '/cost-attribution',
+    'per-request-attribution': '/cost-attribution',
+    'the-question-this-answers': '/cost-attribution',
+    'where-the-tags-go': '/cost-attribution',
+    'routing--resilience': '/frameworks/routing',
+    'semantic-caching--semantic-routing-live': '/frameworks/routing',
+    'two-behaviours-worth-knowing': '/frameworks/routing',
+    'typescript-parity-roadmap': '/frameworks/routing',
+    'when-last_call-is-unavailable': '/frameworks/routing',
+  },
 }
 
 // Strip the basePath prefix, query, hash, trailing slash and `.html`, and

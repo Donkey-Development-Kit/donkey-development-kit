@@ -106,7 +106,7 @@ The three required values for the LLM proxy:
   `apikey: <client_id>:<client_secret>` — which its
   `dataweave-headers-transformation` policy splits back into the pair. DDK doesn't use that form: it always
   sends the two-header pair, because `client_id` is the per-agent
-  [attribution](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags) unit. The colon-joined value is not an
+  [attribution](https://docs.donkey-kit.dev/cost-attribution.md) unit. The colon-joined value is not an
   alternative once a `client_id` header is present — the policy ignores it.
 
 Missing required fields are reported **all at once** with their env-var names,
@@ -288,7 +288,7 @@ attribution.
 To set the business group per request rather than per `Donkey`, wrap the calls
 in `donkey.attribution(business_group=…)` or pass `business_group=` to
 `donkey.run(...)`. The scoped value wins over this field for its block. See
-[Per-request attribution](https://docs.donkey-kit.dev/telemetry.md#per-request-attribution).
+[Per-request attribution](https://docs.donkey-kit.dev/cost-attribution.md#per-request-attribution).
 
   Both header names are unconfirmed guesses. The gateway hasn't been seen
   reading them (see §3 of the
@@ -302,7 +302,7 @@ in `donkey.attribution(business_group=…)` or pass `business_group=` to
 
 Per-call and per-run correlation IDs ride on request headers. The IDs also
 appear on spans and exceptions regardless of the header names. See
-[Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#correlation-ids).
+[Telemetry & cost](https://docs.donkey-kit.dev/correlation.md).
 
 - `X-Correlation-Id` carries the run ID. The gateway reads this header and
   echoes it on the response `x-correlation-id`, so a client log line joins to
@@ -402,7 +402,7 @@ In code, `Donkey.from_env(send_cost_headers=True)`.
   With `send_cost_headers` on, the headers, including the end-user ID, go only
   on model requests to the LLM proxy, never to the Anypoint platform. Where the
   tags go is described in
-  [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags).
+  [Telemetry & cost](https://docs.donkey-kit.dev/cost-attribution.md).
 
 ## Telemetry
 
@@ -428,7 +428,7 @@ which is not redaction. See [Telemetry & cost](https://docs.donkey-kit.dev/telem
 | `DONKEY_TIMEOUT_S` | `timeout_s` | `60.0` | HTTP timeout for governed calls, in seconds. |
 | `DONKEY_MAX_RETRIES` | `max_retries` | `3` | Retries for transient upstream failures (`502` / `503` / `504`) with backoff. A `502` or `504` on a model call is retried only with `retry_model_calls_on_gateway_errors` (below). Policy refusals are never retried, and a gateway fallback is never retried twice. |
 | `DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS` | `retry_model_calls_on_gateway_errors` | `false` | Also retry a `502` or `504` on a model call (a `POST` whose body, or native Gemini path, names a model). Off by default, because the provider may already have completed and billed the call, and the gateway offers no verified idempotency key. A `503`, and other requests outside scoped A2A, are retried either way. A2A never automatically replays. |
-| `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing). |
+| `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://docs.donkey-kit.dev/frameworks/routing.md#two-behaviours-worth-knowing). |
 | `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `300` | How long registry lookups (used by [tool access](https://docs.donkey-kit.dev/tool-access.md)) are cached in memory, in seconds. |
 | `DONKEY_TOOL_WARN_COUNT` | `tool_warn_count` | `20` | Warn when a [tool binding](https://docs.donkey-kit.dev/tool-access/binding.md#what-the-tool-list-costs) exposes more tools than this. `0` turns the warning off. See [Tool-set size warnings](#tool-set-size-warnings). |
 | `DONKEY_TOOL_WARN_TOKENS` | `tool_warn_tokens` | `10000` | Warn when a tool binding's descriptors cost more than this many estimated tokens per model call. `0` turns the warning off. |
@@ -624,7 +624,7 @@ never carry them.
 | `X-Donkey-Request-Id` (`call_id_header`) | A per-call ID | Always | Both planes |
 | `X-Anypoint-Client-Application` | `application_name` | When set | The LLM proxy only |
 | `X-Anypoint-Business-Group` | `business_group`, or the group from an enclosing `donkey.attribution(...)` / `donkey.run(business_group=…)` block | When set | The LLM proxy only |
-| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags) | The LLM proxy only, or a receiver of yours in front of it |
+| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://docs.donkey-kit.dev/cost-attribution.md) | The LLM proxy only, or a receiver of yours in front of it |
 | `x-cache-*` | Your cache controls, including `principal_id` | Inside a `donkey.cache(...)` block | The LLM proxy's semantic cache only |
 
 CrewAI, which gets only a header snapshot, sends the auth headers, the

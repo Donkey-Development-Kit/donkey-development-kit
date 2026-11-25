@@ -10,7 +10,7 @@ publishing, verifying and exposing your agents and tools.
 
 ### `@donkey.governed`
 
-Runs a function inside a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md) scope:
+Runs a function inside a [`donkey.run()`](https://docs.donkey-kit.dev/correlation.md) scope:
 
 ```python
 @donkey.governed(team="support")

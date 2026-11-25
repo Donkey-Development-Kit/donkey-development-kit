@@ -116,7 +116,7 @@ donkey.current_run: RunLedger | None
 
 A snapshot of the bound `donkey.run()` block's ledger, or `None` outside a run.
 
-Guide: [`/telemetry#run-ledger`](https://docs.donkey-kit.dev/telemetry.md#run-ledger)
+Guide: [`/correlation#run-ledger`](https://docs.donkey-kit.dev/correlation.md#run-ledger)
 
 ### `donkey.openai()`
 
@@ -200,7 +200,7 @@ donkey.run_from_headers(
 
 Join the caller's run: `run`, with the id read from an inbound request's headers.
 
-Guide: [`/telemetry`](https://docs.donkey-kit.dev/telemetry.md)
+Guide: [`/correlation`](https://docs.donkey-kit.dev/correlation.md)
 
 ### `donkey.correlation_headers()`
 

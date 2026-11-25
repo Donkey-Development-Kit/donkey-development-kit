@@ -1046,8 +1046,9 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 | `core/budget.py` | `budget.mdx` |
 | `core/reactions.py`, `core/transport/*` `_on_refusal` | `refusal-handlers.mdx` |
 | `core/approvals.py`, `core/toolspec.py` (`@donkey.tool(approval=...)`, `donkey.approvals`) | `hitl.mdx`, `cli.mdx` |
-| `core/telemetry.py`, `core/cost.py` | `telemetry.mdx` |
-| `core/lastcall.py` | `reference/last-call.mdx` |
+| `core/telemetry.py` | `telemetry.mdx`, `correlation.mdx` |
+| `core/cost.py` | `cost-attribution.mdx` |
+| `core/lastcall.py` | `reference/last-call.mdx`, `frameworks/routing.mdx` |
 | `llm/*` | `quickstart.mdx`, `feature-overview.mdx` |
 | `simulator/*` | `simulator/index.mdx`, `simulator/mcp.mdx`, `simulator/a2a.mdx` |
 | `conformance/*` | `testing.mdx` |

@@ -208,7 +208,7 @@ except Exception as err:
 - **A `provider/` prefix is not a substitution.** On a model-based routing
   proxy the gateway reports the served model without the `provider/` prefix;
   `substituted` ignores a prefix that names the served provider (see
-  [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing)).
+  [Telemetry & cost](https://docs.donkey-kit.dev/frameworks/routing.md#two-behaviours-worth-knowing)).
 
   The simulator's captured success response was recorded against `gpt-5.1`, so
   asking for any other model id shows up as a substitution in narrative demo

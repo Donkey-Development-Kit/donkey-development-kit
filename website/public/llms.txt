@@ -13,6 +13,7 @@
 
 - [Overview](https://docs.donkey-kit.dev/frameworks.md): (status: live) Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
 - [Gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md): (status: offline-verified) What each Omni Gateway policy on an LLM proxy does to a model call, the typed exception or field DDK gives your code for it, and how to rehearse it offline.
+- [Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md): (status: live) How DDK reports the provider and model the gateway actually served, when a fallback answered, and how semantic routing and semantic caching show up on each response.
 - [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md): (status: live) Which versions of each agent framework donkey-kit supports — the minimum, the version every PR tests, and known incompatibilities.
 
 ## Frameworks
@@ -53,7 +54,9 @@
 
 ## Observability
 
-- [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md): (status: live) OpenTelemetry GenAI spans, per-run correlation IDs, and cost-attribution tags — in the dashboard you already run.
+- [OpenTelemetry spans](https://docs.donkey-kit.dev/telemetry.md): (status: live) OpenTelemetry GenAI spans for every governed call, in the dashboard you already run, and how DDK's own debug logging works.
+- [Correlation IDs](https://docs.donkey-kit.dev/correlation.md): (status: live) Per-run correlation IDs, carried on the wire, on every span and on every exception, and how they join gateway records across agent hops.
+- [Cost attribution](https://docs.donkey-kit.dev/cost-attribution.md): (status: live) Per-call cost tags (team, project, env, enduser.id) on every model span, where they go on the wire and in the gateway's records, and how to attribute spend per request.
 
 ## Local simulator
 

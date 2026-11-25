@@ -16,7 +16,7 @@ copilot that are still blocked on verification.
   [`ContentSafetyBlocked`](https://docs.donkey-kit.dev/errors.md), driven by the `donkey-sim/content-safety`
   sentinel — no need to craft a prompt that a real guardrail would reject.
 - **Per-run correlation joins the refusal to your logs.** Inside a
-  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/telemetry.md) block the bound id becomes the
+  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/correlation.md) block the bound id becomes the
   `X-Correlation-Id` on every request *and* lands on
   `ContentSafetyBlocked.correlation_id`, so a log line for the block joins to
   the gateway's own record with no extra wiring.

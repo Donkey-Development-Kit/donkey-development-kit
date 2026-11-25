@@ -845,7 +845,7 @@ In this section:
 
 - [Gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md): what each policy on an LLM
   proxy does to a model call, and the typed exception or field your code gets.
-- [Routing & resilience](https://docs.donkey-kit.dev/telemetry.md#routing--resilience): which provider served
+- [Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md): which provider served
   a call, fallback, and how DDK's retries stay out of a gateway failover's way.
 - [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md): the framework versions
   each adapter supports and is tested on.
@@ -1421,7 +1421,7 @@ upstream call and DDK raises `ModelNotRoutable`. That happens for a bare model
 name on a proxy with more than one provider (use `provider/model`, for example
 `openai/gpt-5-mini`), a missing model, or a provider with no route and no
 fallback. `.model` and `.provider` say which. See
-[Routing & resilience](https://docs.donkey-kit.dev/telemetry.md#routing--resilience) for how DDK's retries
+[Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md) for how DDK's retries
 stay out of the way of a gateway failover.
 
 ## Semantic routing
@@ -1432,7 +1432,7 @@ A semantic-routing proxy picks the provider from the topic the prompt matches.
 `last_call.routing_type` is `"Semantic"`, and `last_call.matched_topic` and
 `.routing_score` say which topic won and how closely. Both stay `None` on a
 model-based proxy. See
-[Semantic caching & semantic routing](https://docs.donkey-kit.dev/telemetry.md#semantic-caching--semantic-routing-live).
+[Semantic caching & semantic routing](https://docs.donkey-kit.dev/frameworks/routing.md#semantic-caching--semantic-routing-live).
 
 ## Semantic caching
 
@@ -1461,6 +1461,170 @@ with the status, headers and body.
 - [Budget & pacing](https://docs.donkey-kit.dev/budget.md): pace against the token and request windows.
 - [Refusal handlers](https://docs.donkey-kit.dev/refusal-handlers.md): wait out a window or rewrite and resend.
 - [Local simulator](https://docs.donkey-kit.dev/simulator.md): rehearse each refusal before it reaches production.
+
+---
+
+Source: https://docs.donkey-kit.dev/frameworks/routing.md
+
+# Routing & fallback
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+<span id="routing--resilience" />
+
+The gateway can fail over between providers when one degrades ("Enhanced
+Resilience for Intelligent Routing"). It reports what it *did* with each request
+on the response — which provider and model served it, how it routed, and whether
+that was a **fallback**. DDK reads those signals off the shared transport, so
+you get them with **no framework required** — the raw `donkey.llm.client()` path
+benefits just as the deep adapters do.
+
+Every governed call through the SDK's shared HTTP client exposes them on
+`donkey.last_call`, beside the usage and identity fields:
+
+```python
+donkey = Donkey.from_env()
+await donkey.openai().responses.create(model="gpt-5.1", input="…")
+
+r = donkey.last_call
+r.requested_model    # "gpt-5.1"  — what you asked for
+r.served_model       # "gpt-5.1"  — or a substitute after failover
+r.served_provider    # "openai"
+r.routing_type       # "ModelBased" — or "Semantic" on a semantic-routing proxy
+r.fallback           # False      — True if the gateway failed over
+r.substituted        # False      — served_model != requested_model
+r.matched_topic      # None       — the topic a Semantic proxy matched (else None)
+r.routing_score      # None       — that match's similarity score (else None)
+```
+
+On a **semantic-routing** proxy (`routing_type == "Semantic"`), the gateway also
+reports *why* it picked a provider: the topic your prompt matched and the
+similarity score behind that match. Those land on `r.matched_topic` /
+`r.routing_score`. On a model-based proxy both are `None` — the gateway emits no
+semantic header, and DDK never fabricates a value for a signal it did not
+observe.
+
+They also land on the span (`gen_ai.response.model`, `donkey.routing.type`,
+`donkey.routing.fallback`, and — on a semantic route —
+`donkey.routing.matched_topic` / `donkey.routing.score`) — the most useful thing
+to have on hand when latency spikes: it tells an operator whether a slow call was
+routed normally or recovered from a degraded provider.
+
+For the complete list of `last_call` fields — observability status, gateway
+identity, routing, and token usage — see the [`last_call` field
+reference](https://docs.donkey-kit.dev/reference/last-call.md).
+
+The same record also carries the call's identity and usage: `request_id` (the
+upstream provider's id), `api_instance_id` and `environment_id` (which gateway
+instance served it), and the token counts including cached and reasoning
+tokens. The [gateway identity example](https://docs.donkey-kit.dev/examples/general/gateway-identity.md) walks
+through every field.
+
+## When `last_call` is unavailable
+
+`donkey.last_call` is populated only when the governed response passes through
+the SDK's shared HTTP client, and only in the context that made the call.
+CrewAI routes outside that client: its native OpenAI provider builds its own,
+so no response reaches the record and the run's correlation ID isn't sent.
+
+LlamaIndex, Microsoft Agent Framework and ADK's `model()` send through the
+shared client, so a call populates the record in its own context and carries
+the run's correlation ID. A cold read on a `Donkey` that resolved only these
+adapters reports `UNOBSERVED`, and `OBSERVED` after a call
+([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)).
+ADK's `gemini()` uses the shared client too (see
+[Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini) for reading `last_call` inside
+an ADK run).
+
+For a `Donkey` that resolved only CrewAI:
+
+```python
+r = donkey.last_call
+r.status       # LastCallStatus.UNAVAILABLE
+r.available    # False
+r.surface      # "crewai"
+```
+
+This is different from `UNOBSERVED`, which means the current context has not
+yet received a governed response. On an unavailable surface the SDK cannot
+observe any response-derived `last_call` field, including gateway identity,
+routing, fallback, and usage. If multiple non-observing adapters were resolved,
+`surface` lists their names.
+
+An agent runner that sends the model call from a task of its own leaves its
+caller reading `UNOBSERVED`, even though the SDK observed the call: the record
+lands in that task. The OpenAI Agents SDK's `Runner` sends a run's first turn
+that way (and every turn of `run_streamed`), and ADK's `Runner` runs the whole
+agent that way. Read `last_call` in the framework's model hook, which runs in the
+call's own task: `RunHooks.on_llm_end` for the
+[OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md#donkeylast_call), `after_model_callback`
+for [ADK](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). Calling the model directly (Strands'
+`Agent.invoke_async`, `AsyncAnthropic.messages.create`, a model's own async
+method) records in the caller's context.
+
+## Two behaviours worth knowing
+
+**The SDK never double-retries a fallback.** DDK retries `502/503/504` with
+backoff (a `502`/`504` on a model call only with
+`retry_model_calls_on_gateway_errors`), but if the gateway already failed over internally, a `503` it marked as
+a fallback is **not** retried again — a second recovery layer stacked on a
+working first one just multiplies latency against an outage the gateway already
+handled.
+
+**Opt in to model determinism.** A silent substitution is surfaced passively on
+`last_call.substituted` by default. When a substitution is not acceptable — your
+evaluation, cost model and token assumptions are all pinned to one model — opt
+into a hard error:
+
+```python
+donkey = Donkey.from_env(on_model_substitution="raise")
+# raises ModelSubstituted when the served model differs from the requested one
+```
+
+`on_model_substitution` resolves along the standard precedence (kwarg → env
+`DONKEY_ON_MODEL_SUBSTITUTION` → `.donkey-kit.toml` → default) and **defaults to
+`"off"`**.
+
+On a model-based routing proxy you address models as `provider/model` (for
+example `openai/gpt-5-mini`), and the gateway reports the served model without
+the prefix (`gpt-5-mini`), with the provider in its own header. A prefix that
+names the served provider is not counted as a difference, so asking for
+`openai/gpt-5-mini` and being served `gpt-5-mini` by `openai` is not a
+substitution. The same model served by a different provider still is. On a
+proxy with more than one provider, a bare name the gateway cannot pin to one
+provider is rejected with a `400` before any upstream call, and DDK raises
+[`ModelNotRoutable`](https://docs.donkey-kit.dev/errors.md).
+
+## Semantic caching & semantic routing Live
+
+Omni Gateway can answer a request from its **semantic cache** (a similar
+prompt was answered before, so no provider round-trip and no token cost) and
+can **route semantically** (pick the model by matching the prompt to a
+topic). Both happen at the gateway. DDK caches nothing and computes no
+embeddings itself; it lets you steer the gateway's cache per request — skip it,
+not store a response, or override the TTL or similarity threshold via
+[`donkey.cache(...)`](https://docs.donkey-kit.dev/budget.md#semantic-cache-steering) — and reports what
+happened:
+
+- the cache outcome (`hit`, `miss`, `bypass`, `no-store`) and similarity score
+  on `donkey.last_call.cache_status` / `.cache_score` and the span
+  (`donkey.cache.status` / `donkey.cache.score`);
+- the matched routing topic and its score, beside the routing fields above.
+
+A cache `hit` is a verbatim replay with no provider round-trip, so it never
+advances the [token budget](https://docs.donkey-kit.dev/budget.md) — the replayed `usage` is not fresh spend.
+
+## TypeScript parity Roadmap
+
+The same signals will surface as `donkey.lastRouting.servedModel` / `.fallback`
+in the TypeScript SDK.
+
+## Next steps
+
+- [Gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md): every model policy the gateway can apply, and the typed exception each one raises.
+- [`last_call` fields](https://docs.donkey-kit.dev/reference/last-call.md): the routing, fallback, substitution and cache fields in full.
+- [Typed refusals](https://docs.donkey-kit.dev/errors.md): `ModelNotRoutable` and the other refusals a routed call can raise.
+- [OpenTelemetry spans](https://docs.donkey-kit.dev/telemetry.md): the span attributes these signals are recorded on.
 
 ---
 
@@ -4678,7 +4842,7 @@ Other sections cover A2A where it meets their topic:
   and [A2A ingress replay](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay).
 - **Human-in-the-loop:** [A2A Authorization-Code Challenges](https://docs.donkey-kit.dev/hitl.md#a2a-authorization-code-challenges).
 - **Observability:** [outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans) and
-  [correlation across agent hops](https://docs.donkey-kit.dev/telemetry.md#across-agent-hops).
+  [correlation across agent hops](https://docs.donkey-kit.dev/correlation.md#across-agent-hops).
 - **Scan & publish:** [publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents) and
   [declaring how an agent is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-agent-is-reached).
 - **CLI:** [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose) and [`donkey dev`](https://docs.donkey-kit.dev/cli.md#donkey-dev).
@@ -5957,7 +6121,7 @@ closed the client it was given), and a call whose pooled connections belong to
 an event loop that has closed. The SDK's own connection pools are per event
 loop, so a second `asyncio.run()` on one `Donkey` works; this one comes from a
 transport you passed in and reused across `asyncio.run()` calls. Its
-`.remediation` names the fix for each. Outside a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids)
+`.remediation` names the fix for each. Outside a [`donkey.run()`](https://docs.donkey-kit.dev/correlation.md)
 block, `typed_refusals()` or `@donkey.governed`, it reaches you the way
 `GatewayUnavailable` does: `openai` before 3 and `anthropic` wrap it in an
 `APIConnectionError` (read the `ConfigError` from `e.__cause__`), and `openai`
@@ -6083,7 +6247,7 @@ logs and to the gateway's own record:
 
 | Attribute | What it is | Provenance |
 | --- | --- | --- |
-| `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
+| `.correlation_id` | The **run** id, shared by every call in a [`donkey.run()`](https://docs.donkey-kit.dev/correlation.md) block | The `X-Correlation-Id` request header the client sent — always equals what went on the wire. |
 | `.call_id` | The **per-call** id, unique per logical request and stable across that request's retries | The `X-Donkey-Request-Id` request header the client sent. Present **even when the request fails before any response** (a transport error). |
 | `.request_id` | The **upstream provider's own** id, passed through by the gateway | Read back from a **response** header whose name varies by provider (`x-request-id` for OpenAI, `x-amzn-requestid` for Bedrock, `apim-request-id` for Azure, `request-id` for a native Anthropic proxy). Quote it to the provider's support team. Absent on a transport error, or on a route where the provider forwarded none. |
 
@@ -6100,8 +6264,8 @@ A lost gateway becomes an `APIConnectionError` with the `GatewayUnavailable`
 hidden on its `__cause__` under `openai` before 3 and under `anthropic`, while
 `openai` 3 and later raises `GatewayUnavailable` as it is. LangChain re-wraps
 these again, and Strands and Agent Framework wrap them in their own types. Inside a
-[`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) block or a
-[`@donkey.governed`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids) function, none of that reaches
+[`donkey.run()`](https://docs.donkey-kit.dev/correlation.md) block or a
+[`@donkey.governed`](https://docs.donkey-kit.dev/correlation.md) function, none of that reaches
 you: a refusal or a lost gateway leaves the block as its typed `DonkeyError`,
 so one `except` covers every framework.
 
@@ -6445,7 +6609,7 @@ gateway does not allow is refused too.
 
 A handled call that ends in a success returns that success, from the new
 request. Every other outcome reaches your code as the refusal it was, typed
-inside [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids), `typed_refusals()` or
+inside [`donkey.run()`](https://docs.donkey-kit.dev/correlation.md), `typed_refusals()` or
 `@donkey.governed` exactly as in [Typed refusals](https://docs.donkey-kit.dev/errors.md). So keep catching
 the refusals you care about: an escalated `PIIDetected` still raises, after the
 handler has queued it.
@@ -7210,7 +7374,7 @@ async with donkey.cache(threshold=0.9, ttl=60):
 ```
 
 `donkey.cache(...)` is a dual sync/async context manager — like
-[`donkey.run(...)`](https://docs.donkey-kit.dev/telemetry.md#correlation-ids), the controls bind to a context variable, so they
+[`donkey.run(...)`](https://docs.donkey-kit.dev/correlation.md), the controls bind to a context variable, so they
 reach every governed call in the block (including calls on framework-spawned
 `asyncio` tasks) with no threading through framework state. The five controls:
 
@@ -8411,15 +8575,16 @@ live state will eventually make a decision it should not have.
 
 Source: https://docs.donkey-kit.dev/telemetry.md
 
-# Telemetry & cost
+# OpenTelemetry spans
 
 Status: Live. Shipped, and verified against a real governed gateway.
 
 DDK answers two questions about every governed call: *what happened?* and *who
-pays for it?* It does so with OpenTelemetry GenAI spans, per-run correlation
-IDs, cost-attribution tags, and routing and resilience signals. For what the
-SDK itself does along the way, such as retries and token refreshes, see
-[Debug logging](#debug-logging).
+pays for it?* It does so with OpenTelemetry GenAI spans. Per-run correlation
+IDs, cost-attribution tags and routing signals each have their own page:
+[Correlation IDs](https://docs.donkey-kit.dev/correlation.md), [Cost attribution](https://docs.donkey-kit.dev/cost-attribution.md) and
+[Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md). For what the SDK itself does along
+the way, such as retries and token refreshes, see [Debug logging](#debug-logging).
 
 ## OpenTelemetry GenAI spans
 
@@ -8895,407 +9060,6 @@ and A2A quality explanation text is omitted by the outbound recorder. Numeric
 quality scores and the captured evaluation/status values do not require content
 opt-in. See [Outbound A2A spans](#outbound-a2a-spans).
 
-## Routing & resilience
-
-The gateway can fail over between providers when one degrades ("Enhanced
-Resilience for Intelligent Routing"). It reports what it *did* with each request
-on the response — which provider and model served it, how it routed, and whether
-that was a **fallback**. DDK reads those signals off the shared transport, so
-you get them with **no framework required** — the raw `donkey.llm.client()` path
-benefits just as the deep adapters do.
-
-Every governed call through the SDK's shared HTTP client exposes them on
-`donkey.last_call`, beside the usage and identity fields:
-
-```python
-donkey = Donkey.from_env()
-await donkey.openai().responses.create(model="gpt-5.1", input="…")
-
-r = donkey.last_call
-r.requested_model    # "gpt-5.1"  — what you asked for
-r.served_model       # "gpt-5.1"  — or a substitute after failover
-r.served_provider    # "openai"
-r.routing_type       # "ModelBased" — or "Semantic" on a semantic-routing proxy
-r.fallback           # False      — True if the gateway failed over
-r.substituted        # False      — served_model != requested_model
-r.matched_topic      # None       — the topic a Semantic proxy matched (else None)
-r.routing_score      # None       — that match's similarity score (else None)
-```
-
-On a **semantic-routing** proxy (`routing_type == "Semantic"`), the gateway also
-reports *why* it picked a provider: the topic your prompt matched and the
-similarity score behind that match. Those land on `r.matched_topic` /
-`r.routing_score`. On a model-based proxy both are `None` — the gateway emits no
-semantic header, and DDK never fabricates a value for a signal it did not
-observe.
-
-They also land on the span (`gen_ai.response.model`, `donkey.routing.type`,
-`donkey.routing.fallback`, and — on a semantic route —
-`donkey.routing.matched_topic` / `donkey.routing.score`) — the most useful thing
-to have on hand when latency spikes: it tells an operator whether a slow call was
-routed normally or recovered from a degraded provider.
-
-For the complete list of `last_call` fields — observability status, gateway
-identity, routing, and token usage — see the [`last_call` field
-reference](https://docs.donkey-kit.dev/reference/last-call.md).
-
-The same record also carries the call's identity and usage: `request_id` (the
-upstream provider's id), `api_instance_id` and `environment_id` (which gateway
-instance served it), and the token counts including cached and reasoning
-tokens. The [gateway identity example](https://docs.donkey-kit.dev/examples/general/gateway-identity.md) walks
-through every field.
-
-### When `last_call` is unavailable
-
-`donkey.last_call` is populated only when the governed response passes through
-the SDK's shared HTTP client, and only in the context that made the call.
-CrewAI routes outside that client: its native OpenAI provider builds its own,
-so no response reaches the record and the run's correlation ID isn't sent.
-
-LlamaIndex, Microsoft Agent Framework and ADK's `model()` send through the
-shared client, so a call populates the record in its own context and carries
-the run's correlation ID. A cold read on a `Donkey` that resolved only these
-adapters reports `UNOBSERVED`, and `OBSERVED` after a call
-([#740](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/740)).
-ADK's `gemini()` uses the shared client too (see
-[Native Gemini](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini) for reading `last_call` inside
-an ADK run).
-
-For a `Donkey` that resolved only CrewAI:
-
-```python
-r = donkey.last_call
-r.status       # LastCallStatus.UNAVAILABLE
-r.available    # False
-r.surface      # "crewai"
-```
-
-This is different from `UNOBSERVED`, which means the current context has not
-yet received a governed response. On an unavailable surface the SDK cannot
-observe any response-derived `last_call` field, including gateway identity,
-routing, fallback, and usage. If multiple non-observing adapters were resolved,
-`surface` lists their names.
-
-An agent runner that sends the model call from a task of its own leaves its
-caller reading `UNOBSERVED`, even though the SDK observed the call: the record
-lands in that task. The OpenAI Agents SDK's `Runner` sends a run's first turn
-that way (and every turn of `run_streamed`), and ADK's `Runner` runs the whole
-agent that way. Read `last_call` in the framework's model hook, which runs in the
-call's own task: `RunHooks.on_llm_end` for the
-[OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md#donkeylast_call), `after_model_callback`
-for [ADK](https://docs.donkey-kit.dev/frameworks/adk.md#native-gemini). Calling the model directly (Strands'
-`Agent.invoke_async`, `AsyncAnthropic.messages.create`, a model's own async
-method) records in the caller's context.
-
-### Two behaviours worth knowing
-
-**The SDK never double-retries a fallback.** DDK retries `502/503/504` with
-backoff (a `502`/`504` on a model call only with
-`retry_model_calls_on_gateway_errors`), but if the gateway already failed over internally, a `503` it marked as
-a fallback is **not** retried again — a second recovery layer stacked on a
-working first one just multiplies latency against an outage the gateway already
-handled.
-
-**Opt in to model determinism.** A silent substitution is surfaced passively on
-`last_call.substituted` by default. When a substitution is not acceptable — your
-evaluation, cost model and token assumptions are all pinned to one model — opt
-into a hard error:
-
-```python
-donkey = Donkey.from_env(on_model_substitution="raise")
-# raises ModelSubstituted when the served model differs from the requested one
-```
-
-`on_model_substitution` resolves along the standard precedence (kwarg → env
-`DONKEY_ON_MODEL_SUBSTITUTION` → `.donkey-kit.toml` → default) and **defaults to
-`"off"`**.
-
-On a model-based routing proxy you address models as `provider/model` (for
-example `openai/gpt-5-mini`), and the gateway reports the served model without
-the prefix (`gpt-5-mini`), with the provider in its own header. A prefix that
-names the served provider is not counted as a difference, so asking for
-`openai/gpt-5-mini` and being served `gpt-5-mini` by `openai` is not a
-substitution. The same model served by a different provider still is. On a
-proxy with more than one provider, a bare name the gateway cannot pin to one
-provider is rejected with a `400` before any upstream call, and DDK raises
-[`ModelNotRoutable`](https://docs.donkey-kit.dev/errors.md).
-
-### Semantic caching & semantic routing Live
-
-Omni Gateway can answer a request from its **semantic cache** (a similar
-prompt was answered before, so no provider round-trip and no token cost) and
-can **route semantically** (pick the model by matching the prompt to a
-topic). Both happen at the gateway. DDK caches nothing and computes no
-embeddings itself; it lets you steer the gateway's cache per request — skip it,
-not store a response, or override the TTL or similarity threshold via
-[`donkey.cache(...)`](https://docs.donkey-kit.dev/budget.md#semantic-cache-steering) — and reports what
-happened:
-
-- the cache outcome (`hit`, `miss`, `bypass`, `no-store`) and similarity score
-  on `donkey.last_call.cache_status` / `.cache_score` and the span
-  (`donkey.cache.status` / `donkey.cache.score`);
-- the matched routing topic and its score, beside the routing fields above.
-
-A cache `hit` is a verbatim replay with no provider round-trip, so it never
-advances the [token budget](https://docs.donkey-kit.dev/budget.md) — the replayed `usage` is not fresh spend.
-
-### TypeScript parity Roadmap
-
-The same signals will surface as `donkey.lastRouting.servedModel` / `.fallback`
-in the TypeScript SDK.
-
-## Correlation IDs
-
-Set a per-**run** id once, and every call inside the block carries it — on the
-wire, on every span, and on every exception — with nothing threaded through your
-framework state.
-
-```python
-async with donkey.run(id=ticket.id):
-    await triage_agent.run(ticket)
-```
-
-`donkey.run(id=…)` binds **two ids**:
-
-- a **run id** → the `X-Correlation-Id` request header → the span's
-  `donkey.correlation_id` → `DonkeyError.correlation_id`. Shared by every call in
-  the block, so a client-side log line **joins** to the gateway's own record.
-- a fresh **per-call id** → the `X-Donkey-Request-Id` request header →
-  `DonkeyError.call_id`. Unique per logical request, stable across that request's
-  retries, so one call is pinpointable within a run.
-
-The gateway reads the inbound `X-Correlation-Id` and echoes it verbatim on the
-response, so the request and response `x-correlation-id` are the same value.
-`X-Donkey-Request-Id` is a client-owned per-call id the gateway does not consume.
-Both header names are overridable (`correlation_header` / `call_id_header`) for a
-gateway that expects different ones.
-
-Propagation is contextvar-based, so it reaches through framework nodes (every
-LangGraph node, for instance) without threading an argument through every
-function, and concurrent runs never leak into each other. It works with or
-without OpenTelemetry installed. `donkey.run(...)` is a **dual sync/async**
-context manager (plain `with` works too); nested blocks rebind then restore.
-
-**Concurrent fan-out.** Every call in a fan-out started inside `donkey.run()`
-(`asyncio.gather`, parallel nodes, tool calls on child tasks) carries exactly
-one correlation id. Each task copies the context when it is created, so this
-holds even for a task that outlives the block, and a task that opens its own
-`donkey.run()` changes only its own id, never its parent's or a sibling's.
-Threads do not inherit the context: run them under `contextvars.copy_context()`
-or open a `donkey.run()` inside the thread. **Outside** a run nothing is
-grouped. Each call gets its own fresh id, so N concurrent calls send N ids.
-
-A refusal leaving the block is re-raised as its typed `DonkeyError`, whichever
-framework wrapped it on the way out, so `except PIIDetected` works the same
-around every framework. See
-[Typed refusals at the framework boundary](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary);
-`donkey.run(typed_refusals=False)` turns it off.
-
-### Across agent hops
-
-An agent that serves requests can **join** its caller's run instead of starting
-a fresh one. `donkey.run_from_headers()` reads the configured correlation header
-from the inbound request, adopts the caller's id when it is well-formed
-(`[A-Za-z0-9._:-]`, at most 128 characters), and mints a fresh one otherwise. A
-malformed id is never forwarded. Every governed call in the block then carries
-it, exactly as inside `donkey.run(id=…)`.
-
-```python nocheck
-@app.post("/tasks")
-async def handle(request: Request, task: Task):
-    async with donkey.run_from_headers(request.headers):
-        return await agent.run(task)
-```
-
-For an outbound hop the governed transport does not carry, such as another
-agent's endpoint or an MCP server reached on your own HTTP client, pass
-`donkey.correlation_headers()`. It returns the bound run id under the configured
-header, or `{}` outside a run, and never the gateway credentials.
-
-```python nocheck
-async with donkey.run(id=ticket.id):
-    await agents.post(sub_agent_url, json=task, headers=donkey.correlation_headers())
-```
-
-The sub-agent's spans and the gateway's record then share one id end to end. The
-GenAI span inside `run_from_headers()` records `donkey.correlation_id.source`:
-`adopted` when the caller supplied the id, `minted` when it did not. A served
-[A2A task](https://docs.donkey-kit.dev/a2a/call.md) applies the same rule on its own.
-
-### Run ledger
-
-`donkey.last_call` keeps only the most recent call. A `donkey.run()` block also
-keeps a **run ledger**: every governed model call made in the run, every refusal
-the gateway returned, and the run's token totals. Read it inside the block at
-`donkey.current_run`. Keep the scope to read it after the block ends:
-
-```python
-from donkey_kit import PIIDetected
-
-scope = donkey.run(id=ticket.id)
-async with scope as run_id:                 # still the run's id, a str
-    await triage_agent.run(ticket)
-    run = donkey.current_run
-    if any(r.is_a(PIIDetected) for r in run.refusals):
-        ...                                 # redact the later prompts
-
-ledger = scope.ledger                       # still readable after the block
-ledger.call_count                           # every governed model call in the run
-ledger.usage.total_tokens                   # summed across them, cached and reasoning tokens too
-[c.served_model for c in ledger.calls]      # each entry is that call's last_call record
-```
-
-| Field | What it holds |
-|---|---|
-| `calls` | Each call's [`last_call` record](https://docs.donkey-kit.dev/reference/last-call.md), oldest first: served model and provider, fallback, request id, usage, semantic-cache and semantic-routing outcome |
-| `refusals` | A `RunRefusal` for each policy refusal (`PIIDetected`, `TokenBudgetExceeded`, …) the gateway returned on a call in the run, **even when a framework caught it**, and for any `ModelSubstituted` the SDK raised: its `kind`, `policy`, `status_code`, the three ids and, for PII, the entity types. Test it with `r.is_a(PIIDetected)` |
-| `usage` | A `RunUsage` with the run's `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens`, `cache_write_tokens` and `reasoning_tokens`, and `calls_with_usage` |
-| `call_count`, `refusal_count` | Totals for the whole run |
-| `dropped` | Calls and refusals the cap dropped from `calls` and `refusals` |
-| `available`, `surface` | `False`, with the adapter names, when nothing used can feed the ledger |
-
-Each read returns a frozen snapshot, so read again for newer state. The ledger
-holds metadata only, never prompt or completion text. A refusal is recorded as a
-`RunRefusal`, not the exception, because the exception's `.response` keeps the
-gateway's body, which can echo the values a policy blocked.
-
-- **Scope.** The ledger follows the run's correlation id. Framework-spawned
-  tasks append to their run's ledger, concurrent runs never see each other's,
-  and a nested `donkey.run()` keeps its own and restores the outer one on exit.
-  Appends are thread-safe for threads run under `contextvars.copy_context()`.
-- **Bounded memory.** `calls` and `refusals` each keep the newest 1000 entries
-  (`donkey.run(ledger_max_entries=…)`). Older ones are counted in `dropped`. The
-  totals keep counting past the cap, so a long run's cost stays exact.
-- **Same reach as `last_call`.** Only responses through the SDK's shared HTTP
-  client reach it. When every adapter used routes outside that client (CrewAI
-  today), `available` is `False` and `surface` names them: the ledger is
-  unavailable, not empty. See [When `last_call` is unavailable](#when-last_call-is-unavailable).
-
-### The decorator form
-
-When a whole function should be one run, `@donkey.governed` is the decorator
-equivalent of wrapping its body in `donkey.run()`:
-
-```python
-@donkey.governed(team="support")
-async def handle_ticket(ticket):
-    await triage_agent.run(ticket)
-```
-
-Each call opens its own run — a fresh run/correlation id — and binds the
-optional per-run cost tags, the OTel span, and typed refusals, exactly the scope
-`donkey.run()` establishes. It wraps **both sync and async** callables and is
-usable bare (`@donkey.governed`) or parametrised. There is deliberately
-**no `id=`**: pinning one id across every call would collapse unrelated runs into
-a single correlation, so when you need a specific id, use `donkey.run(id=…)`
-directly.
-
-## Cost-attribution tags
-
-A small, fixed set of tags (`team`, `project`, `env`, `enduser.id`) set once
-and recorded on every model call's span:
-
-```python
-donkey = Donkey.from_env(team="support", project="triage-v2", env="prod")
-
-async with donkey.run(id=ticket.id, enduser_id=agent_user.id):
-    await triage_agent.run(ticket)
-```
-
-The tags resolve in this order: `Donkey.from_env(team=…)` kwargs, then
-`DONKEY_COST_*` env vars, then a `[donkey.cost]` table in the config files (see
-[Configuration](https://docs.donkey-kit.dev/reference/configuration.md#cost-attribution-tags)). Per-run
-overrides layer on top: `donkey.run(team=…, project=…, env=…, enduser_id=…)`
-wins **per field** for its block, and the rest fall back to the configured
-tags. The key set is **fixed**: an unknown dimension is a configuration error,
-never a silently dropped tag. Values are **validated** (fixed keys, bounded
-length), so nobody stuffs a JSON blob into a span attribute or header.
-
-### Where the tags go
-
-| Carrier | Names | When | Goes to |
-|---|---|---|---|
-| Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id` | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so CrewAI, which has only header injection, records none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
-| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Model requests to the LLM proxy only. See the note below. |
-
-Each header carries the tag's value unchanged (for example
-`X-Anypoint-Cost-Enduser-Id: user-42`). A tag that isn't set is sent under
-neither carrier.
-
-The Anypoint LLM Gateway doesn't read cost tags from request headers: it meters
-cost from token usage per API instance and consuming client application. So the
-span attributes are the carrier that matters. Turn the headers on only when
-something of your own reads them.
-
-  **With `send_cost_headers` on, the headers go only on model requests to the
-  LLM proxy.** The connected-app token request and other Anypoint
-  control-plane requests never carry them, so the end-user ID doesn't reach
-  those hosts. Adapters with transport injection also send per-run
-  `donkey.run(...)` values; adapters that get only a `default_headers` snapshot
-  send the configured tags.
-
-  **The end-user ID reaches your trace backend regardless of
-  `send_cost_headers`.** If `enduser_id` is set, every model-call span carries
-  `donkey.cost.enduser.id`, and any exporter you've configured receives it. To
-  keep it out of traces, don't set `enduser_id` (`DONKEY_COST_ENDUSER_ID`,
-  `"enduser.id"` in `[donkey.cost]`, or `donkey.run(enduser_id=…)`), drop the
-  attribute in your collector, or turn spans off with `DONKEY_TELEMETRY=false`.
-
-### Per-request attribution
-
-One process often serves several tenants or teams: a shared agent platform, a
-multi-tenant SaaS agent, or one job that spans two cost centres. Keep one
-`Donkey` (one client, pool, auth cache and budget) and say per request which
-group a call belongs to:
-
-```python
-async def handle(tenant: str, prompt: str):
-    with donkey.attribution(business_group=tenant):
-        return await model.ainvoke(prompt)
-```
-
-`donkey.attribution(business_group=…, team=…, project=…, env=…, enduser_id=…)`
-attributes every governed call in its block, on both the async and the blocking
-client. The business group replaces the configured `business_group` for the
-block. The precedence is this scope, then the `Donkey` config, then
-`DONKEY_BUSINESS_GROUP`, then the config file. The cost tags merge per field
-over any already bound by an enclosing block.
-
-It doesn't start a run, so the correlation ID stays the same and one run can
-span two cost centres:
-
-```python
-async with donkey.run(id=job.id):
-    with donkey.attribution(business_group="risk-eu"):
-        await score(job)
-    with donkey.attribution(business_group="risk-us"):
-        await score(job)
-```
-
-`donkey.run(business_group=…)` and `@donkey.governed(business_group=…)` take
-the same argument when the group belongs to the whole run. Like the run ID, the
-binding is contextvar-based: it reaches framework-spawned tasks, concurrent
-tasks never see each other's group, and nested blocks restore the outer value
-on exit. The value is validated like a cost tag, and an invalid one raises
-`ConfigError` where you set it.
-
-  **Adapters that get only a `default_headers` snapshot don't follow the
-  scope.** They captured the configured business group when they were built, so
-  they keep sending it. Adapters with transport injection send the scoped value.
-  The header name, `X-Anypoint-Business-Group`, is still an unverified
-  placeholder; see [Configuration](https://docs.donkey-kit.dev/reference/configuration.md#optional-attribution).
-
-### The question this answers
-
-Finance asks what the support agent cost last month versus the HR bot. Without
-tags, both agents share one `client_id` and there is no way to split the bill.
-With tags it is a group-by.
-
-For compliance — *"prove the HR bot's answer to user X on date Y went through
-the content-safety policy"* — the correlation ID on the log line joins to the
-gateway record, and the span carries `donkey.cost.enduser.id` and `donkey.policy.type`. An
-EU AI Act Article 12 log request becomes one query, not an investigation.
-
 ## Debug logging
 
 Spans tell you what a call did. When you need to see what the SDK did *for*
@@ -9352,6 +9116,288 @@ problem you have to fix is a Python warning instead, raised through
 error with the `warnings` module. For example, an OTLP endpoint set without its
 exporter installed raises `donkey_kit.core.telemetry.TelemetryExportWarning`
 (see [Zero-config export](#zero-config-export)).
+
+---
+
+Source: https://docs.donkey-kit.dev/correlation.md
+
+# Correlation IDs
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+<span id="correlation-ids" />
+
+Set a per-**run** id once, and every call inside the block carries it — on the
+wire, on every span, and on every exception — with nothing threaded through your
+framework state.
+
+```python
+async with donkey.run(id=ticket.id):
+    await triage_agent.run(ticket)
+```
+
+`donkey.run(id=…)` binds **two ids**:
+
+- a **run id** → the `X-Correlation-Id` request header → the span's
+  `donkey.correlation_id` → `DonkeyError.correlation_id`. Shared by every call in
+  the block, so a client-side log line **joins** to the gateway's own record.
+- a fresh **per-call id** → the `X-Donkey-Request-Id` request header →
+  `DonkeyError.call_id`. Unique per logical request, stable across that request's
+  retries, so one call is pinpointable within a run.
+
+The gateway reads the inbound `X-Correlation-Id` and echoes it verbatim on the
+response, so the request and response `x-correlation-id` are the same value.
+`X-Donkey-Request-Id` is a client-owned per-call id the gateway does not consume.
+Both header names are overridable (`correlation_header` / `call_id_header`) for a
+gateway that expects different ones.
+
+Propagation is contextvar-based, so it reaches through framework nodes (every
+LangGraph node, for instance) without threading an argument through every
+function, and concurrent runs never leak into each other. It works with or
+without OpenTelemetry installed. `donkey.run(...)` is a **dual sync/async**
+context manager (plain `with` works too); nested blocks rebind then restore.
+
+**Concurrent fan-out.** Every call in a fan-out started inside `donkey.run()`
+(`asyncio.gather`, parallel nodes, tool calls on child tasks) carries exactly
+one correlation id. Each task copies the context when it is created, so this
+holds even for a task that outlives the block, and a task that opens its own
+`donkey.run()` changes only its own id, never its parent's or a sibling's.
+Threads do not inherit the context: run them under `contextvars.copy_context()`
+or open a `donkey.run()` inside the thread. **Outside** a run nothing is
+grouped. Each call gets its own fresh id, so N concurrent calls send N ids.
+
+A refusal leaving the block is re-raised as its typed `DonkeyError`, whichever
+framework wrapped it on the way out, so `except PIIDetected` works the same
+around every framework. See
+[Typed refusals at the framework boundary](https://docs.donkey-kit.dev/errors.md#typed-refusals-at-the-framework-boundary);
+`donkey.run(typed_refusals=False)` turns it off.
+
+## Across agent hops
+
+An agent that serves requests can **join** its caller's run instead of starting
+a fresh one. `donkey.run_from_headers()` reads the configured correlation header
+from the inbound request, adopts the caller's id when it is well-formed
+(`[A-Za-z0-9._:-]`, at most 128 characters), and mints a fresh one otherwise. A
+malformed id is never forwarded. Every governed call in the block then carries
+it, exactly as inside `donkey.run(id=…)`.
+
+```python nocheck
+@app.post("/tasks")
+async def handle(request: Request, task: Task):
+    async with donkey.run_from_headers(request.headers):
+        return await agent.run(task)
+```
+
+For an outbound hop the governed transport does not carry, such as another
+agent's endpoint or an MCP server reached on your own HTTP client, pass
+`donkey.correlation_headers()`. It returns the bound run id under the configured
+header, or `{}` outside a run, and never the gateway credentials.
+
+```python nocheck
+async with donkey.run(id=ticket.id):
+    await agents.post(sub_agent_url, json=task, headers=donkey.correlation_headers())
+```
+
+The sub-agent's spans and the gateway's record then share one id end to end. The
+GenAI span inside `run_from_headers()` records `donkey.correlation_id.source`:
+`adopted` when the caller supplied the id, `minted` when it did not. A served
+[A2A task](https://docs.donkey-kit.dev/a2a/call.md) applies the same rule on its own.
+
+## Run ledger
+
+`donkey.last_call` keeps only the most recent call. A `donkey.run()` block also
+keeps a **run ledger**: every governed model call made in the run, every refusal
+the gateway returned, and the run's token totals. Read it inside the block at
+`donkey.current_run`. Keep the scope to read it after the block ends:
+
+```python
+from donkey_kit import PIIDetected
+
+scope = donkey.run(id=ticket.id)
+async with scope as run_id:                 # still the run's id, a str
+    await triage_agent.run(ticket)
+    run = donkey.current_run
+    if any(r.is_a(PIIDetected) for r in run.refusals):
+        ...                                 # redact the later prompts
+
+ledger = scope.ledger                       # still readable after the block
+ledger.call_count                           # every governed model call in the run
+ledger.usage.total_tokens                   # summed across them, cached and reasoning tokens too
+[c.served_model for c in ledger.calls]      # each entry is that call's last_call record
+```
+
+| Field | What it holds |
+|---|---|
+| `calls` | Each call's [`last_call` record](https://docs.donkey-kit.dev/reference/last-call.md), oldest first: served model and provider, fallback, request id, usage, semantic-cache and semantic-routing outcome |
+| `refusals` | A `RunRefusal` for each policy refusal (`PIIDetected`, `TokenBudgetExceeded`, …) the gateway returned on a call in the run, **even when a framework caught it**, and for any `ModelSubstituted` the SDK raised: its `kind`, `policy`, `status_code`, the three ids and, for PII, the entity types. Test it with `r.is_a(PIIDetected)` |
+| `usage` | A `RunUsage` with the run's `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens`, `cache_write_tokens` and `reasoning_tokens`, and `calls_with_usage` |
+| `call_count`, `refusal_count` | Totals for the whole run |
+| `dropped` | Calls and refusals the cap dropped from `calls` and `refusals` |
+| `available`, `surface` | `False`, with the adapter names, when nothing used can feed the ledger |
+
+Each read returns a frozen snapshot, so read again for newer state. The ledger
+holds metadata only, never prompt or completion text. A refusal is recorded as a
+`RunRefusal`, not the exception, because the exception's `.response` keeps the
+gateway's body, which can echo the values a policy blocked.
+
+- **Scope.** The ledger follows the run's correlation id. Framework-spawned
+  tasks append to their run's ledger, concurrent runs never see each other's,
+  and a nested `donkey.run()` keeps its own and restores the outer one on exit.
+  Appends are thread-safe for threads run under `contextvars.copy_context()`.
+- **Bounded memory.** `calls` and `refusals` each keep the newest 1000 entries
+  (`donkey.run(ledger_max_entries=…)`). Older ones are counted in `dropped`. The
+  totals keep counting past the cap, so a long run's cost stays exact.
+- **Same reach as `last_call`.** Only responses through the SDK's shared HTTP
+  client reach it. When every adapter used routes outside that client (CrewAI
+  today), `available` is `False` and `surface` names them: the ledger is
+  unavailable, not empty. See [When `last_call` is unavailable](https://docs.donkey-kit.dev/frameworks/routing.md#when-last_call-is-unavailable).
+
+## The decorator form
+
+When a whole function should be one run, `@donkey.governed` is the decorator
+equivalent of wrapping its body in `donkey.run()`:
+
+```python
+@donkey.governed(team="support")
+async def handle_ticket(ticket):
+    await triage_agent.run(ticket)
+```
+
+Each call opens its own run — a fresh run/correlation id — and binds the
+optional per-run cost tags, the OTel span, and typed refusals, exactly the scope
+`donkey.run()` establishes. It wraps **both sync and async** callables and is
+usable bare (`@donkey.governed`) or parametrised. There is deliberately
+**no `id=`**: pinning one id across every call would collapse unrelated runs into
+a single correlation, so when you need a specific id, use `donkey.run(id=…)`
+directly.
+
+## Next steps
+
+- [Cost attribution](https://docs.donkey-kit.dev/cost-attribution.md): the per-call tags that travel with the same run.
+- [OpenTelemetry spans](https://docs.donkey-kit.dev/telemetry.md): the spans that carry the correlation ID.
+- [Refusal handlers](https://docs.donkey-kit.dev/refusal-handlers.md): acting on refusals inside a `donkey.run()` scope.
+- [Typed refusals](https://docs.donkey-kit.dev/errors.md): the `.correlation_id` field on every exception.
+
+---
+
+Source: https://docs.donkey-kit.dev/cost-attribution.md
+
+# Cost attribution
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+<span id="cost-attribution-tags" />
+
+A small, fixed set of tags (`team`, `project`, `env`, `enduser.id`) set once
+and recorded on every model call's span:
+
+```python
+donkey = Donkey.from_env(team="support", project="triage-v2", env="prod")
+
+async with donkey.run(id=ticket.id, enduser_id=agent_user.id):
+    await triage_agent.run(ticket)
+```
+
+The tags resolve in this order: `Donkey.from_env(team=…)` kwargs, then
+`DONKEY_COST_*` env vars, then a `[donkey.cost]` table in the config files (see
+[Configuration](https://docs.donkey-kit.dev/reference/configuration.md#cost-attribution-tags)). Per-run
+overrides layer on top: `donkey.run(team=…, project=…, env=…, enduser_id=…)`
+wins **per field** for its block, and the rest fall back to the configured
+tags. The key set is **fixed**: an unknown dimension is a configuration error,
+never a silently dropped tag. Values are **validated** (fixed keys, bounded
+length), so nobody stuffs a JSON blob into a span attribute or header.
+
+## Where the tags go
+
+| Carrier | Names | When | Goes to |
+|---|---|---|---|
+| Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id` | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so CrewAI, which has only header injection, records none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
+| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Model requests to the LLM proxy only. See the note below. |
+
+Each header carries the tag's value unchanged (for example
+`X-Anypoint-Cost-Enduser-Id: user-42`). A tag that isn't set is sent under
+neither carrier.
+
+The Anypoint LLM Gateway doesn't read cost tags from request headers: it meters
+cost from token usage per API instance and consuming client application. So the
+span attributes are the carrier that matters. Turn the headers on only when
+something of your own reads them.
+
+  **With `send_cost_headers` on, the headers go only on model requests to the
+  LLM proxy.** The connected-app token request and other Anypoint
+  control-plane requests never carry them, so the end-user ID doesn't reach
+  those hosts. Adapters with transport injection also send per-run
+  `donkey.run(...)` values; adapters that get only a `default_headers` snapshot
+  send the configured tags.
+
+  **The end-user ID reaches your trace backend regardless of
+  `send_cost_headers`.** If `enduser_id` is set, every model-call span carries
+  `donkey.cost.enduser.id`, and any exporter you've configured receives it. To
+  keep it out of traces, don't set `enduser_id` (`DONKEY_COST_ENDUSER_ID`,
+  `"enduser.id"` in `[donkey.cost]`, or `donkey.run(enduser_id=…)`), drop the
+  attribute in your collector, or turn spans off with `DONKEY_TELEMETRY=false`.
+
+## Per-request attribution
+
+One process often serves several tenants or teams: a shared agent platform, a
+multi-tenant SaaS agent, or one job that spans two cost centres. Keep one
+`Donkey` (one client, pool, auth cache and budget) and say per request which
+group a call belongs to:
+
+```python
+async def handle(tenant: str, prompt: str):
+    with donkey.attribution(business_group=tenant):
+        return await model.ainvoke(prompt)
+```
+
+`donkey.attribution(business_group=…, team=…, project=…, env=…, enduser_id=…)`
+attributes every governed call in its block, on both the async and the blocking
+client. The business group replaces the configured `business_group` for the
+block. The precedence is this scope, then the `Donkey` config, then
+`DONKEY_BUSINESS_GROUP`, then the config file. The cost tags merge per field
+over any already bound by an enclosing block.
+
+It doesn't start a run, so the correlation ID stays the same and one run can
+span two cost centres:
+
+```python
+async with donkey.run(id=job.id):
+    with donkey.attribution(business_group="risk-eu"):
+        await score(job)
+    with donkey.attribution(business_group="risk-us"):
+        await score(job)
+```
+
+`donkey.run(business_group=…)` and `@donkey.governed(business_group=…)` take
+the same argument when the group belongs to the whole run. Like the run ID, the
+binding is contextvar-based: it reaches framework-spawned tasks, concurrent
+tasks never see each other's group, and nested blocks restore the outer value
+on exit. The value is validated like a cost tag, and an invalid one raises
+`ConfigError` where you set it.
+
+  **Adapters that get only a `default_headers` snapshot don't follow the
+  scope.** They captured the configured business group when they were built, so
+  they keep sending it. Adapters with transport injection send the scoped value.
+  The header name, `X-Anypoint-Business-Group`, is still an unverified
+  placeholder; see [Configuration](https://docs.donkey-kit.dev/reference/configuration.md#optional-attribution).
+
+## The question this answers
+
+Finance asks what the support agent cost last month versus the HR bot. Without
+tags, both agents share one `client_id` and there is no way to split the bill.
+With tags it is a group-by.
+
+For compliance — *"prove the HR bot's answer to user X on date Y went through
+the content-safety policy"* — the correlation ID on the log line joins to the
+gateway record, and the span carries `donkey.cost.enduser.id` and `donkey.policy.type`. An
+EU AI Act Article 12 log request becomes one query, not an investigation.
+
+## Next steps
+
+- [Correlation IDs](https://docs.donkey-kit.dev/correlation.md): the per-run id that joins a call's tags to its log lines and gateway record.
+- [Configuration](https://docs.donkey-kit.dev/reference/configuration.md#optional-attribution): where the tags and the attribution headers are set.
+- [Budget & pacing](https://docs.donkey-kit.dev/budget.md): the token and request windows the gateway enforces per consumer.
+- [OpenTelemetry spans](https://docs.donkey-kit.dev/telemetry.md): the span attributes these tags are recorded on.
 
 ---
 
@@ -10382,7 +10428,7 @@ publishing, verifying and exposing your agents and tools.
 
 ### `@donkey.governed`
 
-Runs a function inside a [`donkey.run()`](https://docs.donkey-kit.dev/telemetry.md) scope:
+Runs a function inside a [`donkey.run()`](https://docs.donkey-kit.dev/correlation.md) scope:
 
 ```python
 @donkey.governed(team="support")
@@ -12268,7 +12314,7 @@ reports `UNAVAILABLE`, and `surface` names the adapter.
 | `UNAVAILABLE` | The adapter named in `surface` sends outside the SDK. | Use an adapter whose `capabilities().observes_last_call` is `True` (see [the table](https://docs.donkey-kit.dev/frameworks.md#what-each-factory-gets-capabilities)), or read the gateway's own logs. |
 
 See [`last_call` fields](https://docs.donkey-kit.dev/reference/last-call.md) and
-[When `last_call` is unavailable](https://docs.donkey-kit.dev/telemetry.md#when-last_call-is-unavailable).
+[When `last_call` is unavailable](https://docs.donkey-kit.dev/frameworks/routing.md#when-last_call-is-unavailable).
 
 ## A `401` in JWT mode
 
@@ -12318,7 +12364,7 @@ terminal before it ever runs on a customer's data.
 
 | Scenario | The job | What it exercises |
 | --- | --- | --- |
-| [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) | Draft replies to a queue of support tickets; one carries PII | Typed refusals ([`PIIDetected`](https://docs.donkey-kit.dev/errors.md)), [correlation IDs](https://docs.donkey-kit.dev/telemetry.md), [OTel spans](https://docs.donkey-kit.dev/telemetry.md) — the shipped LangGraph demo, end to end, and the same job [on the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md) |
+| [Support triage](https://docs.donkey-kit.dev/scenarios/support-triage.md) | Draft replies to a queue of support tickets; one carries PII | Typed refusals ([`PIIDetected`](https://docs.donkey-kit.dev/errors.md)), [correlation IDs](https://docs.donkey-kit.dev/correlation.md), [OTel spans](https://docs.donkey-kit.dev/telemetry.md) — the shipped LangGraph demo, end to end, and the same job [on the OpenAI Agents SDK](https://docs.donkey-kit.dev/scenarios/support-triage-agents-sdk.md) |
 | [Nightly batch](https://docs.donkey-kit.dev/scenarios/nightly-batch.md) | Enrich 50,000 records overnight against a windowed budget, unattended | [Budget pacing](https://docs.donkey-kit.dev/budget.md) (`pace()` / `wait_for_reset()`) and resume, driven by the [simulator's `budget` scenario](https://docs.donkey-kit.dev/simulator.md#scenario-scripting) |
 | [Internal copilot](https://docs.donkey-kit.dev/scenarios/internal-copilot.md) | An internal assistant whose output must clear a content-safety guardrail | [`ContentSafetyBlocked`](https://docs.donkey-kit.dev/errors.md) via the `donkey-sim/content-safety` sentinel, plus per-run correlation |
 
@@ -12369,7 +12415,7 @@ credentials, no real gateway — exercising four governance pieces at once.
   LangGraph run as a typed [`PIIDetected`](https://docs.donkey-kit.dev/errors.md), not a framework-wrapped
   generic error.
 - **Correlation reaches every node for free.** Each ticket runs inside a
-  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/telemetry.md) block; the run id shows up in a graph
+  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/correlation.md) block; the run id shows up in a graph
   node's own logs without being threaded through graph state, because LangGraph
   runs nodes on context-copying `asyncio` tasks.
 - **Every governed call emits an OTel span** — refusals included — exported to a
@@ -12488,7 +12534,7 @@ the LangGraph demo, so you can compare the two frameworks line for line.
   the refusal surfaces out of `Runner.run` as a typed [`PIIDetected`](https://docs.donkey-kit.dev/errors.md),
   not the OpenAI client's generic `PermissionDeniedError`.
 - **Correlation reaches the agent for free.** Each ticket runs inside a
-  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/telemetry.md) block. The agent's dynamic `instructions`
+  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/correlation.md) block. The agent's dynamic `instructions`
   log the run id without it being passed through the run context, because
   `Runner.run` resolves instructions and runs `function_tool`s inside the
   caller's context. Every model request carries the id on the wire too.
@@ -12757,7 +12803,7 @@ copilot that are still blocked on verification.
   [`ContentSafetyBlocked`](https://docs.donkey-kit.dev/errors.md), driven by the `donkey-sim/content-safety`
   sentinel — no need to craft a prompt that a real guardrail would reject.
 - **Per-run correlation joins the refusal to your logs.** Inside a
-  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/telemetry.md) block the bound id becomes the
+  [`donkey.run(id=...)`](https://docs.donkey-kit.dev/correlation.md) block the bound id becomes the
   `X-Correlation-Id` on every request *and* lands on
   `ContentSafetyBlocked.correlation_id`, so a log line for the block joins to
   the gateway's own record with no extra wiring.
@@ -15194,7 +15240,7 @@ except Exception as err:
 - **A `provider/` prefix is not a substitution.** On a model-based routing
   proxy the gateway reports the served model without the `provider/` prefix;
   `substituted` ignores a prefix that names the served provider (see
-  [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing)).
+  [Telemetry & cost](https://docs.donkey-kit.dev/frameworks/routing.md#two-behaviours-worth-knowing)).
 
   The simulator's captured success response was recorded against `gpt-5.1`, so
   asking for any other model id shows up as a substitution in narrative demo
@@ -17007,7 +17053,7 @@ The three required values for the LLM proxy:
   `apikey: <client_id>:<client_secret>` — which its
   `dataweave-headers-transformation` policy splits back into the pair. DDK doesn't use that form: it always
   sends the two-header pair, because `client_id` is the per-agent
-  [attribution](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags) unit. The colon-joined value is not an
+  [attribution](https://docs.donkey-kit.dev/cost-attribution.md) unit. The colon-joined value is not an
   alternative once a `client_id` header is present — the policy ignores it.
 
 Missing required fields are reported **all at once** with their env-var names,
@@ -17189,7 +17235,7 @@ attribution.
 To set the business group per request rather than per `Donkey`, wrap the calls
 in `donkey.attribution(business_group=…)` or pass `business_group=` to
 `donkey.run(...)`. The scoped value wins over this field for its block. See
-[Per-request attribution](https://docs.donkey-kit.dev/telemetry.md#per-request-attribution).
+[Per-request attribution](https://docs.donkey-kit.dev/cost-attribution.md#per-request-attribution).
 
   Both header names are unconfirmed guesses. The gateway hasn't been seen
   reading them (see §3 of the
@@ -17203,7 +17249,7 @@ in `donkey.attribution(business_group=…)` or pass `business_group=` to
 
 Per-call and per-run correlation IDs ride on request headers. The IDs also
 appear on spans and exceptions regardless of the header names. See
-[Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#correlation-ids).
+[Telemetry & cost](https://docs.donkey-kit.dev/correlation.md).
 
 - `X-Correlation-Id` carries the run ID. The gateway reads this header and
   echoes it on the response `x-correlation-id`, so a client log line joins to
@@ -17303,7 +17349,7 @@ In code, `Donkey.from_env(send_cost_headers=True)`.
   With `send_cost_headers` on, the headers, including the end-user ID, go only
   on model requests to the LLM proxy, never to the Anypoint platform. Where the
   tags go is described in
-  [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags).
+  [Telemetry & cost](https://docs.donkey-kit.dev/cost-attribution.md).
 
 ## Telemetry
 
@@ -17329,7 +17375,7 @@ which is not redaction. See [Telemetry & cost](https://docs.donkey-kit.dev/telem
 | `DONKEY_TIMEOUT_S` | `timeout_s` | `60.0` | HTTP timeout for governed calls, in seconds. |
 | `DONKEY_MAX_RETRIES` | `max_retries` | `3` | Retries for transient upstream failures (`502` / `503` / `504`) with backoff. A `502` or `504` on a model call is retried only with `retry_model_calls_on_gateway_errors` (below). Policy refusals are never retried, and a gateway fallback is never retried twice. |
 | `DONKEY_RETRY_MODEL_CALLS_ON_GATEWAY_ERRORS` | `retry_model_calls_on_gateway_errors` | `false` | Also retry a `502` or `504` on a model call (a `POST` whose body, or native Gemini path, names a model). Off by default, because the provider may already have completed and billed the call, and the gateway offers no verified idempotency key. A `503`, and other requests outside scoped A2A, are retried either way. A2A never automatically replays. |
-| `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md#two-behaviours-worth-knowing). |
+| `DONKEY_ON_MODEL_SUBSTITUTION` | `on_model_substitution` | `off` | `off` surfaces a model substitution on `donkey.last_call`; `raise` turns it into `ModelSubstituted`. See [Telemetry & cost](https://docs.donkey-kit.dev/frameworks/routing.md#two-behaviours-worth-knowing). |
 | `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `300` | How long registry lookups (used by [tool access](https://docs.donkey-kit.dev/tool-access.md)) are cached in memory, in seconds. |
 | `DONKEY_TOOL_WARN_COUNT` | `tool_warn_count` | `20` | Warn when a [tool binding](https://docs.donkey-kit.dev/tool-access/binding.md#what-the-tool-list-costs) exposes more tools than this. `0` turns the warning off. See [Tool-set size warnings](#tool-set-size-warnings). |
 | `DONKEY_TOOL_WARN_TOKENS` | `tool_warn_tokens` | `10000` | Warn when a tool binding's descriptors cost more than this many estimated tokens per model call. `0` turns the warning off. |
@@ -17525,7 +17571,7 @@ never carry them.
 | `X-Donkey-Request-Id` (`call_id_header`) | A per-call ID | Always | Both planes |
 | `X-Anypoint-Client-Application` | `application_name` | When set | The LLM proxy only |
 | `X-Anypoint-Business-Group` | `business_group`, or the group from an enclosing `donkey.attribution(...)` / `donkey.run(business_group=…)` block | When set | The LLM proxy only |
-| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://docs.donkey-kit.dev/telemetry.md#cost-attribution-tags) | The LLM proxy only, or a receiver of yours in front of it |
+| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://docs.donkey-kit.dev/cost-attribution.md) | The LLM proxy only, or a receiver of yours in front of it |
 | `x-cache-*` | Your cache controls, including `principal_id` | Inside a `donkey.cache(...)` block | The LLM proxy's semantic cache only |
 
 CrewAI, which gets only a header snapshot, sends the auth headers, the
@@ -18036,7 +18082,7 @@ donkey.current_run: RunLedger | None
 
 A snapshot of the bound `donkey.run()` block's ledger, or `None` outside a run.
 
-Guide: [`/telemetry#run-ledger`](https://docs.donkey-kit.dev/telemetry.md#run-ledger)
+Guide: [`/correlation#run-ledger`](https://docs.donkey-kit.dev/correlation.md#run-ledger)
 
 ### `donkey.openai()`
 
@@ -18120,7 +18166,7 @@ donkey.run_from_headers(
 
 Join the caller's run: `run`, with the id read from an inbound request's headers.
 
-Guide: [`/telemetry`](https://docs.donkey-kit.dev/telemetry.md)
+Guide: [`/correlation`](https://docs.donkey-kit.dev/correlation.md)
 
 ### `donkey.correlation_headers()`
 
@@ -18714,7 +18760,7 @@ even on a cold read.
   reports `UNAVAILABLE` with the surface named. LlamaIndex, MS Agent Framework
   and ADK's `model()` send through the shared client, so a cold read is
   `UNOBSERVED` and a read after a call is `OBSERVED`. See
-  [When `last_call` is unavailable](https://docs.donkey-kit.dev/telemetry.md#when-last_call-is-unavailable).
+  [When `last_call` is unavailable](https://docs.donkey-kit.dev/frameworks/routing.md#when-last_call-is-unavailable).
 
 ## Gateway identity
 
@@ -18732,7 +18778,7 @@ for quoting to a provider's support team.
 What the gateway *did* with the request — which provider and model served it, how
 it routed, and whether that was a failover. Read live off the shared transport,
 so the raw `donkey.llm.client()` path gets them with no framework required. See
-[Routing & resilience](https://docs.donkey-kit.dev/telemetry.md#routing--resilience) for the operational story,
+[Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md) for the operational story,
 or [Which provider served this?](https://docs.donkey-kit.dev/frameworks/langgraph.md#which-provider-served-this)
 for why a LangGraph message's own `model_provider` field disagrees with these.
 

@@ -1,6 +1,7 @@
 export default {
   index: 'Overview',
   'gateway-policies': 'Gateway policies',
+  routing: 'Routing & fallback',
   compatibility: 'Version compatibility',
   '-- frameworks': {
     type: 'separator',

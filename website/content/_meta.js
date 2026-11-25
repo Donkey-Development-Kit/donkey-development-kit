@@ -33,7 +33,9 @@ export default {
     type: 'separator',
     title: 'Observability',
   },
-  telemetry: 'Telemetry & cost',
+  telemetry: 'OpenTelemetry spans',
+  correlation: 'Correlation IDs',
+  'cost-attribution': 'Cost attribution',
   '-- build-test-ship': {
     type: 'separator',
     title: 'Build, test & ship',
