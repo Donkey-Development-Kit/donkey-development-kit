@@ -12,6 +12,11 @@ and tools your organisation has published to Anypoint Exchange and governed,
 filter them down to what it actually needs, and bind
 them into any of the eight supported frameworks as that framework's **native
 tool objects** — the same "no wrapper" approach as [model access](/frameworks).
+A lockfile pins what each server listed, so a catalog change made at the
+gateway fails loudly instead of silently changing your agent's tools. When a
+gateway policy refuses a tool call, DDK raises the refusals it can identify as
+typed exceptions; [Gateway policies](/tool-access/gateway-policies) lists what
+each policy does and how far that typing reaches per framework.
 
 Discovery and binding run end to end through the governed gateway, with
 every supported framework; see [Framework binding](/tool-access/binding).
@@ -61,4 +66,34 @@ Exchange — see [Discovery, search & filter](/tool-access/discovery).
   <Card title="Pinning & lockfile" href="/tool-access/lockfile" badge="Offline-verified" badgeTone="neutral">
     Pin each server's listed tools in `donkey.lock` and fail on drift.
   </Card>
+  <Card title="Gateway policies" href="/tool-access/gateway-policies" badge="Offline-verified" badgeTone="neutral">
+    What MCP gateway policies do to catalogs and calls, and what your code sees.
+  </Card>
 </CardGrid>
+
+## MCP across the docs
+
+Other sections cover MCP where it meets their topic:
+
+- **Typed refusals:** [JSON-RPC refusal matching](/errors#json-rpc-refusal-matching)
+  and [MCP PII metadata](/errors#mcp-pii-metadata).
+- **Local simulator:** [MCP tool fault injection](/simulator#mcp-tool-fault-injection)
+  and [packaged MCP captures](/simulator#packaged-mcp-captures).
+- **Human-in-the-loop:** [discovered tools](/hitl#discovered-tools-local-round-trip),
+  [waiting while listing MCP tools](/hitl#waiting-while-listing-mcp-tools) and
+  [step-up on a tool call](/hitl#step-up-on-a-tool-call).
+- **Identity:** [acting for a user](/tool-access/binding#acting-for-a-user) with a
+  bound `ToolSet`, and [Identity](/identity) for `donkey.as_user()`.
+- **Scan & publish:** [publishing MCP servers](/publishing#publishing-mcp-servers)
+  and [declaring how an MCP server is reached](/publishing#declaring-how-an-mcp-server-is-reached).
+- **CLI:** [`donkey scan`](/cli#donkey-scan), [`donkey publish`](/cli#donkey-publish)
+  and [`donkey mock`](/cli#donkey-mock).
+- **Reference:** [connected-app scopes](/reference/scopes#per-operation) and the
+  [unsupported boundary](/reference/unsupported-boundary#current-boundary).
+
+## Next steps
+
+1. [Discover](/tool-access/discovery) the governed tools your agent needs.
+2. [Bind](/tool-access/binding) them into your framework.
+3. Read what the [gateway policies](/tool-access/gateway-policies) on your MCP
+   instance do, and pin the result with the [lockfile](/tool-access/lockfile).
