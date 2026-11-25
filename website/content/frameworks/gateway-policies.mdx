@@ -121,7 +121,7 @@ Rehearse it with `donkey mock --scenario request_limit:limit=3,window=60s`
 A wallet-backed proxy authenticates with an IdP-issued JWT plus a client ID
 instead of a client secret, and spends from a wallet budget attached by the
 platform. Configure the auth mode as described in
-[JWT / model-wallet auth mode](/reference/configuration#jwt--model-wallet-auth-mode).
+[JWT / model-wallet auth mode](/reference/configuration/auth#jwt--model-wallet-auth-mode).
 
 Wallet state is not reported in-band: a `200` carries no limit or remaining
 value, so `donkey.budget` cannot show it and there is no warning before the

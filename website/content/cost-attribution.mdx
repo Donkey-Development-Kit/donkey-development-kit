@@ -22,7 +22,7 @@ async with donkey.run(id=ticket.id, enduser_id=agent_user.id):
 
 The tags resolve in this order: `Donkey.from_env(team=…)` kwargs, then
 `DONKEY_COST_*` env vars, then a `[donkey.cost]` table in the config files (see
-[Configuration](/reference/configuration#cost-attribution-tags)). Per-run
+[Configuration](/reference/configuration/attribution#cost-attribution-tags)). Per-run
 overrides layer on top: `donkey.run(team=…, project=…, env=…, enduser_id=…)`
 wins **per field** for its block, and the rest fall back to the configured
 tags. The key set is **fixed**: an unknown dimension is a configuration error,
@@ -106,7 +106,7 @@ on exit. The value is validated like a cost tag, and an invalid one raises
   scope.** They captured the configured business group when they were built, so
   they keep sending it. Adapters with transport injection send the scoped value.
   The header name, `X-Anypoint-Business-Group`, is still an unverified
-  placeholder; see [Configuration](/reference/configuration#optional-attribution).
+  placeholder; see [Configuration](/reference/configuration/attribution#optional-attribution).
 </Callout>
 
 ## The question this answers
@@ -124,6 +124,6 @@ EU AI Act Article 12 log request becomes one query, not an investigation.
 ## Next steps
 
 - [Correlation IDs](/correlation): the per-run id that joins a call's tags to its log lines and gateway record.
-- [Configuration](/reference/configuration#optional-attribution): where the tags and the attribution headers are set.
+- [Configuration](/reference/configuration/attribution#optional-attribution): where the tags and the attribution headers are set.
 - [Budget & pacing](/budget): the token and request windows the gateway enforces per consumer.
 - [OpenTelemetry spans](/telemetry): the span attributes these tags are recorded on.

@@ -11,7 +11,7 @@ Targets:
 * ``python/README.md`` — the PyPI description, written whole from the
   repository ``README.md`` with every relative link made absolute (PyPI does
   not resolve them). Edit the root ``README.md``, never this copy.
-* ``website/content/reference/configuration.mdx`` — the ``settings-index``
+* ``website/content/reference/configuration/index.mdx`` — the ``settings-index``
   region: every ``DonkeyConfig`` field with its env var, config-file key and
   default, from the field table in ``core/config.py``.
 * ``website/content/cli/index.mdx`` — the ``cli-reference`` region: every visible
@@ -276,7 +276,8 @@ def settings_index() -> str:
     ]
     intro = (
         "Every `DonkeyConfig` field except `cost` (set per dimension, see\n"
-        "[Cost-attribution tags](#cost-attribution-tags)), in the order the SDK reads\n"
+        "[Cost-attribution tags](/reference/configuration/attribution#cost-attribution-tags)), "
+        "in the order the SDK reads\n"
         f"them. The config-file key goes in the `[donkey]` table of `{config.TOML_NAME}`.\n"
         "This table is generated from the field table in `core/config.py`.\n"
     )
@@ -1610,7 +1611,7 @@ TARGETS: tuple[Target, ...] = (
     Target("pypi-readme", REPO / "python" / "README.md", None, _pypi_readme),
     Target(
         "settings-index",
-        REPO / "website" / "content" / "reference" / "configuration.mdx",
+        REPO / "website" / "content" / "reference" / "configuration" / "index.mdx",
         "settings-index",
         settings_index,
     ),

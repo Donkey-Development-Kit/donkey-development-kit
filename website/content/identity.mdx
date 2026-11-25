@@ -72,8 +72,8 @@ each other. Each thread of a threaded server starts with no user bound, so one
 request's user never reaches another request's thread.
 
 The sync client runs in the default `client-id` auth mode only. In the
-[`jwt`](/reference/configuration#jwt--model-wallet-auth-mode) and
-[`bearer`](/reference/configuration#bearer-token-auth-mode) modes a blocking
+[`jwt`](/reference/configuration/auth#jwt--model-wallet-auth-mode) and
+[`bearer`](/reference/configuration/auth#bearer-token-auth-mode) modes a blocking
 call raises a `ConfigError`, so use `async with` there.
 
 ## Configuring the header
@@ -94,7 +94,7 @@ JWT Validation and on-behalf-of policies read. You can override it:
   to your app, not to the gateway.
 </Callout>
 
-In the `jwt` and `bearer` [auth modes](/reference/configuration#bearer-token-auth-mode)
+In the `jwt` and `bearer` [auth modes](/reference/configuration/auth#bearer-token-auth-mode)
 the data-plane token already rides in `Authorization`, so `as_user()` raises a
 `ConfigError` until you set `user_token_header` to the header your gateway
 reads the user token from.

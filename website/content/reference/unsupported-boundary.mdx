@@ -31,7 +31,7 @@ the Model Proxy. Control-plane features call the Anypoint control plane, with a
 connected-app token. Governed MCP servers and A2A agents are called through
 their Omni Gateway instance. Model calls never request a control-plane token. The features that
 would request it are listed in
-[Which features use the control plane](/reference/configuration#which-features-use-the-control-plane).
+[Which features use the control plane](/reference/configuration/control-plane#which-features-use-the-control-plane).
 In this release they are `donkey publish` and `donkey.registry.search()`,
 which also call Exchange, `donkey.registry.resolve_mcp()` and
 `resolve_agent()`, which read Access Management, API Manager and Omni Gateway

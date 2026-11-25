@@ -110,6 +110,28 @@ export const MOVED_ANCHORS = {
     'the-framework-approval-helpers': '/hitl/frameworks',
     'waiting-while-listing-mcp-tools': '/hitl/gateway-step-up',
   },
+  // #1836: the auth, attribution and control-plane sections moved to their own pages.
+  '/reference/configuration': {
+    'behaviour': '/reference/configuration/attribution',
+    'correlation-headers': '/reference/configuration/attribution',
+    'cost-attribution-tags': '/reference/configuration/attribution',
+    'header-names-you-cant-use': '/reference/configuration/attribution',
+    'invalid-values': '/reference/configuration/attribution',
+    'optional-attribution': '/reference/configuration/attribution',
+    'telemetry': '/reference/configuration/attribution',
+    'tool-set-size-warnings': '/reference/configuration/attribution',
+    'auth-providers': '/reference/configuration/auth',
+    'bearer-token-auth-mode': '/reference/configuration/auth',
+    'bring-your-own-provider-key': '/reference/configuration/auth',
+    'governed-model-access': '/reference/configuration/auth',
+    'jwt--model-wallet-auth-mode': '/reference/configuration/auth',
+    'anypoint-control-plane': '/reference/configuration/control-plane',
+    'credentials': '/reference/configuration/control-plane',
+    'credentials-go-only-to-checked-endpoints': '/reference/configuration/control-plane',
+    'other-headers': '/reference/configuration/control-plane',
+    'what-the-sdk-sends-where': '/reference/configuration/control-plane',
+    'which-features-use-the-control-plane': '/reference/configuration/control-plane',
+  },
 }
 
 // Strip the basePath prefix, query, hash, trailing slash and `.html`, and

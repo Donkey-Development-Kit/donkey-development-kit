@@ -20,10 +20,16 @@ from donkey_kit.core import config as config_module
 from donkey_kit.core.config import DonkeyConfig
 
 _REPO = Path(__file__).resolve().parents[3]
-_PAGE = _REPO / "website" / "content" / "reference" / "configuration.mdx"
+_CONFIG = _REPO / "website" / "content" / "reference" / "configuration"
+#: The configuration reference is split into a folder (#1836). The field tables
+#: and the sections are read across all four pages; each heading lives on one.
+_PAGES = tuple(
+    _CONFIG / name for name in ("index.mdx", "auth.mdx", "attribution.mdx", "control-plane.mdx")
+)
+_PAGE_TEXT = "\n".join(page.read_text(encoding="utf-8") for page in _PAGES if page.is_file())
 
 pytestmark = pytest.mark.skipif(
-    not _PAGE.is_file(), reason="the repository docs are not included in the sdist"
+    not _CONFIG.is_dir(), reason="the repository docs are not included in the sdist"
 )
 
 _CODE = re.compile(r"`([^`]+)`")
@@ -55,7 +61,7 @@ def _field_rows() -> list[dict[str, str]]:
     """Each row of a table with both an env-var and a field column, keyed by
     header (``env``, ``field`` and, where present, ``default``)."""
     rows: list[dict[str, str]] = []
-    for table in _tables(_PAGE.read_text(encoding="utf-8")):
+    for table in _tables(_PAGE_TEXT):
         header = [cell.lower() for cell in table[0]]
         if "`donkeyconfig` field" not in header:
             continue
@@ -93,7 +99,7 @@ def test_docs_pair_each_env_var_with_its_field() -> None:
     wrong = [f"{r['env']} -> {r['field']}" for r in rows if table.get(r["field"]) != r["env"]]
     assert not wrong, "the docs pair these env vars with the wrong field:\n" + "\n".join(wrong)
     missing = set(table) - {r["field"] for r in rows}
-    assert not missing, f"configuration.mdx has no env-var row for: {sorted(missing)}"
+    assert not missing, f"the configuration pages have no env-var row for: {sorted(missing)}"
 
 
 def test_docs_defaults_match_the_dataclass() -> None:
@@ -112,7 +118,7 @@ def test_docs_defaults_match_the_dataclass() -> None:
 
 
 def test_docs_list_the_accepted_choices() -> None:
-    text = _PAGE.read_text(encoding="utf-8")
+    text = _PAGE_TEXT
     invalid = _section(text, "### Invalid values")
     rows = {row[0]: row[1] for table in _tables(invalid) for row in table[1:]}
     for spec in config_module._FIELDS:
@@ -128,7 +134,7 @@ def test_docs_list_the_accepted_choices() -> None:
 
 
 def test_docs_precedence_follows_the_resolution_order() -> None:
-    text = _PAGE.read_text(encoding="utf-8")
+    text = _PAGE_TEXT
     items = re.findall(r"^\d+\. (.+)$", _section(text, "### Precedence"), re.MULTILINE)
     markers = {
         "explicit": "set in code",

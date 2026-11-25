@@ -52,7 +52,7 @@ for an Azure OpenAI route.
 
 `DONKEY_LLM_PROXY_URL` is the proxy base with a trailing slash:
 `https://<ingress-gw>/<instance>/`. See
-[Governed model access](https://docs.donkey-kit.dev/reference/configuration.md#governed-model-access).
+[Governed model access](https://docs.donkey-kit.dev/reference/configuration/auth.md#governed-model-access).
 
 ### `401` and `403`
 
@@ -84,7 +84,7 @@ CrewAI retries any `429` three times inside its own code. See the
 
 `UpstreamModelError` is a provider failure. The SDK retries a `503`, and
 retries a `502` or `504` on a model call only with
-[`retry_model_calls_on_gateway_errors`](https://docs.donkey-kit.dev/reference/configuration.md#behaviour).
+[`retry_model_calls_on_gateway_errors`](https://docs.donkey-kit.dev/reference/configuration/attribution.md#behaviour).
 If it persists, the provider is down: retry later or fall back.
 
 ## `donkey.last_call` says `UNAVAILABLE`
@@ -130,8 +130,8 @@ Work through these in order:
    requests and `donkey.crewai` raises `ConfigError` in `jwt` mode. Use
    client-id auth with CrewAI.
 
-See [JWT / model-wallet auth mode](https://docs.donkey-kit.dev/reference/configuration.md#jwt--model-wallet-auth-mode)
-and [Auth providers](https://docs.donkey-kit.dev/reference/configuration.md#auth-providers).
+See [JWT / model-wallet auth mode](https://docs.donkey-kit.dev/reference/configuration/auth.md#jwt--model-wallet-auth-mode)
+and [Auth providers](https://docs.donkey-kit.dev/reference/configuration/auth.md#auth-providers).
 
   Still stuck? Run `donkey --json doctor`, remove any secrets from the output,
   and include it in an issue on

@@ -16,7 +16,7 @@ async with donkey.run(id=ticket.id, enduser_id=agent_user.id):
 
 The tags resolve in this order: `Donkey.from_env(team=…)` kwargs, then
 `DONKEY_COST_*` env vars, then a `[donkey.cost]` table in the config files (see
-[Configuration](https://docs.donkey-kit.dev/reference/configuration.md#cost-attribution-tags)). Per-run
+[Configuration](https://docs.donkey-kit.dev/reference/configuration/attribution.md#cost-attribution-tags)). Per-run
 overrides layer on top: `donkey.run(team=…, project=…, env=…, enduser_id=…)`
 wins **per field** for its block, and the rest fall back to the configured
 tags. The key set is **fixed**: an unknown dimension is a configuration error,
@@ -95,7 +95,7 @@ on exit. The value is validated like a cost tag, and an invalid one raises
   scope.** They captured the configured business group when they were built, so
   they keep sending it. Adapters with transport injection send the scoped value.
   The header name, `X-Anypoint-Business-Group`, is still an unverified
-  placeholder; see [Configuration](https://docs.donkey-kit.dev/reference/configuration.md#optional-attribution).
+  placeholder; see [Configuration](https://docs.donkey-kit.dev/reference/configuration/attribution.md#optional-attribution).
 
 ## The question this answers
 
@@ -111,6 +111,6 @@ EU AI Act Article 12 log request becomes one query, not an investigation.
 ## Next steps
 
 - [Correlation IDs](https://docs.donkey-kit.dev/correlation.md): the per-run id that joins a call's tags to its log lines and gateway record.
-- [Configuration](https://docs.donkey-kit.dev/reference/configuration.md#optional-attribution): where the tags and the attribution headers are set.
+- [Configuration](https://docs.donkey-kit.dev/reference/configuration/attribution.md#optional-attribution): where the tags and the attribution headers are set.
 - [Budget & pacing](https://docs.donkey-kit.dev/budget.md): the token and request windows the gateway enforces per consumer.
 - [OpenTelemetry spans](https://docs.donkey-kit.dev/telemetry.md): the span attributes these tags are recorded on.

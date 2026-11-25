@@ -64,10 +64,8 @@ def _framework(module: str, *pages: str) -> Surface:
 #: the two in step, and keep the workflow's ``paths:`` covering ``files``.
 SURFACES: tuple[Surface, ...] = (
     Surface(("core/errors.py",), ("errors.mdx", "frameworks/gateway-policies.mdx")),
-    Surface(
-        ("core/config.py", "core/auth.py", "core/endpoints.py"),
-        ("reference/configuration.mdx",),
-    ),
+    Surface(("core/config.py", "core/endpoints.py"), ("reference/configuration/index.mdx",)),
+    Surface(("core/auth.py",), ("reference/configuration/auth.mdx",)),
     Surface(
         ("core/_verify.py",),
         ("reference/unsupported-boundary.mdx", "roadmap.mdx", "frameworks/index.mdx"),
@@ -81,7 +79,7 @@ SURFACES: tuple[Surface, ...] = (
     Surface(("llm/*.py",), ("quickstart.mdx", "feature-overview.mdx")),
     Surface(("simulator/*.py",), ("simulator/index.mdx", "simulator/mcp.mdx", "simulator/a2a.mdx")),
     Surface(("conformance/*.py",), ("testing.mdx",)),
-    Surface(("donkey.py",), ("quickstart.mdx", "testing.mdx", "reference/configuration.mdx")),
+    Surface(("donkey.py",), ("quickstart.mdx", "testing.mdx", "reference/configuration/index.mdx")),
     Surface(("integrations/__init__.py", "integrations/_base.py"), ("frameworks/index.mdx",)),
     _framework("adk", "frameworks/adk.mdx", "examples/adk.mdx"),
     _framework("agent_framework", "frameworks/agent-framework.mdx", "examples/agent-framework.mdx"),

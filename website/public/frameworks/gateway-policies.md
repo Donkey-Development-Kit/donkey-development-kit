@@ -113,7 +113,7 @@ Live
 A wallet-backed proxy authenticates with an IdP-issued JWT plus a client ID
 instead of a client secret, and spends from a wallet budget attached by the
 platform. Configure the auth mode as described in
-[JWT / model-wallet auth mode](https://docs.donkey-kit.dev/reference/configuration.md#jwt--model-wallet-auth-mode).
+[JWT / model-wallet auth mode](https://docs.donkey-kit.dev/reference/configuration/auth.md#jwt--model-wallet-auth-mode).
 
 Wallet state is not reported in-band: a `200` carries no limit or remaining
 value, so `donkey.budget` cannot show it and there is no warning before the

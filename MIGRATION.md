@@ -1170,7 +1170,7 @@ refused), and it doesn't relax the credential rule in section 2.
 
 ### 2. A URL from the project's config files only gets credentials from those files
 
-Reference: [Which credentials a URL receives](website/content/reference/configuration.mdx#which-credentials-a-url-receives).
+Reference: [Which credentials a URL receives](website/content/reference/configuration/index.mdx#which-credentials-a-url-receives).
 
 **Who:** anyone with `llm_proxy_url` or a non-standard `base_url` in
 `./.donkey-kit.toml` or `./.donkey-kit.local.toml`, while a credential for that
@@ -1279,7 +1279,7 @@ pytest `filterwarnings = error` that warning fails the run; move the secret to
 
 ### 4. Each credential stays on its own plane
 
-Reference: [What the SDK sends where](website/content/reference/configuration.mdx#what-the-sdk-sends-where).
+Reference: [What the SDK sends where](website/content/reference/configuration/control-plane.mdx#what-the-sdk-sends-where).
 
 `Donkey` now keeps one HTTP client for the LLM proxy and one for the Anypoint
 platform. Model calls never request, send or refresh the connected-app token,
@@ -1288,7 +1288,7 @@ features that use the control plane (registry, tool discovery, publication,
 governance, provisioning) are still on the roadmap, so in this release the
 token endpoint is contacted only if your own code calls
 `AnypointConnectedApp.token()`. See
-[Which features use the control plane](website/content/reference/configuration.mdx#which-features-use-the-control-plane).
+[Which features use the control plane](website/content/reference/configuration/control-plane.mdx#which-features-use-the-control-plane).
 
 **4a. `Donkey(auth=…)` no longer reaches the LLM proxy.**
 
@@ -1400,7 +1400,7 @@ If you parse `donkey doctor --json`, expect the new entries named `llm endpoint`
 
 ### 7. Some configurable header names are refused
 
-Reference: [Header names you can't use](website/content/reference/configuration.mdx#header-names-you-cant-use).
+Reference: [Header names you can't use](website/content/reference/configuration/attribution.mdx#header-names-you-cant-use).
 
 **Who:** anyone who sets `correlation_header`, `call_id_header` or a
 `cost_*_header` key (in the environment, a file or code) to a name that:
@@ -1441,7 +1441,7 @@ working directory is fine), or set the values in the environment.
 
 ### 9. URL overrides passed to factories must use `https://`
 
-Reference: [Credentials go only to checked endpoints](website/content/reference/configuration.mdx#credentials-go-only-to-checked-endpoints).
+Reference: [Credentials go only to checked endpoints](website/content/reference/configuration/control-plane.mdx#credentials-go-only-to-checked-endpoints).
 
 **Who:** code that passes a URL to a factory: `base_url` to
 `donkey.llm.client()` or an adapter factory, `api_base` (LlamaIndex, ADK's
@@ -1524,7 +1524,7 @@ instead. Unpacking, lookups, equality and `json.dumps` are unchanged (and
 built from the kwargs print credentials in their own `repr()`: LangGraph's
 `ChatOpenAI` (`client_secret`), LlamaIndex's `OpenAILike` (`client_secret` and
 `api_key`) and CrewAI's `OpenAICompletion` (`api_key`). Details:
-[What printed output hides](website/content/reference/configuration.mdx#what-printed-output-hides).
+[What printed output hides](website/content/reference/configuration/index.mdx#what-printed-output-hides).
 
 ### 15. `typed_refusals()` no longer chains the LangChain error
 

@@ -1,0 +1,195 @@
+# Auth modes
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+## Governed model access
+
+The three required values for the LLM proxy:
+
+| Env var | `DonkeyConfig` field | Meaning |
+|---|---|---|
+| `DONKEY_LLM_PROXY_URL` | `llm_proxy_url` | Proxy base URL: `https://<ingress-gw>/<instance>/` — **no `/v1`**. Must be `https://`; plain `http://` is accepted for loopback hosts such as the [local simulator](https://docs.donkey-kit.dev/simulator.md), and for other hosts only with [`DONKEY_ALLOW_HTTP`](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https). |
+| `DONKEY_LLM_PROXY_CLIENT_ID` | `llm_proxy_client_id` | Consumer client ID (the per-agent identity). |
+| `DONKEY_LLM_PROXY_CLIENT_SECRET` | `llm_proxy_client_secret` | Consumer client secret. |
+
+  Auth is a `client_id` / `client_secret` **header pair** (consumer auth), **not**
+  a bearer token, and separate from any Anypoint control-plane credential. The
+  OpenAI SDK still requires a non-empty `api_key` slot, which the proxy ignores.
+
+  The stock gateway also accepts a **single** colon-joined header —
+  `authorization: Bearer <client_id>:<client_secret>` or
+  `apikey: <client_id>:<client_secret>` — which its
+  `dataweave-headers-transformation` policy splits back into the pair. DDK doesn't use that form: it always
+  sends the two-header pair, because `client_id` is the per-agent
+  [attribution](https://docs.donkey-kit.dev/cost-attribution.md) unit. The colon-joined value is not an
+  alternative once a `client_id` header is present — the policy ignores it.
+
+Missing required fields are reported **all at once** with their env-var names,
+so you can fix configuration in a single pass.
+
+| Optional env var | `DonkeyConfig` field | Meaning |
+|---|---|---|
+| `DONKEY_LLM_PROXY_KEY` | `llm_proxy_key` | Value for the client's API-key slot, sent to the LLM proxy: `Authorization: Bearer <key>` from OpenAI-compatible clients, `x-api-key` from the Anthropic client, `x-goog-api-key` from ADK's `gemini()`. Unset, the SDK sends the placeholder `client-id-enforced`. A client-id proxy ignores this value, so leave it unset unless your proxy authenticates on an API key. |
+| `DONKEY_LLM_PROXY_KEY_HEADER` | `llm_proxy_key_header` | A header that also carries `llm_proxy_key`, for a route that reads the provider key from a request header. See [Bring your own provider key](#bring-your-own-provider-key). |
+
+## Bring your own provider key
+
+A model proxy route whose API key is set to **Dynamic** reads the *provider's*
+key from the request, through a DataWeave expression the proxy admin writes.
+There is no fixed header: Anypoint's `#[attributes.headers['X-API-KEY']]` is
+only an example. Set `llm_proxy_key_header` to the header your route's
+expression reads, and `llm_proxy_key` to the provider key:
+
+```bash
+export DONKEY_LLM_PROXY_KEY_HEADER=X-API-KEY   # the header the route's expression reads
+export DONKEY_LLM_PROXY_KEY=sk-…               # your provider key
+```
+
+Every request to the LLM proxy then carries `X-API-KEY: <key>`, from every
+adapter, next to the usual consumer credentials. The key still fills the
+client's API-key slot<sup>1</sup> too.
+
+- Both fields must be set. With either one unset, nothing changes.
+- `jwt` mode never sends the header: a model wallet holds its own provider keys.
+- The name may be any header except one that routes the request, one the SDK
+  already sets, or one that carries the consumer's own credentials: `client_id`,
+  `client_secret`, `Authorization`, `X-Client-Id`, `Proxy-Authorization`,
+  `Cookie` and `apikey`. The proxy reads `apikey` as the packed
+  `client_id:client_secret` consumer credential, not a provider key.
+- Like the other credentials, the header is removed from any request to an
+  origin other than the LLM proxy, and printed headers show `***` for it.
+
+## JWT / model-wallet auth mode
+
+A **model-wallet** proxy identifies the caller from an IdP-issued **JWT** plus a
+durable wallet-selector client ID, with Client ID Enforcement disabled and **no
+`client_secret`**. Select it with `DONKEY_LLM_PROXY_AUTH=jwt`:
+
+| Env var | `DonkeyConfig` field | Meaning |
+|---|---|---|
+| `DONKEY_LLM_PROXY_AUTH` | `llm_proxy_auth` | Data-plane auth mode: `client-id` (default), `jwt`, or [`bearer`](#bearer-token-auth-mode). |
+| `DONKEY_LLM_PROXY_WALLET_CLIENT_ID` | `llm_proxy_wallet_client_id` | The wallet's system-generated client ID, sent as the `X-Client-Id` header. Required in `jwt` mode. |
+
+In `jwt` mode the required fields are `llm_proxy_url` **and**
+`llm_proxy_wallet_client_id` — **not** `client_id` / `client_secret`. The
+rotating JWT is **not** a config value: supply it through an
+[`AuthProvider`](#auth-providers) passed as `Donkey(llm_auth=…)`, so the SDK can
+re-fetch it as it rotates and refresh it once on a `401`:
+
+```python
+from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit.core.auth import StaticToken  # or your own rotating AuthProvider
+
+donkey = Donkey(
+    DonkeyConfig(
+        llm_proxy_url="https://<ingress-gw>/<instance>/",
+        llm_proxy_auth="jwt",
+        llm_proxy_wallet_client_id="<wallet-client-id>",
+    ),
+    llm_auth=StaticToken("<jwt>"),  # rides as Authorization: Bearer <jwt>
+)
+```
+
+  `jwt` mode is **async-only** — the rotating credential is fetched from an
+  async `AuthProvider`, so the blocking client (`sync=True`) is refused with an
+  actionable error. Use client-id auth for a synchronous caller.
+
+  The JWT is attached only by the SDK's shared async HTTP client, so it reaches
+  the proxy only from async calls through adapters with **transport injection**
+  built from a `Donkey` that has `llm_auth`: the raw client, LangGraph, Strands,
+  OpenAI Agents SDK, the Anthropic SDK, ADK's `model()` and `gemini()`,
+  LlamaIndex and MS Agent Framework.
+
+  Sync calls through an adapter, such as LangGraph's `invoke()` or LlamaIndex's
+  `complete()`, go through the blocking client, so they raise the same
+  `ConfigError` as `sync=True` before sending anything.
+
+  These can't send the JWT, so they raise `ConfigError` before sending anything,
+  rather than sending the `client-id-enforced` placeholder as the bearer:
+
+  - CrewAI, in `jwt` mode at all: its native OpenAI provider builds its own
+    HTTP clients, which the SDK can't add the JWT to. Use client-id auth with
+    CrewAI;
+  - every adapter on a `Donkey` without `llm_auth`, and the module-level
+    factories (for example
+    `from donkey_kit.integrations.langgraph import chat_model`), which have no
+    `llm_auth`. Use `Donkey(llm_auth=…)` in `jwt` mode.
+
+  See [Injection depth](https://docs.donkey-kit.dev/frameworks.md#injection-depth-differs-by-framework).
+
+## Bearer-token auth mode
+
+A proxy that authenticates model calls on a plain bearer token, with no wallet
+selector and no `client_id` / `client_secret` pair, uses
+`DONKEY_LLM_PROXY_AUTH=bearer`. The only required field is `llm_proxy_url`. The
+token comes from an [`AuthProvider`](#auth-providers) passed as
+`Donkey(llm_auth=…)`:
+
+```python
+from donkey_kit import Donkey, DonkeyConfig
+from donkey_kit.core.auth import StaticToken  # or your own rotating AuthProvider
+
+donkey = Donkey(
+    DonkeyConfig(
+        llm_proxy_url="https://<ingress-gw>/<instance>/",
+        llm_proxy_auth="bearer",
+    ),
+    llm_auth=StaticToken("<token>"),  # rides as Authorization: Bearer <token>
+)
+```
+
+The SDK's shared client adds `Authorization: Bearer <token>` to every model
+call, replacing whatever the framework client put there. It sends no
+`X-Client-Id` and no `client_id` / `client_secret`. This is the way to send a
+bearer token from the Anthropic client and ADK's `gemini()`, which have no
+OpenAI-style API-key slot. A `401` refreshes the token once, and the
+[endpoint rule](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives) covers it.
+
+  `bearer` mode has the same reach as `jwt` mode: async calls through the raw
+  client, LangGraph, Strands, OpenAI Agents SDK, the Anthropic SDK, ADK's
+  `model()` and `gemini()`, LlamaIndex and MS Agent Framework, on a `Donkey`
+  built with `llm_auth`. The forms that can't carry the token raise
+  `ConfigError` instead of sending an unauthenticated request: CrewAI's
+  `connection_kwargs()` and `llm()`, the blocking client (`sync=True`), sync
+  calls through an adapter such as LangGraph's `invoke()` or LlamaIndex's
+  `complete()`, and the module-level factories, which have no `llm_auth`.
+
+### Auth providers
+
+An `AuthProvider` (in `donkey_kit.core.auth`) is any object with two async
+methods: `token()` returns the current credential and `invalidate()` drops a
+cached one.
+
+Each provider belongs to one credential plane:
+
+- `Donkey(llm_auth=…)` supplies the LLM-proxy credential. It is used only in
+  `jwt` and `bearer` mode.
+- `Donkey(auth=…)` supplies the Anypoint control-plane credential. By default
+  it is an `AnypointConnectedApp` built from `ANYPOINT_CLIENT_ID` /
+  `ANYPOINT_CLIENT_SECRET`. It is used only for control-plane calls, never for
+  model calls. Its token counts as set in code for the
+  [endpoint rule](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
+
+What happens on a `401`:
+
+| Request | On `401` |
+|---|---|
+| Model call, client-id mode | Raises `AuthError` straight away. There is no token to refresh. |
+| Model call, `jwt` or `bearer` mode | Calls `invalidate()` on the `llm_auth` provider, re-sends once with the new token, then raises `AuthError`. |
+| Control-plane call | Calls `invalidate()` on the `auth` provider, re-sends once, then raises `AuthError`. |
+| Blocking client (`sync=True`) | Raises `AuthError` straight away. |
+
+| Provider | Use it for |
+|---|---|
+| `StaticToken(token)` | A token injected out-of-band, for example from CI. Never refreshes. |
+| `AnypointConnectedApp(client_id=…, client_secret=…, control_plane_url=…, http_client=…)` | OAuth2 client credentials against the Anypoint token endpoint. Caches the token in memory and refreshes it 60 seconds before expiry. The token endpoint must be `https://` (loopback excepted, or any host with `DONKEY_ALLOW_HTTP`). `AnypointConnectedApp.from_config(config, http_client=…)` builds one from a `DonkeyConfig` and also applies the [endpoint check](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives) before the first token request. |
+| `ChainedAuth(*providers)` | Tries providers in order; the first that yields a token wins. |
+
+For a rotating JWT from your IdP, implement the two methods yourself and pass
+the object as `llm_auth`.
+
+## Next steps
+
+- [Overview & all settings](https://docs.donkey-kit.dev/reference/configuration.md): every setting, precedence and the trust rules for config files.
+- [Attribution, telemetry & behaviour](https://docs.donkey-kit.dev/reference/configuration/attribution.md): attribution, correlation and cost headers, telemetry and value checks.
+- [Control plane & credentials](https://docs.donkey-kit.dev/reference/configuration/control-plane.md): the Anypoint control plane and what the SDK sends where.

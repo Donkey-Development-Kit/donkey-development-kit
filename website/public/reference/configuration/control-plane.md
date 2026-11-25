@@ -1,0 +1,156 @@
+# Control plane & credentials
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+## Anypoint control plane
+
+A separate credential from the LLM proxy, for features that call the Anypoint
+platform: registry and tool discovery, and publication. The SDK
+exchanges `ANYPOINT_CLIENT_ID` / `ANYPOINT_CLIENT_SECRET` for a connected-app
+token at the Anypoint token endpoint and sends only that token to the platform.
+You don't need these values for governed model access. Model calls never use
+them.
+
+The connected app needs a scope for each platform call: see
+[Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). A `client_credentials` app is
+enough; no feature needs one that acts on behalf of a user.
+
+  Some of the features that call the Anypoint platform are
+  Roadmap in this release and stop before sending
+  anything. [Which features use the control plane](#which-features-use-the-control-plane)
+  lists them.
+
+| Env var | `DonkeyConfig` field | Meaning |
+|---|---|---|
+| `ANYPOINT_CLIENT_ID` | `client_id` | Connected-app client ID. |
+| `ANYPOINT_CLIENT_SECRET` | `client_secret` | Connected-app client secret. |
+| `ANYPOINT_ORG_ID` | `org_id` | Anypoint organization ID. |
+| `ANYPOINT_ENV` | `environment` | Anypoint environment (default `Sandbox`). |
+| `ANYPOINT_REGION` | `region` | Control-plane region: `us` (default), `eu`, `ca`, or `jp`. |
+| `ANYPOINT_BASE_URL` | `base_url` | Explicit control-plane base URL; overrides the region. Must be `https://` (loopback hosts excepted, or any host with `DONKEY_ALLOW_HTTP`). |
+
+## What the SDK sends where
+
+`Donkey` keeps one HTTP client per credential plane, so a credential never
+rides the other plane's requests:
+
+- **Data plane**: the LLM proxy at `llm_proxy_url`. Used by `donkey.llm` and
+  every framework adapter.
+- **Control plane**: the Anypoint platform at `base_url` (default: the host for
+  `region`). Used for the connected-app token request and for registry and tool
+  discovery.
+
+### Credentials
+
+| Destination | Client-id mode (default) | `jwt` mode | `bearer` mode | Never sent here |
+|---|---|---|---|---|
+| **LLM proxy** (`llm_proxy_url`) | `client_id: <llm_proxy_client_id>` and `client_secret: <llm_proxy_client_secret>` headers. The API-key slot<sup>1</sup> carries `llm_proxy_key`, or the placeholder `client-id-enforced`, and so does the [`llm_proxy_key_header`](https://docs.donkey-kit.dev/reference/configuration/auth.md#bring-your-own-provider-key) header when set. | `X-Client-Id: <llm_proxy_wallet_client_id>` and `Authorization: Bearer `<sup>2</sup>. No `client_secret`. | `Authorization: Bearer <token from llm_auth>`<sup>2</sup>. The API-key slot<sup>1</sup> and `llm_proxy_key_header` as in client-id mode. No `X-Client-Id`, no `client_secret`. | `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, the connected-app token, anything from `Donkey(auth=…)` |
+| **Governed MCP servers** (the gateway URL `resolve_mcp()` returns) | `client_id: <llm_proxy_client_id>` and `client_secret: <llm_proxy_client_secret>` headers, or the credential passed to `discover(auth=…)`. See [Auth](https://docs.donkey-kit.dev/tool-access/binding.md#auth). | `Authorization: Bearer `, or `discover(auth=…)`. No `X-Client-Id`. | `Authorization: Bearer <token from llm_auth>`, or `discover(auth=…)`. | `llm_proxy_key`, `X-Client-Id`, the attribution headers, `ANYPOINT_CLIENT_ID`, `ANYPOINT_CLIENT_SECRET`, the connected-app token |
+| **Anypoint token endpoint** (`<base_url>/accounts/api/v2/oauth2/token`) | Form body: `grant_type=client_credentials`, `client_id`, `client_secret` (the `ANYPOINT_*` values). | Same. | Same. | Every `llm_proxy_*` value, the JWT or bearer token, `X-Client-Id` |
+| **Registry and tools** (`base_url`) | `Authorization: Bearer <connected-app token>` (or the token from `Donkey(auth=…)`). | Same. No `X-Client-Id`. | Same. | Every `llm_proxy_*` value, the JWT or bearer token, `X-Client-Id` |
+
+<sup>1</sup> The framework client decides the header: `Authorization: Bearer`
+for OpenAI-compatible clients, `x-api-key` for the Anthropic client,
+`x-goog-api-key` for ADK's `gemini()`. In `jwt` and `bearer` mode the SDK's
+shared client replaces `Authorization` with the token from `llm_auth`.
+
+<sup>2</sup> Only from async calls through adapters with transport
+injection; see the [`jwt` mode note](https://docs.donkey-kit.dev/reference/configuration/auth.md#jwt--model-wallet-auth-mode) and the
+[`bearer` mode note](https://docs.donkey-kit.dev/reference/configuration/auth.md#bearer-token-auth-mode).
+
+Model calls never request, send or refresh the connected-app token.
+
+### Credentials go only to checked endpoints
+
+Each of the SDK's HTTP clients attaches credentials only to the endpoints it
+was checked for, compared by scheme, host and port:
+
+- the configured endpoint: `llm_proxy_url` on the data plane, `base_url` on the
+  control plane;
+- a URL you pass to a factory in code: `base_url` to `donkey.llm.client()` or
+  an adapter factory, `api_base` (LlamaIndex, ADK's `model()`, CrewAI),
+  `openai_api_base` (LangGraph), or `client_args["base_url"]` (Strands). It
+  must pass the same [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https) as the
+  config, and then receives the same credentials.
+
+A request to any other origin is still sent, but without credentials: the SDK
+adds none and removes the credential headers the framework set
+(`Authorization`, `x-api-key`, `client_id`, `client_secret`, `X-Client-Id` and
+the other names in [What printed output hides](https://docs.donkey-kit.dev/reference/configuration.md#what-printed-output-hides)).
+The correlation, attribution and other headers in the next table still go.
+This covers:
+
+- a URL changed outside the factories, for example
+  `ChatOpenAI(**{**kwargs, "base_url": other})`;
+- every redirect hop. The SDK's clients don't follow redirects; if your code
+  asks for it on a request, a hop to another origin carries no credentials.
+
+CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
+`interceptor` that removes the credential headers the same way.
+
+### Which features use the control plane
+
+| Feature | Control-plane requests | In this release |
+|---|---|---|
+| Model calls: `donkey.llm`, `donkey.openai()`, every adapter | None | Available |
+| `donkey doctor` | None. It checks the control-plane settings without sending, and makes one model call to the LLM proxy. | Available |
+| `donkey init`, `donkey mock`, `donkey test`, `donkey.simulate()` | None | Available |
+| Registry search: `donkey.registry.search()` | Token request, then Exchange Graph API reads | Available. Its `domain`, `environment` and `governed` filters raise `NotImplementedError` before sending. See [Registry search](https://docs.donkey-kit.dev/tool-access/discovery.md#registry-search). |
+| Registry: `resolve_mcp()` | Token request, then Access Management, API Manager and Omni Gateway Manager reads | Available. See [Resolving an MCP server](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-mcp-server). |
+| Registry: `explain()` | Token request, then Access Management, API Manager, Exchange and API Governance reads, only those the criteria need | Available. See [`explain()`](https://docs.donkey-kit.dev/tool-access/discovery.md#explain--why-a-tool-was-included-or-excluded). |
+| Registry: `resolve_agent()` | Token request, then the `resolve_mcp()` reads, for the agent's A2A instance | Available. See [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent). |
+| Outbound A2A: `donkey.a2a.send()` / `stream()` | Token request, then `explain()` and `resolve_agent()` reads; card GET and JSON-RPC use consumer auth, not the connected app | Offline-verified; provisional. Successful gateway send and SSE are NOT live verified by this implementation yet. See [Outbound A2A](https://docs.donkey-kit.dev/a2a/call.md). |
+| Registry: `donkey.registry.warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
+| Tool discovery: `donkey.tools.discover()` | Token request, then the `search()`, `explain()` and `resolve_mcp()` reads | Available. Its `domain` filter raises `NotImplementedError` before sending; `locked=True` reads `donkey.lock` first and raises `ConfigError` if it is unreadable. `donkey.tools.warm()` does the same reads ahead of time. See [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md). |
+| Tool pinning: `donkey.tools.lock()` | Token request, the discovery reads, then one `tools/list` per server | Provisional: writes `donkey.lock`. See [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md). |
+| Publication: `Publication.verify()` | Token request, then the Exchange version read and its `mcp-metadata` or card download, the `explain()` and `resolve_mcp()` or `resolve_agent()` reads, and the server's `tools/list` or the agent's card through the gateway | Available for MCP servers and agents; `API` raises `NotImplementedError` before sending. See [Verifying at runtime](https://docs.donkey-kit.dev/publishing/publication.md#verifying-at-runtime-verify). |
+| Publication: `Publication.preview()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
+| `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |
+| `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](https://docs.donkey-kit.dev/cli/ship.md#donkey-expose). |
+| `donkey preflight`, `donkey expose --dry-run` | Token request, then the same reads, and no writes | Available |
+| `donkey verify` | Token request, then the `Publication.verify()` reads for each MCP server and `a2a_v1` agent | Available for MCP servers and `a2a_v1` agents; other agents are skipped. See [`donkey verify`](https://docs.donkey-kit.dev/cli/ship.md#donkey-verify). |
+| Hidden command `donkey status` | Token request, then platform calls | Roadmap: exits with "blocked on verification" before sending |
+| Your own code calling `AnypointConnectedApp.token()` | Token request | Available |
+
+So in this release the SDK sends the `ANYPOINT_*` credentials only for the
+Available rows above: `donkey publish`, `donkey expose` and `donkey preflight`,
+the registry reads and tool discovery,
+or your own code asking for a connected-app token. The scopes each one needs
+are in [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md).
+
+### Other headers
+
+Outbound A2A uses a distinct scoped credential plane over the shared async
+transport. Its `auth=` override accepts `McpAuth`; otherwise it uses the
+configured consumer client-ID pair or `llm_auth` bearer provider. Each HTTP
+request rechecks derived-endpoint provenance and obtains current credentials
+and the current `as_user()` token. A service/user header collision is refused.
+No shared LLM default headers, wallet selector, provider key, attribution,
+cache or cost headers are inherited. Correlation/call IDs and enabled W3C
+trace context are propagated. `max_retries` and
+`retry_model_calls_on_gateway_errors` never enable A2A replay or 401 refresh.
+
+The correlation and per-call IDs go on every request the SDK's HTTP clients
+send, on both planes. The other headers go only on model requests to the LLM
+proxy: the connected-app token request and the registry and tool requests
+never carry them.
+
+| Header (default name) | Value | When | Sent to |
+|---|---|---|---|
+| `X-Correlation-Id` (`correlation_header`) | The run ID | Always | Both planes |
+| `X-Donkey-Request-Id` (`call_id_header`) | A per-call ID | Always | Both planes |
+| `X-Anypoint-Client-Application` | `application_name` | When set | The LLM proxy only |
+| `X-Anypoint-Business-Group` | `business_group`, or the group from an enclosing `donkey.attribution(...)` / `donkey.run(business_group=…)` block | When set | The LLM proxy only |
+| `X-Anypoint-Cost-Team`, `-Project`, `-Env`, `-Enduser-Id` | Your cost tags, including the end-user ID | Only with `send_cost_headers`; see [Cost-attribution tags](https://docs.donkey-kit.dev/cost-attribution.md) | The LLM proxy only, or a receiver of yours in front of it |
+| `x-cache-*` | Your cache controls, including `principal_id` | Inside a `donkey.cache(...)` block | The LLM proxy's semantic cache only |
+
+CrewAI, which gets only a header snapshot, sends the auth headers, the
+attribution headers and, with `send_cost_headers`, the configured cost tags. It
+doesn't send per-run values, a per-request business group or cache controls: it
+always sends the configured `business_group`.
+
+## Next steps
+
+- [Overview & all settings](https://docs.donkey-kit.dev/reference/configuration.md): every setting, precedence and the trust rules for config files.
+- [Auth modes](https://docs.donkey-kit.dev/reference/configuration/auth.md): client ID, your own provider key, JWT model-wallet and bearer tokens.
+- [Attribution, telemetry & behaviour](https://docs.donkey-kit.dev/reference/configuration/attribution.md): attribution, correlation and cost headers, telemetry and value checks.

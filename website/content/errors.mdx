@@ -616,7 +616,7 @@ surfaces immediately as `AuthError`. A CIBA `401` (`GatewayApprovalPending`) is
 not a credential failure, but in `jwt` mode it still triggers that one refresh
 and re-send before it reaches you; the re-send just gets "pending" again. The Anypoint control-plane credential
 lives on a separate client: model calls never fetch, send or refresh it. See
-[What the SDK sends where](/reference/configuration#what-the-sdk-sends-where).
+[What the SDK sends where](/reference/configuration/control-plane#what-the-sdk-sends-where).
 
 The scoped outbound A2A plane is different: **no automatic replay**, including
 401 refresh/re-send, every 5xx, refusal-handler actions and stream

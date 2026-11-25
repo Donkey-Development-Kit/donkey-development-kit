@@ -275,7 +275,7 @@ WARNING donkey_kit.tools.session: langgraph() binds 34 tool descriptors, about 9
 ```
 
 The defaults follow the model vendors' published guidance on tool count and
-descriptor size; see [Tool-set size warnings](https://docs.donkey-kit.dev/reference/configuration.md#tool-set-size-warnings)
+descriptor size; see [Tool-set size warnings](https://docs.donkey-kit.dev/reference/configuration/attribution.md#tool-set-size-warnings)
 for the sources and how to change or turn off each threshold.
 
   The SDK also logs how many tool descriptors a `ToolSet` exposes out of the

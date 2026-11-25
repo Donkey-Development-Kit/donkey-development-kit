@@ -108,7 +108,7 @@ model = LLM(
 also adds an `interceptor`: with one set, CrewAI's provider builds HTTP clients
 that don't follow redirects, and the interceptor removes the credential headers
 from any request to an origin other than the proxy (see
-[Credentials go only to checked endpoints](https://docs.donkey-kit.dev/reference/configuration.md#credentials-go-only-to-checked-endpoints)).
+[Credentials go only to checked endpoints](https://docs.donkey-kit.dev/reference/configuration/control-plane.md#credentials-go-only-to-checked-endpoints)).
 A `base_url` / `api_base` passed to `llm()` must pass the
 [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https).
 
@@ -126,7 +126,7 @@ A `base_url` / `api_base` passed to `llm()` must pass the
   client, which CrewAI's provider doesn't use, so `donkey.crewai.llm()` and
   `connection_kwargs()` raise `ConfigError` in `jwt` mode. Use client-id auth
   with CrewAI; see the
-  [`jwt` mode note](https://docs.donkey-kit.dev/reference/configuration.md#jwt--model-wallet-auth-mode).
+  [`jwt` mode note](https://docs.donkey-kit.dev/reference/configuration/auth.md#jwt--model-wallet-auth-mode).
 - **A budget refusal is sent 3 times.** CrewAI wraps every LLM call in its own
   rate-limit retry (3 attempts, with a 1s then 2s wait) and treats any `429` as
   a rate limit. On the proxy a `429` is a budget refusal, so CrewAI re-sends it
