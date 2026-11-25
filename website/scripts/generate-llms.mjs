@@ -74,19 +74,20 @@ async function collectPages(dir, urlPrefix, section, pages) {
       currentSection = value.title || currentSection
       continue
     }
-    // `display: 'hidden'` entries are routable but not part of the site's
-    // navigation, so they stay out of llms.txt and the per-page .md set too.
-    if (value && typeof value === 'object' && value.display === 'hidden') continue
+    // `display: 'hidden'` entries are routable but not in the site's navigation.
+    // They keep their per-page .md (their URLs are public and must keep working)
+    // but stay out of llms.txt and llms-full.txt, which follow the navigation.
+    const hidden = Boolean(value && typeof value === 'object' && value.display === 'hidden')
     const title = typeof value === 'string' ? value : value?.title || key
     const mdxPath = join(dir, `${key}.mdx`)
     const subDir = join(dir, key)
 
     if (key === 'index') {
       // Directory root page: url is the directory itself ('' for the site root).
-      pages.push({ title, urlPath: urlPrefix, file: mdxPath, section: currentSection })
+      pages.push({ title, urlPath: urlPrefix, file: mdxPath, section: currentSection, hidden })
     } else if (await exists(mdxPath)) {
       const urlPath = urlPrefix ? `${urlPrefix}/${key}` : key
-      pages.push({ title, urlPath, file: mdxPath, section: currentSection })
+      pages.push({ title, urlPath, file: mdxPath, section: currentSection, hidden })
     } else if (await exists(join(subDir, '_meta.js'))) {
       // A sub-directory: recurse, and group its pages under its own nav label.
       await collectPages(subDir, urlPrefix ? `${urlPrefix}/${key}` : key, title, pages)
@@ -278,6 +279,7 @@ async function main() {
   const indexLines = [`# ${TITLE}`, '', `> ${TAGLINE}`]
   let section = null
   for (const page of pages) {
+    if (page.hidden) continue
     if (page.section !== section) {
       section = page.section
       indexLines.push('', `## ${section}`, '')
@@ -303,6 +305,7 @@ async function main() {
     '',
   ]
   for (const page of pages) {
+    if (page.hidden) continue
     fullParts.push('---', '', `Source: ${page.mdUrl}`, '', page.markdown.trim(), '')
   }
   await writeFile(join(PUBLIC, 'llms-full.txt'), `${fullParts.join('\n')}\n`)

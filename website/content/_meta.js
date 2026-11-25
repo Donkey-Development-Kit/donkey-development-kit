@@ -18,6 +18,7 @@ export default {
   frameworks: { title: 'Models', theme: { collapsed: false } },
   'tool-access': { title: 'MCP tools', theme: { collapsed: false } },
   a2a: { title: 'A2A agents', theme: { collapsed: false } },
+  'supported-frameworks': { title: 'Supported frameworks', theme: { collapsed: false } },
   '-- governance': {
     type: 'separator',
     title: 'Governance (all surfaces)',

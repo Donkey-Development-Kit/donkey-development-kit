@@ -1,0 +1,71 @@
+---
+description: Which agent frameworks DDK supports on each surface, how deep each one goes, and where the framework-specific how-to lives.
+status: offline-verified
+---
+
+import { Callout } from 'nextra/components'
+
+# Supported frameworks
+
+DDK supports eight agent frameworks. Each one is wired into a surface, and the
+depth varies by surface. This page is the map: which framework goes where, how
+far DDK goes for it, and which page has the how-to. The how-to itself lives in
+the surface sections, so each one is documented once.
+
+| Surface | What a framework gets | Where the how-to lives |
+| --- | --- | --- |
+| [Models](/frameworks) | A governed model object from the framework's own API (`chat_model()`, `model()`, `llm()` and so on), with credentials, correlation, attribution and retry policy applied. | [Models](/frameworks), with one page per framework |
+| [MCP tools](/tool-access) | Governed MCP tools bound as the framework's native tools. Some frameworks bind one tool at a time; others take a whole server. | [Framework binding](/tool-access/binding) |
+| [A2A agents](/a2a) | Nothing framework-specific today. `donkey.a2a.send()` and `donkey.serve()` work the same for every framework. Binding an A2A agent as a framework tool is planned. | [Call other agents](/a2a/call), [Serve & expose](/a2a/serve) |
+
+## Models
+
+Every framework has a factory on the shared `Donkey` object, and the adapter
+page for each one shows the exact call and what it returns.
+
+| Framework | Factory | Depth to know about |
+| --- | --- | --- |
+| [LangGraph](/frameworks/langgraph) | `donkey.langgraph.chat_model()` | Full model path: typed refusals and `last_call` are observed. |
+| [Google ADK](/frameworks/adk) | `donkey.adk.model()`, `donkey.adk.gemini()` | Full model path, plus a native Gemini route on a `Format=Gemini` proxy. |
+| [Strands](/frameworks/strands) | `donkey.strands.model()` | Streaming is off on the governed connection (`stream=False`). |
+| [MS Agent Framework](/frameworks/agent-framework) | `donkey.agent_framework.chat_client()` | Full model path. |
+| [OpenAI Agents SDK](/frameworks/openai) | `donkey.openai_agents.model()` | Full model path. |
+| [Anthropic SDK](/frameworks/anthropic) | `donkey.anthropic.client()` | Full model path. |
+| [CrewAI](/frameworks/crewai) | `donkey.crewai.llm()` | CrewAI builds its own HTTP client, so the JWT and bearer auth modes are refused and `last_call` is not observed. |
+| [LlamaIndex](/frameworks/llamaindex) | `donkey.llamaindex.llm()` | Full model path. |
+
+The per-factory capability table (transport, sync, streaming, typed refusals,
+observed `last_call`) is on the [Models overview](/frameworks#what-each-factory-gets-capabilities).
+
+<Callout type="info">
+  "Full model path" means the framework's model object goes through DDK's shared
+  transport, so refusals, `last_call` and budget reads reach your code. Where the
+  table marks a capability off, read that adapter's page before relying on it.
+</Callout>
+
+## MCP tools
+
+The binding shape decides how you filter and refuse tools:
+
+- **Per tool.** [LangGraph](/tool-access/binding), [LlamaIndex](/tool-access/binding) and the
+  [Anthropic SDK](/tool-access/binding) bind each tool separately. Typed refusals
+  from a tool call reach your code through these bindings.
+- **Per server.** [Google ADK](/tool-access/binding), [Strands](/tool-access/binding),
+  [OpenAI Agents SDK](/tool-access/binding), [MS Agent Framework](/tool-access/binding) and
+  [CrewAI](/tool-access/binding) bind a whole server. Some of these return tool errors as
+  text, so the policy metadata is lost. The per-framework refusal behaviour is on the
+  [MCP gateway policies](/tool-access/gateway-policies) page.
+
+## A2A agents
+
+A2A is not bound per framework. `donkey.a2a.send()` and `donkey.serve()` are the
+same for every framework, so an agent built with any of the eight can call or
+serve other agents. Framework-native `as_tool()` binding is still planned; see
+[Call other agents](/a2a/call).
+
+## Next steps
+
+- [Models](/frameworks): the framework adapters, gateway policies and routing.
+- [MCP tools](/tool-access): discovery, binding and the MCP gateway policies.
+- [A2A agents](/a2a): serving and calling agents through the gateway.
+- [Feature overview](/feature-overview): every capability, grouped by surface.

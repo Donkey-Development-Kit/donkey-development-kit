@@ -16,17 +16,6 @@
 - [Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md): (status: live) How DDK reports the provider and model the gateway actually served, when a fallback answered, and how semantic routing and semantic caching show up on each response.
 - [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md): (status: live) Which versions of each agent framework donkey-kit supports — the minimum, the version every PR tests, and known incompatibilities.
 
-## Frameworks
-
-- [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md): (status: live) Use a governed LangChain ChatOpenAI in LangGraph, pointed at your Omni Gateway LLM proxy with full header and transport injection, typed refusals, and conformance testing.
-- [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md): (status: live) Use a governed OpenAIChatCompletionsModel in the OpenAI Agents SDK, backed by a pre-built AsyncOpenAI client pointed at your Omni Gateway LLM proxy.
-- [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md): (status: live) Use a governed LiteLlm model, or ADK's native Gemini model on a Format=Gemini proxy, in Google's Agent Development Kit (ADK), pointed at your Omni Gateway LLM proxy.
-- [Strands](https://docs.donkey-kit.dev/frameworks/strands.md): (status: live) Use a governed OpenAIModel in Strands Agents, pointed at your Omni Gateway LLM proxy with full header and transport injection.
-- [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md): (status: live) Use a governed OpenAIChatClient in Microsoft Agent Framework, pointed at your Omni Gateway LLM proxy, with policy middleware that ends a run on a typed governance refusal.
-- [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md): (status: live) Use a governed AsyncAnthropic client with the Anthropic SDK, pointed at a Format=Anthropic Omni Gateway LLM proxy with full header and transport injection.
-- [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md): (status: live) Use a governed CrewAI LLM, served by CrewAI's native OpenAI provider and pointed at your Omni Gateway LLM proxy.
-- [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md): (status: live) Use a governed OpenAILike LLM in LlamaIndex, pointed at your Omni Gateway LLM proxy with is_chat_model forced on.
-
 ## MCP tools
 
 - [Overview](https://docs.donkey-kit.dev/tool-access.md): (status: live) Discover the governed MCP tools your organisation publishes in Exchange and bind them into any framework as native tool objects.
@@ -41,6 +30,10 @@
 - [Serve & expose](https://docs.donkey-kit.dev/a2a/serve.md): (status: offline-verified) Make your agent callable by other agents over A2A — serve it in one line, expose it through the gateway, and develop against a gateway on your laptop.
 - [Call other agents](https://docs.donkey-kit.dev/a2a/call.md): (status: offline-verified) Send official A2A SDK requests to registry-resolved governed agents, with scoped authentication and context-managed streams.
 - [Gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md): (status: offline-verified) Version-specific A2A gateway policy captures, DDK outcomes, and offline replay and telemetry boundaries.
+
+## Supported frameworks
+
+- [Overview](https://docs.donkey-kit.dev/supported-frameworks.md): (status: offline-verified) Which agent frameworks DDK supports on each surface, how deep each one goes, and where the framework-specific how-to lives.
 
 ## Governance (all surfaces)
 
