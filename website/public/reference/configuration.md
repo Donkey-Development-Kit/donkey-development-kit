@@ -582,7 +582,7 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Registry: `resolve_mcp()` | Token request, then Access Management, API Manager and Omni Gateway Manager reads | Available. See [Resolving an MCP server](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-mcp-server). |
 | Registry: `explain()` | Token request, then Access Management, API Manager, Exchange and API Governance reads, only those the criteria need | Available. See [`explain()`](https://docs.donkey-kit.dev/tool-access/discovery.md#explain--why-a-tool-was-included-or-excluded). |
 | Registry: `resolve_agent()` | Token request, then the `resolve_mcp()` reads, for the agent's A2A instance | Available. See [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent). |
-| Outbound A2A: `donkey.a2a.send()` / `stream()` | Token request, then `explain()` and `resolve_agent()` reads; card GET and JSON-RPC use consumer auth, not the connected app | Offline-verified; provisional. Successful gateway send and SSE are NOT live verified by this implementation yet. See [Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md). |
+| Outbound A2A: `donkey.a2a.send()` / `stream()` | Token request, then `explain()` and `resolve_agent()` reads; card GET and JSON-RPC use consumer auth, not the connected app | Offline-verified; provisional. Successful gateway send and SSE are NOT live verified by this implementation yet. See [Outbound A2A](https://docs.donkey-kit.dev/a2a/call.md). |
 | Registry: `donkey.registry.warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()` | Token request, then the `search()`, `explain()` and `resolve_mcp()` reads | Available. Its `domain` filter raises `NotImplementedError` before sending; `locked=True` reads `donkey.lock` first and raises `ConfigError` if it is unreadable. `donkey.tools.warm()` does the same reads ahead of time. See [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md). |
 | Tool pinning: `donkey.tools.lock()` | Token request, the discovery reads, then one `tools/list` per server | Provisional: writes `donkey.lock`. See [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md). |
@@ -666,7 +666,7 @@ Four tables in these files are not `DonkeyConfig` fields, and
   [Planning a publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
 - `[donkey.expose]` names the gateway `donkey expose` deploys to, and for
   each service its instance label, upstream and policies. `donkey expose` and
-  `donkey preflight` read it from the same two files. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
+  `donkey preflight` read it from the same two files. See [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md).
 
 `Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named
 file in place of `./.donkey-kit.toml`. The `.donkey-kit.local.toml` beside that

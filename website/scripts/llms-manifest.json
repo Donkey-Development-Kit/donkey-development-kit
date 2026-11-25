@@ -1,6 +1,8 @@
 [
-  "a2a-gateway-policies.md",
   "a2a.md",
+  "a2a/call.md",
+  "a2a/gateway-policies.md",
+  "a2a/serve.md",
   "budget.md",
   "cli.md",
   "community/contribute.md",
@@ -61,7 +63,6 @@
   "telemetry.md",
   "testing.md",
   "tool-access.md",
-  "tool-access/a2a.md",
   "tool-access/binding.md",
   "tool-access/discovery.md",
   "tool-access/gateway-policies.md",

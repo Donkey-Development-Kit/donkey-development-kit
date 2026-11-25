@@ -21,8 +21,8 @@ Omni Gateway later is an environment change, not a code change.
 | Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
 | CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `scaffold`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
 | Governed tool access (MCP) | Live | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
-| A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
-| A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
+| A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) |
+| A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) |
 | On-behalf-of identity: `donkey.as_user()` | Live | [Identity](https://docs.donkey-kit.dev/identity.md) |
 | Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
 | `donkey scan` and `donkey scaffold` (agents, tools and MCP servers from code, and the declarations they need) | Live | [From code to a publish plan](https://docs.donkey-kit.dev/cli.md#from-code-to-a-publish-plan) |

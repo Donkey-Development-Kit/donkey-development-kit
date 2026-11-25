@@ -477,5 +477,5 @@ remain ambiguous, not typed policy refusals. Successful results and
 ## Related
 
 - [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md) — produce the `ToolSet`.
-- [A2A agent tools](https://docs.donkey-kit.dev/tool-access/a2a.md) — bind a remote agent the same way.
+- [A2A agent tools](https://docs.donkey-kit.dev/a2a/call.md) — bind a remote agent the same way.
 - [Frameworks](https://docs.donkey-kit.dev/frameworks.md) — governed model access per framework.

@@ -22,10 +22,8 @@ Everything else in this section — search filters, session management,
 per-framework binding and lockfile pinning — makes those two lines
 hold up in production.
 
-[Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md) is separate: `donkey.a2a.send()` and
-context-managed `stream()` use official SDK objects. They are offline-verified;
-successful gateway send/SSE is not yet live-verified by this implementation,
-and framework-native agent-as-tool binding remains planned.
+Calling another agent over A2A is not an MCP tool call; it has its own
+section: see [Call other A2A agents](https://docs.donkey-kit.dev/a2a/call.md).
 
 ## Discover and filter
 
@@ -56,7 +54,3 @@ Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-a
   
   
     Pin each server's listed tools in `donkey.lock` and fail on drift.
-  
-  
-    Send SDK requests and stream SDK events through a registry-pinned gateway.
-    Native framework binding remains planned.

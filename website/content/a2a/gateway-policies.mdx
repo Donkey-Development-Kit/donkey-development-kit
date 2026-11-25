@@ -10,13 +10,13 @@ import { Callout } from 'nextra/components'
 Omni Gateway policies run on the remote agent's API instance. DDK does not
 evaluate them locally: it resolves the governed endpoint, delegates through the
 official `a2a-sdk`, and surfaces outcomes it can identify safely. Use
-[`donkey.a2a.send()` or `donkey.a2a.stream()`](/tool-access/a2a) for outbound
-delegation, and [`donkey.serve()`](/a2a) to make your own agent callable.
+[`donkey.a2a.send()` or `donkey.a2a.stream()`](/a2a/call) for outbound
+delegation, and [`donkey.serve()`](/a2a/serve) to make your own agent callable.
 
 <Callout type="info">
   **Three things are called "policy" in these docs.** *Gateway policies* are
   what the gateway enforces on each surface: see the [MCP tools](/tool-access/gateway-policies)
-  and [A2A agents](/a2a-gateway-policies) pages. *[Custom policies](/custom-policies)*
+  and [A2A agents](/a2a/gateway-policies) pages. *[Custom policies](/custom-policies)*
   teach `classify()` the refusal shape your own gateway policy returns. The
   *[policy handshake](/policies)* is a planned, advisory read of the policies in
   force; the gateway always wins.
@@ -108,7 +108,7 @@ Unknown/incomplete layouts and all v1 tasks stay native SDK responses; the
 documentation limits the In-Task Authorization Code policy to v0.3.0, so DDK does
 not convert a v1 challenge. OAuth completion, token forwarding/removal, caching
 and authorization-policy `401` responses remain **UNVERIFIED**: a bounded probe with a synthetic invalid token and unvalidatable OAuth metadata got no policy-generated `401` (the request passed through to the agent), so DDK treats that `401` as an accepted boundary. See
-[Authentication challenges](/tool-access/a2a#authentication-challenges).
+[Authentication challenges](/a2a/call#authentication-challenges).
 
 The outbound plane never automatically replays a delegated action, even for
 `401`, `429` or `503`; model retry settings do not change that. Leaving an
@@ -162,7 +162,7 @@ annotations and the official SDK's own instrumentation.
 
 ## Offline testing and privacy
 
-[`donkey dev`](/a2a#simulated-ingress) defaults to `--protocol-version 1.0`,
+[`donkey dev`](/a2a/serve#simulated-ingress) defaults to `--protocol-version 1.0`,
 replaying selected v1 ingress Azure Prompt Shield, PII and token-rate refusals
 for both send methods. `--protocol-version 0.3.0` uses the existing legacy PII
 and token-rate captures for `message/send` only. See the
@@ -198,7 +198,7 @@ not promote any of these claims.
 
 ## Next steps
 
-- [Outbound A2A](/tool-access/a2a): scoped credentials and call examples.
+- [Call other A2A agents](/a2a/call): scoped credentials and call examples.
 - [Typed errors](/errors#json-rpc-refusal-matching): discriminators and diagnostics.
 - [A2A ingress replay](/simulator#a2a-ingress-replay): offline scenarios.
 - [Outbound A2A spans](/telemetry#outbound-a2a-spans): tracing boundaries.

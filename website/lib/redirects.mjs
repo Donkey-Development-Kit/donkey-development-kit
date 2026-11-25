@@ -17,11 +17,31 @@
 // without `.html`. Entries are empty until the move/split sub-issues add them.
 
 export const PAGE_REDIRECTS = {
-  // '/tool-access/a2a': '/a2a/call',
+  // #1827: A2A gathered into one section.
+  '/tool-access/a2a': '/a2a/call',
+  '/a2a-gateway-policies': '/a2a/gateway-policies',
 }
 
 export const MOVED_ANCHORS = {
-  // '/cli': { 'donkey-init': '/cli/setup' },
+  // #1827: /a2a became the A2A overview; the serving page moved to /a2a/serve.
+  '/a2a': {
+    'call-it-from-any-a2a-client': '/a2a/serve',
+    'donkey-dev--a-gateway-in-front-of-your-laptop': '/a2a/serve',
+    'donkey-expose--the-ingress-registered-from-code-live': '/a2a/serve',
+    'donkeyserve--the-listener-in-one-line': '/a2a/serve',
+    'governed-inbound': '/a2a/serve',
+    'install-the-extra': '/a2a/serve',
+    'mark-the-agent-and-serve-it': '/a2a/serve',
+    'related': '/a2a/serve',
+    'selecting-a-protocol-version': '/a2a/serve',
+    'simulated-ingress': '/a2a/serve',
+    'the-setup-it-replaces': '/a2a/serve',
+    'what-the-card-says': '/a2a/serve',
+    'what-the-handler-gets-and-returns': '/a2a/serve',
+    'where-it-listens': '/a2a/serve',
+    'why-not-have-users-call-the-a2a-sdk-directly': '/a2a/serve',
+    'why-the-agent-still-runs-a-listener': '/a2a/serve',
+  },
 }
 
 // Strip the basePath prefix, query, hash, trailing slash and `.html`, and

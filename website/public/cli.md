@@ -78,7 +78,7 @@ required, because it is the agent's description. A blank or repeated skill
 raises `ValueError`.
 
 [`donkey scan`](#donkey-scan) reads the `@donkey.tool` and `@donkey.agent`
-markers, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) generates its A2A agent card from the same
+markers, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md) generates its A2A agent card from the same
 `@donkey.agent` record, so the scan and the card can't drift.
 
 ## The CLI
@@ -617,7 +617,7 @@ donkey dev my_agent:handle --port 8000 --scenario pii_block:every=5
 
 `TARGET` is `module:attribute`, imported from the current directory. The
 ingress, the rules it takes and where its rejection shapes come from are in
-[Simulated ingress](https://docs.donkey-kit.dev/a2a.md#simulated-ingress). A target that can't be loaded or
+[Simulated ingress](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress). A target that can't be loaded or
 isn't marked with `@donkey.agent`, and an invalid `--scenario` (including
 `budget`), exit with code `2`.
 
@@ -973,7 +973,7 @@ MCP server sku-manager is exposed at https://<gateway>/sku-manager/
   has applied it.
 
 What the run needs comes from the `[donkey.expose]` table in
-`.donkey-kit.toml`; see [A2A agents](https://docs.donkey-kit.dev/a2a.md) for the keys.
+`.donkey-kit.toml`; see [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) for the keys.
 
 The command adds what is missing and nothing else:
 
@@ -1004,6 +1004,6 @@ These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md)
 CLI yet:
 
 - `donkey serve` — serve your agent over A2A from the command line. In code,
-  `donkey.serve()` does it today. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
+  `donkey.serve()` does it today. See [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md).
 
   Run `donkey --help` to see the commands available in your installed version.

@@ -32,12 +32,13 @@
 - [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md): (status: live) Turn discovered governed MCP servers into each framework's native tool objects, with auth, lifecycle, name collisions, and filtering handled for you.
 - [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md): (status: offline-verified) Pin the tools each governed MCP server lists in a donkey.lock, so a catalog change becomes a typed ToolLockDrift and a reviewable diff instead of a runtime surprise.
 - [Gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md): (status: offline-verified) Consume policy-shaped MCP catalogs and handle gateway refusals without guessing policy identity or reimplementing enforcement.
-- [Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md): (status: offline-verified) Send official A2A SDK requests to registry-resolved governed agents, with scoped authentication and context-managed streams.
 
-## Models, tools & agents
+## A2A agents
 
-- [A2A agents](https://docs.donkey-kit.dev/a2a.md): (status: offline-verified) Make your agent callable by other agents over A2A — serve it in one line, expose it through the gateway, and develop against a gateway on your laptop.
-- [A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md): (status: offline-verified) Version-specific A2A gateway policy captures, DDK outcomes, and offline replay and telemetry boundaries.
+- [Overview](https://docs.donkey-kit.dev/a2a.md): (status: offline-verified) Everything DDK does for agent-to-agent (A2A) calls, in one place. Serve and expose your agent behind the gateway, call other governed agents, and handle what the gateway enforces.
+- [Serve & expose](https://docs.donkey-kit.dev/a2a/serve.md): (status: offline-verified) Make your agent callable by other agents over A2A — serve it in one line, expose it through the gateway, and develop against a gateway on your laptop.
+- [Call other agents](https://docs.donkey-kit.dev/a2a/call.md): (status: offline-verified) Send official A2A SDK requests to registry-resolved governed agents, with scoped authentication and context-managed streams.
+- [Gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md): (status: offline-verified) Version-specific A2A gateway policy captures, DDK outcomes, and offline replay and telemetry boundaries.
 
 ## Governance (all surfaces)
 

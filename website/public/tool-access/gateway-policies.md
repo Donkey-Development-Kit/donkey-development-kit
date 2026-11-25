@@ -9,7 +9,7 @@ reimplementing the policies in your agent.
 
   **Three things are called "policy" in these docs.** *Gateway policies* are
   what the gateway enforces on each surface: see the [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
-  and [A2A agents](https://docs.donkey-kit.dev/a2a-gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
+  and [A2A agents](https://docs.donkey-kit.dev/a2a/gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
   teach `classify()` the refusal shape your own gateway policy returns. The
   *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in
   force; the gateway always wins.

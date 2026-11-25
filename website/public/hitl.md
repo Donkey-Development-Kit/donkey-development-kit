@@ -841,7 +841,7 @@ OAuth and must validate the untrusted challenge URLs before using them.
 DDK runs no OAuth flow, hosts no redirect and performs no automatic resend.
 Typing is tested against both captured JSON send/stream responses, not a live
 OAuth completion; v1 challenge semantics and successful token resubmission
-remain unverified. See [Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
+remain unverified. See [Authentication challenges](https://docs.donkey-kit.dev/a2a/call.md#authentication-challenges).
 
 ## Mapped onto what your framework already has
 

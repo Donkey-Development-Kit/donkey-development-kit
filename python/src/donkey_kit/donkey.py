@@ -734,7 +734,7 @@ class Donkey:
         Provisional (ADR 0020): may change in a minor release with a migration
         note. ADR 0022 also makes its root-exported ``A2AFacade`` provisional.
 
-        Docs: https://docs.donkey-kit.dev/tool-access/a2a
+        Docs: https://docs.donkey-kit.dev/a2a/call
         """
         return self._a2a
 
@@ -1337,7 +1337,7 @@ class Donkey:
                 blank or repeated, or the callable has no docstring (it is the
                 agent's description).
 
-        Docs: https://docs.donkey-kit.dev/a2a
+        Docs: https://docs.donkey-kit.dev/a2a/serve
         """
         validate_service_id(name, what="name")
         if isinstance(skills, str):
@@ -1404,7 +1404,7 @@ class Donkey:
             TypeError: ``handler`` is not marked with ``@donkey.agent``.
             ImportError: The ``[a2a]`` extra is not installed.
 
-        Docs: https://docs.donkey-kit.dev/a2a
+        Docs: https://docs.donkey-kit.dev/a2a/serve
         """
         from .a2a import serve
 

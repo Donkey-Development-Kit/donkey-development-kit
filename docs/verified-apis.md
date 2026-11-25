@@ -838,7 +838,7 @@ replays selected method-specific v1 Azure block, PII and token-rate refusals.
 Protocol `0.3.0` replays existing v0.3 PII/rate `message/send` captures only,
 not all rows below. This adds no new captures or live verification. #1398 keeps raw
 RPC diagnostics out of rendered exceptions and DDK spans; original responses
-remain sensitive. The developer inventory is `a2a-gateway-policies.mdx` (#1400).
+remain sensitive. The developer inventory is `a2a/gateway-policies.mdx` (#1400).
 
 The table records response-shape facts, not a claim that every policy is typed
 or simulated. Classification contracts are pinned in

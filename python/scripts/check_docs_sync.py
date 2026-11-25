@@ -101,6 +101,8 @@ SURFACES: tuple[Surface, ...] = (
     ),
     Surface(("registry/publication.py", "registry/exchange.py"), ("publishing.mdx",)),
     Surface(("tools/session.py",), ("tool-access/binding.mdx",)),
+    Surface(("a2a/_server.py",), ("a2a/serve.mdx",)),
+    Surface(("a2a/client.py",), ("a2a/call.mdx",)),
     Surface(("cli/*.py",), ("cli.mdx",)),
     Surface(("experimental.py",), ("reference/unsupported-boundary.mdx",)),
     Surface((), ("quickstart.mdx", "index.mdx"), files=("README.md",)),

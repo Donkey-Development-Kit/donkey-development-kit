@@ -1,23 +1,16 @@
----
-description: Send official A2A SDK requests to registry-resolved governed agents, with scoped authentication and context-managed streams.
-status: offline-verified
----
+# Call other A2A agents
 
-import { Callout } from 'nextra/components'
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
-# Outbound A2A
-
-`donkey.a2a.send()` and `donkey.a2a.stream()` delegate to a governed agent using
+Outbound A2A: `donkey.a2a.send()` and `donkey.a2a.stream()` delegate to a governed agent using
 the official `a2a-sdk`. The `A2AFacade` API is **provisional**: it may change in
 a minor release with a migration note. Framework-native `AgentHandle.as_tool()`
 binding remains planned.
 
-<Callout type="info">
   **OFFLINE-VERIFIED:** official SDK v1/v0.3 send and SSE behavior is tested
   locally with mock HTTP. Successful gateway send and SSE are **NOT live
   verified by this implementation yet**. Captured refusals, including refusals
   to streaming methods before SSE starts, are not streaming success evidence.
-</Callout>
 
 ## Install
 
@@ -25,8 +18,7 @@ binding remains planned.
 pip install "donkey-kit[a2a]"
 ```
 
-The same extra backs [`donkey.serve()`](/a2a). Accessing `donkey.a2a` does not
-import the optional SDK; calling it without the extra raises an `ImportError`
+The same extra backs [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md). Accessing `donkey.a2a` does not
 with the install command before registry requests.
 
 ## Send and stream
@@ -87,7 +79,7 @@ error diagnostics. By default, disable it before importing `a2a` with
 recorders, use `Donkey.from_env(allow_a2a_sdk_telemetry=True)` to accept that risk.
 Neither `telemetry=True` nor `telemetry=False` supplies this permission. Calls
 refuse enabled or unknown SDK tracing before registry access unless you opt in.
-See [Outbound A2A spans](/telemetry#outbound-a2a-spans).
+See [Outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans).
 
 `auth=` accepts the same `McpAuth` credential protocol as MCP bindings, including
 `ClientIdAuth` and `BearerAuth` from `donkey_kit.tools.auth`. Without an
@@ -115,9 +107,9 @@ HTTP pool remains usable for later calls.
 - `AgentHandle` remains an immutable, resolution-only value from
   `ExchangeRegistry.resolve_agent()`. Pass the Exchange reference to the facade,
   not a handle, mutated handle or arbitrary URL. See
-  [Resolving an A2A agent](/tool-access/discovery#resolving-an-a2a-agent).
+  [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent).
 - The resolved URL follows the
-  [`https://` rule](/reference/configuration#endpoints-must-use-https) of the
+  [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https) of the
   URLs you configure, because the gateway credential is sent to it. A gateway
   public URL that uses plain `http://` to a non-loopback host (without
   `DONKEY_ALLOW_HTTP=1`), or that carries a user name or password, raises
@@ -132,12 +124,12 @@ HTTP pool remains usable for later calls.
   older cards without `supportedInterfaces` use the official SDK's legacy
   version default when `protocolVersion` is omitted.
 - Framework-native `as_tool()` binding remains planned, following
-  [Framework binding](/tool-access/binding). No binding method is added to the handle.
-- To make *your* agent callable by others over A2A, see [A2A agents](/a2a).
+  [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md). No binding method is added to the handle.
+- To make *your* agent callable by others over A2A, see [Serve & expose](https://docs.donkey-kit.dev/a2a/serve.md).
 
 ## Gateway Refusals
 
-The [A2A gateway policy inventory](/a2a-gateway-policies) separates v0.3/v1
+The [A2A gateway policy inventory](https://docs.donkey-kit.dev/a2a/gateway-policies.md) separates v0.3/v1
 captures, typed outcomes, non-blocking annotations and unverified behavior.
 
 Gateway policies can reject a remote A2A call before it reaches the agent.
@@ -168,7 +160,7 @@ with HTTP status and headers. The captured bare token-rate-limit HTTP 429 is
 `UpstreamModelError`, not a content block or a no-response `GatewayUnavailable`.
 PII and schema failures remain ambiguous: generic protocol codes and `ErrorInfo`
 reasons do not identify those policies. Their diagnostics are not used for
-typing or repeated in exception text. See [JSON-RPC refusal matching](/errors#json-rpc-refusal-matching).
+typing or repeated in exception text. See [JSON-RPC refusal matching](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching).
 
 ## Authentication Challenges
 
@@ -229,7 +221,7 @@ establish an internal evaluator cause or mean that `pending` is failure; those
 failure semantics, v1 evaluation and streaming remain unverified. The selected
 headers are test-only evidence, not a runtime or replay change or live SDK
 facade success. New in 0.2.1, DDK records quality annotations from successful outbound
-POST responses on its [A2A spans](/telemetry#outbound-a2a-spans). This recording
+POST responses on its [A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans). This recording
 is tested offline, including mock streaming; it is not live facade or streaming
 verification. Explanation text requires `telemetry_capture_content=True`, is
 not sanitized and is limited to 4096 characters. Agent Card GETs and failed
@@ -242,17 +234,17 @@ core transport and are decoded by the official SDK, not the GenAI SSE scanner.
 Raw responses on exceptions remain potentially sensitive. This does not add
 A2A PII/schema-specific typing or framework refusal translation.
 
-`as_tool()` remains planned. [`donkey dev`](/a2a#simulated-ingress) defaults to
+`as_tool()` remains planned. [`donkey dev`](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) defaults to
 v1 ingress replay; `--protocol-version 0.3.0` selects legacy PII/rate
 `message/send` captures, not this outbound authorization-code challenge.
 Its local unsupported-call HTTP `400` is not a gateway policy refusal.
 With scenarios configured, legacy streaming fails locally; without them it
-passes through to the agent. See the [replay matrix](/simulator#a2a-ingress-replay).
+passes through to the agent. See the [replay matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
 The CLI flag selects the local listener/ingress, not this outbound facade,
 which still selects the official compatibility transport from the remote card.
 
 ## Next steps
 
-- [Telemetry and correlation](/telemetry#outbound-a2a-spans)
-- [Typed errors and retry behavior](/errors)
-- [Serve your own A2A agent](/a2a)
+- [Telemetry and correlation](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans)
+- [Typed errors and retry behavior](https://docs.donkey-kit.dev/errors.md)
+- [Serve your own A2A agent](https://docs.donkey-kit.dev/a2a/serve.md)

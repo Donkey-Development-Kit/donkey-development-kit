@@ -153,7 +153,7 @@ print(agent.endpoint_url)   # https://<gateway-host>/<instance-path>/
 The agent's card is at `endpoint_url` + `.well-known/agent-card.json`. It raises
 `RegistryError` in the same cases as `resolve_mcp()`, including a gateway URL
 that is not `https://`, and like it sends no gateway credential. The immutable
-handle is resolution-only. Use [`donkey.a2a.send()` or `stream()`](https://docs.donkey-kit.dev/tool-access/a2a.md)
+handle is resolution-only. Use [`donkey.a2a.send()` or `stream()`](https://docs.donkey-kit.dev/a2a/call.md)
 with the Exchange reference to call the agent; that provisional surface is
 offline-verified, not yet live-verified for successful gateway send/SSE.
 Framework-native `AgentHandle.as_tool()` remains planned.

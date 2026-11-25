@@ -126,7 +126,7 @@ process with the opt-out set. DDK never changes the environment or the global
 tracer provider for you. With explicit permission, SDK spans retain their
 normal parentage and may export exception messages and stack traces.
 
-[`donkey.a2a.send()` and `stream()`](/tool-access/a2a) open one
+[`donkey.a2a.send()` and `stream()`](/a2a/call) open one
 `donkey.a2a.call` CLIENT span covering card discovery and delegation. This is
 not a GenAI span: A2A SSE is decoded by the official SDK and never scanned for
 model token usage. The shared transport still observes budget headers,
@@ -150,7 +150,7 @@ This behavior is **OFFLINE-VERIFIED**. Successful gateway send and SSE are
 NOT live verified by this implementation yet; refused streaming requests
 before SSE are not successful streaming evidence.
 
-The [A2A policy inventory](/a2a-gateway-policies#non-blocking-policies) records
+The [A2A policy inventory](/a2a/gateway-policies#non-blocking-policies) records
 the captured quality headers separately. Successful delegation HTTP responses
 record `donkey.a2a.quality.evaluation="yes"`, a finite numeric
 `donkey.a2a.quality.score`, and `donkey.a2a.quality.status="completed"` when
@@ -749,7 +749,7 @@ async with donkey.run(id=ticket.id):
 The sub-agent's spans and the gateway's record then share one id end to end. The
 GenAI span inside `run_from_headers()` records `donkey.correlation_id.source`:
 `adopted` when the caller supplied the id, `minted` when it did not. A served
-[A2A task](/tool-access/a2a) applies the same rule on its own.
+[A2A task](/a2a/call) applies the same rule on its own.
 
 ### Run ledger
 

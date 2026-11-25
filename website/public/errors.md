@@ -166,7 +166,7 @@ A2A PII and schema-policy responses still lack a reliable policy identifier:
 guardrail headers identifies PII. Fail-closed Azure and Bedrock HTTP `503`
 responses remain `UpstreamModelError`, not `ContentSafetyBlocked` or
 `GatewayUnavailable`. A Bedrock A2A content-block shape remains unverified.
-See [A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md) for the version-specific
+See [A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md) for the version-specific
 capture inventory and the difference between refusals and auth-required tasks.
 
 When you explicitly call `classify(response)` on a `jsonrpc: "2.0"` error
@@ -182,7 +182,7 @@ explicitly classified HTTP 200/400 envelopes are auth errors too; 429 retains
 rate-limit precedence.
 Normal HTTP classification is unchanged. MCP binding coverage and A2A
 PII/schema-specific typing are unchanged. The scoped [outbound A2A
-facade](https://docs.donkey-kit.dev/tool-access/a2a.md) now intercepts non-success HTTP responses and buffered
+facade](https://docs.donkey-kit.dev/a2a/call.md) now intercepts non-success HTTP responses and buffered
 JSON-RPC errors, including HTTP 200 error envelopes, before SDK rendering.
 Successful streams remain unread by core; the official SDK handles their
 protocol events. SDK parsing/protocol failures become safe `ToolInvocationError`.
@@ -615,7 +615,7 @@ resubscription. Model retry settings do not override this. The captured v0.3
 `GatewayAuthRequired`, carrying a frozen challenge and returned task/context
 IDs. It is not a refusal, CIBA polling outcome, or completed OAuth flow.
 Unknown layouts and v1 tasks stay SDK responses. See
-[Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
+[Authentication challenges](https://docs.donkey-kit.dev/a2a/call.md#authentication-challenges).
 Leaving a stream context cleans up locally, not by cancelling the remote task.
 The facade is OFFLINE-VERIFIED; successful gateway send and SSE are NOT live
 verified by this implementation yet. Refusal captures do not prove SSE success.

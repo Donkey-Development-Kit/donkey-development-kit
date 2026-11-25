@@ -117,7 +117,7 @@ endpoint = "https://agents.acme.com/support-triage/"
 ```
 
 - `protocol` is `a2a_v1`, for an agent served over A2A 1.0 such as
-  [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md), or `other`. `a2a` (A2A 0.3) is refused with a hint,
+  [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md), or `other`. `a2a` (A2A 0.3) is refused with a hint,
   because `donkey.serve()` speaks 1.0.
 - `endpoint` is the `http` or `https` URL the agent is served at, with the same
   rules as an MCP server's. An `a2a_v1` agent needs one.
@@ -315,13 +315,13 @@ version-bump rule. Each agent asset is published with:
   stored with the asset. Exchange stores an `a2a_v1` agent's protocol as `a2a`,
   with the version carried by its A2A 1.0 card, so the agent is listed as
   protocol `a2a`, version `v1`. That is the form the gateway accepts when
-  [`donkey expose`](https://docs.donkey-kit.dev/a2a.md) fronts the agent.
+  [`donkey expose`](https://docs.donkey-kit.dev/a2a/serve.md) fronts the agent.
 - an `agent-metadata` file: the protocol, the agent's name and description,
   and its asset coordinates.
 - for an `a2a_v1` agent, an **A2A agent card** (`a2a-v1-card`): the name,
   description, version, skills, input and output modes and the endpoint, as an
   A2A 1.0 card. It is built from the same `@donkey.agent` record as the card
-  [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) serves, so the two match.
+  [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md) serves, so the two match.
 - the endpoint, if you declared one, registered as an external instance.
 - a Home page with the same Overview and provenance as an MCP server's, the
   agent's skills, and how to connect (protocol and endpoint).
@@ -572,7 +572,7 @@ run links: `donkey publish` reads them only from GitHub Actions.
 Publication is for assets that **originate in your code**:
 
 - an MCP server written in Python or TypeScript,
-- an agent exposed over [A2A](https://docs.donkey-kit.dev/a2a.md),
+- an agent exposed over [A2A](https://docs.donkey-kit.dev/a2a/serve.md),
 - an agent exposed as a tool without an A2A surface.
 
 It is not for assets the platform already owns. An MCP server created by MCP
@@ -769,5 +769,5 @@ exits `1`. See
 ## Related
 
 - [CLI & decorators](https://docs.donkey-kit.dev/cli.md) — mark tools with `@donkey.tool` today.
-- [A2A agents](https://docs.donkey-kit.dev/a2a.md) — serve and expose the agent whose card you publish.
+- [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) — serve and expose the agent whose card you publish.
 - [Tool access](https://docs.donkey-kit.dev/tool-access.md) — discover and bind published tools from Exchange.

@@ -17,8 +17,7 @@ export default {
   },
   frameworks: { title: 'Models', theme: { collapsed: false } },
   'tool-access': { title: 'MCP tools', theme: { collapsed: false } },
-  a2a: 'A2A agents',
-  'a2a-gateway-policies': 'A2A gateway policies',
+  a2a: { title: 'A2A agents', theme: { collapsed: false } },
   '-- governance': {
     type: 'separator',
     title: 'Governance (all surfaces)',

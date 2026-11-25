@@ -123,7 +123,7 @@ framework client your agent already uses and adds:
   your code into Exchange assets with their tools and agent cards,
   `donkey.tools.discover()` binds governed MCP tools, and `donkey.serve()` and
   `donkey expose` make your agent callable by other agents over A2A through the
-  gateway. See [Scan & publish](https://docs.donkey-kit.dev/publishing.md), [Tool access](https://docs.donkey-kit.dev/tool-access.md) and
+  gateway. See [Scan & publish](https://docs.donkey-kit.dev/publishing.md), [MCP tools](https://docs.donkey-kit.dev/tool-access.md) and
   [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
 The division of labour is deliberate. The gateway enforces; DDK makes the
@@ -293,8 +293,8 @@ Omni Gateway later is an environment change, not a code change.
 | Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
 | CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `scaffold`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI & decorators](https://docs.donkey-kit.dev/cli.md) |
 | Governed tool access (MCP) | Live | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
-| A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
-| A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
+| A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) |
+| A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) |
 | On-behalf-of identity: `donkey.as_user()` | Live | [Identity](https://docs.donkey-kit.dev/identity.md) |
 | Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
 | `donkey scan` and `donkey scaffold` (agents, tools and MCP servers from code, and the declarations they need) | Live | [From code to a publish plan](https://docs.donkey-kit.dev/cli.md#from-code-to-a-publish-plan) |
@@ -3027,10 +3027,8 @@ Everything else in this section — search filters, session management,
 per-framework binding and lockfile pinning — makes those two lines
 hold up in production.
 
-[Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md) is separate: `donkey.a2a.send()` and
-context-managed `stream()` use official SDK objects. They are offline-verified;
-successful gateway send/SSE is not yet live-verified by this implementation,
-and framework-native agent-as-tool binding remains planned.
+Calling another agent over A2A is not an MCP tool call; it has its own
+section: see [Call other A2A agents](https://docs.donkey-kit.dev/a2a/call.md).
 
 ## Discover and filter
 
@@ -3061,10 +3059,6 @@ Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-a
   
   
     Pin each server's listed tools in `donkey.lock` and fail on drift.
-  
-  
-    Send SDK requests and stream SDK events through a registry-pinned gateway.
-    Native framework binding remains planned.
 
 ---
 
@@ -3225,7 +3219,7 @@ print(agent.endpoint_url)   # https://<gateway-host>/<instance-path>/
 The agent's card is at `endpoint_url` + `.well-known/agent-card.json`. It raises
 `RegistryError` in the same cases as `resolve_mcp()`, including a gateway URL
 that is not `https://`, and like it sends no gateway credential. The immutable
-handle is resolution-only. Use [`donkey.a2a.send()` or `stream()`](https://docs.donkey-kit.dev/tool-access/a2a.md)
+handle is resolution-only. Use [`donkey.a2a.send()` or `stream()`](https://docs.donkey-kit.dev/a2a/call.md)
 with the Exchange reference to call the agent; that provisional surface is
 offline-verified, not yet live-verified for successful gateway send/SSE.
 Framework-native `AgentHandle.as_tool()` remains planned.
@@ -3882,7 +3876,7 @@ remain ambiguous, not typed policy refusals. Successful results and
 ## Related
 
 - [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md) — produce the `ToolSet`.
-- [A2A agent tools](https://docs.donkey-kit.dev/tool-access/a2a.md) — bind a remote agent the same way.
+- [A2A agent tools](https://docs.donkey-kit.dev/a2a/call.md) — bind a remote agent the same way.
 - [Frameworks](https://docs.donkey-kit.dev/frameworks.md) — governed model access per framework.
 
 ---
@@ -4095,7 +4089,7 @@ reimplementing the policies in your agent.
 
   **Three things are called "policy" in these docs.** *Gateway policies* are
   what the gateway enforces on each surface: see the [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
-  and [A2A agents](https://docs.donkey-kit.dev/a2a-gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
+  and [A2A agents](https://docs.donkey-kit.dev/a2a/gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
   teach `classify()` the refusal shape your own gateway policy returns. The
   *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in
   force; the gateway always wins.
@@ -4307,264 +4301,78 @@ API; DDK does not add a transcoder, provisioning API or bridge-specific client.
 
 ---
 
-Source: https://docs.donkey-kit.dev/tool-access/a2a.md
-
-# Outbound A2A
-
-Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
-
-`donkey.a2a.send()` and `donkey.a2a.stream()` delegate to a governed agent using
-the official `a2a-sdk`. The `A2AFacade` API is **provisional**: it may change in
-a minor release with a migration note. Framework-native `AgentHandle.as_tool()`
-binding remains planned.
-
-  **OFFLINE-VERIFIED:** official SDK v1/v0.3 send and SSE behavior is tested
-  locally with mock HTTP. Successful gateway send and SSE are **NOT live
-  verified by this implementation yet**. Captured refusals, including refusals
-  to streaming methods before SSE starts, are not streaming success evidence.
-
-## Install
-
-```bash
-pip install "donkey-kit[a2a]"
-```
-
-The same extra backs [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md). Accessing `donkey.a2a` does not
-with the install command before registry requests.
-
-## Send and stream
-
-Pass an Exchange `group_id/asset_id/version` reference and an official SDK
-`SendMessageRequest`. The async send returns an SDK `SendMessageResponse`,
-not a DDK task wrapper or a framework tool:
-
-```python
-from a2a.types import Message, Part, Role, SendMessageRequest
-from donkey_kit import Donkey
-
-request = SendMessageRequest(
-    message=Message(
-        message_id="triage-1",
-        role=Role.ROLE_USER,
-        parts=[Part(text="Summarize this claim.")],
-    )
-)
-ref = "com.acme/claims-triage-agent/1.0.0"
-
-async with Donkey.from_env() as donkey:
-    response = await donkey.a2a.send(ref, request)
-    print(response.WhichOneof("payload"))
-
-    async with donkey.a2a.stream(ref, request) as events:
-        async for event in events:  # each event is a2a.types.StreamResponse
-            print(event.WhichOneof("payload"))
-```
-
-Inspect the returned message or task, including its status: an HTTP success
-does not mean the remote task completed. Use a distinct message ID for each
-new action in your application; the example shows the same request shape for
-the two alternative calling forms.
-
-Both methods have keyword-only `auth=None` and `criteria=None`. The default
-criteria are `GovernanceCriteria()`: require an API instance, deployment and
-at least one policy, with unknown checks failing. Pass explicit criteria when
-your organization requires named policies, gateways, tags or governance checks:
-
-```python
-from donkey_kit import GovernanceCriteria
-
-criteria = GovernanceCriteria(required_policies=["client-id-enforcement"])
-response = await donkey.a2a.send(ref, request, criteria=criteria)
-```
-
-Each operation calls `donkey.registry.explain()` before resolving the gateway
-endpoint. A failed governance verdict raises `RegistryError` before any card
-or send request reaches the gateway. This is a registry check, not local policy
-enforcement; gateway policies still decide the actual request.
-
-## Authentication and lifecycle
-
-The official SDK's tracing is independent of DDK tracing and can export private
-error diagnostics. By default, disable it before importing `a2a` with
-`OTEL_INSTRUMENTATION_A2A_SDK_ENABLED=false`. If you deliberately want both
-recorders, use `Donkey.from_env(allow_a2a_sdk_telemetry=True)` to accept that risk.
-Neither `telemetry=True` nor `telemetry=False` supplies this permission. Calls
-refuse enabled or unknown SDK tracing before registry access unless you opt in.
-See [Outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans).
-
-`auth=` accepts the same `McpAuth` credential protocol as MCP bindings, including
-`ClientIdAuth` and `BearerAuth` from `donkey_kit.tools.auth`. Without an
-override, configured consumer auth is used: the client-ID pair, or the
-`llm_auth` bearer provider in JWT/bearer mode. The connected-app credential
-belongs only to the registry's control-plane reads.
-
-Credentials and the current `donkey.as_user()` token are read for **each HTTP
-request**, including the card GET. Derived-endpoint provenance is checked
-before acquiring credentials. Service and user credentials must use distinct
-header names; a collision raises `ConfigError`. LLM wallet selectors, provider
-keys, attribution, cache-control and cost headers are not inherited.
-
-No automatic retries, 401 refresh/re-send, refusal-handler replay, stream
-resubscription or OAuth completion occur. This is true even when model retry
-options are enabled. Decide whether a new delegated action is safe yourself.
-
-Always consume streams inside `async with`. Leaving the context, including a
-break, error or task cancellation, closes local responses and generators and
-ends the outbound span. It does **not** cancel the remote task. The shared
-HTTP pool remains usable for later calls.
-
-## Where this fits
-
-- `AgentHandle` remains an immutable, resolution-only value from
-  `ExchangeRegistry.resolve_agent()`. Pass the Exchange reference to the facade,
-  not a handle, mutated handle or arbitrary URL. See
-  [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent).
-- The resolved URL follows the
-  [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https) of the
-  URLs you configure, because the gateway credential is sent to it. A gateway
-  public URL that uses plain `http://` to a non-loopback host (without
-  `DONKEY_ALLOW_HTTP=1`), or that carries a user name or password, raises
-  `RegistryError`, and nothing is sent to the agent.
-- The registry endpoint is pinned for each operation. Card-advertised URLs
-  never retarget the call, and redirects are not followed. Only that exact
-  endpoint and GET of its agent-card URL can use the scoped transport.
-- Only JSON-RPC v1 and v0.3 are in scope. The official SDK selects the v0.3
-  compatibility transport for a legacy card; REST and gRPC are rejected.
-  Each send or stream POST carries `A2A-Version` from the selected card
-  interface. Explicit interfaces without a supported version are rejected;
-  older cards without `supportedInterfaces` use the official SDK's legacy
-  version default when `protocolVersion` is omitted.
-- Framework-native `as_tool()` binding remains planned, following
-  [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md). No binding method is added to the handle.
-- To make *your* agent callable by others over A2A, see [A2A agents](https://docs.donkey-kit.dev/a2a.md).
-
-## Gateway Refusals
-
-The [A2A gateway policy inventory](https://docs.donkey-kit.dev/a2a-gateway-policies.md) separates v0.3/v1
-captures, typed outcomes, non-blocking annotations and unverified behavior.
-
-Gateway policies can reject a remote A2A call before it reaches the agent.
-For A2A v0.3, PII detection returns HTTP 403 with a JSON-RPC error whose
-`data` string can contain the detected value. Schema validation returns HTTP
-400 with a JSON-RPC error, and token rate limiting can return HTTP 429 with
-an empty body and `x-token-*` headers. Do not log raw PII refusal bodies.
-
-For A2A v1, PII detection returns HTTP 403 with a JSON-RPC `ErrorInfo`
-detail (`FORBIDDEN`, domain `a2a-protocol.org`). Both the error message and
-its detail can contain the detected value. Schema validation uses the same
-detail envelope: bad parameters and malformed JSON return HTTP 400, while
-an unknown method returns HTTP 404. Token rate limiting can return a bare
-HTTP 429 with the same `x-token-*` headers. A rejected streaming request can
-return an ordinary HTTP error before any SSE stream starts.
-
-Azure Content Guardrails can return HTTP 403 with `FORBIDDEN` and a
-`prompt_shield` detail. Fail-closed Azure and Bedrock guardrail service failures
-return HTTP 503 with `UNAVAILABLE`. The `x-flex-azure-guardrails-*` or
-`x-flex-bedrock-guardrails-*` headers identify the action, phase and reason.
-A `service_unavailable` refusal is not a content-moderation verdict. These
-captures cover request-phase refusals, not response moderation or successful SSE.
-
-You can explicitly classify the captured Azure HTTP 403 reject headers as
-`ContentSafetyBlocked` using `classify(response)` or `jsonrpc_refusal(...)`
-with HTTP status and headers. The captured bare token-rate-limit HTTP 429 is
-`TokenBudgetExceeded`; its reset is exposed in seconds. HTTP 503 remains
-`UpstreamModelError`, not a content block or a no-response `GatewayUnavailable`.
-PII and schema failures remain ambiguous: generic protocol codes and `ErrorInfo`
-reasons do not identify those policies. Their diagnostics are not used for
-typing or repeated in exception text. See [JSON-RPC refusal matching](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching).
-
-## Authentication Challenges
-
-The v0.3 In-Task Authorization Code policy can return HTTP 200 with a
-JSON-RPC **result**, not an error: a task whose status is `auth-required`.
-Its status message contains an `authChallenge` data part with OAuth metadata,
-including authorization/token endpoints, scopes, audience and redirect URI.
-A `message/stream` challenge can also be ordinary JSON rather than SSE.
-HTTP success alone therefore does not mean the delegated task completed.
-
-For this complete v0.3 challenge, both outbound facade methods raise
-`GatewayAuthRequired` rather than return an apparently successful task.
-Catch it around `send()` or stream iteration:
-
-```python
-from donkey_kit import GatewayAuthRequired
-
-try:
-    response = await donkey.a2a.send(ref, request)
-except GatewayAuthRequired as pending:
-    challenge = pending.challenge
-    # Hand challenge to your application's OAuth flow after validating its URLs.
-```
-
-`challenge` is a frozen `GatewayAuthChallenge` with `secondary_auth_provider`,
-`authorization_endpoint`, `token_endpoint`, `scopes` (a tuple), `audience`,
-`redirect_uri`, `response_type`, `code_challenge_method` and `body_encoding`.
-The exception also keeps the **returned** `task_id` and `context_id`, the raw
-HTTP `response`, and the usual correlation/call/request IDs. Challenge values
-are omitted from repr and error text, but explicit field access and the raw
-response can expose sensitive data. Treat the metadata as untrusted.
-
-This is not `GatewayApprovalPending`: `wait_for_approval()` does not poll it.
-It is neither a refusal nor a local `ApprovalRequired`. A normal HTTP 401 still
-raises `AuthError` with no automatic replay. DDK does not acquire a token,
-follow the challenge URLs, host a redirect, or resend the task. Successful token
-resubmission is not verified. Incomplete or unknown challenge layouts and v1
-tasks remain native SDK responses; there is no captured v1 challenge contract.
-
-The captured missing-token responses generated new task and context IDs,
-despite IDs supplied in the request params, and returned the numeric JSON-RPC
-request ID as a string. These observations do not verify token forwarding,
-caching, authentication failures or a completed OAuth flow.
-
-## Quality Evaluation
-
-Quality Evaluation can annotate a successful agent response with
-`x-quality-evaluation`, `x-quality-score`, `x-quality-explanation` and
-`x-quality-status` headers. A captured v0.3 `message/send` reply returned
-HTTP 200 with `x-quality-evaluation: yes`, `x-quality-score: 3` and
-`x-quality-status: completed`; its explanation described how the agent fulfilled
-the request. That single response does not establish a score range, evaluator
-failure behavior, v1 evaluation or streaming support. A separate bounded v0.3
-send configured with a deliberately invalid synthetic evaluator key returned
-HTTP 200 JSON with an agent `PONG` message and only `x-quality-status: pending`,
-without score, evaluation or explanation headers. This observation does not
-establish an internal evaluator cause or mean that `pending` is failure; those
-failure semantics, v1 evaluation and streaming remain unverified. The selected
-headers are test-only evidence, not a runtime or replay change or live SDK
-facade success. New in 0.2.1, DDK records quality annotations from successful outbound
-POST responses on its [A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans). This recording
-is tested offline, including mock streaming; it is not live facade or streaming
-verification. Explanation text requires `telemetry_capture_content=True`, is
-not sanitized and is limited to 4096 characters. Agent Card GETs and failed
-HTTP responses do not contribute quality annotations.
-
-The outbound facade classifies non-success HTTP responses and buffered JSON-RPC
-errors before the SDK can render sensitive diagnostics. Protocol/parse failures
-become a safe `ToolInvocationError`. Successful streams stay unread by the
-core transport and are decoded by the official SDK, not the GenAI SSE scanner.
-Raw responses on exceptions remain potentially sensitive. This does not add
-A2A PII/schema-specific typing or framework refusal translation.
-
-`as_tool()` remains planned. [`donkey dev`](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) defaults to
-v1 ingress replay; `--protocol-version 0.3.0` selects legacy PII/rate
-`message/send` captures, not this outbound authorization-code challenge.
-Its local unsupported-call HTTP `400` is not a gateway policy refusal.
-With scenarios configured, legacy streaming fails locally; without them it
-passes through to the agent. See the [replay matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
-The CLI flag selects the local listener/ingress, not this outbound facade,
-which still selects the official compatibility transport from the remote card.
-
-## Next steps
-
-- [Telemetry and correlation](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans)
-- [Typed errors and retry behavior](https://docs.donkey-kit.dev/errors.md)
-- [Serve your own A2A agent](https://docs.donkey-kit.dev/a2a.md)
-
----
-
 Source: https://docs.donkey-kit.dev/a2a.md
 
 # A2A agents
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
+DDK covers both directions of agent-to-agent (A2A) traffic through Omni Gateway:
+
+- **Inbound.** Your agent serves A2A behind the gateway, so other agents can call
+  it. `donkey.serve()` runs the listener, `donkey expose` registers the gateway
+  ingress for it, and `donkey dev` puts a simulated gateway in front of your
+  laptop.
+- **Outbound.** Your agent calls another governed A2A agent.
+  `donkey.a2a.send()` and `donkey.a2a.stream()` resolve the agent from the
+  registry and delegate through the official `a2a-sdk`.
+
+Either way, the gateway applies the A2A policies configured on the agent's API
+instance, and DDK turns the outcomes it can identify into typed exceptions.
+
+```mermaid
+flowchart LR
+    C["Calling agent<br/>donkey.a2a.send() / stream()"] --> G["Omni Gateway<br/>A2A instance + policies"]
+    G --> S["Served agent<br/>donkey.serve()"]
+```
+
+## Pick your path
+
+| I want to… | Go to | What you use |
+| --- | --- | --- |
+| Make my agent callable by other agents | [Serve & expose](https://docs.donkey-kit.dev/a2a/serve.md) | `donkey.serve()`, `donkey expose`, `donkey dev` |
+| Call a governed agent from my agent | [Call other agents](https://docs.donkey-kit.dev/a2a/call.md) | `donkey.a2a.send()`, `donkey.a2a.stream()` |
+| Know what the gateway can enforce, and what my code sees | [Gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md) | Typed refusals, challenges and replay |
+
+Each page carries its own status badge. The A2A facade is provisional, and
+successful gateway send and SSE are not live verified yet; see
+[Call other agents](https://docs.donkey-kit.dev/a2a/call.md) for the exact boundary.
+
+## A2A across the docs
+
+Other sections cover A2A where it meets their topic:
+
+- **Typed refusals:** [JSON-RPC refusal matching](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching)
+  covers the A2A refusal shapes `classify()` types.
+- **Local simulator:** [outbound A2A fault injection](https://docs.donkey-kit.dev/simulator.md#outbound-a2a-fault-injection)
+  and [A2A ingress replay](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
+- **Human-in-the-loop:** [A2A Authorization-Code Challenges](https://docs.donkey-kit.dev/hitl.md#a2a-authorization-code-challenges).
+- **Observability:** [outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans) and
+  [correlation across agent hops](https://docs.donkey-kit.dev/telemetry.md#across-agent-hops).
+- **Scan & publish:** [publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents) and
+  [declaring how an agent is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-agent-is-reached).
+- **CLI:** [`donkey expose`](https://docs.donkey-kit.dev/cli.md#donkey-expose) and [`donkey dev`](https://docs.donkey-kit.dev/cli.md#donkey-dev).
+- **Reference:** [connected-app scopes for `donkey expose`](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose),
+  the [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md#current-boundary),
+  and the Python API for [`donkey.serve()`](https://docs.donkey-kit.dev/reference/api.md#donkeyserve) and
+  [`donkey.a2a`](https://docs.donkey-kit.dev/reference/api.md#donkeya2a).
+
+## Next steps
+
+  
+    Serve your agent in one line, then expose it through the gateway.
+  
+  
+    Send and stream through a registry-pinned gateway endpoint.
+  
+  
+    Captured outcomes, challenges and replay, per protocol version.
+
+---
+
+Source: https://docs.donkey-kit.dev/a2a/serve.md
+
+# Serve & expose an A2A agent
 
 Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
 
@@ -5028,14 +4836,269 @@ To test against real policies, use a hosted gateway.
 
 ## Related
 
-- [A2A agent tools](https://docs.donkey-kit.dev/tool-access/a2a.md) — call *other* A2A agents as tools.
+- [Call other A2A agents](https://docs.donkey-kit.dev/a2a/call.md) — call *other* governed A2A agents from your agent.
 - [Scan & publish](https://docs.donkey-kit.dev/publishing.md) — register your agent card with Agent Registry.
 - [Local simulator](https://docs.donkey-kit.dev/simulator.md) — the fixture-replay server behind simulated ingress.
 - [API reference](https://docs.donkey-kit.dev/reference/api.md#donkeyserve) — every `donkey.serve()` argument.
 
 ---
 
-Source: https://docs.donkey-kit.dev/a2a-gateway-policies.md
+Source: https://docs.donkey-kit.dev/a2a/call.md
+
+# Call other A2A agents
+
+Status: Offline-verified. Shipped and verified offline; no live gateway round-trip yet.
+
+Outbound A2A: `donkey.a2a.send()` and `donkey.a2a.stream()` delegate to a governed agent using
+the official `a2a-sdk`. The `A2AFacade` API is **provisional**: it may change in
+a minor release with a migration note. Framework-native `AgentHandle.as_tool()`
+binding remains planned.
+
+  **OFFLINE-VERIFIED:** official SDK v1/v0.3 send and SSE behavior is tested
+  locally with mock HTTP. Successful gateway send and SSE are **NOT live
+  verified by this implementation yet**. Captured refusals, including refusals
+  to streaming methods before SSE starts, are not streaming success evidence.
+
+## Install
+
+```bash
+pip install "donkey-kit[a2a]"
+```
+
+The same extra backs [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md). Accessing `donkey.a2a` does not
+with the install command before registry requests.
+
+## Send and stream
+
+Pass an Exchange `group_id/asset_id/version` reference and an official SDK
+`SendMessageRequest`. The async send returns an SDK `SendMessageResponse`,
+not a DDK task wrapper or a framework tool:
+
+```python
+from a2a.types import Message, Part, Role, SendMessageRequest
+from donkey_kit import Donkey
+
+request = SendMessageRequest(
+    message=Message(
+        message_id="triage-1",
+        role=Role.ROLE_USER,
+        parts=[Part(text="Summarize this claim.")],
+    )
+)
+ref = "com.acme/claims-triage-agent/1.0.0"
+
+async with Donkey.from_env() as donkey:
+    response = await donkey.a2a.send(ref, request)
+    print(response.WhichOneof("payload"))
+
+    async with donkey.a2a.stream(ref, request) as events:
+        async for event in events:  # each event is a2a.types.StreamResponse
+            print(event.WhichOneof("payload"))
+```
+
+Inspect the returned message or task, including its status: an HTTP success
+does not mean the remote task completed. Use a distinct message ID for each
+new action in your application; the example shows the same request shape for
+the two alternative calling forms.
+
+Both methods have keyword-only `auth=None` and `criteria=None`. The default
+criteria are `GovernanceCriteria()`: require an API instance, deployment and
+at least one policy, with unknown checks failing. Pass explicit criteria when
+your organization requires named policies, gateways, tags or governance checks:
+
+```python
+from donkey_kit import GovernanceCriteria
+
+criteria = GovernanceCriteria(required_policies=["client-id-enforcement"])
+response = await donkey.a2a.send(ref, request, criteria=criteria)
+```
+
+Each operation calls `donkey.registry.explain()` before resolving the gateway
+endpoint. A failed governance verdict raises `RegistryError` before any card
+or send request reaches the gateway. This is a registry check, not local policy
+enforcement; gateway policies still decide the actual request.
+
+## Authentication and lifecycle
+
+The official SDK's tracing is independent of DDK tracing and can export private
+error diagnostics. By default, disable it before importing `a2a` with
+`OTEL_INSTRUMENTATION_A2A_SDK_ENABLED=false`. If you deliberately want both
+recorders, use `Donkey.from_env(allow_a2a_sdk_telemetry=True)` to accept that risk.
+Neither `telemetry=True` nor `telemetry=False` supplies this permission. Calls
+refuse enabled or unknown SDK tracing before registry access unless you opt in.
+See [Outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans).
+
+`auth=` accepts the same `McpAuth` credential protocol as MCP bindings, including
+`ClientIdAuth` and `BearerAuth` from `donkey_kit.tools.auth`. Without an
+override, configured consumer auth is used: the client-ID pair, or the
+`llm_auth` bearer provider in JWT/bearer mode. The connected-app credential
+belongs only to the registry's control-plane reads.
+
+Credentials and the current `donkey.as_user()` token are read for **each HTTP
+request**, including the card GET. Derived-endpoint provenance is checked
+before acquiring credentials. Service and user credentials must use distinct
+header names; a collision raises `ConfigError`. LLM wallet selectors, provider
+keys, attribution, cache-control and cost headers are not inherited.
+
+No automatic retries, 401 refresh/re-send, refusal-handler replay, stream
+resubscription or OAuth completion occur. This is true even when model retry
+options are enabled. Decide whether a new delegated action is safe yourself.
+
+Always consume streams inside `async with`. Leaving the context, including a
+break, error or task cancellation, closes local responses and generators and
+ends the outbound span. It does **not** cancel the remote task. The shared
+HTTP pool remains usable for later calls.
+
+## Where this fits
+
+- `AgentHandle` remains an immutable, resolution-only value from
+  `ExchangeRegistry.resolve_agent()`. Pass the Exchange reference to the facade,
+  not a handle, mutated handle or arbitrary URL. See
+  [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent).
+- The resolved URL follows the
+  [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https) of the
+  URLs you configure, because the gateway credential is sent to it. A gateway
+  public URL that uses plain `http://` to a non-loopback host (without
+  `DONKEY_ALLOW_HTTP=1`), or that carries a user name or password, raises
+  `RegistryError`, and nothing is sent to the agent.
+- The registry endpoint is pinned for each operation. Card-advertised URLs
+  never retarget the call, and redirects are not followed. Only that exact
+  endpoint and GET of its agent-card URL can use the scoped transport.
+- Only JSON-RPC v1 and v0.3 are in scope. The official SDK selects the v0.3
+  compatibility transport for a legacy card; REST and gRPC are rejected.
+  Each send or stream POST carries `A2A-Version` from the selected card
+  interface. Explicit interfaces without a supported version are rejected;
+  older cards without `supportedInterfaces` use the official SDK's legacy
+  version default when `protocolVersion` is omitted.
+- Framework-native `as_tool()` binding remains planned, following
+  [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md). No binding method is added to the handle.
+- To make *your* agent callable by others over A2A, see [Serve & expose](https://docs.donkey-kit.dev/a2a/serve.md).
+
+## Gateway Refusals
+
+The [A2A gateway policy inventory](https://docs.donkey-kit.dev/a2a/gateway-policies.md) separates v0.3/v1
+captures, typed outcomes, non-blocking annotations and unverified behavior.
+
+Gateway policies can reject a remote A2A call before it reaches the agent.
+For A2A v0.3, PII detection returns HTTP 403 with a JSON-RPC error whose
+`data` string can contain the detected value. Schema validation returns HTTP
+400 with a JSON-RPC error, and token rate limiting can return HTTP 429 with
+an empty body and `x-token-*` headers. Do not log raw PII refusal bodies.
+
+For A2A v1, PII detection returns HTTP 403 with a JSON-RPC `ErrorInfo`
+detail (`FORBIDDEN`, domain `a2a-protocol.org`). Both the error message and
+its detail can contain the detected value. Schema validation uses the same
+detail envelope: bad parameters and malformed JSON return HTTP 400, while
+an unknown method returns HTTP 404. Token rate limiting can return a bare
+HTTP 429 with the same `x-token-*` headers. A rejected streaming request can
+return an ordinary HTTP error before any SSE stream starts.
+
+Azure Content Guardrails can return HTTP 403 with `FORBIDDEN` and a
+`prompt_shield` detail. Fail-closed Azure and Bedrock guardrail service failures
+return HTTP 503 with `UNAVAILABLE`. The `x-flex-azure-guardrails-*` or
+`x-flex-bedrock-guardrails-*` headers identify the action, phase and reason.
+A `service_unavailable` refusal is not a content-moderation verdict. These
+captures cover request-phase refusals, not response moderation or successful SSE.
+
+You can explicitly classify the captured Azure HTTP 403 reject headers as
+`ContentSafetyBlocked` using `classify(response)` or `jsonrpc_refusal(...)`
+with HTTP status and headers. The captured bare token-rate-limit HTTP 429 is
+`TokenBudgetExceeded`; its reset is exposed in seconds. HTTP 503 remains
+`UpstreamModelError`, not a content block or a no-response `GatewayUnavailable`.
+PII and schema failures remain ambiguous: generic protocol codes and `ErrorInfo`
+reasons do not identify those policies. Their diagnostics are not used for
+typing or repeated in exception text. See [JSON-RPC refusal matching](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching).
+
+## Authentication Challenges
+
+The v0.3 In-Task Authorization Code policy can return HTTP 200 with a
+JSON-RPC **result**, not an error: a task whose status is `auth-required`.
+Its status message contains an `authChallenge` data part with OAuth metadata,
+including authorization/token endpoints, scopes, audience and redirect URI.
+A `message/stream` challenge can also be ordinary JSON rather than SSE.
+HTTP success alone therefore does not mean the delegated task completed.
+
+For this complete v0.3 challenge, both outbound facade methods raise
+`GatewayAuthRequired` rather than return an apparently successful task.
+Catch it around `send()` or stream iteration:
+
+```python
+from donkey_kit import GatewayAuthRequired
+
+try:
+    response = await donkey.a2a.send(ref, request)
+except GatewayAuthRequired as pending:
+    challenge = pending.challenge
+    # Hand challenge to your application's OAuth flow after validating its URLs.
+```
+
+`challenge` is a frozen `GatewayAuthChallenge` with `secondary_auth_provider`,
+`authorization_endpoint`, `token_endpoint`, `scopes` (a tuple), `audience`,
+`redirect_uri`, `response_type`, `code_challenge_method` and `body_encoding`.
+The exception also keeps the **returned** `task_id` and `context_id`, the raw
+HTTP `response`, and the usual correlation/call/request IDs. Challenge values
+are omitted from repr and error text, but explicit field access and the raw
+response can expose sensitive data. Treat the metadata as untrusted.
+
+This is not `GatewayApprovalPending`: `wait_for_approval()` does not poll it.
+It is neither a refusal nor a local `ApprovalRequired`. A normal HTTP 401 still
+raises `AuthError` with no automatic replay. DDK does not acquire a token,
+follow the challenge URLs, host a redirect, or resend the task. Successful token
+resubmission is not verified. Incomplete or unknown challenge layouts and v1
+tasks remain native SDK responses; there is no captured v1 challenge contract.
+
+The captured missing-token responses generated new task and context IDs,
+despite IDs supplied in the request params, and returned the numeric JSON-RPC
+request ID as a string. These observations do not verify token forwarding,
+caching, authentication failures or a completed OAuth flow.
+
+## Quality Evaluation
+
+Quality Evaluation can annotate a successful agent response with
+`x-quality-evaluation`, `x-quality-score`, `x-quality-explanation` and
+`x-quality-status` headers. A captured v0.3 `message/send` reply returned
+HTTP 200 with `x-quality-evaluation: yes`, `x-quality-score: 3` and
+`x-quality-status: completed`; its explanation described how the agent fulfilled
+the request. That single response does not establish a score range, evaluator
+failure behavior, v1 evaluation or streaming support. A separate bounded v0.3
+send configured with a deliberately invalid synthetic evaluator key returned
+HTTP 200 JSON with an agent `PONG` message and only `x-quality-status: pending`,
+without score, evaluation or explanation headers. This observation does not
+establish an internal evaluator cause or mean that `pending` is failure; those
+failure semantics, v1 evaluation and streaming remain unverified. The selected
+headers are test-only evidence, not a runtime or replay change or live SDK
+facade success. New in 0.2.1, DDK records quality annotations from successful outbound
+POST responses on its [A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans). This recording
+is tested offline, including mock streaming; it is not live facade or streaming
+verification. Explanation text requires `telemetry_capture_content=True`, is
+not sanitized and is limited to 4096 characters. Agent Card GETs and failed
+HTTP responses do not contribute quality annotations.
+
+The outbound facade classifies non-success HTTP responses and buffered JSON-RPC
+errors before the SDK can render sensitive diagnostics. Protocol/parse failures
+become a safe `ToolInvocationError`. Successful streams stay unread by the
+core transport and are decoded by the official SDK, not the GenAI SSE scanner.
+Raw responses on exceptions remain potentially sensitive. This does not add
+A2A PII/schema-specific typing or framework refusal translation.
+
+`as_tool()` remains planned. [`donkey dev`](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) defaults to
+v1 ingress replay; `--protocol-version 0.3.0` selects legacy PII/rate
+`message/send` captures, not this outbound authorization-code challenge.
+Its local unsupported-call HTTP `400` is not a gateway policy refusal.
+With scenarios configured, legacy streaming fails locally; without them it
+passes through to the agent. See the [replay matrix](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay).
+The CLI flag selects the local listener/ingress, not this outbound facade,
+which still selects the official compatibility transport from the remote card.
+
+## Next steps
+
+- [Telemetry and correlation](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans)
+- [Typed errors and retry behavior](https://docs.donkey-kit.dev/errors.md)
+- [Serve your own A2A agent](https://docs.donkey-kit.dev/a2a/serve.md)
+
+---
+
+Source: https://docs.donkey-kit.dev/a2a/gateway-policies.md
 
 # A2A gateway policies
 
@@ -5044,12 +5107,12 @@ Status: Offline-verified. Shipped and verified offline; no live gateway round-tr
 Omni Gateway policies run on the remote agent's API instance. DDK does not
 evaluate them locally: it resolves the governed endpoint, delegates through the
 official `a2a-sdk`, and surfaces outcomes it can identify safely. Use
-[`donkey.a2a.send()` or `donkey.a2a.stream()`](https://docs.donkey-kit.dev/tool-access/a2a.md) for outbound
-delegation, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) to make your own agent callable.
+[`donkey.a2a.send()` or `donkey.a2a.stream()`](https://docs.donkey-kit.dev/a2a/call.md) for outbound
+delegation, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md) to make your own agent callable.
 
   **Three things are called "policy" in these docs.** *Gateway policies* are
   what the gateway enforces on each surface: see the [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
-  and [A2A agents](https://docs.donkey-kit.dev/a2a-gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
+  and [A2A agents](https://docs.donkey-kit.dev/a2a/gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
   teach `classify()` the refusal shape your own gateway policy returns. The
   *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in
   force; the gateway always wins.
@@ -5138,7 +5201,7 @@ Unknown/incomplete layouts and all v1 tasks stay native SDK responses; the
 documentation limits the In-Task Authorization Code policy to v0.3.0, so DDK does
 not convert a v1 challenge. OAuth completion, token forwarding/removal, caching
 and authorization-policy `401` responses remain **UNVERIFIED**: a bounded probe with a synthetic invalid token and unvalidatable OAuth metadata got no policy-generated `401` (the request passed through to the agent), so DDK treats that `401` as an accepted boundary. See
-[Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
+[Authentication challenges](https://docs.donkey-kit.dev/a2a/call.md#authentication-challenges).
 
 The outbound plane never automatically replays a delegated action, even for
 `401`, `429` or `503`; model retry settings do not change that. Leaving an
@@ -5192,7 +5255,7 @@ annotations and the official SDK's own instrumentation.
 
 ## Offline testing and privacy
 
-[`donkey dev`](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) defaults to `--protocol-version 1.0`,
+[`donkey dev`](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) defaults to `--protocol-version 1.0`,
 replaying selected v1 ingress Azure Prompt Shield, PII and token-rate refusals
 for both send methods. `--protocol-version 0.3.0` uses the existing legacy PII
 and token-rate captures for `message/send` only. See the
@@ -5228,7 +5291,7 @@ not promote any of these claims.
 
 ## Next steps
 
-- [Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md): scoped credentials and call examples.
+- [Call other A2A agents](https://docs.donkey-kit.dev/a2a/call.md): scoped credentials and call examples.
 - [Typed errors](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching): discriminators and diagnostics.
 - [A2A ingress replay](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay): offline scenarios.
 - [Outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans): tracing boundaries.
@@ -5405,7 +5468,7 @@ A2A PII and schema-policy responses still lack a reliable policy identifier:
 guardrail headers identifies PII. Fail-closed Azure and Bedrock HTTP `503`
 responses remain `UpstreamModelError`, not `ContentSafetyBlocked` or
 `GatewayUnavailable`. A Bedrock A2A content-block shape remains unverified.
-See [A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md) for the version-specific
+See [A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md) for the version-specific
 capture inventory and the difference between refusals and auth-required tasks.
 
 When you explicitly call `classify(response)` on a `jsonrpc: "2.0"` error
@@ -5421,7 +5484,7 @@ explicitly classified HTTP 200/400 envelopes are auth errors too; 429 retains
 rate-limit precedence.
 Normal HTTP classification is unchanged. MCP binding coverage and A2A
 PII/schema-specific typing are unchanged. The scoped [outbound A2A
-facade](https://docs.donkey-kit.dev/tool-access/a2a.md) now intercepts non-success HTTP responses and buffered
+facade](https://docs.donkey-kit.dev/a2a/call.md) now intercepts non-success HTTP responses and buffered
 JSON-RPC errors, including HTTP 200 error envelopes, before SDK rendering.
 Successful streams remain unread by core; the official SDK handles their
 protocol events. SDK parsing/protocol failures become safe `ToolInvocationError`.
@@ -5854,7 +5917,7 @@ resubscription. Model retry settings do not override this. The captured v0.3
 `GatewayAuthRequired`, carrying a frozen challenge and returned task/context
 IDs. It is not a refusal, CIBA polling outcome, or completed OAuth flow.
 Unknown layouts and v1 tasks stay SDK responses. See
-[Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
+[Authentication challenges](https://docs.donkey-kit.dev/a2a/call.md#authentication-challenges).
 Leaving a stream context cleans up locally, not by cancelling the remote task.
 The facade is OFFLINE-VERIFIED; successful gateway send and SSE are NOT live
 verified by this implementation yet. Refusal captures do not prove SSE success.
@@ -6122,7 +6185,7 @@ reaches your code as `UpstreamRequestError` or the generic `PolicyViolation`.
 
   **Three things are called "policy" in these docs.** *Gateway policies* are
   what the gateway enforces on each surface: see the [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
-  and [A2A agents](https://docs.donkey-kit.dev/a2a-gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
+  and [A2A agents](https://docs.donkey-kit.dev/a2a/gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
   teach `classify()` the refusal shape your own gateway policy returns. The
   *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in
   force; the gateway always wins.
@@ -7888,7 +7951,7 @@ OAuth and must validate the untrusted challenge URLs before using them.
 DDK runs no OAuth flow, hosts no redirect and performs no automatic resend.
 Typing is tested against both captured JSON send/stream responses, not a live
 OAuth completion; v1 challenge semantics and successful token resubmission
-remain unverified. See [Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
+remain unverified. See [Authentication challenges](https://docs.donkey-kit.dev/a2a/call.md#authentication-challenges).
 
 ## Mapped onto what your framework already has
 
@@ -7960,7 +8023,7 @@ exist today.
 
   **Three things are called "policy" in these docs.** *Gateway policies* are
   what the gateway enforces on each surface: see the [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
-  and [A2A agents](https://docs.donkey-kit.dev/a2a-gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
+  and [A2A agents](https://docs.donkey-kit.dev/a2a/gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
   teach `classify()` the refusal shape your own gateway policy returns. The
   *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in
   force; the gateway always wins.
@@ -8131,7 +8194,7 @@ process with the opt-out set. DDK never changes the environment or the global
 tracer provider for you. With explicit permission, SDK spans retain their
 normal parentage and may export exception messages and stack traces.
 
-[`donkey.a2a.send()` and `stream()`](https://docs.donkey-kit.dev/tool-access/a2a.md) open one
+[`donkey.a2a.send()` and `stream()`](https://docs.donkey-kit.dev/a2a/call.md) open one
 `donkey.a2a.call` CLIENT span covering card discovery and delegation. This is
 not a GenAI span: A2A SSE is decoded by the official SDK and never scanned for
 model token usage. The shared transport still observes budget headers,
@@ -8155,7 +8218,7 @@ This behavior is **OFFLINE-VERIFIED**. Successful gateway send and SSE are
 NOT live verified by this implementation yet; refused streaming requests
 before SSE are not successful streaming evidence.
 
-The [A2A policy inventory](https://docs.donkey-kit.dev/a2a-gateway-policies.md#non-blocking-policies) records
+The [A2A policy inventory](https://docs.donkey-kit.dev/a2a/gateway-policies.md#non-blocking-policies) records
 the captured quality headers separately. Successful delegation HTTP responses
 record `donkey.a2a.quality.evaluation="yes"`, a finite numeric
 `donkey.a2a.quality.score`, and `donkey.a2a.quality.status="completed"` when
@@ -8720,7 +8783,7 @@ async with donkey.run(id=ticket.id):
 The sub-agent's spans and the gateway's record then share one id end to end. The
 GenAI span inside `run_from_headers()` records `donkey.correlation_id.source`:
 `adopted` when the caller supplied the id, `minted` when it did not. A served
-[A2A task](https://docs.donkey-kit.dev/tool-access/a2a.md) applies the same rule on its own.
+[A2A task](https://docs.donkey-kit.dev/a2a/call.md) applies the same rule on its own.
 
 ### Run ledger
 
@@ -9537,7 +9600,7 @@ guardrailed bot is exercised before it faces a real attack.
 `donkey.simulate_a2a()` is the A2A counterpart of
 [`simulate()`](https://docs.donkey-kit.dev/testing.md) and
 [`simulate_mcp()`](#mcp-tool-fault-injection). It makes an agent you **call**
-through [`donkey.a2a`](https://docs.donkey-kit.dev/tool-access/a2a.md) get a captured gateway refusal, with
+through [`donkey.a2a`](https://docs.donkey-kit.dev/a2a/call.md) get a captured gateway refusal, with
 no gateway and no Exchange. Like `donkey.a2a`, it is provisional.
 
 ```python
@@ -9582,16 +9645,16 @@ async def test_delegation_handles_a_pii_block():
 
 The raised error is whatever the existing classification gives each packaged
 Omni Gateway capture, the same bytes listed in
-[A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md). The rate-limit captures have
+[A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md). The rate-limit captures have
 no body, so the error carries headers only. This covers agents you call. For
 an agent you **serve**, use the ingress replay below.
 
 ## A2A ingress replay
 
-See [A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md) for the version-specific
+See [A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md) for the version-specific
 capture inventory. Local replay verifies handling, not gateway enforcement.
 
-[`donkey dev`](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) wraps your served agent rather than the
+[`donkey dev`](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) wraps your served agent rather than the
 model routes above. It shares the fixture loader and scenario triggers, but
 selects captured A2A refusals with `--protocol-version`: `1.0` by default,
 or `0.3.0`. This is separate from `--agent-version`, the card's application
@@ -9680,7 +9743,7 @@ DDK classifications; the stock SDK does not raise those DDK types.
 
 ## Related
 
-- [Simulated ingress](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) — `donkey dev`, which replays
+- [Simulated ingress](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) — `donkey dev`, which replays
   method-specific A2A captures on inbound calls to your agent.
 - [Testing & conformance](https://docs.donkey-kit.dev/testing.md) — `simulate()` for in-process unit tests,
   and the `gateway` pytest fixture that runs this simulator on an ephemeral port.
@@ -10000,7 +10063,7 @@ required, because it is the agent's description. A blank or repeated skill
 raises `ValueError`.
 
 [`donkey scan`](#donkey-scan) reads the `@donkey.tool` and `@donkey.agent`
-markers, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) generates its A2A agent card from the same
+markers, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md) generates its A2A agent card from the same
 `@donkey.agent` record, so the scan and the card can't drift.
 
 ## The CLI
@@ -10539,7 +10602,7 @@ donkey dev my_agent:handle --port 8000 --scenario pii_block:every=5
 
 `TARGET` is `module:attribute`, imported from the current directory. The
 ingress, the rules it takes and where its rejection shapes come from are in
-[Simulated ingress](https://docs.donkey-kit.dev/a2a.md#simulated-ingress). A target that can't be loaded or
+[Simulated ingress](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress). A target that can't be loaded or
 isn't marked with `@donkey.agent`, and an invalid `--scenario` (including
 `budget`), exit with code `2`.
 
@@ -10895,7 +10958,7 @@ MCP server sku-manager is exposed at https://<gateway>/sku-manager/
   has applied it.
 
 What the run needs comes from the `[donkey.expose]` table in
-`.donkey-kit.toml`; see [A2A agents](https://docs.donkey-kit.dev/a2a.md) for the keys.
+`.donkey-kit.toml`; see [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) for the keys.
 
 The command adds what is missing and nothing else:
 
@@ -10926,7 +10989,7 @@ These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md)
 CLI yet:
 
 - `donkey serve` — serve your agent over A2A from the command line. In code,
-  `donkey.serve()` does it today. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
+  `donkey.serve()` does it today. See [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md).
 
   Run `donkey --help` to see the commands available in your installed version.
 
@@ -11053,7 +11116,7 @@ endpoint = "https://agents.acme.com/support-triage/"
 ```
 
 - `protocol` is `a2a_v1`, for an agent served over A2A 1.0 such as
-  [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md), or `other`. `a2a` (A2A 0.3) is refused with a hint,
+  [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md), or `other`. `a2a` (A2A 0.3) is refused with a hint,
   because `donkey.serve()` speaks 1.0.
 - `endpoint` is the `http` or `https` URL the agent is served at, with the same
   rules as an MCP server's. An `a2a_v1` agent needs one.
@@ -11251,13 +11314,13 @@ version-bump rule. Each agent asset is published with:
   stored with the asset. Exchange stores an `a2a_v1` agent's protocol as `a2a`,
   with the version carried by its A2A 1.0 card, so the agent is listed as
   protocol `a2a`, version `v1`. That is the form the gateway accepts when
-  [`donkey expose`](https://docs.donkey-kit.dev/a2a.md) fronts the agent.
+  [`donkey expose`](https://docs.donkey-kit.dev/a2a/serve.md) fronts the agent.
 - an `agent-metadata` file: the protocol, the agent's name and description,
   and its asset coordinates.
 - for an `a2a_v1` agent, an **A2A agent card** (`a2a-v1-card`): the name,
   description, version, skills, input and output modes and the endpoint, as an
   A2A 1.0 card. It is built from the same `@donkey.agent` record as the card
-  [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) serves, so the two match.
+  [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md) serves, so the two match.
 - the endpoint, if you declared one, registered as an external instance.
 - a Home page with the same Overview and provenance as an MCP server's, the
   agent's skills, and how to connect (protocol and endpoint).
@@ -11508,7 +11571,7 @@ run links: `donkey publish` reads them only from GitHub Actions.
 Publication is for assets that **originate in your code**:
 
 - an MCP server written in Python or TypeScript,
-- an agent exposed over [A2A](https://docs.donkey-kit.dev/a2a.md),
+- an agent exposed over [A2A](https://docs.donkey-kit.dev/a2a/serve.md),
 - an agent exposed as a tool without an A2A surface.
 
 It is not for assets the platform already owns. An MCP server created by MCP
@@ -11705,7 +11768,7 @@ exits `1`. See
 ## Related
 
 - [CLI & decorators](https://docs.donkey-kit.dev/cli.md) — mark tools with `@donkey.tool` today.
-- [A2A agents](https://docs.donkey-kit.dev/a2a.md) — serve and expose the agent whose card you publish.
+- [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) — serve and expose the agent whose card you publish.
 - [Tool access](https://docs.donkey-kit.dev/tool-access.md) — discover and bind published tools from Exchange.
 
 ---
@@ -17033,7 +17096,7 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Registry: `resolve_mcp()` | Token request, then Access Management, API Manager and Omni Gateway Manager reads | Available. See [Resolving an MCP server](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-mcp-server). |
 | Registry: `explain()` | Token request, then Access Management, API Manager, Exchange and API Governance reads, only those the criteria need | Available. See [`explain()`](https://docs.donkey-kit.dev/tool-access/discovery.md#explain--why-a-tool-was-included-or-excluded). |
 | Registry: `resolve_agent()` | Token request, then the `resolve_mcp()` reads, for the agent's A2A instance | Available. See [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent). |
-| Outbound A2A: `donkey.a2a.send()` / `stream()` | Token request, then `explain()` and `resolve_agent()` reads; card GET and JSON-RPC use consumer auth, not the connected app | Offline-verified; provisional. Successful gateway send and SSE are NOT live verified by this implementation yet. See [Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md). |
+| Outbound A2A: `donkey.a2a.send()` / `stream()` | Token request, then `explain()` and `resolve_agent()` reads; card GET and JSON-RPC use consumer auth, not the connected app | Offline-verified; provisional. Successful gateway send and SSE are NOT live verified by this implementation yet. See [Outbound A2A](https://docs.donkey-kit.dev/a2a/call.md). |
 | Registry: `donkey.registry.warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()` | Token request, then the `search()`, `explain()` and `resolve_mcp()` reads | Available. Its `domain` filter raises `NotImplementedError` before sending; `locked=True` reads `donkey.lock` first and raises `ConfigError` if it is unreadable. `donkey.tools.warm()` does the same reads ahead of time. See [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md). |
 | Tool pinning: `donkey.tools.lock()` | Token request, the discovery reads, then one `tools/list` per server | Provisional: writes `donkey.lock`. See [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md). |
@@ -17117,7 +17180,7 @@ Four tables in these files are not `DonkeyConfig` fields, and
   [Planning a publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
 - `[donkey.expose]` names the gateway `donkey expose` deploys to, and for
   each service its instance label, upstream and policies. `donkey expose` and
-  `donkey preflight` read it from the same two files. See [A2A agents](https://docs.donkey-kit.dev/a2a.md).
+  `donkey preflight` read it from the same two files. See [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md).
 
 `Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named
 file in place of `./.donkey-kit.toml`. The `.donkey-kit.local.toml` beside that
@@ -17622,7 +17685,7 @@ donkey.a2a: A2AFacade
 
 Governed outbound A2A sends and context-managed streams.
 
-Guide: [`/tool-access/a2a`](https://docs.donkey-kit.dev/tool-access/a2a.md)
+Guide: [`/a2a/call`](https://docs.donkey-kit.dev/a2a/call.md)
 
 ### `donkey.tools`
 
@@ -17769,7 +17832,7 @@ donkey.agent(*, name: str, skills: Sequence[str] = ()) -> Callable[[Callable], C
 
 Mark a callable as an agent entry point, recording its name, skills and docstring in an introspectable registry.
 
-Guide: [`/a2a`](https://docs.donkey-kit.dev/a2a.md)
+Guide: [`/a2a/serve`](https://docs.donkey-kit.dev/a2a/serve.md)
 
 ### `donkey.serve()`
 
@@ -17786,7 +17849,7 @@ donkey.serve(
 
 Serve a `@donkey.agent` handler over A2A on `host:port`, blocking until the server stops.
 
-Guide: [`/a2a`](https://docs.donkey-kit.dev/a2a.md)
+Guide: [`/a2a/serve`](https://docs.donkey-kit.dev/a2a/serve.md)
 
 ### `donkey.approvals`
 
@@ -18540,7 +18603,7 @@ before making a network request.
 | MCP over streamable HTTP through Omni Gateway: `initialize` and `tools/list` on a governed instance's endpoint | `tools.mcp.list_tools`, `tools.session.ToolSet`, `registry.publication.Publication.verify` | **Documented and public** | Lists a governed server's tools for `ToolSet.describe()`, the framework bindings and `Publication.verify()`. It sends the consumer credential the instance's policy reads: the `client_id` / `client_secret` pair, or a bearer token behind JWT Validation. Nothing is sent to a server that `explain()` does not find governed. The [MCP Support policy](https://docs.mulesoft.com/gateway/latest/policies-included-mcp-support) is how Omni Gateway fronts an MCP server, up to MCP `2025-06-18`, and links the [MCP specification](https://modelcontextprotocol.io/specification/2025-06-18), which defines both methods. |
 | MCP `tools/call` through Omni Gateway, and its tool-access denial: HTTP `200` with JSON-RPC error `-32008` `"Unable to access"` | the bound framework's MCP client, `tools.session.ToolSet`, `core.tool_access.tool_access_denial` | **Documented and public** | The bound framework's own MCP client calls the tool, with the binding's credential headers. The LangGraph, LlamaIndex and Anthropic bindings raise the denial as `ToolNotInProfile`. The [MCP Global Access policy](https://docs.mulesoft.com/gateway/latest/policies-included-mcp-global-access) documents the `200` with error `-32008`. The `"Unable to access"` message the SDK also matches was captured live, so a changed message reaches you as the framework's own error. Owner: DDK maintainers; `tests/fixtures/anypoint/mcp_access/` holds the captures to re-check against. |
 | A2A agent card through Omni Gateway: `GET <endpoint>.well-known/agent-card.json` | `tools.discovery.Discovery.agent_card`, `registry.publication.Publication.verify`, `a2a.client.A2AFacade` | **Documented and public** | Reads the card a governed agent serves through its gateway instance. The outbound facade pins both card and invocation to the registry endpoint; advertised URLs never retarget it and no redirect is followed. The [A2A v1 Agent Card policy](https://docs.mulesoft.com/gateway/latest/policies-included-a2a-v1-agent-card) documents the card route and interface URL rewriting. |
-| A2A JSON-RPC v1 `SendMessage` / `SendStreamingMessage` and v0.3 `message/send` / `message/stream` at the resolved gateway endpoint | `a2a.client.A2AFacade.send`, `.stream` over official SDK transports | **Documented and public** | Uses the official A2A SDK and the gateway's [A2A v1 schema-validation contract](https://docs.mulesoft.com/gateway/latest/policies-included-a2a-v1-schema-validation). Provisional, OFFLINE-VERIFIED: successful gateway send and SSE are NOT live verified by this implementation yet. Refusal captures are not SSE success evidence. JSON-RPC only: no REST/gRPC, OAuth completion, automatic replay/resubscription or remote cancellation. See [Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md). |
+| A2A JSON-RPC v1 `SendMessage` / `SendStreamingMessage` and v0.3 `message/send` / `message/stream` at the resolved gateway endpoint | `a2a.client.A2AFacade.send`, `.stream` over official SDK transports | **Documented and public** | Uses the official A2A SDK and the gateway's [A2A v1 schema-validation contract](https://docs.mulesoft.com/gateway/latest/policies-included-a2a-v1-schema-validation). Provisional, OFFLINE-VERIFIED: successful gateway send and SSE are NOT live verified by this implementation yet. Refusal captures are not SSE success evidence. JSON-RPC only: no REST/gRPC, OAuth completion, automatic replay/resubscription or remote cancellation. See [Outbound A2A](https://docs.donkey-kit.dev/a2a/call.md). |
 | OAuth 2.0 OBO Credential Injection CIBA step-up: `401` `{"error": "authorization_pending"}` with `Retry-After`, and `403` `{"error": "access_denied"}` | `core.errors.classify`, `tools.mcp.list_tools` | **Documented and public** | Types `GatewayApprovalPending`, with its `retry_after`, and `GatewayApprovalDenied` while the gateway waits for the user to approve a call out of band. On `tools/list` they back `ToolSet.wait_for_gateway_approval()`. On a framework's `tools/call` they are typed on `mcp` 1.x, through the HTTP client the per-tool binding hands the framework; on `mcp` 2.x they reach you as that framework's error. The [OAuth 2.0 OBO Credential Injection policy](https://docs.mulesoft.com/gateway/latest/policies-outbound-oauth-obo) documents the `401` body and `Retry-After`. The `403` denial is not on that page: it was captured live. If either shape changes, `tools/list` raises `AuthError`; on an MCP binding a changed `401` becomes `AuthError` and a changed `403` stays the framework's error; elsewhere a changed `401` becomes `AuthError` and a changed `403` a generic `PolicyViolation`. Owner: DDK maintainers; the simulator's `reject.ciba-pending` and `reject.ciba-denied` fixtures hold the captures. |
 
 The connected-app scope each of these calls needs is in

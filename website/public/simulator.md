@@ -578,7 +578,7 @@ guardrailed bot is exercised before it faces a real attack.
 `donkey.simulate_a2a()` is the A2A counterpart of
 [`simulate()`](https://docs.donkey-kit.dev/testing.md) and
 [`simulate_mcp()`](#mcp-tool-fault-injection). It makes an agent you **call**
-through [`donkey.a2a`](https://docs.donkey-kit.dev/tool-access/a2a.md) get a captured gateway refusal, with
+through [`donkey.a2a`](https://docs.donkey-kit.dev/a2a/call.md) get a captured gateway refusal, with
 no gateway and no Exchange. Like `donkey.a2a`, it is provisional.
 
 ```python
@@ -623,16 +623,16 @@ async def test_delegation_handles_a_pii_block():
 
 The raised error is whatever the existing classification gives each packaged
 Omni Gateway capture, the same bytes listed in
-[A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md). The rate-limit captures have
+[A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md). The rate-limit captures have
 no body, so the error carries headers only. This covers agents you call. For
 an agent you **serve**, use the ingress replay below.
 
 ## A2A ingress replay
 
-See [A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md) for the version-specific
+See [A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md) for the version-specific
 capture inventory. Local replay verifies handling, not gateway enforcement.
 
-[`donkey dev`](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) wraps your served agent rather than the
+[`donkey dev`](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) wraps your served agent rather than the
 model routes above. It shares the fixture loader and scenario triggers, but
 selects captured A2A refusals with `--protocol-version`: `1.0` by default,
 or `0.3.0`. This is separate from `--agent-version`, the card's application
@@ -721,7 +721,7 @@ DDK classifications; the stock SDK does not raise those DDK types.
 
 ## Related
 
-- [Simulated ingress](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) — `donkey dev`, which replays
+- [Simulated ingress](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) — `donkey dev`, which replays
   method-specific A2A captures on inbound calls to your agent.
 - [Testing & conformance](https://docs.donkey-kit.dev/testing.md) — `simulate()` for in-process unit tests,
   and the `gateway` pytest fixture that runs this simulator on an ephemeral port.

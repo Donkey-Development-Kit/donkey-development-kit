@@ -5,12 +5,12 @@ Status: Offline-verified. Shipped and verified offline; no live gateway round-tr
 Omni Gateway policies run on the remote agent's API instance. DDK does not
 evaluate them locally: it resolves the governed endpoint, delegates through the
 official `a2a-sdk`, and surfaces outcomes it can identify safely. Use
-[`donkey.a2a.send()` or `donkey.a2a.stream()`](https://docs.donkey-kit.dev/tool-access/a2a.md) for outbound
-delegation, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) to make your own agent callable.
+[`donkey.a2a.send()` or `donkey.a2a.stream()`](https://docs.donkey-kit.dev/a2a/call.md) for outbound
+delegation, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md) to make your own agent callable.
 
   **Three things are called "policy" in these docs.** *Gateway policies* are
   what the gateway enforces on each surface: see the [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
-  and [A2A agents](https://docs.donkey-kit.dev/a2a-gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
+  and [A2A agents](https://docs.donkey-kit.dev/a2a/gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
   teach `classify()` the refusal shape your own gateway policy returns. The
   *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in
   force; the gateway always wins.
@@ -99,7 +99,7 @@ Unknown/incomplete layouts and all v1 tasks stay native SDK responses; the
 documentation limits the In-Task Authorization Code policy to v0.3.0, so DDK does
 not convert a v1 challenge. OAuth completion, token forwarding/removal, caching
 and authorization-policy `401` responses remain **UNVERIFIED**: a bounded probe with a synthetic invalid token and unvalidatable OAuth metadata got no policy-generated `401` (the request passed through to the agent), so DDK treats that `401` as an accepted boundary. See
-[Authentication challenges](https://docs.donkey-kit.dev/tool-access/a2a.md#authentication-challenges).
+[Authentication challenges](https://docs.donkey-kit.dev/a2a/call.md#authentication-challenges).
 
 The outbound plane never automatically replays a delegated action, even for
 `401`, `429` or `503`; model retry settings do not change that. Leaving an
@@ -153,7 +153,7 @@ annotations and the official SDK's own instrumentation.
 
 ## Offline testing and privacy
 
-[`donkey dev`](https://docs.donkey-kit.dev/a2a.md#simulated-ingress) defaults to `--protocol-version 1.0`,
+[`donkey dev`](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) defaults to `--protocol-version 1.0`,
 replaying selected v1 ingress Azure Prompt Shield, PII and token-rate refusals
 for both send methods. `--protocol-version 0.3.0` uses the existing legacy PII
 and token-rate captures for `message/send` only. See the
@@ -189,7 +189,7 @@ not promote any of these claims.
 
 ## Next steps
 
-- [Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md): scoped credentials and call examples.
+- [Call other A2A agents](https://docs.donkey-kit.dev/a2a/call.md): scoped credentials and call examples.
 - [Typed errors](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching): discriminators and diagnostics.
 - [A2A ingress replay](https://docs.donkey-kit.dev/simulator.md#a2a-ingress-replay): offline scenarios.
 - [Outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans): tracing boundaries.
