@@ -54,14 +54,15 @@ The binding shape decides how you filter and refuse tools:
   [OpenAI Agents SDK](/tool-access/binding), [MS Agent Framework](/tool-access/binding) and
   [CrewAI](/tool-access/binding) bind a whole server. Some of these return tool errors as
   text, so the policy metadata is lost. The per-framework refusal behaviour is on the
-  [MCP gateway policies](/tool-access/gateway-policies) page.
+  [MCP gateway policies](/tool-access/gateway-policies) page. The per-framework
+  methods are listed on the [MCP tools overview](/tool-access#supported-frameworks).
 
 ## A2A agents
 
 A2A is not bound per framework. `donkey.a2a.send()` and `donkey.serve()` are the
 same for every framework, so an agent built with any of the eight can call or
 serve other agents. Framework-native `as_tool()` binding is still planned; see
-[Call other agents](/a2a/call).
+[Call other agents](/a2a/call) and the [A2A overview](/a2a#supported-frameworks).
 
 ## Next steps
 

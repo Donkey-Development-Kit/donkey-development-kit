@@ -49,6 +49,32 @@ Name search and asset type filters live one layer down, on
 "Governed" is a computed, environment-scoped predicate rather than a flag in
 Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md).
 
+## Supported frameworks
+
+Every framework DDK supports gets MCP tools bound as its own native objects.
+`ToolSet` has one method per framework, and the binding shape decides how you
+filter and refuse tools. See [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md#per-framework-binding)
+for the classes and install extras.
+
+| Framework | Method on `ToolSet` | Binds | Rename on collision, approval gate |
+| --- | --- | --- | --- |
+| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | `await ts.langgraph()` | Each tool | Yes |
+| [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `await ts.llamaindex()` | Each tool | Yes |
+| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `async with ts.anthropic()` | Each tool | Yes |
+| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `await ts.adk()` | A whole server | No: raises `ConfigError` |
+| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `await ts.strands()` | A whole server | No: raises `ConfigError` |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `await ts.openai_agents()` | A whole server | No: raises `ConfigError` |
+| [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `await ts.agent_framework()` | A whole server | No: raises `ConfigError` |
+| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `async with ts.crewai()` | A whole server | No: raises `ConfigError` |
+
+Per-tool bindings return typed refusals from a tool call to your code.
+Whole-server bindings can't rename one tool or gate one call, and some return
+tool errors as text, so the policy metadata is lost. See
+[Whole-server bindings](https://docs.donkey-kit.dev/tool-access/binding.md#whole-server-bindings) and the
+per-framework behaviour on the [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
+page. The full map across all three surfaces is on
+[Supported frameworks](https://docs.donkey-kit.dev/supported-frameworks.md).
+
 ## In this section
 
   

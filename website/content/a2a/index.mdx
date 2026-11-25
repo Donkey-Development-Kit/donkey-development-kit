@@ -38,6 +38,27 @@ Each page carries its own status badge. The A2A facade is provisional, and
 successful gateway send and SSE are not live verified yet; see
 [Call other agents](/a2a/call) for the exact boundary.
 
+## Supported frameworks
+
+A2A is not bound per framework. `donkey.a2a.send()`, `donkey.a2a.stream()` and
+`donkey.serve()` are the same for every framework, so an agent built with any of
+the eight can call or serve other agents.
+
+| Framework | Call another agent | Serve your agent |
+| --- | --- | --- |
+| [LangGraph](/frameworks/langgraph) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` |
+| [Google ADK](/frameworks/adk) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` |
+| [Strands](/frameworks/strands) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` |
+| [MS Agent Framework](/frameworks/agent-framework) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` |
+| [OpenAI Agents SDK](/frameworks/openai) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` |
+| [Anthropic SDK](/frameworks/anthropic) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` |
+| [CrewAI](/frameworks/crewai) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` |
+| [LlamaIndex](/frameworks/llamaindex) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` |
+
+Binding an A2A agent as a framework-native tool (`as_tool()`) is planned, not
+shipped; see [Call other agents](/a2a/call). The full map across all three
+surfaces is on [Supported frameworks](/supported-frameworks).
+
 ## A2A across the docs
 
 Other sections cover A2A where it meets their topic:
