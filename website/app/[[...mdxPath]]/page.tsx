@@ -1,5 +1,6 @@
 import { generateStaticParamsFor, importPage } from 'nextra/pages'
 import { Badge } from '../../components'
+import { MovedAnchors } from '../../components/moved-anchors'
 import { pageMetadata } from '../../lib/site.mjs'
 import { statusOf } from '../../lib/status.mjs'
 import { useMDXComponents as getMDXComponents } from '../../mdx-components'
@@ -46,6 +47,7 @@ export default async function Page(props: PageProps) {
             <Badge tone={page.tone}>{page.label}</Badge>
           </p>
         )}
+        <MovedAnchors />
         <MDXContent {...props} params={params} />
       </div>
     </Wrapper>

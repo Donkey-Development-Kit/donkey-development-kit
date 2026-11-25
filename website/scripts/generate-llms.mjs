@@ -17,8 +17,8 @@
 //
 // Run: `npm run generate:llms` (also runs automatically via `prebuild`).
 
-import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
-import { dirname, join, resolve, relative } from 'node:path'
+import { readFile, writeFile, mkdir, access, rm, readdir } from 'node:fs/promises'
+import { dirname, join, resolve, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { statusOf } from '../lib/status.mjs'
@@ -27,6 +27,9 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const WEBSITE = resolve(HERE, '..')
 const CONTENT = join(WEBSITE, 'content')
 const PUBLIC = join(WEBSITE, 'public')
+// Per-page .md files this script wrote last time. Tracked in git so a moved or
+// removed page's stale .md shows up as a deletion in the PR that moves it.
+const MANIFEST = join(HERE, 'llms-manifest.json')
 
 // The deployed site URL. GitHub Pages serves it from the root of the
 // docs.donkey-kit.dev custom domain (#909), so /llms.txt sits at the domain root.
@@ -71,6 +74,9 @@ async function collectPages(dir, urlPrefix, section, pages) {
       currentSection = value.title || currentSection
       continue
     }
+    // `display: 'hidden'` entries are routable but not part of the site's
+    // navigation, so they stay out of llms.txt and the per-page .md set too.
+    if (value && typeof value === 'object' && value.display === 'hidden') continue
     const title = typeof value === 'string' ? value : value?.title || key
     const mdxPath = join(dir, `${key}.mdx`)
     const subDir = join(dir, key)
@@ -216,6 +222,28 @@ function truncate(s, n) {
   return s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s
 }
 
+// Delete per-page .md files an earlier run wrote that this run did not, so a
+// moved page doesn't leave a stale copy behind. Only files listed in the
+// manifest are ever removed, never any other public/ asset; the manifest is
+// then rewritten for the next run.
+async function removeOrphans(written) {
+  let previous
+  if (await exists(MANIFEST)) previous = JSON.parse(await readFile(MANIFEST, 'utf8'))
+  else {
+    // First run (no manifest yet): every .md under public/ was written by this
+    // script, so they are all candidates for cleanup.
+    const all = await readdir(PUBLIC, { recursive: true })
+    previous = all.filter((f) => f.endsWith('.md')).map((f) => f.split(sep).join('/'))
+  }
+  const keep = new Set(written)
+  for (const rel of previous) {
+    if (keep.has(rel)) continue
+    await rm(join(PUBLIC, rel), { force: true })
+    console.log(`Removed orphaned public/${rel}`)
+  }
+  await writeFile(MANIFEST, `${JSON.stringify([...written].sort(), null, 2)}\n`)
+}
+
 async function main() {
   const pages = []
   await collectPages(CONTENT, '', 'Getting started', pages)
@@ -236,12 +264,15 @@ async function main() {
   }
 
   // 1) per-page .md
+  const written = []
   for (const page of pages) {
     const rel = `${page.urlPath || 'index'}.md`
     const dest = join(PUBLIC, rel)
     await mkdir(dirname(dest), { recursive: true })
     await writeFile(dest, page.markdown)
+    written.push(rel)
   }
+  await removeOrphans(written)
 
   // 2) llms.txt — the llmstxt.org index, grouped by section in nav order.
   const indexLines = [`# ${TITLE}`, '', `> ${TAGLINE}`]
