@@ -406,7 +406,7 @@ donkey verify .          # each published MCP server and A2A agent against its l
 donkey --json verify .   # the same, with each asset's outcome as JSON
 ```
 
-Runs [`Publication.verify()`](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify) on each
+Runs [`Publication.verify()`](https://docs.donkey-kit.dev/publishing/publication.md#verifying-at-runtime-verify) on each
 MCP server and `a2a_v1` agent `donkey publish` would register, at the version
 declared in `[donkey.publication]`: the tools an MCP server's version was
 published with against the tools it lists through its gateway, and the card an

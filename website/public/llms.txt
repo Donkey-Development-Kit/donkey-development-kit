@@ -76,9 +76,14 @@
 - [Develop locally](https://docs.donkey-kit.dev/cli/local.md): (status: live) donkey mock, donkey dev and donkey test run your agent against the local simulator, a dev card and the offline test suite.
 - [Ship](https://docs.donkey-kit.dev/cli/ship.md): (status: live) From code to a publish plan, then donkey scan, scaffold, publish, verify and expose, the commands that take an agent from code to Exchange.
 
+## Scan & publish
+
+- [Overview](https://docs.donkey-kit.dev/publishing.md): (status: live) donkey scan derives a deterministic model of your agents, tools and MCP servers from code; publishing registers it with Exchange / Agent Registry from CI, complementing Agent Scanners.
+- [CI pipelines](https://docs.donkey-kit.dev/publishing/ci.md): (status: live) Run donkey publish from GitHub Actions, GitLab CI or Bitbucket Pipelines, with the same plan, artifact and exit code on each provider.
+- [Publication & verify()](https://docs.donkey-kit.dev/publishing/publication.md): (status: live) The Publication object, descriptor derivation, and verify(), the read-only runtime check that a live MCP server or A2A agent still matches its published version.
+
 ## Build, test & ship
 
-- [Scan & publish](https://docs.donkey-kit.dev/publishing.md): (status: live) donkey scan derives a deterministic model of your agents, tools and MCP servers from code; publishing registers it with Exchange / Agent Registry from CI, complementing Agent Scanners.
 - [Troubleshooting](https://docs.donkey-kit.dev/troubleshooting.md): (status: live) How to read donkey doctor output, tell apart failures that look the same, explain an UNAVAILABLE donkey.last_call, and fix a 401 in JWT mode.
 
 ## Scenarios

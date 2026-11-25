@@ -87,6 +87,16 @@ export const MOVED_ANCHORS = {
     'from-code-to-a-publish-plan': '/cli/ship',
     'what-each-workflow-still-needs': '/cli/ship',
   },
+  // #1834: the CI recipes and the Publication object moved off the publishing page.
+  '/publishing': {
+    'derivation-modes': '/publishing/publication',
+    'descriptorauto--deriving-the-spec-from-code-roadmap': '/publishing/publication',
+    'from-bitbucket-pipelines': '/publishing/ci',
+    'from-github-actions': '/publishing/ci',
+    'from-gitlab-ci': '/publishing/ci',
+    'the-publication-object': '/publishing/publication',
+    'verifying-at-runtime-verify': '/publishing/publication',
+  },
 }
 
 // Strip the basePath prefix, query, hash, trailing slash and `.html`, and

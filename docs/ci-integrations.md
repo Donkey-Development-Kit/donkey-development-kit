@@ -16,7 +16,7 @@ verification requirements rather than duplicating their examples.
 | --- | --- | --- |
 | GitHub Actions composite action | [`action/`](../action/README.md) in this repository | Shipped. Installs donkey-kit from the selected action ref into its own virtual environment. |
 | GitLab CI/CD component | [`donkey-development-kit/donkey-publish`](https://gitlab.com/donkey-development-kit/donkey-publish) | Shipped in the GitLab CI/CD Catalog; the website documents release `1.0.0` with donkey-kit `0.2.1`. |
-| Plain GitLab and Bitbucket jobs | [Website publishing guide](../website/content/publishing.mdx), sections "From GitLab CI" and "From Bitbucket Pipelines" | Documented. Install a pinned published donkey-kit and invoke the CLI directly. |
+| Plain GitLab and Bitbucket jobs | [Website publishing guide](../website/content/publishing/ci.mdx), sections "From GitLab CI" and "From Bitbucket Pipelines" | Documented. Install a pinned published donkey-kit and invoke the CLI directly. |
 | Bitbucket Pipe | [`donkey-development-kit/donkey-publish-pipe`](https://bitbucket.org/donkey-development-kit/donkey-publish-pipe/) | Image `0.1.0` published and signed, with donkey-kit `0.2.1`; consumer dry run verified in pipeline #7. SDK-update schedule activation remains open under [#1265](https://github.com/Donkey-Development-Kit/donkey-development-kit/issues/1265). |
 
 The Donkey Development Kit maintainers own these integrations. An external

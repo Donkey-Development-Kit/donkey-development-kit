@@ -53,6 +53,8 @@
   "index.md",
   "policies.md",
   "publishing.md",
+  "publishing/ci.md",
+  "publishing/publication.md",
   "quickstart.md",
   "reference/api.md",
   "reference/configuration.md",

@@ -586,7 +586,7 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Registry: `donkey.registry.warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()` | Token request, then the `search()`, `explain()` and `resolve_mcp()` reads | Available. Its `domain` filter raises `NotImplementedError` before sending; `locked=True` reads `donkey.lock` first and raises `ConfigError` if it is unreadable. `donkey.tools.warm()` does the same reads ahead of time. See [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md). |
 | Tool pinning: `donkey.tools.lock()` | Token request, the discovery reads, then one `tools/list` per server | Provisional: writes `donkey.lock`. See [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md). |
-| Publication: `Publication.verify()` | Token request, then the Exchange version read and its `mcp-metadata` or card download, the `explain()` and `resolve_mcp()` or `resolve_agent()` reads, and the server's `tools/list` or the agent's card through the gateway | Available for MCP servers and agents; `API` raises `NotImplementedError` before sending. See [Verifying at runtime](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify). |
+| Publication: `Publication.verify()` | Token request, then the Exchange version read and its `mcp-metadata` or card download, the `explain()` and `resolve_mcp()` or `resolve_agent()` reads, and the server's `tools/list` or the agent's card through the gateway | Available for MCP servers and agents; `API` raises `NotImplementedError` before sending. See [Verifying at runtime](https://docs.donkey-kit.dev/publishing/publication.md#verifying-at-runtime-verify). |
 | Publication: `Publication.preview()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |
 | `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](https://docs.donkey-kit.dev/cli/ship.md#donkey-expose). |
@@ -748,7 +748,7 @@ each connected-app token request. `donkey doctor` runs both without sending
 anything. For the [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md) token, the LLM-proxy check
 runs when you call `as_user()`. The control-plane check also runs each time a
 discovered MCP tool set lists or binds, and before `agent_card()` (and so
-[`verify()`](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify))
+[`verify()`](https://docs.donkey-kit.dev/publishing/publication.md#verifying-at-runtime-verify))
 reads an agent's card. Discovery read those gateway URLs from `base_url`, so
 they get `base_url`'s rule for the service's gateway credential, and inside an
 `as_user()` block for the user's token as well. `donkey doctor` doesn't run

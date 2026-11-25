@@ -108,7 +108,10 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("quickstart.mdx", "| Conformance testing with pytest |"): _LOCAL,
     ("quickstart.mdx", "## Test the refusal branch"): _LOCAL,
     ("quickstart.mdx", "| `donkey scan` "): "static analysis of local code; no gateway contract",
-    ("publishing.mdx", "## `donkey scan` "): "static analysis of local code; no gateway contract",
+    (
+        "publishing/index.mdx",
+        "## `donkey scan` ",
+    ): "static analysis of local code; no gateway contract",
     ("quickstart.mdx", "| Framework adapters for "): _GENERATED,
     ("frameworks/compatibility.mdx", "|"): _GENERATED,
 }

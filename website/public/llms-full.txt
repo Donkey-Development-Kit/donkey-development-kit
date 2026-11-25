@@ -11391,7 +11391,7 @@ donkey verify .          # each published MCP server and A2A agent against its l
 donkey --json verify .   # the same, with each asset's outcome as JSON
 ```
 
-Runs [`Publication.verify()`](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify) on each
+Runs [`Publication.verify()`](https://docs.donkey-kit.dev/publishing/publication.md#verifying-at-runtime-verify) on each
 MCP server and `a2a_v1` agent `donkey publish` would register, at the version
 declared in `[donkey.publication]`: the tools an MCP server's version was
 published with against the tools it lists through its gateway, and the card an
@@ -11502,7 +11502,7 @@ collision check and `descriptor="auto"` derivation are on the
 [`@donkey.agent`](https://docs.donkey-kit.dev/decorators.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/decorators.md#donkeytool), plus
 the MCP servers those tools name with `server=`. It produces one deterministic
 model of them. Publishing registers that model with Exchange / Agent
-Registry, and the [GitHub Action](#from-github-actions) runs both on every merge
+Registry, and the [GitHub Action](https://docs.donkey-kit.dev/publishing/ci.md#from-github-actions) runs both on every merge
 to `main`.
 
 **The registry becomes a consequence of the code, not a chore.** A support agent
@@ -11818,6 +11818,46 @@ version-bump rule. Each agent asset is published with:
 
 Publishing agents has been checked against a live sandbox, as for MCP servers.
 
+## Scope: code-first assets
+
+Publication is for assets that **originate in your code**:
+
+- an MCP server written in Python or TypeScript,
+- an agent exposed over [A2A](https://docs.donkey-kit.dev/a2a/serve.md),
+- an agent exposed as a tool without an A2A surface.
+
+It is not for assets the platform already owns. An MCP server created by MCP
+Bridge from an existing API is already in Exchange; publishing a second,
+code-derived descriptor would create two catalog entries for one capability.
+
+### Collision check Roadmap
+
+`donkey publish` doesn't run this check yet. As planned, before publishing the
+SDK will search Exchange for an existing asset with the same endpoint, name, or
+derived tool signature. On a probable match it will **refuse** and print the
+existing asset's coordinates, and a planned `--allow-duplicate` flag will
+override it with a `WARNING`.
+
+## Related
+
+- [CI pipelines](https://docs.donkey-kit.dev/publishing/ci.md) — the GitHub Actions, GitLab CI and Bitbucket Pipelines recipes.
+- [Publication & verify()](https://docs.donkey-kit.dev/publishing/publication.md) — the Publication object, descriptor derivation and runtime verification.
+- [Decorators](https://docs.donkey-kit.dev/decorators.md) — mark tools with `@donkey.tool` today.
+- [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) — serve and expose the agent whose card you publish.
+- [Tool access](https://docs.donkey-kit.dev/tool-access.md) — discover and bind published tools from Exchange.
+
+---
+
+Source: https://docs.donkey-kit.dev/publishing/ci.md
+
+# CI pipelines
+
+Status: Live. Shipped, and verified against a real governed gateway.
+
+Each recipe runs `donkey publish` in your pipeline. The plan, the JSON artifact
+and the exit code behave the same on every provider. The overview of what
+publishing does is on [Scan & publish](https://docs.donkey-kit.dev/publishing.md).
+
 ## From GitHub Actions
 
 The scan-and-publish action runs `donkey publish` in a workflow. It lives in
@@ -11889,7 +11929,7 @@ partway. The step's outputs are the `published`, `unchanged`, `incomplete`,
 JSON that `donkey publish --json` printed. A failed publish fails the step with
 `donkey`'s exit code, and each line `donkey` printed to stderr becomes an error
 annotation, so the fix shows on the run's page. Re-running the failed job
-finishes the publish (see [When a publish fails](#when-a-publish-fails)).
+finishes the publish (see [When a publish fails](https://docs.donkey-kit.dev/publishing.md#when-a-publish-fails)).
 What `donkey` prints comes from the repository it scans, so the summary shows
 every field as plain text, and the stderr echo can't run a workflow command.
 
@@ -11941,7 +11981,7 @@ also prints in the log. Both are kept even when the job fails. A dotenv report
 gives jobs that `needs:` this one the `DONKEY_PUBLISHED`, `DONKEY_UNCHANGED`,
 `DONKEY_INCOMPLETE`, `DONKEY_FAILED` and `DONKEY_NOT_ATTEMPTED` counts. A
 failed publish fails the job with `donkey`'s exit code, and re-running the job
-finishes the publish (see [When a publish fails](#when-a-publish-fails)). Like
+finishes the publish (see [When a publish fails](https://docs.donkey-kit.dev/publishing.md#when-a-publish-fails)). Like
 the action, the component reads only the JSON format of the donkey-kit it
 pins, and drops control characters from what `donkey` prints.
 
@@ -12057,25 +12097,18 @@ log, and the exit code fails the step.
 On GitLab and Bitbucket, the generated Home page leaves out the commit and
 run links: `donkey publish` reads them only from GitHub Actions.
 
-## Scope: code-first assets
+## Next steps
 
-Publication is for assets that **originate in your code**:
+- [Scan & publish](https://docs.donkey-kit.dev/publishing.md): the scan, plan and publish flow these pipelines run.
+- [Publication & verify()](https://docs.donkey-kit.dev/publishing/publication.md): the runtime check that a published version still matches.
 
-- an MCP server written in Python or TypeScript,
-- an agent exposed over [A2A](https://docs.donkey-kit.dev/a2a/serve.md),
-- an agent exposed as a tool without an A2A surface.
+---
 
-It is not for assets the platform already owns. An MCP server created by MCP
-Bridge from an existing API is already in Exchange; publishing a second,
-code-derived descriptor would create two catalog entries for one capability.
+Source: https://docs.donkey-kit.dev/publishing/publication.md
 
-### Collision check Roadmap
+# Publication & verify()
 
-`donkey publish` doesn't run this check yet. As planned, before publishing the
-SDK will search Exchange for an existing asset with the same endpoint, name, or
-derived tool signature. On a probable match it will **refuse** and print the
-existing asset's coordinates, and a planned `--allow-duplicate` flag will
-override it with a `WARNING`.
+Status: Live. Shipped, and verified against a real governed gateway.
 
 ## The `Publication` object
 
@@ -12256,11 +12289,10 @@ is set. Otherwise `verify()` raises `ConfigError` before anything is sent, and
 exits `1`. See
 [Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
 
-## Related
+## Next steps
 
-- [Decorators](https://docs.donkey-kit.dev/decorators.md) — mark tools with `@donkey.tool` today.
-- [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) — serve and expose the agent whose card you publish.
-- [Tool access](https://docs.donkey-kit.dev/tool-access.md) — discover and bind published tools from Exchange.
+- [Scan & publish](https://docs.donkey-kit.dev/publishing.md): how a publish is planned and run.
+- [CI pipelines](https://docs.donkey-kit.dev/publishing/ci.md): run the publish from your pipeline.
 
 ---
 
@@ -17591,7 +17623,7 @@ CrewAI builds its own HTTP client, so its `connection_kwargs()` includes an
 | Registry: `donkey.registry.warm()` | Token request, then Exchange and API Manager reads | Roadmap: raises `NotImplementedError` before sending |
 | Tool discovery: `donkey.tools.discover()` | Token request, then the `search()`, `explain()` and `resolve_mcp()` reads | Available. Its `domain` filter raises `NotImplementedError` before sending; `locked=True` reads `donkey.lock` first and raises `ConfigError` if it is unreadable. `donkey.tools.warm()` does the same reads ahead of time. See [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md). |
 | Tool pinning: `donkey.tools.lock()` | Token request, the discovery reads, then one `tools/list` per server | Provisional: writes `donkey.lock`. See [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md). |
-| Publication: `Publication.verify()` | Token request, then the Exchange version read and its `mcp-metadata` or card download, the `explain()` and `resolve_mcp()` or `resolve_agent()` reads, and the server's `tools/list` or the agent's card through the gateway | Available for MCP servers and agents; `API` raises `NotImplementedError` before sending. See [Verifying at runtime](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify). |
+| Publication: `Publication.verify()` | Token request, then the Exchange version read and its `mcp-metadata` or card download, the `explain()` and `resolve_mcp()` or `resolve_agent()` reads, and the server's `tools/list` or the agent's card through the gateway | Available for MCP servers and agents; `API` raises `NotImplementedError` before sending. See [Verifying at runtime](https://docs.donkey-kit.dev/publishing/publication.md#verifying-at-runtime-verify). |
 | Publication: `Publication.preview()` | Token request, then platform calls | Roadmap: raises `NotImplementedError` before sending |
 | `donkey publish` (without `--dry-run`) | Token request, then Exchange reads and publishes | Available for MCP servers and agents. See [Publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers) and [Publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents). |
 | `donkey expose` (without `--dry-run`) | Token request, then the `donkey publish` calls, then Access Management, Omni Gateway Manager and API Manager reads and writes, and the proxy deployment | Available for MCP servers and agents. See [`donkey expose`](https://docs.donkey-kit.dev/cli/ship.md#donkey-expose). |
@@ -17753,7 +17785,7 @@ each connected-app token request. `donkey doctor` runs both without sending
 anything. For the [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md) token, the LLM-proxy check
 runs when you call `as_user()`. The control-plane check also runs each time a
 discovered MCP tool set lists or binds, and before `agent_card()` (and so
-[`verify()`](https://docs.donkey-kit.dev/publishing.md#verifying-at-runtime-verify))
+[`verify()`](https://docs.donkey-kit.dev/publishing/publication.md#verifying-at-runtime-verify))
 reads an agent's card. Discovery read those gateway URLs from `base_url`, so
 they get `base_url`'s rule for the service's gateway credential, and inside an
 `as_user()` block for the user's token as well. `donkey doctor` doesn't run

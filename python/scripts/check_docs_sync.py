@@ -100,7 +100,10 @@ SURFACES: tuple[Surface, ...] = (
         ),
         ("tool-access/discovery.mdx",),
     ),
-    Surface(("registry/publication.py", "registry/exchange.py"), ("publishing.mdx",)),
+    Surface(
+        ("registry/publication.py", "registry/exchange.py"),
+        ("publishing/publication.mdx", "publishing/index.mdx"),
+    ),
     Surface(("tools/session.py",), ("tool-access/binding.mdx",)),
     Surface(("a2a/_server.py",), ("a2a/serve.mdx",)),
     Surface(("a2a/client.py",), ("a2a/call.mdx",)),

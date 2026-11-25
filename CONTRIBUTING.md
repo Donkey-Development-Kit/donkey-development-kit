@@ -1055,12 +1055,12 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 | `donkey.py` (the `Donkey` facade: `from_env`, `run`, `simulate()`, `tools`) | `quickstart.mdx`, `testing.mdx`, `reference/configuration.mdx` |
 | `integrations/<fw>.py` | `frameworks/<fw>.mdx` + `examples/<fw>.mdx` (note `openai_agents.py` → `frameworks/openai.mdx`, `examples/openai-agents.mdx`); `frameworks/index.mdx` if the roster or an adapter's depth changes |
 | `registry/criteria.py`, `registry/introspect.py`, `registry/models.py`, `tools/filter.py` | `tool-access/discovery.mdx` |
-| `registry/publication.py`, `registry/exchange.py` | `publishing.mdx` |
+| `registry/publication.py`, `registry/exchange.py` | `publishing/publication.mdx`, `publishing/index.mdx` |
 | `tools/session.py` | `tool-access/binding.mdx` |
 | `a2a/_server.py` (the `donkey.serve()` listener) | `a2a/serve.mdx` |
 | `a2a/client.py` (`donkey.a2a.send()` / `stream()`) | `a2a/call.mdx` |
 | `cli/*` (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `publish`, `verify`, `expose`, `preflight`, the blocked `status`) | `cli/index.mdx`, `cli/setup.mdx`, `cli/local.mdx`, `cli/ship.mdx` (the site has no provisioning section; don't add one, the control plane is refused, ADR 0008 in `docs/adr/`) |
-| `experimental.py` | `reference/unsupported-boundary.mdx`, plus the page of the surface whose types moved (`publishing.mdx`, `tool-access/discovery.mdx`) |
+| `experimental.py` | `reference/unsupported-boundary.mdx`, plus the page of the surface whose types moved (`publishing/publication.mdx`, `tool-access/discovery.mdx`) |
 | `README.md` (install/status/extras) | `quickstart.mdx`, `index.mdx` |
 
 `docs/verified-apis.md` is not "engineering-internal" for this purpose: when

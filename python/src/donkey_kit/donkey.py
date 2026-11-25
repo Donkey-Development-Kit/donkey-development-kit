@@ -307,7 +307,7 @@ class ToolsFacade:
             AuthError: The gateway refused the credential.
             ToolInvocationError: The server could not list its tools.
 
-        Docs: https://docs.donkey-kit.dev/publishing#verifying-at-runtime-verify
+        Docs: https://docs.donkey-kit.dev/publishing/publication#verifying-at-runtime-verify
         """
         return await self._discovery.live_tools(ref)
 
@@ -333,7 +333,7 @@ class ToolsFacade:
                 control plane the working directory's config files named (ADR 0019).
             AuthError: The gateway refused the credential.
 
-        Docs: https://docs.donkey-kit.dev/publishing#verifying-at-runtime-verify
+        Docs: https://docs.donkey-kit.dev/publishing/publication#verifying-at-runtime-verify
         """
         return await self._discovery.agent_card(ref)
 
