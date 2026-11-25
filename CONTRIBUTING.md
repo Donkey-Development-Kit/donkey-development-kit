@@ -1040,7 +1040,7 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 
 | Code surface | Docs page(s) |
 | --- | --- |
-| `core/errors.py` | `errors.mdx` |
+| `core/errors.py` | `errors.mdx`, `frameworks/gateway-policies.mdx` |
 | `core/config.py`, `core/auth.py`, `core/endpoints.py` | `reference/configuration.mdx` |
 | `core/_verify.py`, `docs/verified-apis.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
 | `core/budget.py` | `budget.mdx` |

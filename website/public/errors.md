@@ -18,6 +18,9 @@ and the same nested-object envelope is emitted by both the upstream provider and
 a gateway policy. The authoritative discriminator is the error **`type`** plus
 specific headers.
 
+For what each model policy means for your code, policy by policy, see
+[Model gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md).
+
 | Rejection | HTTP | Discriminator | Maps to |
 |---|---|---|---|
 | Client-ID enforcement (auth) | `401` | flat `{"error":"…"}` + `www-authenticate: Client-ID-Enforcement` | `AuthError` |

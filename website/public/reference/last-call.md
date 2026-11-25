@@ -27,6 +27,10 @@ observation (an empty completion) and is distinct from `None` (no usage was
 reported at all). See [Verification discipline](https://github.com/Donkey-Development-Kit/donkey-development-kit/blob/main/ARCHITECTURE.md#verification-discipline) for why
 the SDK never guesses a value it did not see on the wire.
 
+The routing and cache fields report what the gateway's routing and caching
+policies did. [Model gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md) explains
+each policy and what your code sees for it.
+
 ## Observability status
 
 Whether — and from where — the call was observed. These are always meaningful,

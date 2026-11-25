@@ -24,6 +24,10 @@ updates a `Budget` object on the `Donkey` instance. Where both are present the
 numeric values win, and the prose header fills any field they leave unset.
 Until the first such response, every field is `None`, never a misleading zero.
 
+The token and request windows are two of the gateway's policies on model
+calls. [Model gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md) covers them next
+to the others, including the model wallet, whose state is not reported in-band.
+
 ## The object
 
 ```python

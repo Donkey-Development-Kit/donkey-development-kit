@@ -9,7 +9,7 @@ official `a2a-sdk`, and surfaces outcomes it can identify safely. Use
 delegation, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md) to make your own agent callable.
 
   **Three things are called "policy" in these docs.** *Gateway policies* are
-  what the gateway enforces on each surface: see the [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
+  what the gateway enforces on each surface: see the [Models](https://docs.donkey-kit.dev/frameworks/gateway-policies.md), [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
   and [A2A agents](https://docs.donkey-kit.dev/a2a/gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
   teach `classify()` the refusal shape your own gateway policy returns. The
   *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in

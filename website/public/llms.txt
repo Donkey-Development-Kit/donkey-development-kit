@@ -12,6 +12,7 @@
 ## Models
 
 - [Overview](https://docs.donkey-kit.dev/frameworks.md): (status: live) Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
+- [Gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md): (status: offline-verified) What each Omni Gateway policy on an LLM proxy does to a model call, the typed exception or field DDK gives your code for it, and how to rehearse it offline.
 - [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md): (status: live) Which versions of each agent framework donkey-kit supports — the minimum, the version every PR tests, and known incompatibilities.
 
 ## Frameworks

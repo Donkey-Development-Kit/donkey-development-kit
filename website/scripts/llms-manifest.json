@@ -36,6 +36,7 @@
   "frameworks/anthropic.md",
   "frameworks/compatibility.md",
   "frameworks/crewai.md",
+  "frameworks/gateway-policies.md",
   "frameworks/langgraph.md",
   "frameworks/llamaindex.md",
   "frameworks/openai.md",

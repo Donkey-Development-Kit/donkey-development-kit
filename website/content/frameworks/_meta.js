@@ -1,5 +1,6 @@
 export default {
   index: 'Overview',
+  'gateway-policies': 'Gateway policies',
   compatibility: 'Version compatibility',
   '-- frameworks': {
     type: 'separator',

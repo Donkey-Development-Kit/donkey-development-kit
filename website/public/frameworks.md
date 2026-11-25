@@ -12,6 +12,20 @@ consumer auth and attribution headers already set. Nothing wraps the object you
 get back, and every page shows the plain-framework code you can switch to at
 any time.
 
+In this section:
+
+- [Gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md): what each policy on an LLM
+  proxy does to a model call, and the typed exception or field your code gets.
+- [Routing & resilience](https://docs.donkey-kit.dev/telemetry.md#routing--resilience): which provider served
+  a call, fallback, and how DDK's retries stay out of a gateway failover's way.
+- [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md): the framework versions
+  each adapter supports and is tested on.
+- The framework adapters, from [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) to
+  [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md), listed [below](#supported-frameworks).
+
+For governed tools and agent-to-agent calls, see [MCP tools](https://docs.donkey-kit.dev/tool-access.md) and
+[A2A agents](https://docs.donkey-kit.dev/a2a.md).
+
   **Using TypeScript or another language?** The SDK is Python. From TypeScript
   or any other language, call the proxy's OpenAI-compatible HTTP API directly —
   every framework page has a **TypeScript** tab showing the official `openai`

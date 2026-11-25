@@ -63,7 +63,7 @@ def _framework(module: str, *pages: str) -> Surface:
 #: website/content/; any one listed page changing satisfies the surface. Keep
 #: the two in step, and keep the workflow's ``paths:`` covering ``files``.
 SURFACES: tuple[Surface, ...] = (
-    Surface(("core/errors.py",), ("errors.mdx",)),
+    Surface(("core/errors.py",), ("errors.mdx", "frameworks/gateway-policies.mdx")),
     Surface(
         ("core/config.py", "core/auth.py", "core/endpoints.py"),
         ("reference/configuration.mdx",),

@@ -18,6 +18,20 @@ consumer auth and attribution headers already set. Nothing wraps the object you
 get back, and every page shows the plain-framework code you can switch to at
 any time.
 
+In this section:
+
+- [Gateway policies](/frameworks/gateway-policies): what each policy on an LLM
+  proxy does to a model call, and the typed exception or field your code gets.
+- [Routing & resilience](/telemetry#routing--resilience): which provider served
+  a call, fallback, and how DDK's retries stay out of a gateway failover's way.
+- [Version compatibility](/frameworks/compatibility): the framework versions
+  each adapter supports and is tested on.
+- The framework adapters, from [LangGraph](/frameworks/langgraph) to
+  [LlamaIndex](/frameworks/llamaindex), listed [below](#supported-frameworks).
+
+For governed tools and agent-to-agent calls, see [MCP tools](/tool-access) and
+[A2A agents](/a2a).
+
 <Callout type="info">
   **Using TypeScript or another language?** The SDK is Python. From TypeScript
   or any other language, call the proxy's OpenAI-compatible HTTP API directly —

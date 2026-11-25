@@ -1566,6 +1566,11 @@ _README = REPO / "README.md"
 _ARCHITECTURE = REPO / "ARCHITECTURE.md"
 
 
+#: Pages under ``frameworks/`` that document no adapter, so take no status from §8.
+#: ``index`` and the compatibility page have targets of their own.
+_NON_ADAPTER_PAGES = frozenset({"index", COMPATIBILITY_PAGE.stem, "gateway-policies"})
+
+
 def _framework_page_targets() -> tuple[Target, ...]:
     """One target per framework page; a page with no roster row fails its render."""
     if not FRAMEWORK_PAGES.is_dir():
@@ -1578,7 +1583,7 @@ def _framework_page_targets() -> tuple[Target, ...]:
             functools.partial(framework_page, path),
         )
         for path in sorted(FRAMEWORK_PAGES.glob("*.mdx"))
-        if path.stem not in ("index", COMPATIBILITY_PAGE.stem)
+        if path.stem not in _NON_ADAPTER_PAGES
     )
 
 
