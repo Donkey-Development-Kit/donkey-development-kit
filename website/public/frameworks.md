@@ -1,6 +1,10 @@
-# Model access
+# Models
 
 Status: Live. Shipped, and verified against a real governed gateway.
+
+This section covers governed model calls: the framework adapters, the version
+ranges each one is tested against, and how the gateway's policies on model
+calls reach your code.
 
 Governed model access from eight agent frameworks. Each adapter returns the
 framework's **own native object**, pointed at your Omni Gateway LLM proxy with

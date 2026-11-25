@@ -7,21 +7,39 @@
 - [Introduction](https://docs.donkey-kit.dev/index.md): Governed by the gateway, understood by your code. DDK brings Agent Fabric and Omni Gateway awareness into your agent framework — typed refusals, budgets, telemetry and simulation, with native framework objects.
 - [Quickstart](https://docs.donkey-kit.dev/quickstart.md): (status: live) From pip install to a governed model call, a typed refusal, a budget and an OpenTelemetry span — locally, with no gateway and no credentials.
 - [Feature overview](https://docs.donkey-kit.dev/feature-overview.md): (status: live) Every DDK capability at a glance — its purpose, its goal, and what it saves developers — grouped by pillar.
+- [Use with your coding agent](https://docs.donkey-kit.dev/use-with-your-agent.md): (status: live) Point your coding assistant at these docs — llms.txt, llms-full.txt, and a .md next to every page — so it writes correct governed code.
 
-## Frameworks
+## Models
 
 - [Overview](https://docs.donkey-kit.dev/frameworks.md): (status: live) Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
 - [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md): (status: live) Which versions of each agent framework donkey-kit supports — the minimum, the version every PR tests, and known incompatibilities.
+
+## Frameworks
+
 - [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md): (status: live) Use a governed LangChain ChatOpenAI in LangGraph, pointed at your Omni Gateway LLM proxy with full header and transport injection, typed refusals, and conformance testing.
+- [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md): (status: live) Use a governed OpenAIChatCompletionsModel in the OpenAI Agents SDK, backed by a pre-built AsyncOpenAI client pointed at your Omni Gateway LLM proxy.
 - [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md): (status: live) Use a governed LiteLlm model, or ADK's native Gemini model on a Format=Gemini proxy, in Google's Agent Development Kit (ADK), pointed at your Omni Gateway LLM proxy.
 - [Strands](https://docs.donkey-kit.dev/frameworks/strands.md): (status: live) Use a governed OpenAIModel in Strands Agents, pointed at your Omni Gateway LLM proxy with full header and transport injection.
 - [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md): (status: live) Use a governed OpenAIChatClient in Microsoft Agent Framework, pointed at your Omni Gateway LLM proxy, with policy middleware that ends a run on a typed governance refusal.
-- [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md): (status: live) Use a governed OpenAIChatCompletionsModel in the OpenAI Agents SDK, backed by a pre-built AsyncOpenAI client pointed at your Omni Gateway LLM proxy.
 - [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md): (status: live) Use a governed AsyncAnthropic client with the Anthropic SDK, pointed at a Format=Anthropic Omni Gateway LLM proxy with full header and transport injection.
 - [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md): (status: live) Use a governed CrewAI LLM, served by CrewAI's native OpenAI provider and pointed at your Omni Gateway LLM proxy.
 - [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md): (status: live) Use a governed OpenAILike LLM in LlamaIndex, pointed at your Omni Gateway LLM proxy with is_chat_model forced on.
 
-## Governance
+## MCP tools
+
+- [Overview](https://docs.donkey-kit.dev/tool-access.md): (status: live) Discover the governed MCP tools your organisation publishes in Exchange and bind them into any framework as native tool objects.
+- [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md): (status: live) Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
+- [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md): (status: live) Turn discovered governed MCP servers into each framework's native tool objects, with auth, lifecycle, name collisions, and filtering handled for you.
+- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md): (status: offline-verified) Pin the tools each governed MCP server lists in a donkey.lock, so a catalog change becomes a typed ToolLockDrift and a reviewable diff instead of a runtime surprise.
+- [Gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md): (status: offline-verified) Consume policy-shaped MCP catalogs and handle gateway refusals without guessing policy identity or reimplementing enforcement.
+- [Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md): (status: offline-verified) Send official A2A SDK requests to registry-resolved governed agents, with scoped authentication and context-managed streams.
+
+## Models, tools & agents
+
+- [A2A agents](https://docs.donkey-kit.dev/a2a.md): (status: offline-verified) Make your agent callable by other agents over A2A — serve it in one line, expose it through the gateway, and develop against a gateway on your laptop.
+- [A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md): (status: offline-verified) Version-specific A2A gateway policy captures, DDK outcomes, and offline replay and telemetry boundaries.
+
+## Governance (all surfaces)
 
 - [Typed refusals](https://docs.donkey-kit.dev/errors.md): (status: live) Typed exceptions for every governance refusal, each with a discriminator, a retry rule, and a next step.
 - [Refusal handlers](https://docs.donkey-kit.dev/refusal-handlers.md): (status: live) Register a reaction to a typed refusal once, and the transport applies it to every governed call. A handler reacts; it never turns a refusal into a success.
@@ -30,33 +48,18 @@
 - [Identity](https://docs.donkey-kit.dev/identity.md): (status: live) On-behalf-of user identity, so the gateway can enforce per-user policy instead of seeing only the service.
 - [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md): (status: live) Declare on the tool that a human must approve the call. DDK pauses it, records who decided, and runs it on approval. The approval is client-side and advisory.
 - [Policy handshake](https://docs.donkey-kit.dev/policies.md): (status: roadmap) Read the in-force policy set to avoid calls that will be refused — advisory only; the gateway always wins.
-- [A2A gateway policies](https://docs.donkey-kit.dev/a2a-gateway-policies.md): (status: offline-verified) Version-specific A2A gateway policy captures, DDK outcomes, and offline replay and telemetry boundaries.
 
 ## Observability
 
 - [Telemetry & cost](https://docs.donkey-kit.dev/telemetry.md): (status: live) OpenTelemetry GenAI spans, per-run correlation IDs, and cost-attribution tags — in the dashboard you already run.
 
-## Developer tooling
+## Build, test & ship
 
 - [Local simulator](https://docs.donkey-kit.dev/simulator.md): (status: live) Run a local server that replays real gateway rejections, so you can build and test failure handling without a governed gateway.
 - [Testing & conformance](https://docs.donkey-kit.dev/testing.md): (status: live) Test your agent's failure handling — in-process refusal injection, a pytest conformance suite you run against your own agent, and an out-of-process gateway fixture.
 - [CLI & decorators](https://docs.donkey-kit.dev/cli.md): (status: live) The @donkey.governed, @donkey.tool and @donkey.agent decorators, and the donkey CLI — init, doctor, mock, dev, test, scan, publish, verify and expose.
-- [Troubleshooting](https://docs.donkey-kit.dev/troubleshooting.md): (status: live) How to read donkey doctor output, tell apart failures that look the same, explain an UNAVAILABLE donkey.last_call, and fix a 401 in JWT mode.
-- [Use with your coding agent](https://docs.donkey-kit.dev/use-with-your-agent.md): (status: live) Point your coding assistant at these docs — llms.txt, llms-full.txt, and a .md next to every page — so it writes correct governed code.
-
-## Tool access
-
-- [Overview](https://docs.donkey-kit.dev/tool-access.md): (status: live) Discover the governed MCP tools your organisation publishes in Exchange and bind them into any framework as native tool objects.
-- [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md): (status: live) Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
-- [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md): (status: live) Turn discovered governed MCP servers into each framework's native tool objects, with auth, lifecycle, name collisions, and filtering handled for you.
-- [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md): (status: offline-verified) Consume policy-shaped MCP catalogs and handle gateway refusals without guessing policy identity or reimplementing enforcement.
-- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md): (status: offline-verified) Pin the tools each governed MCP server lists in a donkey.lock, so a catalog change becomes a typed ToolLockDrift and a reviewable diff instead of a runtime surprise.
-- [Outbound A2A](https://docs.donkey-kit.dev/tool-access/a2a.md): (status: offline-verified) Send official A2A SDK requests to registry-resolved governed agents, with scoped authentication and context-managed streams.
-
-## Registry & catalog
-
-- [A2A agents](https://docs.donkey-kit.dev/a2a.md): (status: offline-verified) Make your agent callable by other agents over A2A — serve it in one line, expose it through the gateway, and develop against a gateway on your laptop.
 - [Scan & publish](https://docs.donkey-kit.dev/publishing.md): (status: live) donkey scan derives a deterministic model of your agents, tools and MCP servers from code; publishing registers it with Exchange / Agent Registry from CI, complementing Agent Scanners.
+- [Troubleshooting](https://docs.donkey-kit.dev/troubleshooting.md): (status: live) How to read donkey doctor output, tell apart failures that look the same, explain an UNAVAILABLE donkey.last_call, and fix a 401 in JWT mode.
 
 ## Scenarios
 
@@ -95,16 +98,6 @@
 - [Anthropic](https://docs.donkey-kit.dev/examples/anthropic.md): (status: offline-verified) Two scripts for the native anthropic client from donkey.anthropic.client() — /v1/messages on a Format=Anthropic proxy with last_call, and typed refusals simulated in-process.
 - [Gemini](https://docs.donkey-kit.dev/examples/gemini.md): (status: offline-verified) Two plain-httpx scripts against a Format=Gemini proxy — native generateContent, and an OpenAI-shaped request classified as UpstreamRequestError.
 
-## Roadmap
-
-- [Roadmap](https://docs.donkey-kit.dev/roadmap.md): Where DDK is going — five phases in order, each with its goal, live progress and the issues in its milestone.
-- [Release notes](https://docs.donkey-kit.dev/release-notes.md): Where the donkey-kit release notes live, what each one covers, and how to check which version you have installed and which one these docs describe.
-
-## Community
-
-- [Team](https://docs.donkey-kit.dev/community/team.md): The people behind the Donkey Development Kit — its creators and contributors.
-- [Contribute](https://docs.donkey-kit.dev/community/contribute.md): How to contribute to DDK — issues, docs, examples and code — from filing an issue to a merged pull request.
-
 ## Reference
 
 - [Configuration](https://docs.donkey-kit.dev/reference/configuration.md): (status: live) Every DDK configuration value — LLM proxy URL and credentials, JWT model-wallet auth, attribution, cost tags, telemetry, and Anypoint control-plane settings — as env vars, config file, or code.
@@ -112,3 +105,13 @@
 - [last_call fields](https://docs.donkey-kit.dev/reference/last-call.md): (status: live) Every field on donkey.last_call — the observability status, the gateway identity, the routing and fallback signals, the per-call token usage, and the semantic-cache outcome the gateway reported about the most recent governed model call.
 - [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md): (status: live) The Anypoint connected-app scopes each DDK operation needs, where to grant them, and what the SDK raises when one is missing.
 - [Unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md): (status: live) Which MuleSoft platform APIs DDK calls, whether each is documented for third-party use, and the project's support statement.
+
+## Reference & project
+
+- [Release notes](https://docs.donkey-kit.dev/release-notes.md): Where the donkey-kit release notes live, what each one covers, and how to check which version you have installed and which one these docs describe.
+- [Roadmap](https://docs.donkey-kit.dev/roadmap.md): Where DDK is going — five phases in order, each with its goal, live progress and the issues in its milestone.
+
+## Community
+
+- [Team](https://docs.donkey-kit.dev/community/team.md): The people behind the Donkey Development Kit — its creators and contributors.
+- [Contribute](https://docs.donkey-kit.dev/community/contribute.md): How to contribute to DDK — issues, docs, examples and code — from filing an issue to a merged pull request.

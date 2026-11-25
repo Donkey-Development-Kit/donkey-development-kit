@@ -1,10 +1,12 @@
-# Governed error taxonomy
+# Typed refusals
 
 Status: Live. Shipped, and verified against a real governed gateway.
 
 The proxy doesn't just pass model calls through — it enforces policy. When it
 rejects a call, DDK turns the response into a **typed exception** so you
-branch on the governance outcome instead of parsing bodies.
+branch on the governance outcome instead of parsing bodies. This page is the
+governed error taxonomy: every refusal shape DDK types, how it is told apart,
+and what to do next.
 
 ## The rejection shapes `classify()` types
 

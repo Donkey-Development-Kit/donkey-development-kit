@@ -1,11 +1,15 @@
 export default {
   index: 'Overview',
   compatibility: 'Version compatibility',
+  '-- frameworks': {
+    type: 'separator',
+    title: 'Frameworks',
+  },
   langgraph: 'LangGraph',
+  openai: 'OpenAI Agents SDK',
   adk: 'Google ADK',
   strands: 'Strands',
   'agent-framework': 'MS Agent Framework',
-  openai: 'OpenAI Agents SDK',
   anthropic: 'Anthropic SDK',
   crewai: 'CrewAI',
   llamaindex: 'LlamaIndex',

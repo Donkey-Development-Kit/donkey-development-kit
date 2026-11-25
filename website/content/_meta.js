@@ -1,3 +1,7 @@
+// Sidebar order, grouped by surface first (epic #1824). The three surfaces
+// (Models, MCP tools, A2A agents) share one group; the groups after it apply
+// to every surface. A surface folder is expanded by default with
+// `theme: { collapsed: false }`; other folders follow `defaultMenuCollapseLevel`.
 export default {
   '-- get-started': {
     type: 'separator',
@@ -6,14 +10,18 @@ export default {
   index: 'Introduction',
   quickstart: 'Quickstart',
   'feature-overview': 'Feature overview',
-  '-- model-access': {
+  'use-with-your-agent': 'Use with your coding agent',
+  '-- surfaces': {
     type: 'separator',
-    title: 'Model access',
+    title: 'Models, tools & agents',
   },
-  frameworks: 'Frameworks',
+  frameworks: { title: 'Models', theme: { collapsed: false } },
+  'tool-access': { title: 'MCP tools', theme: { collapsed: false } },
+  a2a: 'A2A agents',
+  'a2a-gateway-policies': 'A2A gateway policies',
   '-- governance': {
     type: 'separator',
-    title: 'Governance',
+    title: 'Governance (all surfaces)',
   },
   errors: 'Typed refusals',
   'refusal-handlers': 'Refusal handlers',
@@ -22,52 +30,32 @@ export default {
   identity: 'Identity',
   hitl: 'Human-in-the-loop',
   policies: 'Policy handshake',
-  'a2a-gateway-policies': 'A2A gateway policies',
   '-- observability': {
     type: 'separator',
     title: 'Observability',
   },
   telemetry: 'Telemetry & cost',
-  '-- developer-tooling': {
+  '-- build-test-ship': {
     type: 'separator',
-    title: 'Developer tooling',
+    title: 'Build, test & ship',
   },
   simulator: 'Local simulator',
   testing: 'Testing & conformance',
   cli: 'CLI & decorators',
-  troubleshooting: 'Troubleshooting',
-  'use-with-your-agent': 'Use with your coding agent',
-  '-- registry': {
-    type: 'separator',
-    title: 'Registry & catalog',
-  },
-  'tool-access': 'Tool access',
-  a2a: 'A2A agents',
   publishing: 'Scan & publish',
-  '-- scenarios': {
+  troubleshooting: 'Troubleshooting',
+  '-- learn': {
     type: 'separator',
-    title: 'Scenarios',
+    title: 'Learn',
   },
   scenarios: 'Scenarios',
-  '-- examples': {
-    type: 'separator',
-    title: 'Examples',
-  },
   examples: 'Examples',
-  '-- roadmap': {
+  '-- reference-project': {
     type: 'separator',
-    title: 'Roadmap',
-  },
-  roadmap: 'Roadmap',
-  'release-notes': 'Release notes',
-  '-- community': {
-    type: 'separator',
-    title: 'Community',
-  },
-  community: 'Community',
-  '-- reference': {
-    type: 'separator',
-    title: 'Reference',
+    title: 'Reference & project',
   },
   reference: 'Reference',
+  'release-notes': 'Release notes',
+  roadmap: 'Roadmap',
+  community: 'Community',
 }

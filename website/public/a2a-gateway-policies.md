@@ -8,6 +8,13 @@ official `a2a-sdk`, and surfaces outcomes it can identify safely. Use
 [`donkey.a2a.send()` or `donkey.a2a.stream()`](https://docs.donkey-kit.dev/tool-access/a2a.md) for outbound
 delegation, and [`donkey.serve()`](https://docs.donkey-kit.dev/a2a.md) to make your own agent callable.
 
+  **Three things are called "policy" in these docs.** *Gateway policies* are
+  what the gateway enforces on each surface: see the [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
+  and [A2A agents](https://docs.donkey-kit.dev/a2a-gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
+  teach `classify()` the refusal shape your own gateway policy returns. The
+  *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in
+  force; the gateway always wins.
+
   **Live captures are not live SDK verification.** The response shapes below
   include the 2026-11-02 Omni Gateway 1.14.4 captures and later bounded send-header captures. DDK classification,
   outbound delegation and selected ingress replay are **OFFLINE-VERIFIED**.

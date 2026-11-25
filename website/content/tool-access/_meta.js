@@ -2,7 +2,7 @@ export default {
   index: 'Overview',
   discovery: 'Discovery, search & filter',
   binding: 'Framework binding',
-  'gateway-policies': 'MCP gateway policies',
   lockfile: 'Pinning & lockfile',
+  'gateway-policies': 'Gateway policies',
   a2a: 'Outbound A2A',
 }

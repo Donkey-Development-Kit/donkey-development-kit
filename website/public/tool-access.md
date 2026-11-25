@@ -1,14 +1,15 @@
-# Tool access
+# MCP tools
 
 Status: Live. Shipped, and verified against a real governed gateway.
 
-Discovery and binding run end to end through the governed gateway, with
-every supported framework; see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
-
-Governed tool access lets an agent discover the MCP tools your organisation has
-published and governed, filter them down to what it actually needs, and bind
+This section is DDK's MCP support. It lets an agent discover the MCP servers
+and tools your organisation has published to Anypoint Exchange and governed,
+filter them down to what it actually needs, and bind
 them into any of the eight supported frameworks as that framework's **native
 tool objects** — the same "no wrapper" approach as [model access](https://docs.donkey-kit.dev/frameworks.md).
+
+Discovery and binding run end to end through the governed gateway, with
+every supported framework; see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md).
 
 ## Two lines from catalog to agent
 
