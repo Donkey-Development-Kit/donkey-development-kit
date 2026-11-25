@@ -38,23 +38,42 @@ observed `last_call`) is on the [Models overview](https://docs.donkey-kit.dev/fr
 
 ## MCP tools
 
-The binding shape decides how you filter and refuse tools:
+The binding shape decides how you filter and refuse tools. Each framework gets
+a `ToolSet` method that returns its own native MCP objects.
 
-- **Per tool.** [LangGraph](https://docs.donkey-kit.dev/tool-access/binding.md), [LlamaIndex](https://docs.donkey-kit.dev/tool-access/binding.md) and the
-  [Anthropic SDK](https://docs.donkey-kit.dev/tool-access/binding.md) bind each tool separately. Typed refusals
-  from a tool call reach your code through these bindings.
-- **Per server.** [Google ADK](https://docs.donkey-kit.dev/tool-access/binding.md), [Strands](https://docs.donkey-kit.dev/tool-access/binding.md),
-  [OpenAI Agents SDK](https://docs.donkey-kit.dev/tool-access/binding.md), [MS Agent Framework](https://docs.donkey-kit.dev/tool-access/binding.md) and
-  [CrewAI](https://docs.donkey-kit.dev/tool-access/binding.md) bind a whole server. Some of these return tool errors as
-  text, so the policy metadata is lost. The per-framework refusal behaviour is on the
-  [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) page. The per-framework
-  methods are listed on the [MCP tools overview](https://docs.donkey-kit.dev/tool-access.md#supported-frameworks).
+| Framework | Method on `ToolSet` | Binds | Depth to know about |
+| --- | --- | --- | --- |
+| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | `await ts.langgraph()` | Each tool | Typed refusals reach your code. Rename on collision and the approval gate work. |
+| [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `await ts.llamaindex()` | Each tool | Typed refusals reach your code. Rename on collision and the approval gate work. |
+| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `async with ts.anthropic()` | Each tool | Typed refusals reach your code. Rename on collision and the approval gate work. |
+| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `await ts.adk()` | A whole server | A name collision or an approval rule raises `ConfigError`. |
+| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `await ts.strands()` | A whole server | A name collision or an approval rule raises `ConfigError`. Tool errors come back as text. |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `await ts.openai_agents()` | A whole server | A name collision or an approval rule raises `ConfigError`. |
+| [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `await ts.agent_framework()` | A whole server | A name collision or an approval rule raises `ConfigError`. |
+| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `async with ts.crewai()` | A whole server | A name collision or an approval rule raises `ConfigError`. |
+
+The classes and install extras are in [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md#per-framework-binding).
+The per-framework refusal behaviour is on the
+[MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) page, and the same list
+sits on the [MCP tools overview](https://docs.donkey-kit.dev/tool-access.md#supported-frameworks).
 
 ## A2A agents
 
-A2A is not bound per framework. `donkey.a2a.send()` and `donkey.serve()` are the
-same for every framework, so an agent built with any of the eight can call or
-serve other agents. Framework-native `as_tool()` binding is still planned; see
+A2A is not bound per framework. The same calls work for every framework, so an
+agent built with any of the eight can call or serve other agents.
+
+| Framework | Call another agent | Serve your agent | `as_tool()` binding |
+| --- | --- | --- | --- |
+| [LangGraph](https://docs.donkey-kit.dev/frameworks/langgraph.md) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` | Planned |
+| [Google ADK](https://docs.donkey-kit.dev/frameworks/adk.md) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` | Planned |
+| [Strands](https://docs.donkey-kit.dev/frameworks/strands.md) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` | Planned |
+| [MS Agent Framework](https://docs.donkey-kit.dev/frameworks/agent-framework.md) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` | Planned |
+| [OpenAI Agents SDK](https://docs.donkey-kit.dev/frameworks/openai.md) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` | Planned |
+| [Anthropic SDK](https://docs.donkey-kit.dev/frameworks/anthropic.md) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` | Planned |
+| [CrewAI](https://docs.donkey-kit.dev/frameworks/crewai.md) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` | Planned |
+| [LlamaIndex](https://docs.donkey-kit.dev/frameworks/llamaindex.md) | `donkey.a2a.send()` / `stream()` | `donkey.serve()` | Planned |
+
+Framework-native `as_tool()` binding is planned, not shipped. See
 [Call other agents](https://docs.donkey-kit.dev/a2a/call.md) and the [A2A overview](https://docs.donkey-kit.dev/a2a.md#supported-frameworks).
 
 ## Next steps

@@ -9,9 +9,9 @@
 - [Feature overview](https://docs.donkey-kit.dev/feature-overview.md): (status: live) Every DDK capability at a glance — its purpose, its goal, and what it saves developers — grouped by surface (models, MCP tools, A2A agents) and then by concern.
 - [Use with your coding agent](https://docs.donkey-kit.dev/use-with-your-agent.md): (status: live) Point your coding assistant at these docs — llms.txt, llms-full.txt, and a .md next to every page — so it writes correct governed code.
 
-## Supported frameworks
+## Frameworks
 
-- [Overview](https://docs.donkey-kit.dev/supported-frameworks.md): (status: offline-verified) Which agent frameworks DDK supports on each surface, how deep each one goes, and where the framework-specific how-to lives.
+- [Supported frameworks](https://docs.donkey-kit.dev/supported-frameworks.md): (status: offline-verified) Which agent frameworks DDK supports on each surface, how deep each one goes, and where the framework-specific how-to lives.
 
 ## Models
 

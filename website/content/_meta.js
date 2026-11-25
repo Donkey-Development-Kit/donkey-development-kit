@@ -15,7 +15,7 @@ export default {
     type: 'separator',
     title: 'Frameworks',
   },
-  'supported-frameworks': { title: 'Supported frameworks', theme: { collapsed: false } },
+  'supported-frameworks': 'Supported frameworks',
   '-- surfaces': {
     type: 'separator',
     title: 'Models, tools & agents',
