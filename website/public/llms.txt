@@ -9,6 +9,10 @@
 - [Feature overview](https://docs.donkey-kit.dev/feature-overview.md): (status: live) Every DDK capability at a glance — its purpose, its goal, and what it saves developers — grouped by surface (models, MCP tools, A2A agents) and then by concern.
 - [Use with your coding agent](https://docs.donkey-kit.dev/use-with-your-agent.md): (status: live) Point your coding assistant at these docs — llms.txt, llms-full.txt, and a .md next to every page — so it writes correct governed code.
 
+## Supported frameworks
+
+- [Overview](https://docs.donkey-kit.dev/supported-frameworks.md): (status: offline-verified) Which agent frameworks DDK supports on each surface, how deep each one goes, and where the framework-specific how-to lives.
+
 ## Models
 
 - [Overview](https://docs.donkey-kit.dev/frameworks.md): (status: live) Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
@@ -30,10 +34,6 @@
 - [Serve & expose](https://docs.donkey-kit.dev/a2a/serve.md): (status: offline-verified) Make your agent callable by other agents over A2A — serve it in one line, expose it through the gateway, and develop against a gateway on your laptop.
 - [Call other agents](https://docs.donkey-kit.dev/a2a/call.md): (status: offline-verified) Send official A2A SDK requests to registry-resolved governed agents, with scoped authentication and context-managed streams.
 - [Gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md): (status: offline-verified) Version-specific A2A gateway policy captures, DDK outcomes, and offline replay and telemetry boundaries.
-
-## Supported frameworks
-
-- [Overview](https://docs.donkey-kit.dev/supported-frameworks.md): (status: offline-verified) Which agent frameworks DDK supports on each surface, how deep each one goes, and where the framework-specific how-to lives.
 
 ## Governance (all surfaces)
 

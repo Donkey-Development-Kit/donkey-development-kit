@@ -11,6 +11,11 @@ export default {
   quickstart: 'Quickstart',
   'feature-overview': 'Feature overview',
   'use-with-your-agent': 'Use with your coding agent',
+  '-- frameworks': {
+    type: 'separator',
+    title: 'Frameworks',
+  },
+  'supported-frameworks': { title: 'Supported frameworks', theme: { collapsed: false } },
   '-- surfaces': {
     type: 'separator',
     title: 'Models, tools & agents',
@@ -18,7 +23,6 @@ export default {
   frameworks: { title: 'Models', theme: { collapsed: false } },
   'tool-access': { title: 'MCP tools', theme: { collapsed: false } },
   a2a: { title: 'A2A agents', theme: { collapsed: false } },
-  'supported-frameworks': { title: 'Supported frameworks', theme: { collapsed: false } },
   '-- governance': {
     type: 'separator',
     title: 'Governance (all surfaces)',
