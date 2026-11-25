@@ -42,7 +42,7 @@ aiologic==0.17.1
 aiosignal==1.4.0
 annotated-doc==0.0.7
 annotated-types==0.8.0
-anthropic==2.13.0
+anthropic==2.14.0
 anyio==4.16.0
 asgiref==3.13.0
 ast-serialize==0.13.1
@@ -62,12 +62,12 @@ azure-identity==1.27.0
 azure-monitor-opentelemetry-exporter==1.0.0b59
 azure-search-documents==12.1.0
 azure-storage-blob==12.31.1
-boto3==1.44.10
-botocore==1.44.10
+boto3==1.44.11
+botocore==1.44.11
 certifi==2026.11.20
 cffi==2.0.0
 charset-normalizer==3.5.3
-claude-agent-sdk==0.2.188
+claude-agent-sdk==0.2.189
 click==8.5.1
 clr-loader==0.2.10
 coverage==7.17.5
@@ -142,7 +142,7 @@ oauthlib==4.0.1
 ollama==0.6.3
 onnxruntime==1.32.0
 onnxruntime-genai-core==0.20.0
-openai==3.58.0
+openai==3.59.0
 openai-agents==0.26.0
 openai-chatkit==1.6.5
 opentelemetry-api==1.45.2
@@ -176,7 +176,7 @@ packaging==26.4
 pathspec==1.1.1
 pluggy==1.7.0
 portalocker==4.4.2
-posthog==8.2.1
+posthog==8.2.7
 powerfx==0.0.34
 priority==2.0.0
 propcache==0.5.4
@@ -209,7 +209,7 @@ qdrant-client==1.20.0
 redis==7.2.0
 redisvl==0.32.1
 referencing==0.37.0
-regex==2026.11.23
+regex==2026.11.24
 requests==2.34.2
 requests-oauthlib==2.0.0
 respx==0.23.1
