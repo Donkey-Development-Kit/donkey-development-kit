@@ -41,7 +41,7 @@ Other sections cover A2A where it meets their topic:
   covers the A2A refusal shapes `classify()` types.
 - **Local simulator:** [outbound A2A fault injection](https://docs.donkey-kit.dev/simulator/a2a.md#outbound-a2a-fault-injection)
   and [A2A ingress replay](https://docs.donkey-kit.dev/simulator/a2a.md#a2a-ingress-replay).
-- **Human-in-the-loop:** [A2A Authorization-Code Challenges](https://docs.donkey-kit.dev/hitl.md#a2a-authorization-code-challenges).
+- **Human-in-the-loop:** [A2A Authorization-Code Challenges](https://docs.donkey-kit.dev/hitl/gateway-step-up.md#a2a-authorization-code-challenges).
 - **Observability:** [outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans) and
   [correlation across agent hops](https://docs.donkey-kit.dev/correlation.md#across-agent-hops).
 - **Scan & publish:** [publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents) and

@@ -97,6 +97,19 @@ export const MOVED_ANCHORS = {
     'the-publication-object': '/publishing/publication',
     'verifying-at-runtime-verify': '/publishing/publication',
   },
+  // #1835: the framework helpers and the gateway step-up sections moved to their own pages.
+  '/hitl': {
+    'a2a-authorization-code-challenges': '/hitl/gateway-step-up',
+    'discovered-tools-local-round-trip': '/hitl/gateway-step-up',
+    'gateway-step-up': '/hitl/gateway-step-up',
+    'in-a-google-adk-app': '/hitl/frameworks',
+    'in-a-langgraph-graph': '/hitl/frameworks',
+    'in-a-strands-agent': '/hitl/frameworks',
+    'in-an-openai-agents-sdk-run': '/hitl/frameworks',
+    'step-up-on-a-tool-call': '/hitl/gateway-step-up',
+    'the-framework-approval-helpers': '/hitl/frameworks',
+    'waiting-while-listing-mcp-tools': '/hitl/gateway-step-up',
+  },
 }
 
 // Strip the basePath prefix, query, hash, trailing slash and `.html`, and

@@ -86,12 +86,12 @@ _LEGEND = "the badge legend, which defines the labels"
 _LOCAL = "runs in-process with no gateway contract of its own"
 _GENERATED = "written by generate_docs.py from §8, and checked there"
 ALLOWED: dict[tuple[str, str], str] = {
-    ("hitl.mdx", "| Any Python code |"): (
+    ("hitl/index.mdx", "| Any Python code |"): (
         "the approval runs in the caller's process and has no gateway contract of its own"
     ),
-    ("hitl.mdx", '| <Badge tone="live">Live</Badge> |'): _LEGEND,
-    ("hitl.mdx", '| <Badge tone="neutral">Local round-trip</Badge> |'): _LEGEND,
-    ("hitl.mdx", '| <Badge tone="neutral">Offline-verified</Badge> |'): _LEGEND,
+    ("hitl/index.mdx", '| <Badge tone="live">Live</Badge> |'): _LEGEND,
+    ("hitl/index.mdx", '| <Badge tone="neutral">Local round-trip</Badge> |'): _LEGEND,
+    ("hitl/index.mdx", '| <Badge tone="neutral">Offline-verified</Badge> |'): _LEGEND,
     ("frameworks/index.mdx", '| <Badge tone="accent">Conformance-tested</Badge> |'): _LEGEND,
     ("frameworks/index.mdx", '| <Badge tone="live">Live-verified</Badge> |'): _LEGEND,
     ("frameworks/index.mdx", '| <Badge tone="neutral">Signature-confirmed</Badge> |'): _LEGEND,

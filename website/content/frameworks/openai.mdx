@@ -178,7 +178,7 @@ own `needs_approval`, so `Runner.run` pauses with the call in
 `reject` record the decision on the `RunState`, and
 `Runner.run(agent, state)` resumes (#213). Each
 helper returns an `Approval`; `approve` and `reject` return it with the
-`RunState` on `native`. See [Human approval](/hitl#in-an-openai-agents-sdk-run).
+`RunState` on `native`. See [Human approval](/hitl/frameworks#in-an-openai-agents-sdk-run).
 
 A serialised `RunState` does not preserve DDK's in-process requester evidence.
 DDK registers that evidence in the initial `needs_approval` callback, under

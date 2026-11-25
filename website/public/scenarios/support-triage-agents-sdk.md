@@ -113,7 +113,7 @@ newest Agents SDK release.
   trip included: an `@donkey.tool(approval="required")` wrapped with
   `openai_agents.function_tool` pauses `Runner.run` on the SDK's own
   `needs_approval` and resumes from the `RunState` (#213). See
-  [Human approval](https://docs.donkey-kit.dev/hitl.md#in-an-openai-agents-sdk-run).
+  [Human approval](https://docs.donkey-kit.dev/hitl/frameworks.md#in-an-openai-agents-sdk-run).
 
   **Honest note on the block.** The simulator triggers on the request *count*
   (`every=5`), not by scanning content — it replays a captured fixture, it is

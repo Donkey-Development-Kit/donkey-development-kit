@@ -211,7 +211,7 @@ same request after `.retry_after`, and it goes through once the user approves.
 If the user refuses, DDK raises `GatewayApprovalDenied`. The gateway caches a
 denial, so retrying gets the same answer until it expires.
 
-See [Gateway step-up](https://docs.donkey-kit.dev/hitl.md#gateway-step-up) for how the step-up behaves and
+See [Gateway step-up](https://docs.donkey-kit.dev/hitl/gateway-step-up.md#gateway-step-up) for how the step-up behaves and
 [Identity](https://docs.donkey-kit.dev/identity.md) for acting on behalf of a user. Rehearse it with
 `donkey mock --scenario ciba:pending=2,then=approve`
 ([scenario](https://docs.donkey-kit.dev/simulator.md#cibapendingnthenapprovedeny)).

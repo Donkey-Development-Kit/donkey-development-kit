@@ -103,7 +103,7 @@ tools = await donkey.tools.discover(tags=["hr"], auth=BearerAuth(my_provider))
   once, then raises `AuthError`. A gateway step-up answer is the exception: it
   raises `GatewayApprovalPending` or `GatewayApprovalDenied` at once and keeps
   the credential. To wait for the user instead, see
-  [`wait_for_gateway_approval()`](https://docs.donkey-kit.dev/hitl.md#waiting-while-listing-mcp-tools).
+  [`wait_for_gateway_approval()`](https://docs.donkey-kit.dev/hitl/gateway-step-up.md#waiting-while-listing-mcp-tools).
 - Discovery reads the server URLs from the control plane at `base_url`, so the
   credential follows `base_url`'s rule. If `base_url` comes from the working
   directory's `.donkey-kit.toml` or `.donkey-kit.local.toml` and isn't a

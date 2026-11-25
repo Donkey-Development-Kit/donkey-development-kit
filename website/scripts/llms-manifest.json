@@ -49,6 +49,8 @@
   "frameworks/routing.md",
   "frameworks/strands.md",
   "hitl.md",
+  "hitl/frameworks.md",
+  "hitl/gateway-step-up.md",
   "identity.md",
   "index.md",
   "policies.md",

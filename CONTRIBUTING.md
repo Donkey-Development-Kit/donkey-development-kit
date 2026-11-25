@@ -1045,7 +1045,7 @@ start with `docs/` or are `README.md`, pages under `website/content/`):
 | `core/_verify.py`, `docs/verified-apis.md` | `reference/unsupported-boundary.mdx`, and any page that states the changed status (`roadmap.mdx`, `frameworks/index.mdx`) |
 | `core/budget.py` | `budget.mdx` |
 | `core/reactions.py`, `core/transport/*` `_on_refusal` | `refusal-handlers.mdx` |
-| `core/approvals.py`, `core/toolspec.py` (`@donkey.tool(approval=...)`, `donkey.approvals`) | `hitl.mdx`, `decorators.mdx` |
+| `core/approvals.py`, `core/toolspec.py` (`@donkey.tool(approval=...)`, `donkey.approvals`) | `hitl/index.mdx`, `decorators.mdx` |
 | `core/telemetry.py` | `telemetry.mdx`, `correlation.mdx` |
 | `core/cost.py` | `cost-attribution.mdx` |
 | `core/lastcall.py` | `reference/last-call.mdx`, `frameworks/routing.mdx` |

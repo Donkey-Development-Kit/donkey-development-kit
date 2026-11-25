@@ -72,9 +72,9 @@ Other sections cover MCP where it meets their topic:
   and [MCP PII metadata](https://docs.donkey-kit.dev/errors.md#mcp-pii-metadata).
 - **Local simulator:** [MCP tool fault injection](https://docs.donkey-kit.dev/simulator/mcp.md#mcp-tool-fault-injection)
   and [packaged MCP captures](https://docs.donkey-kit.dev/simulator/mcp.md#packaged-mcp-captures).
-- **Human-in-the-loop:** [discovered tools](https://docs.donkey-kit.dev/hitl.md#discovered-tools-local-round-trip),
-  [waiting while listing MCP tools](https://docs.donkey-kit.dev/hitl.md#waiting-while-listing-mcp-tools) and
-  [step-up on a tool call](https://docs.donkey-kit.dev/hitl.md#step-up-on-a-tool-call).
+- **Human-in-the-loop:** [discovered tools](https://docs.donkey-kit.dev/hitl/gateway-step-up.md#discovered-tools-local-round-trip),
+  [waiting while listing MCP tools](https://docs.donkey-kit.dev/hitl/gateway-step-up.md#waiting-while-listing-mcp-tools) and
+  [step-up on a tool call](https://docs.donkey-kit.dev/hitl/gateway-step-up.md#step-up-on-a-tool-call).
 - **Identity:** [acting for a user](https://docs.donkey-kit.dev/tool-access/binding.md#acting-for-a-user) with a
   bound `ToolSet`, and [Identity](https://docs.donkey-kit.dev/identity.md) for `donkey.as_user()`.
 - **Scan & publish:** [publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers)
