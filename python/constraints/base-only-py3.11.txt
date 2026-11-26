@@ -13,7 +13,7 @@ coverage==7.17.5
 grimp==3.20
 h11==0.16.0
 httpcore==1.0.9
-httpx==0.28.1
+httpx==0.29.0
 idna==3.20
 import-linter==2.17
 iniconfig==2.3.1
@@ -38,7 +38,7 @@ respx==0.23.1
 rich==15.0.0
 ruff==0.17.6
 shellingham==1.5.4
-typer==0.29.2
+typer==0.29.3
 typing-extensions==4.16.0
 typing-inspection==0.4.5
 vulture==2.16
