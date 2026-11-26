@@ -24,7 +24,7 @@ a gateway policy. The authoritative discriminator is the error **`type`** plus
 specific headers.
 
 For what each model policy means for your code, policy by policy, see
-[Model gateway policies](/frameworks/gateway-policies).
+[Model gateway policies](/governance/gateway-policies/models).
 
 | Rejection | HTTP | Discriminator | Maps to |
 |---|---|---|---|
@@ -174,7 +174,7 @@ A2A PII and schema-policy responses still lack a reliable policy identifier:
 guardrail headers identifies PII. Fail-closed Azure and Bedrock HTTP `503`
 responses remain `UpstreamModelError`, not `ContentSafetyBlocked` or
 `GatewayUnavailable`. A Bedrock A2A content-block shape remains unverified.
-See [A2A gateway policies](/a2a/gateway-policies) for the version-specific
+See [A2A gateway policies](/governance/gateway-policies/a2a) for the version-specific
 capture inventory and the difference between refusals and auth-required tasks.
 
 When you explicitly call `classify(response)` on a `jsonrpc: "2.0"` error
@@ -198,7 +198,7 @@ Original HTTP responses on errors remain potentially sensitive; do not log them.
 
 ### MCP PII metadata
 
-The [MCP gateway policy inventory](/tool-access/gateway-policies) covers
+The [MCP gateway policy inventory](/governance/gateway-policies/mcp) covers
 policy configuration boundaries and which native bindings preserve these refusals.
 
 For an MCP PII rejection, `.policy` is `"mcp-pii-detector"`, `.phase` is

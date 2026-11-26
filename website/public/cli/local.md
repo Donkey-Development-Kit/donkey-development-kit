@@ -36,7 +36,7 @@ donkey dev my_agent:handle --port 8000 --scenario pii_block:every=5
 
 `TARGET` is `module:attribute`, imported from the current directory. The
 ingress, the rules it takes and where its rejection shapes come from are in
-[Simulated ingress](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress). A target that can't be loaded or
+[Simulated ingress](https://docs.donkey-kit.dev/registry/serve.md#simulated-ingress). A target that can't be loaded or
 isn't marked with `@donkey.agent`, and an invalid `--scenario` (including
 `budget`), exit with code `2`.
 

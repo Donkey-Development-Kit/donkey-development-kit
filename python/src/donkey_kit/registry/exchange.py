@@ -77,7 +77,7 @@ class ExchangeRegistry:
         cfg: The resolved configuration.
         http_client: The control-plane client.
 
-    Docs: https://docs.donkey-kit.dev/tool-access/discovery
+    Docs: https://docs.donkey-kit.dev/registry/discovery/mcp
     """
 
     def __init__(self, cfg: DonkeyConfig, http_client: DonkeyAsyncClient) -> None:

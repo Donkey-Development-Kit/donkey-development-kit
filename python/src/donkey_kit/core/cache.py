@@ -42,7 +42,7 @@ class TTLCache(Generic[T]):
         ttl_s: Default lifetime of an entry, in seconds.
         clock: Monotonic time source; injected so tests do not sleep.
 
-    Docs: https://docs.donkey-kit.dev/tool-access/lockfile#registry-caching
+    Docs: https://docs.donkey-kit.dev/registry/lockfile#registry-caching
     """
 
     def __init__(self, *, ttl_s: float, clock: Callable[[], float] = time.monotonic) -> None:

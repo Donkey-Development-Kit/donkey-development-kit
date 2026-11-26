@@ -113,7 +113,7 @@ framework client your agent already uses and adds:
   your code into Exchange assets with their tools and agent cards,
   `donkey.tools.discover()` binds governed MCP tools, and `donkey.serve()` and
   `donkey expose` make your agent callable by other agents over A2A through the
-  gateway. See [Scan & publish](https://docs.donkey-kit.dev/publishing.md), [MCP tools](https://docs.donkey-kit.dev/tool-access.md) and
+  gateway. See [Scan & publish](https://docs.donkey-kit.dev/registry/publish.md), [MCP tools](https://docs.donkey-kit.dev/tool-access.md) and
   [A2A agents](https://docs.donkey-kit.dev/a2a.md).
 
 The division of labour is deliberate. The gateway enforces; DDK makes the

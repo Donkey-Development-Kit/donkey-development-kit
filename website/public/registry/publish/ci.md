@@ -1,16 +1,10 @@
----
-description: Run donkey publish from GitHub Actions, GitLab CI or Bitbucket Pipelines, with the same plan, artifact and exit code on each provider.
-status: live
----
-
-import { Callout } from 'nextra/components'
-import { Badge } from '../../components'
-
 # CI pipelines
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 Each recipe runs `donkey publish` in your pipeline. The plan, the JSON artifact
 and the exit code behave the same on every provider. The overview of what
-publishing does is on [Scan & publish](/publishing).
+publishing does is on [Scan & publish](https://docs.donkey-kit.dev/registry/publish.md).
 
 ## From GitHub Actions
 
@@ -52,12 +46,10 @@ need the org ID either. The action passes the credentials to `donkey` only
 through the environment. A credential input left empty keeps the `ANYPOINT_*`
 variable your job already sets.
 
-<Callout type="warning">
 Pass `client-secret` from a `secrets.*` value only. GitHub masks secrets before
 any step runs. The action masks the input in its first step, but the runner
 prints that step's environment before the mask takes effect, so a value from a
 variable or another step's output shows in the log once.
-</Callout>
 
 | Input | Default | |
 | --- | --- | --- |
@@ -85,12 +77,12 @@ partway. The step's outputs are the `published`, `unchanged`, `incomplete`,
 JSON that `donkey publish --json` printed. A failed publish fails the step with
 `donkey`'s exit code, and each line `donkey` printed to stderr becomes an error
 annotation, so the fix shows on the run's page. Re-running the failed job
-finishes the publish (see [When a publish fails](/publishing#when-a-publish-fails)).
+finishes the publish (see [When a publish fails](https://docs.donkey-kit.dev/registry/publish.md#when-a-publish-fails)).
 What `donkey` prints comes from the repository it scans, so the summary shows
 every field as plain text, and the stderr echo can't run a workflow command.
 
 The action reads only the document of its own release: `plan_format: 1` on a
-dry run, `publish_format: 1` otherwise (see [JSON output](/cli#json-output)).
+dry run, `publish_format: 1` otherwise (see [JSON output](https://docs.donkey-kit.dev/cli.md#json-output)).
 If the `donkey-kit` input installs a release that prints another, the action
 writes no summary and no outputs. It fails the step with an annotation that
 names the format it found, even when the publish succeeded.
@@ -137,7 +129,7 @@ also prints in the log. Both are kept even when the job fails. A dotenv report
 gives jobs that `needs:` this one the `DONKEY_PUBLISHED`, `DONKEY_UNCHANGED`,
 `DONKEY_INCOMPLETE`, `DONKEY_FAILED` and `DONKEY_NOT_ATTEMPTED` counts. A
 failed publish fails the job with `donkey`'s exit code, and re-running the job
-finishes the publish (see [When a publish fails](/publishing#when-a-publish-fails)). Like
+finishes the publish (see [When a publish fails](https://docs.donkey-kit.dev/registry/publish.md#when-a-publish-fails)). Like
 the action, the component reads only the JSON format of the donkey-kit it
 pins, and drops control characters from what `donkey` prints.
 
@@ -255,5 +247,5 @@ run links: `donkey publish` reads them only from GitHub Actions.
 
 ## Next steps
 
-- [Scan & publish](/publishing): the scan, plan and publish flow these pipelines run.
-- [Publication & verify()](/publishing/publication): the runtime check that a published version still matches.
+- [Scan & publish](https://docs.donkey-kit.dev/registry/publish.md): the scan, plan and publish flow these pipelines run.
+- [Publication & verify()](https://docs.donkey-kit.dev/registry/publish/publication.md): the runtime check that a published version still matches.

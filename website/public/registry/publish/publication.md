@@ -1,12 +1,6 @@
----
-description: The Publication object, descriptor derivation, and verify(), the read-only runtime check that a live MCP server or A2A agent still matches its published version.
-status: live
----
-
-import { Callout } from 'nextra/components'
-import { Badge } from '../../components'
-
 # Publication & verify()
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 ## The `Publication` object
 
@@ -46,7 +40,7 @@ pub = Publication(
 ```
 
 As planned, `asset_type` will determine which descriptor is required and how it
-is generated <Badge tone="roadmap">Roadmap</Badge>:
+is generated Roadmap:
 
 | `asset_type` | Descriptor | Generated from |
 |---|---|---|
@@ -55,7 +49,7 @@ is generated <Badge tone="roadmap">Roadmap</Badge>:
 | `AGENT` | agent descriptor (no A2A surface) | framework introspection, best-effort |
 | `API` | OpenAPI / AsyncAPI | user-supplied file; no generation |
 
-## `descriptor="auto"` — deriving the spec from code <Badge tone="roadmap">Roadmap</Badge>
+## `descriptor="auto"` — deriving the spec from code Roadmap
 
 This section is the planned design: a `Publication` doesn't derive its
 descriptor yet. Hand-maintained catalog descriptors go stale within a sprint, so generation is
@@ -83,7 +77,6 @@ descriptor="auto:check"    # generate, diff against committed file, fail on mism
 - **`auto`** (the default) imports your module, locates the tool and agent
   objects, and reads their already-computed schemas. No server, no network,
   works in CI. Importing user code executes it, so tool definitions must be
-  import-safe; you will declare explicit entrypoints rather than scanning whole
   packages, in a planned table such as:
 
   ```toml
@@ -103,13 +96,11 @@ A planned `donkey publish --cross-check` will run `auto` and `auto:live` and dif
 them. A disagreement will mean either dynamic registration the object graph does
 not reflect, or a broken framework adapter.
 
-<Callout type="info">
   Type hints give the **shape**, not the **meaning** — `department: str` becomes
   `{"type": "string"}` and says nothing about which departments are valid, or
   when to use this tool over a similar one. `auto` will fail publication on a
   description that is tautological or missing, and `preview()` will report
   description quality. Today `donkey scan` already fails on such a description.
-</Callout>
 
 ## Verifying at runtime: `verify()`
 
@@ -137,7 +128,7 @@ async with Donkey.from_env() as donkey:
 
 It reads the `tools` of the version's `mcp-metadata` file from Exchange, and
 lists the live server's tools through its gateway instance, with the same
-governance check and credential as a [`donkey.tools`](/tool-access) binding:
+governance check and credential as a [`donkey.tools`](https://docs.donkey-kit.dev/tool-access.md) binding:
 an ungoverned server raises `UngovernedMcpServer` and is sent nothing. A tool
 added or removed, a changed description, or a changed set of parameter names
 is drift. Parameter types are not compared, because `donkey publish` records
@@ -149,7 +140,7 @@ before A2A 1.0) and the card the agent serves at
 `.well-known/agent-card.json` through its gateway instance, with the same
 governance check and gateway credential: an ungoverned agent raises
 `RegistryError` and is sent nothing, and so does one whose gateway URL is not
-[`https://`](/tool-access/discovery#resolving-an-mcp-server). A changed card description, a changed set
+[`https://`](https://docs.donkey-kit.dev/registry/discovery/mcp.md#resolving-an-mcp-server). A changed card description, a changed set
 of default input or output modes, a skill added or removed, or a skill whose
 description changed is drift. The fields that say where and how this deployment
 serves the agent are not compared: `url`, `supportedInterfaces`,
@@ -169,7 +160,7 @@ card = await donkey.tools.live_card("${ANYPOINT_ORG_ID}/hr-agent/0.1.0")
 
 Both methods are **provisional**: unlike the rest of `donkey.tools`, they may
 change in a minor release, with a migration note in the release notes. See
-[Stability](/reference/api#stability).
+[Stability](https://docs.donkey-kit.dev/reference/api.md#stability).
 
 By default each difference is logged at `WARNING` and returned, so a drifted
 catalog is loud without taking down production traffic. With
@@ -177,7 +168,7 @@ catalog is loud without taking down production traffic. With
 lists every difference. `API` publications are not verified and raise
 `NotImplementedError`.
 
-[`donkey verify`](/cli/ship#donkey-verify) runs the same check from CI, for every MCP
+[`donkey verify`](https://docs.donkey-kit.dev/cli/ship.md#donkey-verify) runs the same check from CI, for every MCP
 server and `a2a_v1` agent in the repository.
 
 Both read the live side at a gateway URL that discovery read from the control
@@ -188,9 +179,9 @@ sent only when it comes from those files too, or when `DONKEY_TRUST_PROJECT_CONF
 is set. Otherwise `verify()` raises `ConfigError` before anything is sent, and
 `donkey verify` reports each such asset as an `error` with that message and
 exits `1`. See
-[Which credentials a URL receives](/reference/configuration#which-credentials-a-url-receives).
+[Which credentials a URL receives](https://docs.donkey-kit.dev/reference/configuration.md#which-credentials-a-url-receives).
 
 ## Next steps
 
-- [Scan & publish](/publishing): how a publish is planned and run.
-- [CI pipelines](/publishing/ci): run the publish from your pipeline.
+- [Scan & publish](https://docs.donkey-kit.dev/registry/publish.md): how a publish is planned and run.
+- [CI pipelines](https://docs.donkey-kit.dev/registry/publish/ci.md): run the publish from your pipeline.

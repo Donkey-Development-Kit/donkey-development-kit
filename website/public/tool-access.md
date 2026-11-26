@@ -10,7 +10,7 @@ tool objects** — the same "no wrapper" approach as [model access](https://docs
 A lockfile pins what each server listed, so a catalog change made at the
 gateway fails loudly instead of silently changing your agent's tools. When a
 gateway policy refuses a tool call, DDK raises the refusals it can identify as
-typed exceptions; [Gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) lists what
+typed exceptions; [Gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md) lists what
 each policy does and how far that typing reaches per framework.
 
 Discovery and binding run end to end through the governed gateway, with
@@ -47,7 +47,7 @@ Name search and asset type filters live one layer down, on
 `donkey.registry.search()`, which is live.
 
 "Governed" is a computed, environment-scoped predicate rather than a flag in
-Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md).
+Exchange — see [Discovery, search & filter](https://docs.donkey-kit.dev/registry/discovery/mcp.md).
 
 ## Supported frameworks
 
@@ -71,7 +71,7 @@ Per-tool bindings return typed refusals from a tool call to your code.
 Whole-server bindings can't rename one tool or gate one call, and some return
 tool errors as text, so the policy metadata is lost. See
 [Whole-server bindings](https://docs.donkey-kit.dev/tool-access/binding.md#whole-server-bindings) and the
-per-framework behaviour on the [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
+per-framework behaviour on the [MCP gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md)
 page. The full map across all three surfaces is on
 [Supported frameworks](https://docs.donkey-kit.dev/supported-frameworks.md).
 
@@ -103,8 +103,8 @@ Other sections cover MCP where it meets their topic:
   [step-up on a tool call](https://docs.donkey-kit.dev/hitl/gateway-step-up.md#step-up-on-a-tool-call).
 - **Identity:** [acting for a user](https://docs.donkey-kit.dev/tool-access/binding.md#acting-for-a-user) with a
   bound `ToolSet`, and [Identity](https://docs.donkey-kit.dev/identity.md) for `donkey.as_user()`.
-- **Scan & publish:** [publishing MCP servers](https://docs.donkey-kit.dev/publishing.md#publishing-mcp-servers)
-  and [declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
+- **Scan & publish:** [publishing MCP servers](https://docs.donkey-kit.dev/registry/publish.md#publishing-mcp-servers)
+  and [declaring how an MCP server is reached](https://docs.donkey-kit.dev/registry/publish.md#declaring-how-an-mcp-server-is-reached).
 - **CLI:** [`donkey scan`](https://docs.donkey-kit.dev/cli/ship.md#donkey-scan), [`donkey publish`](https://docs.donkey-kit.dev/cli/ship.md#donkey-publish)
   and [`donkey mock`](https://docs.donkey-kit.dev/cli/local.md#donkey-mock).
 - **Reference:** [connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md#per-operation) and the
@@ -112,7 +112,7 @@ Other sections cover MCP where it meets their topic:
 
 ## Next steps
 
-1. [Discover](https://docs.donkey-kit.dev/tool-access/discovery.md) the governed tools your agent needs.
+1. [Discover](https://docs.donkey-kit.dev/registry/discovery/mcp.md) the governed tools your agent needs.
 2. [Bind](https://docs.donkey-kit.dev/tool-access/binding.md) them into your framework.
-3. Read what the [gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) on your MCP
-   instance do, and pin the result with the [lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md).
+3. Read what the [gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md) on your MCP
+   instance do, and pin the result with the [lockfile](https://docs.donkey-kit.dev/registry/lockfile.md).

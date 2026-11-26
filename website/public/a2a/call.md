@@ -18,7 +18,7 @@ binding remains planned.
 pip install "donkey-kit[a2a]"
 ```
 
-The same extra backs [`donkey.serve()`](https://docs.donkey-kit.dev/a2a/serve.md). Accessing `donkey.a2a` does not
+The same extra backs [`donkey.serve()`](https://docs.donkey-kit.dev/registry/serve.md). Accessing `donkey.a2a` does not
 with the install command before registry requests.
 
 ## Send and stream
@@ -107,7 +107,7 @@ HTTP pool remains usable for later calls.
 - `AgentHandle` remains an immutable, resolution-only value from
   `ExchangeRegistry.resolve_agent()`. Pass the Exchange reference to the facade,
   not a handle, mutated handle or arbitrary URL. See
-  [Resolving an A2A agent](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-a2a-agent).
+  [Resolving an A2A agent](https://docs.donkey-kit.dev/registry/discovery/a2a.md).
 - The resolved URL follows the
   [`https://` rule](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https) of the
   URLs you configure, because the gateway credential is sent to it. A gateway
@@ -125,11 +125,11 @@ HTTP pool remains usable for later calls.
   version default when `protocolVersion` is omitted.
 - Framework-native `as_tool()` binding remains planned, following
   [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md). No binding method is added to the handle.
-- To make *your* agent callable by others over A2A, see [Serve & expose](https://docs.donkey-kit.dev/a2a/serve.md).
+- To make *your* agent callable by others over A2A, see [Serve & expose](https://docs.donkey-kit.dev/registry/serve.md).
 
 ## Gateway Refusals
 
-The [A2A gateway policy inventory](https://docs.donkey-kit.dev/a2a/gateway-policies.md) separates v0.3/v1
+The [A2A gateway policy inventory](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md) separates v0.3/v1
 captures, typed outcomes, non-blocking annotations and unverified behavior.
 
 Gateway policies can reject a remote A2A call before it reaches the agent.
@@ -234,7 +234,7 @@ core transport and are decoded by the official SDK, not the GenAI SSE scanner.
 Raw responses on exceptions remain potentially sensitive. This does not add
 A2A PII/schema-specific typing or framework refusal translation.
 
-`as_tool()` remains planned. [`donkey dev`](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) defaults to
+`as_tool()` remains planned. [`donkey dev`](https://docs.donkey-kit.dev/registry/serve.md#simulated-ingress) defaults to
 v1 ingress replay; `--protocol-version 0.3.0` selects legacy PII/rate
 `message/send` captures, not this outbound authorization-code challenge.
 Its local unsupported-call HTTP `400` is not a gateway policy refusal.
@@ -247,4 +247,4 @@ which still selects the official compatibility transport from the remote card.
 
 - [Telemetry and correlation](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans)
 - [Typed errors and retry behavior](https://docs.donkey-kit.dev/errors.md)
-- [Serve your own A2A agent](https://docs.donkey-kit.dev/a2a/serve.md)
+- [Serve your own A2A agent](https://docs.donkey-kit.dev/registry/serve.md)

@@ -33,7 +33,7 @@ and bounded-test guidance.
   were run against local MCP servers.
 </Callout>
 
-Once [discovery](/tool-access/discovery) hands you a `ToolSet`, binding turns
+Once [discovery](/registry/discovery/mcp) hands you a `ToolSet`, binding turns
 governed MCP servers into a framework's own tool objects — nothing wrapped,
 nothing re-implemented.
 
@@ -309,7 +309,7 @@ instance. The refusal happens before any connection opens, so:
   switch apply to every tool the agent can call.
 
 The error names each refused server (`.servers`) and each governance check it
-failed (`.reasons`, from [`explain()`](/tool-access/discovery)):
+failed (`.reasons`, from [`explain()`](/registry/discovery/mcp)):
 
 ```python
 from donkey_kit import UngovernedMcpServer
@@ -414,7 +414,7 @@ partial bytes. Status and headers remain available: an authentication status
 can still raise `AuthError`, while an unclassifiable listing failure raises
 `ToolInvocationError`. A partial body never becomes an approval response.
 For locked per-tool metadata guarantees and whole-server limitations, see
-[Pinning & lockfile](/tool-access/lockfile#check-against-the-lock).
+[Pinning & lockfile](/registry/lockfile#check-against-the-lock).
 
 ### Tools outside your access profile
 
@@ -462,7 +462,7 @@ tool that ran and failed returns a result with `isError: true`, never
 
 ### MCP policy refusals
 
-See [MCP gateway policies](/tool-access/gateway-policies) for the policy inventory,
+See [MCP gateway policies](/governance/gateway-policies/mcp) for the policy inventory,
 gateway-visible catalog changes and the limits of each captured behavior.
 
 Captured MCP PII Detector refusals on tool requests and responses raise
@@ -489,6 +489,6 @@ remain ambiguous, not typed policy refusals. Successful results and
 
 ## Related
 
-- [Discovery, search & filter](/tool-access/discovery) — produce the `ToolSet`.
+- [Discovery, search & filter](/registry/discovery/mcp) — produce the `ToolSet`.
 - [A2A agent tools](/a2a/call) — bind a remote agent the same way.
 - [Frameworks](/frameworks) — governed model access per framework.

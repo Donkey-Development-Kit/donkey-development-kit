@@ -1,6 +1,5 @@
 export default {
   index: 'Overview',
-  'gateway-policies': 'Gateway policies',
   routing: 'Routing & fallback',
   compatibility: 'Version compatibility',
   // The adapter pages keep their URLs and are linked from Supported frameworks.

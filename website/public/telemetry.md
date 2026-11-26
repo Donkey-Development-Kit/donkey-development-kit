@@ -80,7 +80,7 @@ A [tool that needs approval](https://docs.donkey-kit.dev/hitl.md) records each s
 `.approved`, `.rejected` or `.timed_out`). The event names the approver and
 carries `donkey.correlation_id`, but never the tool's arguments.
 
-Each [tool discovery](https://docs.donkey-kit.dev/tool-access/discovery.md) is a `donkey.tools.discover` span,
+Each [tool discovery](https://docs.donkey-kit.dev/registry/discovery/mcp.md) is a `donkey.tools.discover` span,
 and each `donkey.tools.warm()` a `donkey.tools.warm` span. `donkey.discover.cache`
 is `hit` when the set came from the cache and `miss` when the registry was read.
 `donkey.discover.servers` counts the servers in the set, and
@@ -143,7 +143,7 @@ This behavior is **OFFLINE-VERIFIED**. Successful gateway send and SSE are
 NOT live verified by this implementation yet; refused streaming requests
 before SSE are not successful streaming evidence.
 
-The [A2A policy inventory](https://docs.donkey-kit.dev/a2a/gateway-policies.md#non-blocking-policies) records
+The [A2A policy inventory](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md#non-blocking-policies) records
 the captured quality headers separately. Successful delegation HTTP responses
 record `donkey.a2a.quality.evaluation="yes"`, a finite numeric
 `donkey.a2a.quality.score`, and `donkey.a2a.quality.status="completed"` when

@@ -188,7 +188,7 @@ never-awaited coroutine and writes no lockfile.
 path = await donkey.tools.lock(tags=["inventory"])
 ```
 
-See [Pinning & lockfile](/tool-access/lockfile).
+See [Pinning & lockfile](/registry/lockfile).
 
 ### 3. Some refusals get a narrower type
 

@@ -1,7 +1,8 @@
-// Sidebar order, grouped by surface first (epic #1824). The three surfaces
-// (Models, MCP tools, A2A agents) share one group; the groups after it apply
-// to every surface. A surface folder is expanded by default with
-// `theme: { collapsed: false }`; other folders follow `defaultMenuCollapseLevel`.
+// Sidebar order, grouped by capability first, surface second (#1851, revising the
+// surface-first layout of epic #1824). Each capability is a group or a folder, and
+// where a capability differs by surface its surfaces are same-named leaf pages in a
+// fixed order: Models, MCP tools, A2A agents.
+// `display: 'children'` lifts a container folder's children into its parent group.
 export default {
   '-- get-started': {
     type: 'separator',
@@ -11,22 +12,25 @@ export default {
   quickstart: 'Quickstart',
   'feature-overview': 'Feature overview',
   'use-with-your-agent': 'Use with your coding agent',
-  '-- frameworks': {
+  '-- connect': {
     type: 'separator',
-    title: 'Frameworks',
+    title: 'Connect',
   },
+  connect: 'Overview',
+  frameworks: { title: 'Models', theme: { collapsed: true } },
+  'tool-access': { title: 'MCP tools', theme: { collapsed: true } },
+  a2a: { title: 'A2A agents', theme: { collapsed: true } },
   'supported-frameworks': 'Supported frameworks',
-  '-- surfaces': {
+  '-- registry': {
     type: 'separator',
-    title: 'Models, tools & agents',
+    title: 'Registry & catalog',
   },
-  frameworks: { title: 'Models', theme: { collapsed: false } },
-  'tool-access': { title: 'MCP tools', theme: { collapsed: false } },
-  a2a: { title: 'A2A agents', theme: { collapsed: false } },
+  registry: { title: 'Registry & catalog', theme: { collapsed: false } },
   '-- governance': {
     type: 'separator',
-    title: 'Governance (all surfaces)',
+    title: 'Governance',
   },
+  governance: { display: 'children' },
   errors: 'Typed refusals',
   'refusal-handlers': 'Refusal handlers',
   'custom-policies': 'Custom policies',
@@ -49,7 +53,6 @@ export default {
   testing: 'Testing & conformance',
   decorators: 'Decorators',
   cli: 'CLI',
-  publishing: 'Scan & publish',
   troubleshooting: 'Troubleshooting',
   '-- learn': {
     type: 'separator',

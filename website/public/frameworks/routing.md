@@ -153,7 +153,7 @@ in the TypeScript SDK.
 
 ## Next steps
 
-- [Gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md): every model policy the gateway can apply, and the typed exception each one raises.
+- [Gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/models.md): every model policy the gateway can apply, and the typed exception each one raises.
 - [`last_call` fields](https://docs.donkey-kit.dev/reference/last-call.md): the routing, fallback, substitution and cache fields in full.
 - [Typed refusals](https://docs.donkey-kit.dev/errors.md): `ModelNotRoutable` and the other refusals a routed call can raise.
 - [OpenTelemetry spans](https://docs.donkey-kit.dev/telemetry.md): the span attributes these signals are recorded on.

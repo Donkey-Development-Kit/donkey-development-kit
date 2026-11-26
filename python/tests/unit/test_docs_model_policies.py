@@ -13,8 +13,8 @@ from donkey_kit.core import errors
 
 _ROOT = Path(__file__).resolve().parents[3]
 _CONTENT = _ROOT / "website" / "content"
-_PAGE = _CONTENT / "frameworks" / "gateway-policies.mdx"
-_ROUTE = "/frameworks/gateway-policies"
+_PAGE = _CONTENT / "governance" / "gateway-policies" / "models.mdx"
+_ROUTE = "/governance/gateway-policies/models"
 
 pytestmark = pytest.mark.skipif(
     not _CONTENT.is_dir(), reason="the repository docs are not included in the sdist"
@@ -49,10 +49,10 @@ def _section(text: str, heading: str) -> str:
     return text[start:] if end == -1 else text[start:end]
 
 
-def test_model_policy_page_is_in_the_models_nav() -> None:
+def test_model_policy_page_is_in_the_gateway_policies_nav() -> None:
     assert _PAGE.is_file()
-    nav = (_CONTENT / "frameworks" / "_meta.js").read_text(encoding="utf-8")
-    assert "'gateway-policies': 'Gateway policies'" in nav
+    nav = (_CONTENT / "governance" / "gateway-policies" / "_meta.js").read_text(encoding="utf-8")
+    assert "models: 'Models'" in nav
 
 
 def test_model_policy_page_names_every_typed_model_refusal() -> None:
@@ -78,7 +78,7 @@ def test_model_policy_page_is_linked_from_the_pages_it_summarises() -> None:
         "reference/last-call.mdx",
         "custom-policies.mdx",
         "frameworks/index.mdx",
-        "tool-access/gateway-policies.mdx",
-        "a2a/gateway-policies.mdx",
+        "governance/gateway-policies/mcp.mdx",
+        "governance/gateway-policies/a2a.mdx",
     ):
         assert _ROUTE in (_CONTENT / relative).read_text(encoding="utf-8"), relative

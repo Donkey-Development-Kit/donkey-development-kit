@@ -1,0 +1,40 @@
+---
+description: Resolve a published A2A agent from Exchange to its deployed gateway endpoint with donkey.registry.resolve_agent(), before calling it.
+status: live
+---
+
+import { Badge } from '../../../components'
+
+# Discovery for A2A agents
+
+Finding another agent works like finding an MCP server: the Exchange reference
+goes in, the version's deployed gateway instance comes out. The reads behind it
+are the same ones [MCP discovery](/registry/discovery/mcp#resolving-an-mcp-server)
+documents. There is no filter-and-bind step for agents. You resolve one agent
+by its reference and then call it.
+
+## Resolving an A2A agent
+
+`donkey.registry.resolve_agent()` is <Badge tone="live" ledger="§6 Does an A2A agent resolve">Live</Badge>. It does
+for an A2A agent asset what `resolve_mcp()` does for an MCP server, with the
+same reads, and finds the version's deployed A2A instance:
+
+```python
+agent = await donkey.registry.resolve_agent("<group-id>/claims-triage-agent/1.0.0")
+print(agent.endpoint_url)   # https://<gateway-host>/<instance-path>/
+```
+
+The agent's card is at `endpoint_url` + `.well-known/agent-card.json`. It raises
+`RegistryError` in the same cases as `resolve_mcp()`, including a gateway URL
+that is not `https://`, and like it sends no gateway credential. The immutable
+handle is resolution-only. Use [`donkey.a2a.send()` or `stream()`](/a2a/call)
+with the Exchange reference to call the agent; that provisional surface is
+offline-verified, not yet live-verified for successful gateway send/SSE.
+Framework-native `AgentHandle.as_tool()` remains planned.
+
+
+## Related
+
+- [Call other agents](/a2a/call) — `donkey.a2a.send()` and `stream()` resolve the reference for you.
+- [Discovery for MCP tools](/registry/discovery/mcp) — `resolve_mcp()`, search and `explain()`.
+- [A2A gateway policies](/governance/gateway-policies/a2a) — what the gateway enforces on the call.

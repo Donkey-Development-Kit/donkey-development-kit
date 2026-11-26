@@ -206,10 +206,10 @@ found 1 agent, 2 tools, 1 MCP server
     .donkey-kit.toml:0  invalid-endpoint  mcp server sku-manager: endpoint has a query parameter 'api_key' that looks like a credential; the governed transport supplies credentials, so remove them from the URL
   ```
 
-  See [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
+  See [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/registry/publish.md#declaring-how-an-mcp-server-is-reached).
 - An agent's protocol and endpoint come the same way from a
   `[donkey.agents.<name>]` table. See
-  [Declaring how an agent is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-agent-is-reached).
+  [Declaring how an agent is reached](https://docs.donkey-kit.dev/registry/publish.md#declaring-how-an-agent-is-reached).
 - Issues cover a missing, tautological or too-short description, an invalid
   service ID or skill list, a service ID used twice, two tools with the same
   name on one server, a file that fails to parse, and an invalid
@@ -223,7 +223,7 @@ code always gives the same bytes and a CI diff shows only real changes. The
 `digest` field hashes what would be published and leaves out file paths and
 line numbers, so moving code around does not change it.
 
-Scan is the first half of [Scan & publish](https://docs.donkey-kit.dev/publishing.md): the model it builds is
+Scan is the first half of [Scan & publish](https://docs.donkey-kit.dev/registry/publish.md): the model it builds is
 the input `donkey publish` reads.
 
 ## `donkey scaffold`
@@ -397,7 +397,7 @@ With `--json` it prints the publish document (`publish_format: 1`; with
 It exits `0` when every asset is `published` or `unchanged`, `1` on an issue
 or when an asset is `failed` or `incomplete` (what was published before stays
 published), and `2` on a missing path, invalid config or missing credentials.
-See [Scan & publish](https://docs.donkey-kit.dev/publishing.md#when-a-publish-fails).
+See [Scan & publish](https://docs.donkey-kit.dev/registry/publish.md#when-a-publish-fails).
 
 ## `donkey verify`
 
@@ -406,7 +406,7 @@ donkey verify .          # each published MCP server and A2A agent against its l
 donkey --json verify .   # the same, with each asset's outcome as JSON
 ```
 
-Runs [`Publication.verify()`](https://docs.donkey-kit.dev/publishing/publication.md#verifying-at-runtime-verify) on each
+Runs [`Publication.verify()`](https://docs.donkey-kit.dev/registry/publish/publication.md#verifying-at-runtime-verify) on each
 MCP server and `a2a_v1` agent `donkey publish` would register, at the version
 declared in `[donkey.publication]`: the tools an MCP server's version was
 published with against the tools it lists through its gateway, and the card an
@@ -469,7 +469,7 @@ MCP server sku-manager is exposed at https://<gateway>/sku-manager/
   has applied it.
 
 What the run needs comes from the `[donkey.expose]` table in
-`.donkey-kit.toml`; see [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) for the keys.
+`.donkey-kit.toml`; see [A2A agents](https://docs.donkey-kit.dev/registry/serve.md) for the keys.
 
 The command adds what is missing and nothing else:
 
@@ -496,5 +496,5 @@ the declaration's issues when it has any. The connected-app scopes they need are
 
 ## Next steps
 
-- [Scan & publish](https://docs.donkey-kit.dev/publishing.md): the publish flow in depth, including CI pipelines.
+- [Scan & publish](https://docs.donkey-kit.dev/registry/publish.md): the publish flow in depth, including CI pipelines.
 - [Overview & reference](https://docs.donkey-kit.dev/cli.md): every global flag, exit code and JSON document.

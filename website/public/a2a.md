@@ -25,9 +25,9 @@ flowchart LR
 
 | I want to… | Go to | What you use |
 | --- | --- | --- |
-| Make my agent callable by other agents | [Serve & expose](https://docs.donkey-kit.dev/a2a/serve.md) | `donkey.serve()`, `donkey expose`, `donkey dev` |
+| Make my agent callable by other agents | [Serve & expose](https://docs.donkey-kit.dev/registry/serve.md) | `donkey.serve()`, `donkey expose`, `donkey dev` |
 | Call a governed agent from my agent | [Call other agents](https://docs.donkey-kit.dev/a2a/call.md) | `donkey.a2a.send()`, `donkey.a2a.stream()` |
-| Know what the gateway can enforce, and what my code sees | [Gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md) | Typed refusals, challenges and replay |
+| Know what the gateway can enforce, and what my code sees | [Gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md) | Typed refusals, challenges and replay |
 
 Each page carries its own status badge. The A2A facade is provisional, and
 successful gateway send and SSE are not live verified yet; see
@@ -65,8 +65,8 @@ Other sections cover A2A where it meets their topic:
 - **Human-in-the-loop:** [A2A Authorization-Code Challenges](https://docs.donkey-kit.dev/hitl/gateway-step-up.md#a2a-authorization-code-challenges).
 - **Observability:** [outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans) and
   [correlation across agent hops](https://docs.donkey-kit.dev/correlation.md#across-agent-hops).
-- **Scan & publish:** [publishing agents](https://docs.donkey-kit.dev/publishing.md#publishing-agents) and
-  [declaring how an agent is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-agent-is-reached).
+- **Scan & publish:** [publishing agents](https://docs.donkey-kit.dev/registry/publish.md#publishing-agents) and
+  [declaring how an agent is reached](https://docs.donkey-kit.dev/registry/publish.md#declaring-how-an-agent-is-reached).
 - **CLI:** [`donkey expose`](https://docs.donkey-kit.dev/cli/ship.md#donkey-expose) and [`donkey dev`](https://docs.donkey-kit.dev/cli/local.md#donkey-dev).
 - **Reference:** [connected-app scopes for `donkey expose`](https://docs.donkey-kit.dev/reference/scopes.md#for-donkey-expose),
   the [unsupported boundary](https://docs.donkey-kit.dev/reference/unsupported-boundary.md#current-boundary),

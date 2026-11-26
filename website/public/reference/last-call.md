@@ -28,7 +28,7 @@ reported at all). See [Verification discipline](https://github.com/Donkey-Develo
 the SDK never guesses a value it did not see on the wire.
 
 The routing and cache fields report what the gateway's routing and caching
-policies did. [Model gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md) explains
+policies did. [Model gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/models.md) explains
 each policy and what your code sees for it.
 
 ## Observability status

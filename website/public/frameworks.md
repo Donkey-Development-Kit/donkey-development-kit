@@ -14,7 +14,7 @@ any time.
 
 In this section:
 
-- [Gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md): what each policy on an LLM
+- [Gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/models.md): what each policy on an LLM
   proxy does to a model call, and the typed exception or field your code gets.
 - [Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md): which provider served
   a call, fallback, and how DDK's retries stay out of a gateway failover's way.

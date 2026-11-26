@@ -19,28 +19,39 @@
 export const PAGE_REDIRECTS = {
   // #1827: A2A gathered into one section.
   '/tool-access/a2a': '/a2a/call',
-  '/a2a-gateway-policies': '/a2a/gateway-policies',
+  '/a2a-gateway-policies': '/governance/gateway-policies/a2a',
+  // #1851: capability-first navigation. Gateway policies gathered under Governance,
+  // and discovery, pinning, publishing and serving under Registry & catalog.
+  '/frameworks/gateway-policies': '/governance/gateway-policies/models',
+  '/tool-access/gateway-policies': '/governance/gateway-policies/mcp',
+  '/a2a/gateway-policies': '/governance/gateway-policies/a2a',
+  '/tool-access/discovery': '/registry/discovery/mcp',
+  '/tool-access/lockfile': '/registry/lockfile',
+  '/a2a/serve': '/registry/serve',
+  '/publishing': '/registry/publish',
+  '/publishing/ci': '/registry/publish/ci',
+  '/publishing/publication': '/registry/publish/publication',
 }
 
 export const MOVED_ANCHORS = {
   // #1827: /a2a became the A2A overview; the serving page moved to /a2a/serve.
   '/a2a': {
-    'call-it-from-any-a2a-client': '/a2a/serve',
-    'donkey-dev--a-gateway-in-front-of-your-laptop': '/a2a/serve',
-    'donkey-expose--the-ingress-registered-from-code-live': '/a2a/serve',
-    'donkeyserve--the-listener-in-one-line': '/a2a/serve',
-    'governed-inbound': '/a2a/serve',
-    'install-the-extra': '/a2a/serve',
-    'mark-the-agent-and-serve-it': '/a2a/serve',
-    'related': '/a2a/serve',
-    'selecting-a-protocol-version': '/a2a/serve',
-    'simulated-ingress': '/a2a/serve',
-    'the-setup-it-replaces': '/a2a/serve',
-    'what-the-card-says': '/a2a/serve',
-    'what-the-handler-gets-and-returns': '/a2a/serve',
-    'where-it-listens': '/a2a/serve',
-    'why-not-have-users-call-the-a2a-sdk-directly': '/a2a/serve',
-    'why-the-agent-still-runs-a-listener': '/a2a/serve',
+    'call-it-from-any-a2a-client': '/registry/serve',
+    'donkey-dev--a-gateway-in-front-of-your-laptop': '/registry/serve',
+    'donkey-expose--the-ingress-registered-from-code-live': '/registry/serve',
+    'donkeyserve--the-listener-in-one-line': '/registry/serve',
+    'governed-inbound': '/registry/serve',
+    'install-the-extra': '/registry/serve',
+    'mark-the-agent-and-serve-it': '/registry/serve',
+    'related': '/registry/serve',
+    'selecting-a-protocol-version': '/registry/serve',
+    'simulated-ingress': '/registry/serve',
+    'the-setup-it-replaces': '/registry/serve',
+    'what-the-card-says': '/registry/serve',
+    'what-the-handler-gets-and-returns': '/registry/serve',
+    'where-it-listens': '/registry/serve',
+    'why-not-have-users-call-the-a2a-sdk-directly': '/registry/serve',
+    'why-the-agent-still-runs-a-listener': '/registry/serve',
   },
   // #1830: the simulator's MCP and A2A sections moved to their own pages.
   '/simulator': {
@@ -87,15 +98,20 @@ export const MOVED_ANCHORS = {
     'from-code-to-a-publish-plan': '/cli/ship',
     'what-each-workflow-still-needs': '/cli/ship',
   },
+  // #1851: the A2A and LLM-metadata sections moved off the MCP discovery page.
+  '/tool-access/discovery': {
+    'reading-an-llm-assets-metadata': '/registry/discovery/models',
+    'resolving-an-a2a-agent': '/registry/discovery/a2a',
+  },
   // #1834: the CI recipes and the Publication object moved off the publishing page.
   '/publishing': {
-    'derivation-modes': '/publishing/publication',
-    'descriptorauto--deriving-the-spec-from-code-roadmap': '/publishing/publication',
-    'from-bitbucket-pipelines': '/publishing/ci',
-    'from-github-actions': '/publishing/ci',
-    'from-gitlab-ci': '/publishing/ci',
-    'the-publication-object': '/publishing/publication',
-    'verifying-at-runtime-verify': '/publishing/publication',
+    'derivation-modes': '/registry/publish/publication',
+    'descriptorauto--deriving-the-spec-from-code-roadmap': '/registry/publish/publication',
+    'from-bitbucket-pipelines': '/registry/publish/ci',
+    'from-github-actions': '/registry/publish/ci',
+    'from-gitlab-ci': '/registry/publish/ci',
+    'the-publication-object': '/registry/publish/publication',
+    'verifying-at-runtime-verify': '/registry/publish/publication',
   },
   // #1835: the framework helpers and the gateway step-up sections moved to their own pages.
   '/hitl': {

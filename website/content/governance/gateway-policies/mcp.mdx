@@ -12,14 +12,7 @@ reject a call, or transform its result. Configure enforcement on the MCP API
 instance in API Manager; DDK consumes the gateway-visible contract rather than
 reimplementing the policies in your agent.
 
-<Callout type="info">
-  **Three things are called "policy" in these docs.** *Gateway policies* are
-  what the gateway enforces on each surface: see the [Models](/frameworks/gateway-policies), [MCP tools](/tool-access/gateway-policies)
-  and [A2A agents](/a2a/gateway-policies) pages. *[Custom policies](/custom-policies)*
-  teach `classify()` the refusal shape your own gateway policy returns. The
-  *[policy handshake](/policies)* is a planned, advisory read of the policies in
-  force; the gateway always wins.
-</Callout>
+See [Gateway policies](/governance/gateway-policies) for how this page relates to the other surfaces ([Models](/governance/gateway-policies/models), [MCP tools](/governance/gateway-policies/mcp), [A2A agents](/governance/gateway-policies/a2a)), custom policies and the policy handshake.
 
 <Callout type="info">
   **Partial evidence, not an end-to-end policy certification.** Gateway captures
@@ -167,7 +160,7 @@ A filter or approval rule naming a hidden upstream name raises `ConfigError`
 when tools are listed. See [Gateway-visible catalogs](/tool-access/binding#gateway-visible-catalogs).
 
 Discovery stays connection-free; `describe()` or binding reads the tool catalog.
-[`donkey.tools.lock()`](/tool-access/lockfile) pins this gateway-visible catalog: the
+[`donkey.tools.lock()`](/registry/lockfile) pins this gateway-visible catalog: the
 mapped name under Tool Mapping, and `search_tools` and `invoke_tool` under
 Progressive Disclosure.
 
@@ -224,6 +217,6 @@ API; DDK does not add a transcoder, provisioning API or bridge-specific client.
 
 ## Next steps
 
-- [Discovery](/tool-access/discovery): resolve governed servers before connecting.
+- [Discovery](/registry/discovery/mcp): resolve governed servers before connecting.
 - [Framework binding](/tool-access/binding): choose native tool objects and manage their lifecycle.
 - [Governed errors](/errors#json-rpc-refusal-matching): distinguish reliable refusal markers from raw diagnostics.

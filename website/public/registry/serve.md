@@ -463,6 +463,6 @@ To test against real policies, use a hosted gateway.
 ## Related
 
 - [Call other A2A agents](https://docs.donkey-kit.dev/a2a/call.md) — call *other* governed A2A agents from your agent.
-- [Scan & publish](https://docs.donkey-kit.dev/publishing.md) — register your agent card with Agent Registry.
+- [Scan & publish](https://docs.donkey-kit.dev/registry/publish.md) — register your agent card with Agent Registry.
 - [Local simulator](https://docs.donkey-kit.dev/simulator.md) — the fixture-replay server behind simulated ingress.
 - [API reference](https://docs.donkey-kit.dev/reference/api.md#donkeyserve) — every `donkey.serve()` argument.

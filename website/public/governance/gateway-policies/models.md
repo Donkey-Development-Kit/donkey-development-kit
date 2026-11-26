@@ -9,13 +9,7 @@ The gateway enforces them. DDK reimplements none of them. It reads what the
 gateway answered and turns each outcome it can identify into a typed exception
 or a field your code can branch on.
 
-  **Three things are called "policy" in these docs.** *Gateway policies* are
-  what the gateway enforces on each surface: this page for models, and the
-  [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) and
-  [A2A agents](https://docs.donkey-kit.dev/a2a/gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
-  teach `classify()` the refusal shape your own gateway policy returns. The
-  *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in
-  force; the gateway always wins.
+See [Gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies.md) for how this page relates to the other surfaces ([Models](https://docs.donkey-kit.dev/governance/gateway-policies/models.md), [MCP tools](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md), [A2A agents](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md)), custom policies and the policy handshake.
 
 Each section carries the status of the ledger row it rests on. Live
 means the shape was captured from a real gateway.

@@ -1,0 +1,59 @@
+---
+description: How DDK finds, pins, publishes and serves governed assets in Exchange, for models, MCP tools and A2A agents.
+status: offline-verified
+---
+
+import { Card, CardGrid } from '../../components'
+
+# Registry & catalog
+
+Anypoint Exchange is the catalog behind the gateway: it lists the LLM proxies,
+MCP servers and A2A agents your organisation has published, and API Manager
+says which of them are fronted by a gateway instance. DDK's registry features
+read that catalog, pin what they found, and write your own agents and tools back
+to it. The same four jobs apply to each surface.
+
+| Job | Models | MCP tools | A2A agents |
+| --- | --- | --- | --- |
+| **Discover** | [Models](/registry/discovery/models) | [MCP tools](/registry/discovery/mcp) | [A2A agents](/registry/discovery/a2a) |
+| **Pin** | n/a | [Pinning & lockfile](/registry/lockfile) | n/a |
+| **Publish** | n/a | [Scan & publish](/registry/publish#publishing-mcp-servers) | [Scan & publish](/registry/publish#publishing-agents) |
+| **Serve** | n/a | n/a | [Serve & expose](/registry/serve) |
+
+**n/a** means the capability does not apply to that surface today, not that it
+is missing from the docs. A model has no catalog endpoint to list, and no
+lockfile. An MCP server is not served by DDK, it is published and then called.
+
+Each linked page carries its own status badge. This page makes no status claims
+of its own and takes the lowest status among them.
+
+## The four jobs
+
+<CardGrid columns={2}>
+  <Card title="Discovery" href="/registry/discovery">
+    Find governed assets: `donkey.tools.discover()` and `donkey.registry.search()`
+    for MCP tools, `resolve_agent()` for A2A, and the model reads that exist.
+  </Card>
+  <Card title="Pinning & lockfile" href="/registry/lockfile" badge="Offline-verified" badgeTone="neutral">
+    Pin each MCP server's listed tools in `donkey.lock`, so catalog drift is a
+    typed `ToolLockDrift` and a reviewable diff.
+  </Card>
+  <Card title="Scan & publish" href="/registry/publish">
+    `donkey scan`, `publish` and `verify` register what your code declares, from
+    CI, and check the live side against it.
+  </Card>
+  <Card title="Serve & expose" href="/registry/serve" badge="Offline-verified" badgeTone="neutral">
+    `donkey.serve()` and `donkey expose` make your agent callable by other
+    agents through the gateway.
+  </Card>
+</CardGrid>
+
+## Where the registry shows up elsewhere
+
+- Calling a discovered asset is on [Connect](/connect), not here. Discovery
+  returns a handle or a `ToolSet`, and Connect turns it into a call.
+- [Gateway policies](/governance/gateway-policies) says what the gateway then
+  does to that call.
+- The control-plane calls a registry read makes, and the scopes they need, are on
+  [Control plane](/reference/configuration/control-plane) and
+  [Connected-app scopes](/reference/scopes).

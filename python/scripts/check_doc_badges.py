@@ -109,7 +109,7 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("quickstart.mdx", "## Test the refusal branch"): _LOCAL,
     ("quickstart.mdx", "| `donkey scan` "): "static analysis of local code; no gateway contract",
     (
-        "publishing/index.mdx",
+        "registry/publish/index.mdx",
         "## `donkey scan` ",
     ): "static analysis of local code; no gateway contract",
     ("quickstart.mdx", "| Framework adapters for "): _GENERATED,

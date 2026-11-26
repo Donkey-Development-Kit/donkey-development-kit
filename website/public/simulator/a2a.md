@@ -6,7 +6,7 @@ The [local simulator](https://docs.donkey-kit.dev/simulator.md) replays model-ro
 its A2A counterparts: refusing an outbound call made through `donkey.a2a` with
 `donkey.simulate_a2a()`, and replaying captured A2A ingress refusals. For the
 policies these captures come from, see
-[A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md).
+[A2A gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md).
 
 ## Outbound A2A fault injection
 
@@ -58,16 +58,16 @@ async def test_delegation_handles_a_pii_block():
 
 The raised error is whatever the existing classification gives each packaged
 Omni Gateway capture, the same bytes listed in
-[A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md). The rate-limit captures have
+[A2A gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md). The rate-limit captures have
 no body, so the error carries headers only. This covers agents you call. For
 an agent you **serve**, use the ingress replay below.
 
 ## A2A ingress replay
 
-See [A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md) for the version-specific
+See [A2A gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md) for the version-specific
 capture inventory. Local replay verifies handling, not gateway enforcement.
 
-[`donkey dev`](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) wraps your served agent rather than the
+[`donkey dev`](https://docs.donkey-kit.dev/registry/serve.md#simulated-ingress) wraps your served agent rather than the
 model routes above. It shares the fixture loader and scenario triggers, but
 selects captured A2A refusals with `--protocol-version`: `1.0` by default,
 or `0.3.0`. This is separate from `--agent-version`, the card's application
@@ -131,5 +131,5 @@ DDK classifications; the stock SDK does not raise those DDK types.
 ## Next steps
 
 - [Local simulator](https://docs.donkey-kit.dev/simulator.md): model-route sentinels, scenarios and the server.
-- [A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md): what each A2A policy does.
+- [A2A gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md): what each A2A policy does.
 - [Call other agents](https://docs.donkey-kit.dev/a2a/call.md): the `donkey.a2a` facade these faults exercise.

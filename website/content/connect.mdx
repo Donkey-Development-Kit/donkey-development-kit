@@ -1,0 +1,48 @@
+---
+description: Connect an agent to a governed model, MCP tool or A2A agent through the gateway. Pick the surface, then the page for it.
+status: offline-verified
+---
+
+import { Card, CardGrid } from '../components'
+
+# Connect
+
+Connecting is the first job: getting your agent's calls to a model, a tool or
+another agent through Omni Gateway, with credentials, correlation and
+attribution already set. The same shared transport carries all three, so
+everything under [Governance](/governance/gateway-policies) and
+[Observability](/telemetry) applies to each without extra wiring.
+
+<CardGrid columns={3}>
+  <Card title="Models" href="/frameworks" badge="Live" badgeTone="live">
+    Your framework's own model object, pointed at a governed LLM proxy. Eight
+    frameworks, no wrapper.
+  </Card>
+  <Card title="MCP tools" href="/tool-access" badge="Live" badgeTone="live">
+    Discover governed MCP servers and bind their tools as native framework tool
+    objects.
+  </Card>
+  <Card title="A2A agents" href="/a2a/call" badge="Offline-verified" badgeTone="neutral">
+    Delegate to another governed agent with `donkey.a2a.send()` or `stream()`.
+  </Card>
+</CardGrid>
+
+## What each surface needs
+
+| | Models | MCP tools | A2A agents |
+| --- | --- | --- | --- |
+| **You write** | `donkey.<framework>.chat_model(...)` or the framework's equivalent | `await donkey.tools.discover()`, then a per-framework bind method | `await donkey.a2a.send(...)` or `stream()` |
+| **You get** | The framework's native model object | The framework's native tool objects | The official `a2a-sdk` request and response types |
+| **How it is found** | By model id, see [Discovery for models](/registry/discovery/models) | By governance and tags, see [Discovery for MCP tools](/registry/discovery/mcp) | By Exchange reference, see [Discovery for A2A agents](/registry/discovery/a2a) |
+| **Start here** | [Models](/frameworks) | [MCP tools](/tool-access) | [A2A agents](/a2a) |
+
+Which frameworks are supported on which surface, and how deep each one goes, is
+on [Supported frameworks](/supported-frameworks). Each framework's own page
+(for example [LangGraph](/frameworks/langgraph)) shows the model code, and the
+tool-binding code is on [Framework binding](/tool-access/binding).
+
+## After you connect
+
+- [Registry & catalog](/registry): find, pin and publish the assets you connect to.
+- [Gateway policies](/governance/gateway-policies): what the gateway does to each call.
+- [Typed refusals](/errors): what your code catches when it says no.

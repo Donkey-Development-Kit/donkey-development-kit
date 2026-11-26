@@ -11,7 +11,7 @@ the surface sections, so each one is documented once.
 | --- | --- | --- |
 | [Models](https://docs.donkey-kit.dev/frameworks.md) | A governed model object from the framework's own API (`chat_model()`, `model()`, `llm()` and so on), with credentials, correlation, attribution and retry policy applied. | [Models](https://docs.donkey-kit.dev/frameworks.md), with one page per framework |
 | [MCP tools](https://docs.donkey-kit.dev/tool-access.md) | Governed MCP tools bound as the framework's native tools. Some frameworks bind one tool at a time; others take a whole server. | [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md) |
-| [A2A agents](https://docs.donkey-kit.dev/a2a.md) | Nothing framework-specific today. `donkey.a2a.send()` and `donkey.serve()` work the same for every framework. Binding an A2A agent as a framework tool is planned. | [Call other agents](https://docs.donkey-kit.dev/a2a/call.md), [Serve & expose](https://docs.donkey-kit.dev/a2a/serve.md) |
+| [A2A agents](https://docs.donkey-kit.dev/a2a.md) | Nothing framework-specific today. `donkey.a2a.send()` and `donkey.serve()` work the same for every framework. Binding an A2A agent as a framework tool is planned. | [Call other agents](https://docs.donkey-kit.dev/a2a/call.md), [Serve & expose](https://docs.donkey-kit.dev/registry/serve.md) |
 
 ## Models
 
@@ -54,7 +54,7 @@ a `ToolSet` method that returns its own native MCP objects.
 
 The classes and install extras are in [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md#per-framework-binding).
 The per-framework refusal behaviour is on the
-[MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) page, and the same list
+[MCP gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md) page, and the same list
 sits on the [MCP tools overview](https://docs.donkey-kit.dev/tool-access.md#supported-frameworks).
 
 ## A2A agents
