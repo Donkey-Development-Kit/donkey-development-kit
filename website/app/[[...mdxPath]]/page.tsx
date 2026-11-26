@@ -28,6 +28,13 @@ export async function generateMetadata(props: PageProps) {
 
 const Wrapper = getMDXComponents().wrapper
 
+// In `next dev`, Nextra fills `metadata.timestamp` from git, and the docs theme's
+// ClientWrapper then clones its `lastUpdated` element with the date. That element
+// resolves to `undefined` during dev server rendering, so every page returns 500
+// ("Element type is invalid", #1850). Dropping the timestamp in dev skips the
+// "Last updated" line there; the production export still renders it.
+const IS_DEV = process.env.NODE_ENV === 'development'
+
 export default async function Page(props: PageProps) {
   const params = await props.params
   const result = await importPage(params.mdxPath)
@@ -37,7 +44,11 @@ export default async function Page(props: PageProps) {
   // with no status.
   const page = statusOf(metadata, `content/${(params.mdxPath ?? ['index']).join('/')}`)
   return (
-    <Wrapper toc={toc} metadata={metadata} sourceCode={sourceCode}>
+    <Wrapper
+      toc={toc}
+      metadata={IS_DEV ? { ...metadata, timestamp: undefined } : metadata}
+      sourceCode={sourceCode}
+    >
       {/* Nextra 4 no longer wraps page markup in `.nextra-content`; this
           `.af-prose` div is the stable hook styles/globals.css keys the prose
           refinements off (see the typography section there). */}
