@@ -90,7 +90,16 @@ async function collectPages(dir, urlPrefix, section, pages) {
       pages.push({ title, urlPath, file: mdxPath, section: currentSection, hidden })
     } else if (await exists(join(subDir, '_meta.js'))) {
       // A sub-directory: recurse, and group its pages under its own nav label.
-      await collectPages(subDir, urlPrefix ? `${urlPrefix}/${key}` : key, title, pages)
+      // A `display: 'children'` folder has no label of its own in the sidebar (its
+      // children sit directly under the enclosing separator), so it keeps that
+      // section instead of one named after its key.
+      const lifted = value && typeof value === 'object' && value.display === 'children'
+      await collectPages(
+        subDir,
+        urlPrefix ? `${urlPrefix}/${key}` : key,
+        lifted ? currentSection : title,
+        pages
+      )
     }
   }
 }

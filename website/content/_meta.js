@@ -25,7 +25,7 @@ export default {
     type: 'separator',
     title: 'Registry & catalog',
   },
-  registry: { title: 'Registry & catalog', theme: { collapsed: false } },
+  registry: { display: 'children' },
   '-- governance': {
     type: 'separator',
     title: 'Governance',
