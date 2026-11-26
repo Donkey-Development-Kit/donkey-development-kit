@@ -13,6 +13,10 @@
 
 - [Overview](https://docs.donkey-kit.dev/connect.md): (status: offline-verified) Connect an agent to a governed model, MCP tool or A2A agent through the gateway. Pick the surface, then the page for it.
 
+## Supported frameworks
+
+- [Overview](https://docs.donkey-kit.dev/supported-frameworks.md): (status: offline-verified) Which agent frameworks DDK supports on each surface, how deep each one goes, and where the framework-specific how-to lives.
+
 ## Models
 
 - [Overview](https://docs.donkey-kit.dev/frameworks.md): (status: live) Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
@@ -28,10 +32,6 @@
 
 - [Overview](https://docs.donkey-kit.dev/a2a.md): (status: offline-verified) Everything DDK does for agent-to-agent (A2A) calls, in one place. Serve and expose your agent behind the gateway, call other governed agents, and handle what the gateway enforces.
 - [Call other agents](https://docs.donkey-kit.dev/a2a/call.md): (status: offline-verified) Send official A2A SDK requests to registry-resolved governed agents, with scoped authentication and context-managed streams.
-
-## Connect
-
-- [Supported frameworks](https://docs.donkey-kit.dev/supported-frameworks.md): (status: offline-verified) Which agent frameworks DDK supports on each surface, how deep each one goes, and where the framework-specific how-to lives.
 
 ## Registry & catalog
 

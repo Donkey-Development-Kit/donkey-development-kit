@@ -84,7 +84,7 @@ an endpoint:
   governed MCP tools rather than ad-hoc HTTP — is a [Phase 2 surface](https://docs.donkey-kit.dev/roadmap.md).
   Exchange→MCP tool discovery is still blocked on verification; the SDK raises
   `NotImplementedError("blocked on verification: …")` at call time rather than
-  guessing an endpoint. See [Tool access](https://docs.donkey-kit.dev/tool-access.md).
+  guessing an endpoint. See [MCP tools](https://docs.donkey-kit.dev/tool-access.md).
 
   **Agent identity and a kill switch** — a verifiable identity for the copilot,
   and the ability to disable it centrally — are platform capabilities the SDK's
