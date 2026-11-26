@@ -8,7 +8,7 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[3]
 _CONTENT = _ROOT / "website" / "content"
-_ROUTE = "/tool-access/gateway-policies"
+_ROUTE = "/governance/gateway-policies/mcp"
 
 pytestmark = pytest.mark.skipif(
     not _CONTENT.is_dir(), reason="the repository docs are not included in the sdist"
@@ -16,21 +16,21 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_mcp_policy_page_is_navigable_from_affected_surfaces() -> None:
-    page = _CONTENT / "tool-access" / "gateway-policies.mdx"
+    page = _CONTENT / "governance" / "gateway-policies" / "mcp.mdx"
     assert page.is_file()
-    nav = (_CONTENT / "tool-access" / "_meta.js").read_text(encoding="utf-8")
-    assert "'gateway-policies': 'Gateway policies'" in nav
+    nav = (_CONTENT / "governance" / "gateway-policies" / "_meta.js").read_text(encoding="utf-8")
+    assert "mcp: 'MCP tools'" in nav
     for relative in (
-        "tool-access/discovery.mdx",
+        "registry/discovery/mcp.mdx",
         "tool-access/binding.mdx",
-        "tool-access/lockfile.mdx",
+        "registry/lockfile.mdx",
         "errors.mdx",
     ):
         assert _ROUTE in (_CONTENT / relative).read_text(encoding="utf-8"), relative
 
 
 def test_mcp_policy_inventory_keeps_partial_evidence_explicit() -> None:
-    text = (_CONTENT / "tool-access" / "gateway-policies.mdx").read_text(encoding="utf-8")
+    text = (_CONTENT / "governance" / "gateway-policies" / "mcp.mdx").read_text(encoding="utf-8")
     headings = (
         "## MCP Support",
         "## MCP Global Access",

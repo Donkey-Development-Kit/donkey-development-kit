@@ -15,7 +15,7 @@ tool objects** — the same "no wrapper" approach as [model access](/frameworks)
 A lockfile pins what each server listed, so a catalog change made at the
 gateway fails loudly instead of silently changing your agent's tools. When a
 gateway policy refuses a tool call, DDK raises the refusals it can identify as
-typed exceptions; [Gateway policies](/tool-access/gateway-policies) lists what
+typed exceptions; [Gateway policies](/governance/gateway-policies/mcp) lists what
 each policy does and how far that typing reaches per framework.
 
 Discovery and binding run end to end through the governed gateway, with
@@ -52,7 +52,7 @@ Name search and asset type filters live one layer down, on
 `donkey.registry.search()`, which is live.
 
 "Governed" is a computed, environment-scoped predicate rather than a flag in
-Exchange — see [Discovery, search & filter](/tool-access/discovery).
+Exchange — see [Discovery, search & filter](/registry/discovery/mcp).
 
 ## Supported frameworks
 
@@ -76,23 +76,23 @@ Per-tool bindings return typed refusals from a tool call to your code.
 Whole-server bindings can't rename one tool or gate one call, and some return
 tool errors as text, so the policy metadata is lost. See
 [Whole-server bindings](/tool-access/binding#whole-server-bindings) and the
-per-framework behaviour on the [MCP gateway policies](/tool-access/gateway-policies)
+per-framework behaviour on the [MCP gateway policies](/governance/gateway-policies/mcp)
 page. The full map across all three surfaces is on
 [Supported frameworks](/supported-frameworks).
 
 ## In this section
 
 <CardGrid columns={2}>
-  <Card title="Discovery, search & filter" href="/tool-access/discovery">
+  <Card title="Discovery, search & filter" href="/registry/discovery/mcp">
     Narrow the catalog by governance and tags, or search it by name and asset type.
   </Card>
   <Card title="Framework binding" href="/tool-access/binding">
     Turn a `ToolSet` into each framework's own native tool objects.
   </Card>
-  <Card title="Pinning & lockfile" href="/tool-access/lockfile" badge="Offline-verified" badgeTone="neutral">
+  <Card title="Pinning & lockfile" href="/registry/lockfile" badge="Offline-verified" badgeTone="neutral">
     Pin each server's listed tools in `donkey.lock` and fail on drift.
   </Card>
-  <Card title="Gateway policies" href="/tool-access/gateway-policies" badge="Offline-verified" badgeTone="neutral">
+  <Card title="Gateway policies" href="/governance/gateway-policies/mcp" badge="Offline-verified" badgeTone="neutral">
     What MCP gateway policies do to catalogs and calls, and what your code sees.
   </Card>
 </CardGrid>
@@ -110,8 +110,8 @@ Other sections cover MCP where it meets their topic:
   [step-up on a tool call](/hitl/gateway-step-up#step-up-on-a-tool-call).
 - **Identity:** [acting for a user](/tool-access/binding#acting-for-a-user) with a
   bound `ToolSet`, and [Identity](/identity) for `donkey.as_user()`.
-- **Scan & publish:** [publishing MCP servers](/publishing#publishing-mcp-servers)
-  and [declaring how an MCP server is reached](/publishing#declaring-how-an-mcp-server-is-reached).
+- **Scan & publish:** [publishing MCP servers](/registry/publish#publishing-mcp-servers)
+  and [declaring how an MCP server is reached](/registry/publish#declaring-how-an-mcp-server-is-reached).
 - **CLI:** [`donkey scan`](/cli/ship#donkey-scan), [`donkey publish`](/cli/ship#donkey-publish)
   and [`donkey mock`](/cli/local#donkey-mock).
 - **Reference:** [connected-app scopes](/reference/scopes#per-operation) and the
@@ -119,7 +119,7 @@ Other sections cover MCP where it meets their topic:
 
 ## Next steps
 
-1. [Discover](/tool-access/discovery) the governed tools your agent needs.
+1. [Discover](/registry/discovery/mcp) the governed tools your agent needs.
 2. [Bind](/tool-access/binding) them into your framework.
-3. Read what the [gateway policies](/tool-access/gateway-policies) on your MCP
-   instance do, and pin the result with the [lockfile](/tool-access/lockfile).
+3. Read what the [gateway policies](/governance/gateway-policies/mcp) on your MCP
+   instance do, and pin the result with the [lockfile](/registry/lockfile).

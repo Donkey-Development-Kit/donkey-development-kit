@@ -7,12 +7,7 @@ reject a call, or transform its result. Configure enforcement on the MCP API
 instance in API Manager; DDK consumes the gateway-visible contract rather than
 reimplementing the policies in your agent.
 
-  **Three things are called "policy" in these docs.** *Gateway policies* are
-  what the gateway enforces on each surface: see the [Models](https://docs.donkey-kit.dev/frameworks/gateway-policies.md), [MCP tools](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
-  and [A2A agents](https://docs.donkey-kit.dev/a2a/gateway-policies.md) pages. *[Custom policies](https://docs.donkey-kit.dev/custom-policies.md)*
-  teach `classify()` the refusal shape your own gateway policy returns. The
-  *[policy handshake](https://docs.donkey-kit.dev/policies.md)* is a planned, advisory read of the policies in
-  force; the gateway always wins.
+See [Gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies.md) for how this page relates to the other surfaces ([Models](https://docs.donkey-kit.dev/governance/gateway-policies/models.md), [MCP tools](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md), [A2A agents](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md)), custom policies and the policy handshake.
 
   **Partial evidence, not an end-to-end policy certification.** Gateway captures
   establish the wire behavior described below. Typed PII surfacing across
@@ -158,7 +153,7 @@ A filter or approval rule naming a hidden upstream name raises `ConfigError`
 when tools are listed. See [Gateway-visible catalogs](https://docs.donkey-kit.dev/tool-access/binding.md#gateway-visible-catalogs).
 
 Discovery stays connection-free; `describe()` or binding reads the tool catalog.
-[`donkey.tools.lock()`](https://docs.donkey-kit.dev/tool-access/lockfile.md) pins this gateway-visible catalog: the
+[`donkey.tools.lock()`](https://docs.donkey-kit.dev/registry/lockfile.md) pins this gateway-visible catalog: the
 mapped name under Tool Mapping, and `search_tools` and `invoke_tool` under
 Progressive Disclosure.
 
@@ -215,6 +210,6 @@ API; DDK does not add a transcoder, provisioning API or bridge-specific client.
 
 ## Next steps
 
-- [Discovery](https://docs.donkey-kit.dev/tool-access/discovery.md): resolve governed servers before connecting.
+- [Discovery](https://docs.donkey-kit.dev/registry/discovery/mcp.md): resolve governed servers before connecting.
 - [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md): choose native tool objects and manage their lifecycle.
 - [Governed errors](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching): distinguish reliable refusal markers from raw diagnostics.

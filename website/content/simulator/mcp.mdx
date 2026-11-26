@@ -9,7 +9,7 @@ The [local simulator](/simulator) replays model-route refusals. This page covers
 its MCP counterpart: refusing an MCP **tool call** in-process with
 `donkey.simulate_mcp()`, and replaying the packaged MCP gateway captures
 against your own client. For the policies these captures come from, see
-[MCP gateway policies](/tool-access/gateway-policies).
+[MCP gateway policies](/governance/gateway-policies/mcp).
 
 ## MCP tool fault injection
 
@@ -42,7 +42,7 @@ with donkey.simulate_mcp("pii-request", servers=servers):
   dropped. A tool you declare with a different descriptor raises
   `ToolLockDrift` when the set binds. Call `donkey.tools.lock(path=...)` inside
   the block to pin the declared servers. See
-  [Pinning & lockfile](/tool-access/lockfile).
+  [Pinning & lockfile](/registry/lockfile).
 - `times=1` (the default) counts injected requests. After that, a `tools/call`
   is answered by `call_tool(name, arguments)`. If you pass no `call_tool`, the
   answer is a single text item.
@@ -298,11 +298,11 @@ as bytes. Schema and poisoning errors cannot safely identify a gateway policy
 from generic codes or diagnostic text, so `jsonrpc_refusal()` leaves those
 captures untyped. Despite its name, `pii-response-sse.json` is HTTP 403
 `application/json`, not an SSE error event. The matcher takes a parsed JSON-RPC
-envelope, not raw SSE bytes. See [MCP gateway policies](/tool-access/gateway-policies)
+envelope, not raw SSE bytes. See [MCP gateway policies](/governance/gateway-policies/mcp)
 for the evidence boundaries and framework-specific refusal behavior.
 
 ## Next steps
 
 - [Local simulator](/simulator): model-route sentinels, scenarios and the server.
-- [MCP gateway policies](/tool-access/gateway-policies): what each MCP policy does.
+- [MCP gateway policies](/governance/gateway-policies/mcp): what each MCP policy does.
 - [Testing & conformance](/testing): `simulate()` and the `gateway` pytest fixture.

@@ -70,7 +70,7 @@ def test_packaged_mcp_docs_preserve_replay_boundaries() -> None:
 
 def test_packaged_mcp_replay_is_linked_without_duplicate_examples() -> None:
     for relative in (
-        "tool-access/gateway-policies.mdx",
+        "governance/gateway-policies/mcp.mdx",
         "examples/general/simulating-refusals.mdx",
     ):
         text = (_CONTENT / relative).read_text(encoding="utf-8")

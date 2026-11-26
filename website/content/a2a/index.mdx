@@ -30,9 +30,9 @@ flowchart LR
 
 | I want to… | Go to | What you use |
 | --- | --- | --- |
-| Make my agent callable by other agents | [Serve & expose](/a2a/serve) | `donkey.serve()`, `donkey expose`, `donkey dev` |
+| Make my agent callable by other agents | [Serve & expose](/registry/serve) | `donkey.serve()`, `donkey expose`, `donkey dev` |
 | Call a governed agent from my agent | [Call other agents](/a2a/call) | `donkey.a2a.send()`, `donkey.a2a.stream()` |
-| Know what the gateway can enforce, and what my code sees | [Gateway policies](/a2a/gateway-policies) | Typed refusals, challenges and replay |
+| Know what the gateway can enforce, and what my code sees | [Gateway policies](/governance/gateway-policies/a2a) | Typed refusals, challenges and replay |
 
 Each page carries its own status badge. The A2A facade is provisional, and
 successful gateway send and SSE are not live verified yet; see
@@ -70,8 +70,8 @@ Other sections cover A2A where it meets their topic:
 - **Human-in-the-loop:** [A2A Authorization-Code Challenges](/hitl/gateway-step-up#a2a-authorization-code-challenges).
 - **Observability:** [outbound A2A spans](/telemetry#outbound-a2a-spans) and
   [correlation across agent hops](/correlation#across-agent-hops).
-- **Scan & publish:** [publishing agents](/publishing#publishing-agents) and
-  [declaring how an agent is reached](/publishing#declaring-how-an-agent-is-reached).
+- **Scan & publish:** [publishing agents](/registry/publish#publishing-agents) and
+  [declaring how an agent is reached](/registry/publish#declaring-how-an-agent-is-reached).
 - **CLI:** [`donkey expose`](/cli/ship#donkey-expose) and [`donkey dev`](/cli/local#donkey-dev).
 - **Reference:** [connected-app scopes for `donkey expose`](/reference/scopes#for-donkey-expose),
   the [unsupported boundary](/reference/unsupported-boundary#current-boundary),
@@ -81,13 +81,13 @@ Other sections cover A2A where it meets their topic:
 ## Next steps
 
 <CardGrid columns={3}>
-  <Card title="Serve & expose" href="/a2a/serve">
+  <Card title="Serve & expose" href="/registry/serve">
     Serve your agent in one line, then expose it through the gateway.
   </Card>
   <Card title="Call other agents" href="/a2a/call">
     Send and stream through a registry-pinned gateway endpoint.
   </Card>
-  <Card title="Gateway policies" href="/a2a/gateway-policies">
+  <Card title="Gateway policies" href="/governance/gateway-policies/a2a">
     Captured outcomes, challenges and replay, per protocol version.
   </Card>
 </CardGrid>

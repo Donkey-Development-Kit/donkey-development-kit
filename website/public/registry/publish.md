@@ -1,40 +1,32 @@
----
-description: donkey scan derives a deterministic model of your agents, tools and MCP servers from code; publishing registers it with Exchange / Agent Registry from CI, complementing Agent Scanners.
-status: live
----
-
-import { Callout } from 'nextra/components'
-import { Badge } from '../../components'
-
 # Scan & publish
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 `donkey scan`, `donkey publish` and `donkey verify` are live: publish plans
 (`--dry-run` sends nothing) and registers each MCP server and agent in Exchange
 from CI, and verify checks the live side against what was published. The
 collision check and `descriptor="auto"` derivation are on the
-[Roadmap](/roadmap); their sections are badged and show the planned design.
+[Roadmap](https://docs.donkey-kit.dev/roadmap.md); their sections are badged and show the planned design.
 
 `donkey scan` walks your repository and finds every
-[`@donkey.agent`](/decorators#donkeyagent) and [`@donkey.tool`](/decorators#donkeytool), plus
+[`@donkey.agent`](https://docs.donkey-kit.dev/decorators.md#donkeyagent) and [`@donkey.tool`](https://docs.donkey-kit.dev/decorators.md#donkeytool), plus
 the MCP servers those tools name with `server=`. It produces one deterministic
 model of them. Publishing registers that model with Exchange / Agent
-Registry, and the [GitHub Action](/publishing/ci#from-github-actions) runs both on every merge
+Registry, and the [GitHub Action](https://docs.donkey-kit.dev/registry/publish/ci.md#from-github-actions) runs both on every merge
 to `main`.
 
 **The registry becomes a consequence of the code, not a chore.** A support agent
 with six tools registered by hand has a stale tool list within a week; with the
 Action, every merge updates it.
 
-<Callout type="info">
   **This complements MuleSoft's Agent Scanners.** Agent Scanners discover agents
   from Agentforce, Bedrock, Vertex AI, and Copilot Studio at **runtime**. Scan is
   the **design-time / CI** source for the agents you build in plain Python,
   which no cloud scanner can see. Its model feeds direct Exchange publishing
   today, and is planned to feed the platform's self-managed scanner too, so the
   platform stays the system of record.
-</Callout>
 
-## `donkey scan` — the model of your code <Badge tone="live">Live</Badge>
+## `donkey scan` — the model of your code Live
 
 ```bash
 donkey scan .           # a summary, and any issues
@@ -60,7 +52,7 @@ The model is deterministic: the same code always gives the same JSON, and its
 like a change. Scan also reports **issues** and exits `1` when it finds one:
 a missing or tautological description, an invalid service ID, a non-literal
 decorator argument it cannot read, or a service ID used twice. That way CI
-fails before anything is published. See [`donkey scan`](/cli/ship#donkey-scan) for
+fails before anything is published. See [`donkey scan`](https://docs.donkey-kit.dev/cli/ship.md#donkey-scan) for
 the full rules.
 
 ### Declaring how an MCP server is reached
@@ -125,7 +117,7 @@ endpoint = "https://agents.acme.com/support-triage/"
 ```
 
 - `protocol` is `a2a_v1`, for an agent served over A2A 1.0 such as
-  [`donkey.serve()`](/a2a/serve), or `other`. `a2a` (A2A 0.3) is refused with a hint,
+  [`donkey.serve()`](https://docs.donkey-kit.dev/registry/serve.md), or `other`. `a2a` (A2A 0.3) is refused with a hint,
   because `donkey.serve()` speaks 1.0.
 - `endpoint` is the `http` or `https` URL the agent is served at, with the same
   rules as an MCP server's. An `a2a_v1` agent needs one.
@@ -135,11 +127,9 @@ endpoint = "https://agents.acme.com/support-triage/"
   part of the digest, as for `[donkey.mcp_servers]`. A table for a name that no
   `@donkey.agent` uses is an issue.
 
-<Callout type="warning">
   A service ID (`@donkey.agent(name=...)`, `@donkey.tool(server=...)`) names a
   service in the registry **permanently**, so choose it deliberately. Renaming
   it later would register a second service rather than rename the first.
-</Callout>
 
 ## Planning a publish
 
@@ -224,7 +214,7 @@ It runs from CI with the control-plane credentials: `ANYPOINT_CLIENT_ID`,
 `ANYPOINT_CLIENT_SECRET` and `ANYPOINT_ORG_ID`. The connected app needs
 the `manage:exchange` scope on that business group: with `edit:exchange` or
 `create:exchange` only, a version can be published but its endpoint cannot be
-registered. See [Connected-app scopes](/reference/scopes). Publishing has been checked against a live sandbox
+registered. See [Connected-app scopes](https://docs.donkey-kit.dev/reference/scopes.md). Publishing has been checked against a live sandbox
 with a connected app's token.
 
 Each asset is published with:
@@ -287,7 +277,7 @@ and `--json` still prints every asset with its `status` and `detail`:
 When the scan or the declaration has an issue, nothing is sent: `--json`
 prints every asset `not_attempted`, with the issues, and the command exits
 `1`. Each `--json` document carries a format key; see
-[JSON output](/cli#json-output).
+[JSON output](https://docs.donkey-kit.dev/cli.md#json-output).
 
 The refusal and its fix go to stderr, and a refused asset's `detail` ends with
 the same fix. A common one: a connected app without `manage:exchange` can
@@ -325,13 +315,13 @@ version-bump rule. Each agent asset is published with:
   stored with the asset. Exchange stores an `a2a_v1` agent's protocol as `a2a`,
   with the version carried by its A2A 1.0 card, so the agent is listed as
   protocol `a2a`, version `v1`. That is the form the gateway accepts when
-  [`donkey expose`](/a2a/serve) fronts the agent.
+  [`donkey expose`](https://docs.donkey-kit.dev/registry/serve.md) fronts the agent.
 - an `agent-metadata` file: the protocol, the agent's name and description,
   and its asset coordinates.
 - for an `a2a_v1` agent, an **A2A agent card** (`a2a-v1-card`): the name,
   description, version, skills, input and output modes and the endpoint, as an
   A2A 1.0 card. It is built from the same `@donkey.agent` record as the card
-  [`donkey.serve()`](/a2a/serve) serves, so the two match.
+  [`donkey.serve()`](https://docs.donkey-kit.dev/registry/serve.md) serves, so the two match.
 - the endpoint, if you declared one, registered as an external instance.
 - a Home page with the same Overview and provenance as an MCP server's, the
   agent's skills, and how to connect (protocol and endpoint).
@@ -343,14 +333,14 @@ Publishing agents has been checked against a live sandbox, as for MCP servers.
 Publication is for assets that **originate in your code**:
 
 - an MCP server written in Python or TypeScript,
-- an agent exposed over [A2A](/a2a/serve),
+- an agent exposed over [A2A](https://docs.donkey-kit.dev/registry/serve.md),
 - an agent exposed as a tool without an A2A surface.
 
 It is not for assets the platform already owns. An MCP server created by MCP
 Bridge from an existing API is already in Exchange; publishing a second,
 code-derived descriptor would create two catalog entries for one capability.
 
-### Collision check <Badge tone="roadmap">Roadmap</Badge>
+### Collision check Roadmap
 
 `donkey publish` doesn't run this check yet. As planned, before publishing the
 SDK will search Exchange for an existing asset with the same endpoint, name, or
@@ -360,8 +350,8 @@ override it with a `WARNING`.
 
 ## Related
 
-- [CI pipelines](/publishing/ci) — the GitHub Actions, GitLab CI and Bitbucket Pipelines recipes.
-- [Publication & verify()](/publishing/publication) — the Publication object, descriptor derivation and runtime verification.
-- [Decorators](/decorators) — mark tools with `@donkey.tool` today.
-- [A2A agents](/a2a/serve) — serve and expose the agent whose card you publish.
-- [Tool access](/tool-access) — discover and bind published tools from Exchange.
+- [CI pipelines](https://docs.donkey-kit.dev/registry/publish/ci.md) — the GitHub Actions, GitLab CI and Bitbucket Pipelines recipes.
+- [Publication & verify()](https://docs.donkey-kit.dev/registry/publish/publication.md) — the Publication object, descriptor derivation and runtime verification.
+- [Decorators](https://docs.donkey-kit.dev/decorators.md) — mark tools with `@donkey.tool` today.
+- [A2A agents](https://docs.donkey-kit.dev/registry/serve.md) — serve and expose the agent whose card you publish.
+- [Tool access](https://docs.donkey-kit.dev/tool-access.md) — discover and bind published tools from Exchange.

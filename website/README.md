@@ -161,13 +161,15 @@ breaks a link.
 content/
   index.mdx, quickstart.mdx,
   feature-overview.mdx               Get started
-  frameworks/                         Model access — one page per framework
+  connect.mdx, frameworks/,
+  tool-access/, a2a/                  Connect (models, MCP tools, A2A agents)
+  registry/                           Registry & catalog (discovery, lockfile, publish, serve)
+  governance/gateway-policies/        Gateway policies, one page per surface
   errors, budget, identity,
   hitl, policies                      Governance
   telemetry                           Observability
   simulator, testing, cli,
   use-with-your-agent                 Developer tooling
-  tool-access/, a2a, publishing       Registry & catalog
   scenarios/                          Scenarios
   examples/                           Examples (from donkey-development-kit-demos)
   roadmap.mdx                         Roadmap — rendered from data/roadmap.json

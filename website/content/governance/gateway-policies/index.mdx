@@ -1,0 +1,57 @@
+---
+description: What the gateway enforces on model, MCP and A2A calls, which policy pages cover each surface, and what the three meanings of "policy" in these docs are.
+status: offline-verified
+---
+
+import { Callout } from 'nextra/components'
+
+# Gateway policies
+
+Policies run at the gateway, not in your agent. DDK does not evaluate them. It
+makes the outcome visible in code: a typed exception, a field on the response, a
+span attribute. Each surface has its own page, because the policies, the
+captured refusals and what your code sees differ.
+
+<Callout type="info">
+  **Three things are called "policy" in these docs.** *Gateway policies* are
+  what the gateway enforces on each surface, covered by the pages in this
+  section. *[Custom policies](/custom-policies)* teach `classify()` the refusal
+  shape your own gateway policy returns. The *[policy handshake](/policies)* is a
+  planned, advisory read of the policies in force; the gateway always wins.
+</Callout>
+
+## One page per surface
+
+- [Models](/governance/gateway-policies/models): policies on an LLM proxy
+  instance, the typed exception or field each gives your code, and how to
+  rehearse it offline.
+- [MCP tools](/governance/gateway-policies/mcp): policies on an MCP server
+  instance, including what they do to the tool catalog.
+- [A2A agents](/governance/gateway-policies/a2a): policies on an A2A agent
+  instance, per protocol version.
+
+## Policy families across surfaces
+
+This matrix lines up the policy families the gateway enforces on each surface. A
+link goes to the section that documents that policy on the surface's page; **—**
+means that surface's policies page has no section for the family. The status
+badges live on the linked pages, so this table makes no status claims of its own.
+
+| Policy family | Models | MCP tools | A2A agents |
+|---|---|---|---|
+| Who may call | [Client ID enforcement](/governance/gateway-policies/models#client-id-enforcement) | [Global access](/governance/gateway-policies/mcp#mcp-global-access), [attribute-based access](/governance/gateway-policies/mcp#mcp-attribute-based-access-control) | — |
+| Token and request limits | [Token rate limiting](/governance/gateway-policies/models#token-rate-limiting), [request rate limiting](/governance/gateway-policies/models#request-rate-limiting) | — | [Token rate limit](/governance/gateway-policies/a2a#captured-outcomes) |
+| Personal data | [PII detection](/governance/gateway-policies/models#pii-detection) | [MCP PII detector](/governance/gateway-policies/mcp#mcp-pii-detector) | [PII detector](/governance/gateway-policies/a2a#captured-outcomes) |
+| Prompt injection and content safety | [Injection protection](/governance/gateway-policies/models#injection-protection-and-regex-prompt-guard), [content safety](/governance/gateway-policies/models#content-safety-and-guardrails) | — | [Azure content guardrails](/governance/gateway-policies/a2a#captured-outcomes) |
+| Schema and tool poisoning | — | [Schema validation and tool poisoning](/governance/gateway-policies/mcp#mcp-schema-validation-and-tool-poisoning) | [Schema validation](/governance/gateway-policies/a2a#captured-outcomes) |
+| Approval and step-up | [OAuth2 OBO and CIBA](/governance/gateway-policies/models#oauth2-obo-step-up-ciba) | [Approval on `invoke_tool`](/governance/gateway-policies/mcp#mcp-tools-progressive-disclosure) | [Challenges and replay](/governance/gateway-policies/a2a#challenges-and-replay) |
+| Kill switch | [Agent kill switch](/governance/gateway-policies/models#agent-kill-switch) | — | — |
+| Routing and caching | [Model-based routing](/governance/gateway-policies/models#model-based-routing-and-fallback), [semantic caching](/governance/gateway-policies/models#semantic-caching) | — | — |
+| Tool discovery and payload size | — | [Progressive disclosure](/governance/gateway-policies/mcp#mcp-tools-progressive-disclosure), [payload optimization](/governance/gateway-policies/mcp#mcp-payload-optimization) | — |
+| Protocol version | — | — | [Protocol versions](/governance/gateway-policies/a2a#protocol-versions) |
+
+## Related
+
+- [Typed refusals](/errors): the exception each refusal becomes.
+- [Refusal handlers](/refusal-handlers): react to a refusal once, for every call.
+- [Human-in-the-loop](/hitl): the approval and step-up policies from your code.

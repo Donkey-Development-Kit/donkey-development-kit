@@ -6,36 +6,66 @@
 
 - [Introduction](https://docs.donkey-kit.dev/index.md): Governed by the gateway, understood by your code. DDK brings Agent Fabric and Omni Gateway awareness into your agent framework — typed refusals, budgets, telemetry and simulation, with native framework objects.
 - [Quickstart](https://docs.donkey-kit.dev/quickstart.md): (status: live) From pip install to a governed model call, a typed refusal, a budget and an OpenTelemetry span — locally, with no gateway and no credentials.
-- [Feature overview](https://docs.donkey-kit.dev/feature-overview.md): (status: live) Every DDK capability at a glance — its purpose, its goal, and what it saves developers — grouped by surface (models, MCP tools, A2A agents) and then by concern.
+- [Feature overview](https://docs.donkey-kit.dev/feature-overview.md): (status: live) Every DDK capability at a glance, as a capability by surface matrix (models, MCP tools, A2A agents) with its purpose, its goal, and what it saves developers.
 - [Use with your coding agent](https://docs.donkey-kit.dev/use-with-your-agent.md): (status: live) Point your coding assistant at these docs — llms.txt, llms-full.txt, and a .md next to every page — so it writes correct governed code.
 
-## Frameworks
+## Connect
 
-- [Supported frameworks](https://docs.donkey-kit.dev/supported-frameworks.md): (status: offline-verified) Which agent frameworks DDK supports on each surface, how deep each one goes, and where the framework-specific how-to lives.
+- [Overview](https://docs.donkey-kit.dev/connect.md): (status: offline-verified) Connect an agent to a governed model, MCP tool or A2A agent through the gateway. Pick the surface, then the page for it.
 
 ## Models
 
 - [Overview](https://docs.donkey-kit.dev/frameworks.md): (status: live) Governed model access from eight agent frameworks. Each adapter returns the framework's own native model or client object, pointed at your Omni Gateway LLM proxy.
-- [Gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md): (status: offline-verified) What each Omni Gateway policy on an LLM proxy does to a model call, the typed exception or field DDK gives your code for it, and how to rehearse it offline.
 - [Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md): (status: live) How DDK reports the provider and model the gateway actually served, when a fallback answered, and how semantic routing and semantic caching show up on each response.
 - [Version compatibility](https://docs.donkey-kit.dev/frameworks/compatibility.md): (status: live) Which versions of each agent framework donkey-kit supports — the minimum, the version every PR tests, and known incompatibilities.
 
 ## MCP tools
 
 - [Overview](https://docs.donkey-kit.dev/tool-access.md): (status: live) Discover the governed MCP tools your organisation publishes in Exchange and bind them into any framework as native tool objects.
-- [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md): (status: live) Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
 - [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md): (status: live) Turn discovered governed MCP servers into each framework's native tool objects, with auth, lifecycle, name collisions, and filtering handled for you.
-- [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md): (status: offline-verified) Pin the tools each governed MCP server lists in a donkey.lock, so a catalog change becomes a typed ToolLockDrift and a reviewable diff instead of a runtime surprise.
-- [Gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md): (status: offline-verified) Consume policy-shaped MCP catalogs and handle gateway refusals without guessing policy identity or reimplementing enforcement.
 
 ## A2A agents
 
 - [Overview](https://docs.donkey-kit.dev/a2a.md): (status: offline-verified) Everything DDK does for agent-to-agent (A2A) calls, in one place. Serve and expose your agent behind the gateway, call other governed agents, and handle what the gateway enforces.
-- [Serve & expose](https://docs.donkey-kit.dev/a2a/serve.md): (status: offline-verified) Make your agent callable by other agents over A2A — serve it in one line, expose it through the gateway, and develop against a gateway on your laptop.
 - [Call other agents](https://docs.donkey-kit.dev/a2a/call.md): (status: offline-verified) Send official A2A SDK requests to registry-resolved governed agents, with scoped authentication and context-managed streams.
-- [Gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md): (status: offline-verified) Version-specific A2A gateway policy captures, DDK outcomes, and offline replay and telemetry boundaries.
 
-## Governance (all surfaces)
+## Connect
+
+- [Supported frameworks](https://docs.donkey-kit.dev/supported-frameworks.md): (status: offline-verified) Which agent frameworks DDK supports on each surface, how deep each one goes, and where the framework-specific how-to lives.
+
+## Registry & catalog
+
+- [Overview](https://docs.donkey-kit.dev/registry.md): (status: offline-verified) How DDK finds, pins, publishes and serves governed assets in Exchange, for models, MCP tools and A2A agents.
+
+## Discovery
+
+- [Overview](https://docs.donkey-kit.dev/registry/discovery.md): (status: offline-verified) Find governed assets in Exchange for each surface. MCP tools are filtered and searched, A2A agents are resolved by reference, and models have no catalog endpoint.
+- [Models](https://docs.donkey-kit.dev/registry/discovery/models.md): (status: offline-verified) Where a model's identity comes from in DDK. The proxy has no catalog endpoint, so use resolve() for a known id and read an llm asset's declared models from Exchange.
+- [MCP tools](https://docs.donkey-kit.dev/registry/discovery/mcp.md): (status: live) Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
+- [A2A agents](https://docs.donkey-kit.dev/registry/discovery/a2a.md): (status: live) Resolve a published A2A agent from Exchange to its deployed gateway endpoint with donkey.registry.resolve_agent(), before calling it.
+
+## Registry & catalog
+
+- [Pinning & lockfile](https://docs.donkey-kit.dev/registry/lockfile.md): (status: offline-verified) Pin the tools each governed MCP server lists in a donkey.lock, so a catalog change becomes a typed ToolLockDrift and a reviewable diff instead of a runtime surprise.
+
+## Scan & publish
+
+- [Overview](https://docs.donkey-kit.dev/registry/publish.md): (status: live) donkey scan derives a deterministic model of your agents, tools and MCP servers from code; publishing registers it with Exchange / Agent Registry from CI, complementing Agent Scanners.
+- [CI pipelines](https://docs.donkey-kit.dev/registry/publish/ci.md): (status: live) Run donkey publish from GitHub Actions, GitLab CI or Bitbucket Pipelines, with the same plan, artifact and exit code on each provider.
+- [Publication & verify()](https://docs.donkey-kit.dev/registry/publish/publication.md): (status: live) The Publication object, descriptor derivation, and verify(), the read-only runtime check that a live MCP server or A2A agent still matches its published version.
+
+## Registry & catalog
+
+- [Serve & expose](https://docs.donkey-kit.dev/registry/serve.md): (status: offline-verified) Make your agent callable by other agents over A2A — serve it in one line, expose it through the gateway, and develop against a gateway on your laptop.
+
+## Gateway policies
+
+- [Overview](https://docs.donkey-kit.dev/governance/gateway-policies.md): (status: offline-verified) What the gateway enforces on model, MCP and A2A calls, which policy pages cover each surface, and what the three meanings of "policy" in these docs are.
+- [Models](https://docs.donkey-kit.dev/governance/gateway-policies/models.md): (status: offline-verified) What each Omni Gateway policy on an LLM proxy does to a model call, the typed exception or field DDK gives your code for it, and how to rehearse it offline.
+- [MCP tools](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md): (status: offline-verified) Consume policy-shaped MCP catalogs and handle gateway refusals without guessing policy identity or reimplementing enforcement.
+- [A2A agents](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md): (status: offline-verified) Version-specific A2A gateway policy captures, DDK outcomes, and offline replay and telemetry boundaries.
+
+## Governance
 
 - [Typed refusals](https://docs.donkey-kit.dev/errors.md): (status: live) Typed exceptions for every governance refusal, each with a discriminator, a retry rule, and a next step.
 - [Refusal handlers](https://docs.donkey-kit.dev/refusal-handlers.md): (status: live) Register a reaction to a typed refusal once, and the transport applies it to every governed call. A handler reacts; it never turns a refusal into a success.
@@ -49,7 +79,7 @@
 - [In your framework](https://docs.donkey-kit.dev/hitl/frameworks.md): (status: live) How the framework approval helpers pause a tool call for a human in LangGraph, the OpenAI Agents SDK, Strands and Google ADK, and resume it on approval.
 - [Gateway step-up & challenges](https://docs.donkey-kit.dev/hitl/gateway-step-up.md): (status: live) Gateway step-up and A2A Authorization-Code challenges, plus the discovered-tools approval. The gateway holds a call until a person approves it.
 
-## Governance (all surfaces)
+## Governance
 
 - [Policy handshake](https://docs.donkey-kit.dev/policies.md): (status: roadmap) Read the in-force policy set to avoid calls that will be refused — advisory only; the gateway always wins.
 
@@ -76,12 +106,6 @@
 - [Set up](https://docs.donkey-kit.dev/cli/setup.md): (status: live) donkey init and donkey doctor set up a project's connection and configuration, and check that the setup is right.
 - [Develop locally](https://docs.donkey-kit.dev/cli/local.md): (status: live) donkey mock, donkey dev and donkey test run your agent against the local simulator, a dev card and the offline test suite.
 - [Ship](https://docs.donkey-kit.dev/cli/ship.md): (status: live) From code to a publish plan, then donkey scan, scaffold, publish, verify and expose, the commands that take an agent from code to Exchange.
-
-## Scan & publish
-
-- [Overview](https://docs.donkey-kit.dev/publishing.md): (status: live) donkey scan derives a deterministic model of your agents, tools and MCP servers from code; publishing registers it with Exchange / Agent Registry from CI, complementing Agent Scanners.
-- [CI pipelines](https://docs.donkey-kit.dev/publishing/ci.md): (status: live) Run donkey publish from GitHub Actions, GitLab CI or Bitbucket Pipelines, with the same plan, artifact and exit code on each provider.
-- [Publication & verify()](https://docs.donkey-kit.dev/publishing/publication.md): (status: live) The Publication object, descriptor derivation, and verify(), the read-only runtime check that a live MCP server or A2A agent still matches its published version.
 
 ## Build, test & ship
 

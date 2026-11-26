@@ -22,7 +22,7 @@ When a publish fails partway, the job summary and the outputs still list every
 asset with its status (`failed`, `incomplete`, `not_attempted`), and re-running
 the job finishes what was left. The inputs, outputs and failure behaviour are
 documented in
-[Scan & publish → From GitHub Actions](https://docs.donkey-kit.dev/publishing#from-github-actions).
+[Scan & publish → From GitHub Actions](https://docs.donkey-kit.dev/registry/publish#from-github-actions).
 
 | File | |
 | --- | --- |

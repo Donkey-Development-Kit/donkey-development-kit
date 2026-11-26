@@ -11,9 +11,27 @@ Everything below hangs off a single shared transport inside your process — the
 one place where every request enters and every response leaves. Each capability
 attaches there once, so you never wire it call by call.
 
-The first three sections follow the three surfaces an agent reaches through the
-gateway: **models**, **MCP tools** and **A2A agents**. Each has its own gateway
-policies page. The sections after them cut across all three.
+## Capability by surface
+
+DDK's capabilities apply to three surfaces an agent reaches through the gateway:
+**models**, **MCP tools** and **A2A agents**. Pick the row for what you want to
+do and the column for the surface. **n/a** means the capability does not apply to
+that surface today. Each linked page carries its own status badge.
+
+| Capability | Models | MCP tools | A2A agents |
+|---|---|---|---|
+| **Connect** | [Models](https://docs.donkey-kit.dev/frameworks.md) | [MCP tools](https://docs.donkey-kit.dev/tool-access.md) | [A2A agents](https://docs.donkey-kit.dev/a2a.md) |
+| **Discover** | [Models](https://docs.donkey-kit.dev/registry/discovery/models.md) | [MCP tools](https://docs.donkey-kit.dev/registry/discovery/mcp.md) | [A2A agents](https://docs.donkey-kit.dev/registry/discovery/a2a.md) |
+| **Pin** | n/a | [Pinning & lockfile](https://docs.donkey-kit.dev/registry/lockfile.md) | n/a |
+| **Publish** | n/a | [Scan & publish](https://docs.donkey-kit.dev/registry/publish.md#publishing-mcp-servers) | [Scan & publish](https://docs.donkey-kit.dev/registry/publish.md#publishing-agents) |
+| **Serve** | n/a | n/a | [Serve & expose](https://docs.donkey-kit.dev/registry/serve.md) |
+| **Gateway policies** | [Models](https://docs.donkey-kit.dev/governance/gateway-policies/models.md) | [MCP tools](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md) | [A2A agents](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md) |
+| **Typed refusals, handlers, approvals** | [Typed refusals](https://docs.donkey-kit.dev/errors.md) | [Typed refusals](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching), [step-up](https://docs.donkey-kit.dev/hitl/gateway-step-up.md#step-up-on-a-tool-call) | [Typed refusals](https://docs.donkey-kit.dev/errors.md#json-rpc-refusal-matching), [challenges](https://docs.donkey-kit.dev/hitl/gateway-step-up.md#a2a-authorization-code-challenges) |
+| **Observability** | [Spans](https://docs.donkey-kit.dev/telemetry.md) | [Spans](https://docs.donkey-kit.dev/telemetry.md) | [Outbound A2A spans](https://docs.donkey-kit.dev/telemetry.md#outbound-a2a-spans), [hops](https://docs.donkey-kit.dev/correlation.md#across-agent-hops) |
+| **Test offline** | [Simulator](https://docs.donkey-kit.dev/simulator.md) | [MCP faults](https://docs.donkey-kit.dev/simulator/mcp.md) | [A2A faults](https://docs.donkey-kit.dev/simulator/a2a.md) |
+
+The sections below describe each capability in turn. The first three cover the
+surfaces themselves, and the ones after them cut across all three.
 
 ## Models
 
@@ -48,7 +66,7 @@ shared `Donkey` (`donkey.langgraph.chat_model(...)`), a module-level factory
 (`from donkey_kit.integrations.langgraph import chat_model`), or
 `connection_kwargs()` when you want to build the native object yourself.
 
-Model calls also carry the model policies: [Model gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md)
+Model calls also carry the model policies: [Model gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/models.md)
 lists each one and what your code sees, and [Routing & fallback](https://docs.donkey-kit.dev/frameworks/routing.md)
 covers how the gateway picks the provider.
 
@@ -62,7 +80,7 @@ covers how the gateway picks the provider.
   
 
 The MCP policies the gateway enforces on tool calls are on
-[MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md).
+[MCP gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md).
 
 ## A2A agents
 
@@ -83,7 +101,7 @@ The MCP policies the gateway enforces on tool calls are on
   
 
 The A2A policies the gateway enforces are on
-[A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md).
+[A2A gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md).
 
 ## Governance
 
@@ -185,24 +203,9 @@ The A2A policies the gateway enforces are on
 
 ## Gateway policies at a glance
 
-Each surface has its own gateway policies page. This matrix lines up the policy
-families the gateway enforces on each one. A link goes to the section that
-documents that policy on the surface's page; **—** means that surface's policies
-page has no section for the family. The status badges live on the linked pages,
-so this table makes no status claims of its own.
-
-| Policy family | Models | MCP tools | A2A agents |
-|---|---|---|---|
-| Who may call | [Client ID enforcement](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#client-id-enforcement) | [Global access](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-global-access), [attribute-based access](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-attribute-based-access-control) | — |
-| Token and request limits | [Token rate limiting](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#token-rate-limiting), [request rate limiting](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#request-rate-limiting) | — | [Token rate limit](https://docs.donkey-kit.dev/a2a/gateway-policies.md#captured-outcomes) |
-| Personal data | [PII detection](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#pii-detection) | [MCP PII detector](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-pii-detector) | [PII detector](https://docs.donkey-kit.dev/a2a/gateway-policies.md#captured-outcomes) |
-| Prompt injection and content safety | [Injection protection](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#injection-protection-and-regex-prompt-guard), [content safety](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#content-safety-and-guardrails) | — | [Azure content guardrails](https://docs.donkey-kit.dev/a2a/gateway-policies.md#captured-outcomes) |
-| Schema and tool poisoning | — | [Schema validation and tool poisoning](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-schema-validation-and-tool-poisoning) | [Schema validation](https://docs.donkey-kit.dev/a2a/gateway-policies.md#captured-outcomes) |
-| Approval and step-up | [OAuth2 OBO and CIBA](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#oauth2-obo-step-up-ciba) | [Approval on `invoke_tool`](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-tools-progressive-disclosure) | [Challenges and replay](https://docs.donkey-kit.dev/a2a/gateway-policies.md#challenges-and-replay) |
-| Kill switch | [Agent kill switch](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#agent-kill-switch) | — | — |
-| Routing and caching | [Model-based routing](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#model-based-routing-and-fallback), [semantic caching](https://docs.donkey-kit.dev/frameworks/gateway-policies.md#semantic-caching) | — | — |
-| Tool discovery and payload size | — | [Progressive disclosure](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-tools-progressive-disclosure), [payload optimization](https://docs.donkey-kit.dev/tool-access/gateway-policies.md#mcp-payload-optimization) | — |
-| Protocol version | — | — | [Protocol versions](https://docs.donkey-kit.dev/a2a/gateway-policies.md#protocol-versions) |
+The policy families the gateway enforces on each surface are lined up on
+[Gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies.md#policy-families-across-surfaces),
+with a link to the section that documents each one.
 
 ## What DDK leaves to the platform
 

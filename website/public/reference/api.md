@@ -142,7 +142,7 @@ donkey.registry: ExchangeRegistry
 
 The Exchange registry client used for tool discovery and resolution.
 
-Guide: [`/tool-access/discovery`](https://docs.donkey-kit.dev/tool-access/discovery.md)
+Guide: [`/registry/discovery/mcp`](https://docs.donkey-kit.dev/registry/discovery/mcp.md)
 
 ### `donkey.a2a`
 
@@ -299,7 +299,7 @@ donkey.agent(*, name: str, skills: Sequence[str] = ()) -> Callable[[Callable], C
 
 Mark a callable as an agent entry point, recording its name, skills and docstring in an introspectable registry.
 
-Guide: [`/a2a/serve`](https://docs.donkey-kit.dev/a2a/serve.md)
+Guide: [`/registry/serve`](https://docs.donkey-kit.dev/registry/serve.md)
 
 ### `donkey.serve()`
 
@@ -316,7 +316,7 @@ donkey.serve(
 
 Serve a `@donkey.agent` handler over A2A on `host:port`, blocking until the server stops.
 
-Guide: [`/a2a/serve`](https://docs.donkey-kit.dev/a2a/serve.md)
+Guide: [`/registry/serve`](https://docs.donkey-kit.dev/registry/serve.md)
 
 ### `donkey.approvals`
 

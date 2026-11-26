@@ -103,8 +103,12 @@ async function main() {
     }
   }
   for (const [from, anchors] of Object.entries(MOVED_ANCHORS)) {
-    if (!(await routeExists(from))) {
-      throw new Error(`write-redirects: moved-anchor source is not exported: ${from}`)
+    // The source is either a page that still exists (a split) or a page that moved
+    // away, in which case its own PAGE_REDIRECTS stub carries the anchor table.
+    if (!(await routeExists(from)) && !Object.hasOwn(PAGE_REDIRECTS, from)) {
+      throw new Error(
+        `write-redirects: moved-anchor source is neither exported nor a redirected page: ${from}`
+      )
     }
     for (const to of Object.values(anchors)) {
       if (!(await routeExists(to))) {

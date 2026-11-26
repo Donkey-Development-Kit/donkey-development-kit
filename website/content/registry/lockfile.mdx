@@ -28,7 +28,7 @@ are **Provisional**: they may change in a minor release, with a migration note.
 ## Write the lock
 
 `donkey.tools.lock()` discovers servers the way
-[`discover()`](/tool-access/discovery) does. It then sends one `tools/list` to
+[`discover()`](/registry/discovery/mcp) does. It then sends one `tools/list` to
 each server, with the credential a binding would send, and writes
 `./donkey.lock`:
 
@@ -168,14 +168,14 @@ The facts it relies on were observed live:
 
 No live gateway has recorded a full `lock()`, then `discover(locked=True)`,
 round trip yet. That is why this page is marked Offline-verified. The
-[MCP gateway policy inventory](/tool-access/gateway-policies) describes the
+[MCP gateway policy inventory](/governance/gateway-policies/mcp) describes the
 policies that change a server's listing.
 
 ## Registry caching
 
 Registry lookups are cached with a configurable TTL (default 300 seconds).
 These are `ExchangeRegistry.search()`, `resolve_mcp()`, `explain()` and
-`resolve_agent()`; see [Discovery, search & filter](/tool-access/discovery).
+`resolve_agent()`; see [Discovery, search & filter](/registry/discovery/mcp).
 
 ```python
 from donkey_kit import Donkey

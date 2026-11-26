@@ -11,7 +11,7 @@ import { Badge } from '../../components'
 ## Discovered tools <Badge tone="neutral" ledger="§9 MCP Python SDK (baseline)">Local round-trip</Badge>
 
 `@donkey.tool` decorates a local function. A governed MCP tool from
-[`donkey.tools.discover()`](/tool-access/discovery) is not one, so you declare
+[`donkey.tools.discover()`](/registry/discovery/mcp) is not one, so you declare
 its approval once on the `ToolSet` instead. The gate runs in the SDK, before
 the call leaves the client. It has been run against local MCP servers, not
 through a gateway (see [Framework binding](/tool-access/binding)):

@@ -16,7 +16,7 @@ the surface sections, so each one is documented once.
 | --- | --- | --- |
 | [Models](/frameworks) | A governed model object from the framework's own API (`chat_model()`, `model()`, `llm()` and so on), with credentials, correlation, attribution and retry policy applied. | [Models](/frameworks), with one page per framework |
 | [MCP tools](/tool-access) | Governed MCP tools bound as the framework's native tools. Some frameworks bind one tool at a time; others take a whole server. | [Framework binding](/tool-access/binding) |
-| [A2A agents](/a2a) | Nothing framework-specific today. `donkey.a2a.send()` and `donkey.serve()` work the same for every framework. Binding an A2A agent as a framework tool is planned. | [Call other agents](/a2a/call), [Serve & expose](/a2a/serve) |
+| [A2A agents](/a2a) | Nothing framework-specific today. `donkey.a2a.send()` and `donkey.serve()` work the same for every framework. Binding an A2A agent as a framework tool is planned. | [Call other agents](/a2a/call), [Serve & expose](/registry/serve) |
 
 ## Models
 
@@ -61,7 +61,7 @@ a `ToolSet` method that returns its own native MCP objects.
 
 The classes and install extras are in [Framework binding](/tool-access/binding#per-framework-binding).
 The per-framework refusal behaviour is on the
-[MCP gateway policies](/tool-access/gateway-policies) page, and the same list
+[MCP gateway policies](/governance/gateway-policies/mcp) page, and the same list
 sits on the [MCP tools overview](/tool-access#supported-frameworks).
 
 ## A2A agents

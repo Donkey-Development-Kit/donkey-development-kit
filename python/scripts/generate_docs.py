@@ -1569,7 +1569,7 @@ _ARCHITECTURE = REPO / "ARCHITECTURE.md"
 
 #: Pages under ``frameworks/`` that document no adapter, so take no status from §8.
 #: ``index`` and the compatibility page have targets of their own.
-_NON_ADAPTER_PAGES = frozenset({"index", COMPATIBILITY_PAGE.stem, "gateway-policies", "routing"})
+_NON_ADAPTER_PAGES = frozenset({"index", COMPATIBILITY_PAGE.stem, "routing"})
 
 
 def _framework_page_targets() -> tuple[Target, ...]:

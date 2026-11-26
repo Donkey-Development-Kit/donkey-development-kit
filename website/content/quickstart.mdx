@@ -27,12 +27,12 @@ Omni Gateway later is an environment change, not a code change.
 | Conformance testing with pytest | <Badge tone="live">Live</Badge> | [Testing & conformance](/testing) |
 | CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `scaffold`, `publish`, `verify`, `preflight`, `expose`) & decorators | <Badge tone="live" ledger="§7 Read back a published version's `mcp-metadata` tools; §12.5 `POST /apimanager/xapi/v1/…/apis/{apiId}/policies/outbound-policies`; §12.5 `POST /proxies/xapi/v1/…/apis/{apiId}/deployments`">Live</Badge> | [CLI](/cli) and [decorators](/decorators) |
 | Governed tool access (MCP) | <Badge tone="live" ledger="§6 How does an Exchange MCP asset resolve; §6 Does the gateway route the resolved MCP path?">Live</Badge> | [Tool access](/tool-access) |
-| A2A agents: `donkey.serve()`, `donkey dev` | <Badge tone="neutral" ledger="§8.5 `a2a.server.agent_execution.AgentExecutor`">Offline-verified</Badge> | [A2A agents](/a2a/serve) |
-| A2A agents: `donkey expose` | <Badge tone="live" ledger="§12.5 `POST /apimanager/xapi/v1/…/apis/{apiId}/policies/outbound-policies`; §12.5 `POST /proxies/xapi/v1/…/apis/{apiId}/deployments`">Live</Badge> | [A2A agents](/a2a/serve) |
+| A2A agents: `donkey.serve()`, `donkey dev` | <Badge tone="neutral" ledger="§8.5 `a2a.server.agent_execution.AgentExecutor`">Offline-verified</Badge> | [A2A agents](/registry/serve) |
+| A2A agents: `donkey expose` | <Badge tone="live" ledger="§12.5 `POST /apimanager/xapi/v1/…/apis/{apiId}/policies/outbound-policies`; §12.5 `POST /proxies/xapi/v1/…/apis/{apiId}/deployments`">Live</Badge> | [A2A agents](/registry/serve) |
 | On-behalf-of identity: `donkey.as_user()` | <Badge tone="live" ledger="§13 User-token request header">Live</Badge> | [Identity](/identity) |
 | Human-in-the-loop (tool approvals) | <Badge tone="live" ledger="§4 OAuth2 OBO Credential Injection, CIBA pending">Live</Badge> | [Human-in-the-loop](/hitl) |
 | `donkey scan` and `donkey scaffold` (agents, tools and MCP servers from code, and the declarations they need) | <Badge tone="live">Live</Badge> | [From code to a publish plan](/cli/ship#from-code-to-a-publish-plan) |
-| Publish to the registry and verify: `donkey publish`, `donkey verify` | <Badge tone="live" ledger="§7 Can arbitrary metadata/tags be attached; §7 Read back a published version's `mcp-metadata` tools">Live</Badge> | [Scan & publish](/publishing) |
+| Publish to the registry and verify: `donkey publish`, `donkey verify` | <Badge tone="live" ledger="§7 Can arbitrary metadata/tags be attached; §7 Read back a published version's `mcp-metadata` tools">Live</Badge> | [Scan & publish](/registry/publish) |
 | Policy handshake | <Badge tone="roadmap">Roadmap</Badge> | [Policy handshake](/policies) |
 
 ## Your first governed call
@@ -324,7 +324,7 @@ If `doctor` reports a `404`, read which line it is on:
 - **[From code to a publish plan](/cli/ship#from-code-to-a-publish-plan)** — scan
   your decorated agents and tools, scaffold their `.donkey-kit.toml`
   declarations and review the publish plan, all offline.
-- **[Model gateway policies](/frameworks/gateway-policies)** — what each gateway
+- **[Model gateway policies](/governance/gateway-policies/models)** — what each gateway
   policy does to a model call, and the typed exception your code gets for it.
 - **[Examples](/examples)** — runnable demos for every capability on this page.
 - **[Scenarios](/scenarios)** — support triage, a nightly batch and an internal

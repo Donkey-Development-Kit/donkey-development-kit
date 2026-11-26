@@ -201,7 +201,7 @@ refusal_count  # unused variable (src/donkey_kit/core/runledger.py)
 dropped  # unused variable (src/donkey_kit/core/runledger.py)
 _.is_a  # unused method (src/donkey_kit/core/runledger.py)
 # LlmMetadata fields are read by the caller of ExchangeRegistry.llm_metadata()
-# (#1533, tests/unit/test_llm_metadata.py, website/content/tool-access/discovery.mdx).
+# (#1533, tests/unit/test_llm_metadata.py, website/content/registry/discovery/mcp.mdx).
 platform  # unused variable (src/donkey_kit/registry/models.py)
 input_format  # unused variable (src/donkey_kit/registry/models.py)
 _.missing_model_remediation  # public class attribute: ModelNotRoutable's #1547 wording (tests, errors.mdx)

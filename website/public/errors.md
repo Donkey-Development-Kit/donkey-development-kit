@@ -19,7 +19,7 @@ a gateway policy. The authoritative discriminator is the error **`type`** plus
 specific headers.
 
 For what each model policy means for your code, policy by policy, see
-[Model gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md).
+[Model gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/models.md).
 
 | Rejection | HTTP | Discriminator | Maps to |
 |---|---|---|---|
@@ -169,7 +169,7 @@ A2A PII and schema-policy responses still lack a reliable policy identifier:
 guardrail headers identifies PII. Fail-closed Azure and Bedrock HTTP `503`
 responses remain `UpstreamModelError`, not `ContentSafetyBlocked` or
 `GatewayUnavailable`. A Bedrock A2A content-block shape remains unverified.
-See [A2A gateway policies](https://docs.donkey-kit.dev/a2a/gateway-policies.md) for the version-specific
+See [A2A gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/a2a.md) for the version-specific
 capture inventory and the difference between refusals and auth-required tasks.
 
 When you explicitly call `classify(response)` on a `jsonrpc: "2.0"` error
@@ -193,7 +193,7 @@ Original HTTP responses on errors remain potentially sensitive; do not log them.
 
 ### MCP PII metadata
 
-The [MCP gateway policy inventory](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) covers
+The [MCP gateway policy inventory](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md) covers
 policy configuration boundaries and which native bindings preserve these refusals.
 
 For an MCP PII rejection, `.policy` is `"mcp-pii-detector"`, `.phase` is

@@ -1,24 +1,18 @@
----
-description: Find governed MCP tools by governance criteria, domain and tags, search the registry by name, asset type and environment, and see why any tool was included or excluded.
-status: live
----
-
-import { Callout } from 'nextra/components'
-import { Badge } from '../../components'
-
 # Discovery, search & filter
+
+Status: Live. Shipped, and verified against a real governed gateway.
 
 `donkey.tools.discover()` composes three live registry reads:
 [`donkey.registry.search()`](#registry-search),
 [`donkey.registry.explain()`](#explain--why-a-tool-was-included-or-excluded) and
 [`donkey.registry.resolve_mcp()`](#resolving-an-mcp-server). What it returns
 has been bound and called through the governed gateway with every supported
-framework (see [Framework binding](/tool-access/binding)).
+framework (see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)).
 
 `donkey.tools.discover(...)` is the one entry point for finding governed tools
 to bind. It narrows the catalog by **governance** and tags, so an agent
 binds only the tools it needs rather than the entire catalog. It returns a
-[`ToolSet`](/tool-access/binding) whose per-framework methods hand back native
+[`ToolSet`](https://docs.donkey-kit.dev/tool-access/binding.md) whose per-framework methods hand back native
 tool objects. Name search and asset type are filters on the lower-level
 [`donkey.registry.search()`](#registry-search).
 
@@ -50,9 +44,9 @@ tools = await donkey.tools.discover(
 | `domain` | `str \| None` | Catalog domain. Raises `NotImplementedError` for now: Exchange has no domain filter. |
 | `tags` | `list[str] \| None` | All listed tags must be present. |
 | `governed` | `bool \| GovernanceCriteria \| None` | `True` (the default) applies the default criteria; pass a `GovernanceCriteria` (e.g. `STRICT`) for explicit rules; `None` = unfiltered. |
-| `locked` | `bool` | `True` reads `donkey.lock` and checks the set against it: drift raises `ToolLockDrift`, and unpinned tools are dropped (see [Pinning & lockfile](/tool-access/lockfile)). Provisional. Default `False`. |
+| `locked` | `bool` | `True` reads `donkey.lock` and checks the set against it: drift raises `ToolLockDrift`, and unpinned tools are dropped (see [Pinning & lockfile](https://docs.donkey-kit.dev/registry/lockfile.md)). Provisional. Default `False`. |
 | `lock_path` | `str \| PathLike` | The lockfile `locked=True` reads. Default `"donkey.lock"`. |
-| `auth` | `McpAuth \| None` | The gateway credential bindings send. `None` uses the data-plane consumer credential; see [Auth](/tool-access/binding#auth). |
+| `auth` | `McpAuth \| None` | The gateway credential bindings send. `None` uses the data-plane consumer credential; see [Auth](https://docs.donkey-kit.dev/tool-access/binding.md#auth). |
 
 It reads at most 200 MCP assets, and logs a warning when it reaches that limit;
 narrow it with `tags=`. A server that does not resolve to exactly one deployed
@@ -65,20 +59,20 @@ Discovery finds servers, not their current tool names. It opens no MCP
 connection, so MCP Tool Mapping and Tools Progressive Disclosure become visible
 only when you call `describe()` or bind. Use the gateway-visible names in
 filters and approval rules; see
-[Gateway-visible catalogs](/tool-access/binding#gateway-visible-catalogs).
+[Gateway-visible catalogs](https://docs.donkey-kit.dev/tool-access/binding.md#gateway-visible-catalogs).
 For access-scoped lists, refusal handling and result transformations, see
-[MCP gateway policies](/tool-access/gateway-policies).
+[MCP gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md).
 
 When listing tools, the SDK retains HTTP error bodies for classification only
 within a 64 KiB limit and a five-second total deadline shared by the read and
 best-effort cleanup, with no compressed or partial envelope classification.
 Cancellation is not delayed by cleanup. Authentication failures remain `AuthError`; other
 listing failures surface as `ToolInvocationError`. See
-[Results and errors](/tool-access/binding#results-and-errors).
+[Results and errors](https://docs.donkey-kit.dev/tool-access/binding.md#results-and-errors).
 
 ## Registry search
 
-`donkey.registry.search()` is <Badge tone="live" ledger="§7 Exchange asset search endpoint">Live</Badge>. `discover(...)`
+`donkey.registry.search()` is Live. `discover(...)`
 is the high-level facade over the registry. When you need name search, asset
 types or a result limit, call `donkey.registry.search()` directly. It returns
 `AssetRef` handles rather than a bindable `ToolSet`:
@@ -107,14 +101,14 @@ latest version:
 - `asset_types` and `tags` are applied by Exchange. `"api"` covers Exchange's
   REST, HTTP and SOAP API types. `"llm"` is an LLM proxy or a custom LLM
   provider; read what one declares with
-  [`donkey.registry.llm_metadata()`](#reading-an-llm-assets-metadata). A tag is an Exchange tag.
+  [`donkey.registry.llm_metadata()`](https://docs.donkey-kit.dev/registry/discovery/models.md#reading-an-llm-assets-metadata). A tag is an Exchange tag.
 - `domain`, `environment`, `governed` and the `"a2a-agent"` type raise
   `NotImplementedError` for now. Exchange has no domain filter, and
   `environment` and `governed` need the governed-state join below.
 
 ## Resolving an MCP server
 
-`donkey.registry.resolve_mcp()` is <Badge tone="live" ledger="§6 How does an Exchange MCP asset resolve">Live</Badge>. It turns an
+`donkey.registry.resolve_mcp()` is Live. It turns an
 MCP server asset into the gateway URL an agent connects to:
 
 ```python
@@ -131,7 +125,7 @@ routes the path only with the trailing slash.
   version has no deployed MCP instance there, or when it has more than one.
 - The gateway URL receives the gateway credential, so it follows the same rule
   as the URLs you configure (see
-  [Endpoints must use `https://`](/reference/configuration#endpoints-must-use-https)):
+  [Endpoints must use `https://`](https://docs.donkey-kit.dev/reference/configuration.md#endpoints-must-use-https)):
   it must be `https://`. Plain `http://` is accepted for a loopback host, and
   for any other host only with `DONKEY_ALLOW_HTTP=1` in the environment, with a
   `ConfigWarning`. A gateway public URL that is not, or that carries a user name
@@ -143,46 +137,7 @@ routes the path only with the trailing slash.
 - The returned handle's `governance` is `None`: whether the instance is
   governed comes from [`explain()`](#explain--why-a-tool-was-included-or-excluded).
 - Results are cached like the other registry lookups; see
-  [Registry caching](/tool-access/lockfile#registry-caching).
-
-## Resolving an A2A agent
-
-`donkey.registry.resolve_agent()` is <Badge tone="live" ledger="§6 Does an A2A agent resolve">Live</Badge>. It does
-for an A2A agent asset what `resolve_mcp()` does for an MCP server, with the
-same reads, and finds the version's deployed A2A instance:
-
-```python
-agent = await donkey.registry.resolve_agent("<group-id>/claims-triage-agent/1.0.0")
-print(agent.endpoint_url)   # https://<gateway-host>/<instance-path>/
-```
-
-The agent's card is at `endpoint_url` + `.well-known/agent-card.json`. It raises
-`RegistryError` in the same cases as `resolve_mcp()`, including a gateway URL
-that is not `https://`, and like it sends no gateway credential. The immutable
-handle is resolution-only. Use [`donkey.a2a.send()` or `stream()`](/a2a/call)
-with the Exchange reference to call the agent; that provisional surface is
-offline-verified, not yet live-verified for successful gateway send/SSE.
-Framework-native `AgentHandle.as_tool()` remains planned.
-
-## Reading an LLM asset's metadata
-
-`donkey.registry.llm_metadata()` is <Badge tone="live" ledger="§7 Read back an `llm` asset's `llm-metadata` file">Live</Badge>. It reads the
-`llm-metadata` file of an `llm` asset version, an LLM proxy or a custom LLM
-provider, and returns what it declares:
-
-```python
-meta = await donkey.registry.llm_metadata("<group-id>/my-llm-provider/1.0.0")
-if meta is not None:
-    print(meta.platform, meta.input_format, meta.models)
-```
-
-`LlmMetadata` has `platform`, `name`, `input_format`, `models` (the model IDs)
-and `capabilities` (the file's object as published). The read is tolerant: it
-ignores fields it does not know, and a field the file leaves out or sets to the
-wrong type comes back as `None` or empty, never a guess. A DDK LLM proxy's file
-sets only `platform`. The read returns `None` for a version with no
-`llm-metadata` file, and raises `RegistryError` when Exchange has no such
-version. It needs `read:exchange`, and the file download carries no credential.
+  [Registry caching](https://docs.donkey-kit.dev/registry/lockfile.md#registry-caching).
 
 ## "Governed" is a computed predicate
 
@@ -224,16 +179,14 @@ Pass it straight through:
 tools = await donkey.tools.discover(governed=STRICT)
 ```
 
-<Callout type="warning">
   `allow_unknown` matters more than it looks. If the platform doesn't expose,
   say, ruleset results, then `require_governance_pass=True` with
   `allow_unknown=False` filters the whole catalog to zero — so every
   filtered-out asset carries a **reason**, surfaced by `explain()`.
-</Callout>
 
 ## `explain()` — why a tool was included or excluded
 
-`donkey.registry.explain()` is <Badge tone="live" ledger="§6 Are applied policies readable">Live</Badge>. Without it,
+`donkey.registry.explain()` is Live. Without it,
 `governed=True` returning an empty list is indistinguishable from a broken
 credential. `explain()` reports every check the criteria turn on:
 
@@ -283,7 +236,7 @@ It reads the asset version's API Manager instances in the environment set by
 - A refused Exchange read makes `tags` and `lifecycle` UNKNOWN. A refused API
   Manager read raises `RegistryError`.
 - Results are cached per asset version and criteria, like the other registry
-  lookups; see [Registry caching](/tool-access/lockfile#registry-caching).
+  lookups; see [Registry caching](https://docs.donkey-kit.dev/registry/lockfile.md#registry-caching).
 
 ## Defaults and performance
 
@@ -295,7 +248,7 @@ It reads the asset version's API Manager instances in the environment set by
   still lists a server the gateway does not govern, with its `explain()` report
   on the handle (`McpServerHandle.governance`), so you can audit the catalog.
   Binding refuses such a set with `UngovernedMcpServer` (see
-  [Only governed servers are bound](/tool-access/binding#only-governed-servers-are-bound)).
+  [Only governed servers are bound](https://docs.donkey-kit.dev/tool-access/binding.md#only-governed-servers-are-bound)).
 - **Nothing found is not an error.** When no server is left, `discover()`
   returns an empty `ToolSet` and logs why: no MCP asset matched, or none was
   governed.
@@ -310,7 +263,7 @@ It reads the asset version's API Manager instances in the environment set by
   `discover()` reads the governance verdicts from API Manager again.
   `DONKEY_NO_CACHE=1` turns both caches off. Each call records a `donkey.tools.discover` span whose
   `donkey.discover.cache` attribute is `hit` or `miss` (see
-  [Telemetry](/telemetry)).
+  [Telemetry](https://docs.donkey-kit.dev/telemetry.md)).
 - **No connection.** `discover()` opens no MCP connection. The tools are listed
   when you bind, or call `describe()`.
 - **Bounded fan-out.** The `explain()` and `resolve_mcp()` reads for each asset
@@ -332,5 +285,6 @@ tools = await donkey.tools.discover(tags=["erp"])  # cache hit
 
 ## Related
 
-- [Framework binding](/tool-access/binding) — turn a `ToolSet` into native tools.
-- [Pinning & lockfile](/tool-access/lockfile) — pin each server's listed tools and fail on drift.
+- [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md) — turn a `ToolSet` into native tools.
+- [Pinning & lockfile](https://docs.donkey-kit.dev/registry/lockfile.md) — pin each server's listed tools and fail on drift.
+- [Discovery for A2A agents](https://docs.donkey-kit.dev/registry/discovery/a2a.md) and [for models](https://docs.donkey-kit.dev/registry/discovery/models.md) — the same registry reads for the other two surfaces.

@@ -6,7 +6,7 @@ The [local simulator](https://docs.donkey-kit.dev/simulator.md) replays model-ro
 its MCP counterpart: refusing an MCP **tool call** in-process with
 `donkey.simulate_mcp()`, and replaying the packaged MCP gateway captures
 against your own client. For the policies these captures come from, see
-[MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md).
+[MCP gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md).
 
 ## MCP tool fault injection
 
@@ -39,7 +39,7 @@ with donkey.simulate_mcp("pii-request", servers=servers):
   dropped. A tool you declare with a different descriptor raises
   `ToolLockDrift` when the set binds. Call `donkey.tools.lock(path=...)` inside
   the block to pin the declared servers. See
-  [Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md).
+  [Pinning & lockfile](https://docs.donkey-kit.dev/registry/lockfile.md).
 - `times=1` (the default) counts injected requests. After that, a `tools/call`
   is answered by `call_tool(name, arguments)`. If you pass no `call_tool`, the
   answer is a single text item.
@@ -293,11 +293,11 @@ as bytes. Schema and poisoning errors cannot safely identify a gateway policy
 from generic codes or diagnostic text, so `jsonrpc_refusal()` leaves those
 captures untyped. Despite its name, `pii-response-sse.json` is HTTP 403
 `application/json`, not an SSE error event. The matcher takes a parsed JSON-RPC
-envelope, not raw SSE bytes. See [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md)
+envelope, not raw SSE bytes. See [MCP gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md)
 for the evidence boundaries and framework-specific refusal behavior.
 
 ## Next steps
 
 - [Local simulator](https://docs.donkey-kit.dev/simulator.md): model-route sentinels, scenarios and the server.
-- [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md): what each MCP policy does.
+- [MCP gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md): what each MCP policy does.
 - [Testing & conformance](https://docs.donkey-kit.dev/testing.md): `simulate()` and the `gateway` pytest fixture.

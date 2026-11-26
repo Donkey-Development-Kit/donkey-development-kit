@@ -217,7 +217,7 @@ def build_app(
         ImportError: The ``[a2a]`` extra is not installed.
         ValueError: The protocol version is unsupported.
 
-    Docs: https://docs.donkey-kit.dev/a2a/serve
+    Docs: https://docs.donkey-kit.dev/registry/serve
     """
     if protocol_version not in {"0.3.0", "1.0"}:
         raise ValueError(f"unsupported A2A protocol version {protocol_version!r}; use 0.3.0 or 1.0")
@@ -391,7 +391,7 @@ def serve(
         TypeError: ``handler`` is not marked with ``@donkey.agent``.
         ImportError: The ``[a2a]`` extra is not installed.
 
-    Docs: https://docs.donkey-kit.dev/a2a/serve
+    Docs: https://docs.donkey-kit.dev/registry/serve
     """
     app = build_app(
         handler,

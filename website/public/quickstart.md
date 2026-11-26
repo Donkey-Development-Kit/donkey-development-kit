@@ -21,12 +21,12 @@ Omni Gateway later is an environment change, not a code change.
 | Conformance testing with pytest | Live | [Testing & conformance](https://docs.donkey-kit.dev/testing.md) |
 | CLI (`init`, `doctor`, `mock`, `dev`, `test`, `scan`, `scaffold`, `publish`, `verify`, `preflight`, `expose`) & decorators | Live | [CLI](https://docs.donkey-kit.dev/cli.md) and [decorators](https://docs.donkey-kit.dev/decorators.md) |
 | Governed tool access (MCP) | Live | [Tool access](https://docs.donkey-kit.dev/tool-access.md) |
-| A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) |
-| A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md) |
+| A2A agents: `donkey.serve()`, `donkey dev` | Offline-verified | [A2A agents](https://docs.donkey-kit.dev/registry/serve.md) |
+| A2A agents: `donkey expose` | Live | [A2A agents](https://docs.donkey-kit.dev/registry/serve.md) |
 | On-behalf-of identity: `donkey.as_user()` | Live | [Identity](https://docs.donkey-kit.dev/identity.md) |
 | Human-in-the-loop (tool approvals) | Live | [Human-in-the-loop](https://docs.donkey-kit.dev/hitl.md) |
 | `donkey scan` and `donkey scaffold` (agents, tools and MCP servers from code, and the declarations they need) | Live | [From code to a publish plan](https://docs.donkey-kit.dev/cli/ship.md#from-code-to-a-publish-plan) |
-| Publish to the registry and verify: `donkey publish`, `donkey verify` | Live | [Scan & publish](https://docs.donkey-kit.dev/publishing.md) |
+| Publish to the registry and verify: `donkey publish`, `donkey verify` | Live | [Scan & publish](https://docs.donkey-kit.dev/registry/publish.md) |
 | Policy handshake | Roadmap | [Policy handshake](https://docs.donkey-kit.dev/policies.md) |
 
 ## Your first governed call
@@ -302,7 +302,7 @@ If `doctor` reports a `404`, read which line it is on:
 - **[From code to a publish plan](https://docs.donkey-kit.dev/cli/ship.md#from-code-to-a-publish-plan)** — scan
   your decorated agents and tools, scaffold their `.donkey-kit.toml`
   declarations and review the publish plan, all offline.
-- **[Model gateway policies](https://docs.donkey-kit.dev/frameworks/gateway-policies.md)** — what each gateway
+- **[Model gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/models.md)** — what each gateway
   policy does to a model call, and the typed exception your code gets for it.
 - **[Examples](https://docs.donkey-kit.dev/examples.md)** — runnable demos for every capability on this page.
 - **[Scenarios](https://docs.donkey-kit.dev/scenarios.md)** — support triage, a nightly batch and an internal

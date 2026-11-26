@@ -63,7 +63,7 @@ def _framework(module: str, *pages: str) -> Surface:
 #: website/content/; any one listed page changing satisfies the surface. Keep
 #: the two in step, and keep the workflow's ``paths:`` covering ``files``.
 SURFACES: tuple[Surface, ...] = (
-    Surface(("core/errors.py",), ("errors.mdx", "frameworks/gateway-policies.mdx")),
+    Surface(("core/errors.py",), ("errors.mdx", "governance/gateway-policies/models.mdx")),
     Surface(("core/config.py", "core/endpoints.py"), ("reference/configuration/index.mdx",)),
     Surface(("core/auth.py",), ("reference/configuration/auth.mdx",)),
     Surface(
@@ -96,14 +96,14 @@ SURFACES: tuple[Surface, ...] = (
             "registry/models.py",
             "tools/filter.py",
         ),
-        ("tool-access/discovery.mdx",),
+        ("registry/discovery/mcp.mdx",),
     ),
     Surface(
         ("registry/publication.py", "registry/exchange.py"),
-        ("publishing/publication.mdx", "publishing/index.mdx"),
+        ("registry/publish/publication.mdx", "registry/publish/index.mdx"),
     ),
     Surface(("tools/session.py",), ("tool-access/binding.mdx",)),
-    Surface(("a2a/_server.py",), ("a2a/serve.mdx",)),
+    Surface(("a2a/_server.py",), ("registry/serve.mdx",)),
     Surface(("a2a/client.py",), ("a2a/call.mdx",)),
     Surface(("cli/*.py",), ("cli/index.mdx", "cli/setup.mdx", "cli/local.mdx", "cli/ship.mdx")),
     Surface(("experimental.py",), ("reference/unsupported-boundary.mdx",)),

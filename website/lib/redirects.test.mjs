@@ -85,3 +85,18 @@ test('registryProblems flags chains, self-targets, bad shapes and redirected tar
   assert.match(text, /points at its own page/)
   assert.match(text, /targets a redirected page: \/a/)
 })
+
+test('a moved page keeps its page redirect and forwards a split-off anchor elsewhere (#1851)', () => {
+  assert.equal(
+    resolvePageRedirect('/tool-access/discovery', '', ''),
+    '/registry/discovery/mcp'
+  )
+  assert.equal(
+    resolvePageRedirect('/tool-access/discovery', '#resolving-an-a2a-agent', ''),
+    '/registry/discovery/a2a#resolving-an-a2a-agent'
+  )
+  assert.equal(
+    resolvePageRedirect('/publishing', '#from-github-actions', ''),
+    '/registry/publish/ci#from-github-actions'
+  )
+})

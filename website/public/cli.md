@@ -222,6 +222,6 @@ These commands are part of the [Roadmap](https://docs.donkey-kit.dev/roadmap.md)
 CLI yet:
 
 - `donkey serve` — serve your agent over A2A from the command line. In code,
-  `donkey.serve()` does it today. See [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md).
+  `donkey.serve()` does it today. See [A2A agents](https://docs.donkey-kit.dev/registry/serve.md).
 
   Run `donkey --help` to see the commands available in your installed version.

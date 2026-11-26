@@ -112,18 +112,18 @@ Four tables in these files are not `DonkeyConfig` fields, and
 - `[donkey.mcp_servers]` declares how each MCP server your tools name is
   reached. `donkey scan` reads it from the scanned directory's two project
   files. See
-  [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-mcp-server-is-reached).
+  [Declaring how an MCP server is reached](https://docs.donkey-kit.dev/registry/publish.md#declaring-how-an-mcp-server-is-reached).
 - `[donkey.agents]` declares each agent's protocol and the endpoint it is
   served at, read the same way. See
-  [Declaring how an agent is reached](https://docs.donkey-kit.dev/publishing.md#declaring-how-an-agent-is-reached).
+  [Declaring how an agent is reached](https://docs.donkey-kit.dev/registry/publish.md#declaring-how-an-agent-is-reached).
 - `[donkey.publication]` declares the Exchange group ID, asset IDs and version
   to publish under, and each asset's name, description, MCP protocol version,
   provider and documentation file. `donkey publish` reads it from the same two
   files. See
-  [Planning a publish](https://docs.donkey-kit.dev/publishing.md#planning-a-publish).
+  [Planning a publish](https://docs.donkey-kit.dev/registry/publish.md#planning-a-publish).
 - `[donkey.expose]` names the gateway `donkey expose` deploys to, and for
   each service its instance label, upstream and policies. `donkey expose` and
-  `donkey preflight` read it from the same two files. See [A2A agents](https://docs.donkey-kit.dev/a2a/serve.md).
+  `donkey preflight` read it from the same two files. See [A2A agents](https://docs.donkey-kit.dev/registry/serve.md).
 
 `Donkey.from_env(path=...)` and `DonkeyConfig.resolve(path=...)` read the named
 file in place of `./.donkey-kit.toml`. The `.donkey-kit.local.toml` beside that
@@ -205,7 +205,7 @@ each connected-app token request. `donkey doctor` runs both without sending
 anything. For the [`donkey.as_user()`](https://docs.donkey-kit.dev/identity.md) token, the LLM-proxy check
 runs when you call `as_user()`. The control-plane check also runs each time a
 discovered MCP tool set lists or binds, and before `agent_card()` (and so
-[`verify()`](https://docs.donkey-kit.dev/publishing/publication.md#verifying-at-runtime-verify))
+[`verify()`](https://docs.donkey-kit.dev/registry/publish/publication.md#verifying-at-runtime-verify))
 reads an agent's card. Discovery read those gateway URLs from `base_url`, so
 they get `base_url`'s rule for the service's gateway credential, and inside an
 `as_user()` block for the user's token as well. `donkey doctor` doesn't run
@@ -259,7 +259,7 @@ lets it through.
 This applies wherever the URL comes from: environment, file or code. It also
 applies to the gateway URL that `resolve_mcp()` and `resolve_agent()` read from
 Omni Gateway Manager, which raises `RegistryError` instead of `ConfigError` (see
-[Resolving an MCP server](https://docs.donkey-kit.dev/tool-access/discovery.md#resolving-an-mcp-server)).
+[Resolving an MCP server](https://docs.donkey-kit.dev/registry/discovery/mcp.md#resolving-an-mcp-server)).
 
 | URL | Result |
 |---|---|

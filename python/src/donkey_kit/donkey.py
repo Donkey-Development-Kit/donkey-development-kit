@@ -276,7 +276,7 @@ class ToolsFacade:
                 Tool-level drift raises when the set is described or bound.
             NotImplementedError: ``domain`` was given; see docs/verified-apis.md §7.
 
-        Docs: https://docs.donkey-kit.dev/tool-access/discovery
+        Docs: https://docs.donkey-kit.dev/registry/discovery/mcp
         """
         lock = read_lock(Path(lock_path)) if locked else None
         return await self._discovery.discover(
@@ -307,7 +307,7 @@ class ToolsFacade:
             AuthError: The gateway refused the credential.
             ToolInvocationError: The server could not list its tools.
 
-        Docs: https://docs.donkey-kit.dev/publishing/publication#verifying-at-runtime-verify
+        Docs: https://docs.donkey-kit.dev/registry/publish/publication#verifying-at-runtime-verify
         """
         return await self._discovery.live_tools(ref)
 
@@ -333,7 +333,7 @@ class ToolsFacade:
                 control plane the working directory's config files named (ADR 0019).
             AuthError: The gateway refused the credential.
 
-        Docs: https://docs.donkey-kit.dev/publishing/publication#verifying-at-runtime-verify
+        Docs: https://docs.donkey-kit.dev/registry/publish/publication#verifying-at-runtime-verify
         """
         return await self._discovery.agent_card(ref)
 
@@ -368,7 +368,7 @@ class ToolsFacade:
             RegistryError: Exchange or API Manager refused a read.
             NotImplementedError: ``domain`` was given; see docs/verified-apis.md §7.
 
-        Docs: https://docs.donkey-kit.dev/tool-access/discovery#defaults-and-performance
+        Docs: https://docs.donkey-kit.dev/registry/discovery/mcp#defaults-and-performance
         """
         return await self._discovery.warm(domain=domain, tags=tags, governed=governed)
 
@@ -423,7 +423,7 @@ class ToolsFacade:
             ValueError: A server lists a tool with no name or two of one name.
             OSError: The lockfile cannot be written.
 
-        Docs: https://docs.donkey-kit.dev/tool-access/lockfile
+        Docs: https://docs.donkey-kit.dev/registry/lockfile
         """
         tools = await self._discovery.discover(domain=None, tags=tags, governed=governed, auth=auth)
         if not tools.servers:
@@ -723,7 +723,7 @@ class Donkey:
     def registry(self) -> ExchangeRegistry:
         """The Exchange registry client used for tool discovery and resolution (BG §2.7).
 
-        Docs: https://docs.donkey-kit.dev/tool-access/discovery
+        Docs: https://docs.donkey-kit.dev/registry/discovery/mcp
         """
         return self._registry
 
@@ -1337,7 +1337,7 @@ class Donkey:
                 blank or repeated, or the callable has no docstring (it is the
                 agent's description).
 
-        Docs: https://docs.donkey-kit.dev/a2a/serve
+        Docs: https://docs.donkey-kit.dev/registry/serve
         """
         validate_service_id(name, what="name")
         if isinstance(skills, str):
@@ -1404,7 +1404,7 @@ class Donkey:
             TypeError: ``handler`` is not marked with ``@donkey.agent``.
             ImportError: The ``[a2a]`` extra is not installed.
 
-        Docs: https://docs.donkey-kit.dev/a2a/serve
+        Docs: https://docs.donkey-kit.dev/registry/serve
         """
         from .a2a import serve
 

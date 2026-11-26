@@ -26,7 +26,7 @@ and bounded-test guidance.
   Enforcement. The collision rename and the approval gate run in the SDK, and
   were run against local MCP servers.
 
-Once [discovery](https://docs.donkey-kit.dev/tool-access/discovery.md) hands you a `ToolSet`, binding turns
+Once [discovery](https://docs.donkey-kit.dev/registry/discovery/mcp.md) hands you a `ToolSet`, binding turns
 governed MCP servers into a framework's own tool objects — nothing wrapped,
 nothing re-implemented.
 
@@ -296,7 +296,7 @@ instance. The refusal happens before any connection opens, so:
   switch apply to every tool the agent can call.
 
 The error names each refused server (`.servers`) and each governance check it
-failed (`.reasons`, from [`explain()`](https://docs.donkey-kit.dev/tool-access/discovery.md)):
+failed (`.reasons`, from [`explain()`](https://docs.donkey-kit.dev/registry/discovery/mcp.md)):
 
 ```python
 from donkey_kit import UngovernedMcpServer
@@ -401,7 +401,7 @@ partial bytes. Status and headers remain available: an authentication status
 can still raise `AuthError`, while an unclassifiable listing failure raises
 `ToolInvocationError`. A partial body never becomes an approval response.
 For locked per-tool metadata guarantees and whole-server limitations, see
-[Pinning & lockfile](https://docs.donkey-kit.dev/tool-access/lockfile.md#check-against-the-lock).
+[Pinning & lockfile](https://docs.donkey-kit.dev/registry/lockfile.md#check-against-the-lock).
 
 ### Tools outside your access profile
 
@@ -449,7 +449,7 @@ tool that ran and failed returns a result with `isError: true`, never
 
 ### MCP policy refusals
 
-See [MCP gateway policies](https://docs.donkey-kit.dev/tool-access/gateway-policies.md) for the policy inventory,
+See [MCP gateway policies](https://docs.donkey-kit.dev/governance/gateway-policies/mcp.md) for the policy inventory,
 gateway-visible catalog changes and the limits of each captured behavior.
 
 Captured MCP PII Detector refusals on tool requests and responses raise
@@ -476,6 +476,6 @@ remain ambiguous, not typed policy refusals. Successful results and
 
 ## Related
 
-- [Discovery, search & filter](https://docs.donkey-kit.dev/tool-access/discovery.md) — produce the `ToolSet`.
+- [Discovery, search & filter](https://docs.donkey-kit.dev/registry/discovery/mcp.md) — produce the `ToolSet`.
 - [A2A agent tools](https://docs.donkey-kit.dev/a2a/call.md) — bind a remote agent the same way.
 - [Frameworks](https://docs.donkey-kit.dev/frameworks.md) — governed model access per framework.

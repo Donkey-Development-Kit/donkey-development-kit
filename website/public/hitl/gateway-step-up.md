@@ -5,7 +5,7 @@ Status: Live. Shipped, and verified against a real governed gateway.
 ## Discovered tools Local round-trip
 
 `@donkey.tool` decorates a local function. A governed MCP tool from
-[`donkey.tools.discover()`](https://docs.donkey-kit.dev/tool-access/discovery.md) is not one, so you declare
+[`donkey.tools.discover()`](https://docs.donkey-kit.dev/registry/discovery/mcp.md) is not one, so you declare
 its approval once on the `ToolSet` instead. The gate runs in the SDK, before
 the call leaves the client. It has been run against local MCP servers, not
 through a gateway (see [Framework binding](https://docs.donkey-kit.dev/tool-access/binding.md)):

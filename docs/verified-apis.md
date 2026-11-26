@@ -838,7 +838,7 @@ replays selected method-specific v1 Azure block, PII and token-rate refusals.
 Protocol `0.3.0` replays existing v0.3 PII/rate `message/send` captures only,
 not all rows below. This adds no new captures or live verification. #1398 keeps raw
 RPC diagnostics out of rendered exceptions and DDK spans; original responses
-remain sensitive. The developer inventory is `a2a/gateway-policies.mdx` (#1400).
+remain sensitive. The developer inventory is `governance/gateway-policies/a2a.mdx` (#1400).
 
 The table records response-shape facts, not a claim that every policy is typed
 or simulated. Classification contracts are pinned in
@@ -1836,7 +1836,7 @@ planned. ADR 0022 records the scoped plane and proposed provisional API tier.
 
 ### MCP Gateway Policy Captures (#1384)
 
-The consumer-facing inventory is `website/content/tool-access/gateway-policies.mdx`
+The consumer-facing inventory is `website/content/governance/gateway-policies/mcp.mdx`
 (partial #1392, BG §2.7 / BG §1.2). It separates these live wire captures from
 local binding replay and unverified configurations; no evidence status changes.
 

@@ -3,8 +3,7 @@ description: What each Omni Gateway policy on an LLM proxy does to a model call,
 status: offline-verified
 ---
 
-import { Callout } from 'nextra/components'
-import { Badge } from '../../components'
+import { Badge } from '../../../components'
 
 # Model gateway policies
 
@@ -15,15 +14,7 @@ The gateway enforces them. DDK reimplements none of them. It reads what the
 gateway answered and turns each outcome it can identify into a typed exception
 or a field your code can branch on.
 
-<Callout type="info">
-  **Three things are called "policy" in these docs.** *Gateway policies* are
-  what the gateway enforces on each surface: this page for models, and the
-  [MCP tools](/tool-access/gateway-policies) and
-  [A2A agents](/a2a/gateway-policies) pages. *[Custom policies](/custom-policies)*
-  teach `classify()` the refusal shape your own gateway policy returns. The
-  *[policy handshake](/policies)* is a planned, advisory read of the policies in
-  force; the gateway always wins.
-</Callout>
+See [Gateway policies](/governance/gateway-policies) for how this page relates to the other surfaces ([Models](/governance/gateway-policies/models), [MCP tools](/governance/gateway-policies/mcp), [A2A agents](/governance/gateway-policies/a2a)), custom policies and the policy handshake.
 
 Each section carries the status of the ledger row it rests on. <Badge tone="live" ledger="§4 PII detection">Live</Badge>
 means the shape was captured from a real gateway.

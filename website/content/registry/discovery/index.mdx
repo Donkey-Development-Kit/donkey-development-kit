@@ -1,0 +1,33 @@
+---
+description: Find governed assets in Exchange for each surface. MCP tools are filtered and searched, A2A agents are resolved by reference, and models have no catalog endpoint.
+status: offline-verified
+---
+
+import { Card, CardGrid } from '../../../components'
+
+# Discovery
+
+Discovery reads the Exchange catalog and the gateway instances in front of it.
+What you get back depends on the surface, because the three surfaces are found
+in different ways.
+
+| Surface | You ask for | You get | Page |
+| --- | --- | --- | --- |
+| **Models** | A model id you already know | A `ModelHandle` from `donkey.llm.resolve()`. The proxy has no catalog endpoint to list. | [Models](/registry/discovery/models) |
+| **MCP tools** | Governed tools, by governance, tags or name | A `ToolSet` from `donkey.tools.discover()`, or registry handles from `donkey.registry.search()` | [MCP tools](/registry/discovery/mcp) |
+| **A2A agents** | One agent by its Exchange reference | An `AgentHandle` with the deployed endpoint, from `donkey.registry.resolve_agent()` | [A2A agents](/registry/discovery/a2a) |
+
+<CardGrid columns={3}>
+  <Card title="Models" href="/registry/discovery/models" badge="Offline-verified" badgeTone="neutral">
+    What identifies a model, and how to read an `llm` asset's declared metadata.
+  </Card>
+  <Card title="MCP tools" href="/registry/discovery/mcp">
+    Filter, search and `explain()` why a tool was included or excluded.
+  </Card>
+  <Card title="A2A agents" href="/registry/discovery/a2a">
+    Resolve a published agent to its gateway endpoint.
+  </Card>
+</CardGrid>
+
+After discovery, [Connect](/connect) covers binding the result into your
+framework or calling it.

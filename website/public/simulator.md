@@ -323,7 +323,7 @@ guardrailed bot is exercised before it faces a real attack.
 - [MCP faults & captures](https://docs.donkey-kit.dev/simulator/mcp.md) and
   [A2A faults & replay](https://docs.donkey-kit.dev/simulator/a2a.md) — the simulator for tool calls and
   agent-to-agent calls.
-- [Simulated ingress](https://docs.donkey-kit.dev/a2a/serve.md#simulated-ingress) — `donkey dev`, which replays
+- [Simulated ingress](https://docs.donkey-kit.dev/registry/serve.md#simulated-ingress) — `donkey dev`, which replays
   method-specific A2A captures on inbound calls to your agent.
 - [Testing & conformance](https://docs.donkey-kit.dev/testing.md) — `simulate()` for in-process unit tests,
   and the `gateway` pytest fixture that runs this simulator on an ephemeral port.
