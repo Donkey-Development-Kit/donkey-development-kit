@@ -354,4 +354,4 @@ override it with a `WARNING`.
 - [Publication & verify()](https://docs.donkey-kit.dev/registry/publish/publication.md) — the Publication object, descriptor derivation and runtime verification.
 - [Decorators](https://docs.donkey-kit.dev/decorators.md) — mark tools with `@donkey.tool` today.
 - [A2A agents](https://docs.donkey-kit.dev/registry/serve.md) — serve and expose the agent whose card you publish.
-- [Tool access](https://docs.donkey-kit.dev/tool-access.md) — discover and bind published tools from Exchange.
+- [MCP tools](https://docs.donkey-kit.dev/tool-access.md) — discover and bind published tools from Exchange.

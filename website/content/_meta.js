@@ -17,10 +17,10 @@ export default {
     title: 'Connect',
   },
   connect: 'Overview',
+  'supported-frameworks': { title: 'Supported frameworks', theme: { collapsed: true } },
   frameworks: { title: 'Models', theme: { collapsed: true } },
   'tool-access': { title: 'MCP tools', theme: { collapsed: true } },
   a2a: { title: 'A2A agents', theme: { collapsed: true } },
-  'supported-frameworks': 'Supported frameworks',
   '-- registry': {
     type: 'separator',
     title: 'Registry & catalog',

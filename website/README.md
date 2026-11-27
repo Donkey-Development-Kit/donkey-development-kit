@@ -161,8 +161,8 @@ breaks a link.
 content/
   index.mdx, quickstart.mdx,
   feature-overview.mdx               Get started
-  connect.mdx, frameworks/,
-  tool-access/, a2a/                  Connect (models, MCP tools, A2A agents)
+  connect.mdx, supported-frameworks/,
+  frameworks/, tool-access/, a2a/     Connect (frameworks, models, MCP tools, A2A agents)
   registry/                           Registry & catalog (discovery, lockfile, publish, serve)
   governance/gateway-policies/        Gateway policies, one page per surface
   errors, budget, identity,
