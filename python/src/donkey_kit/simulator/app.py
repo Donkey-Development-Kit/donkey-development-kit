@@ -31,7 +31,7 @@ import asyncio
 import json
 import re
 from collections.abc import Awaitable, Callable, MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol, cast
 
 from .fixtures import (
@@ -42,6 +42,7 @@ from .fixtures import (
     replay_headers,
 )
 from .scenarios import BudgetScenario, FaultScenario, RequestLimitScenario, request_text
+from .structured import structured_content
 
 __all__ = [
     "RATELIMIT_HEADER",
@@ -375,7 +376,21 @@ class _Simulator:
             window_headers.update(await self._synth_ratelimit_header())
         if stream is None:
             stream = isinstance(payload, dict) and payload.get("stream") is True
+        if route is _CHAT_COMPLETIONS_ROUTE and not stream and isinstance(payload, dict):
+            content = structured_content(payload.get("response_format"))
+            if content is not None:
+                return self._structured(route, window_headers, content)
         return self._happy(route, window_headers, stream=stream)
+
+    def _structured(self, route: _Route, ratelimit_header: dict[str, str], content: str) -> Any:
+        """Serve the Chat Completions 200 with its message ``content`` replaced by a
+        schema-valid JSON document (#231, BG §3.4). Only that field is synthesised:
+        the status, headers and the rest of the captured envelope are unchanged."""
+        fixture = load(route.success)
+        body = json.loads(fixture.body)
+        body["choices"][0]["message"]["content"] = content
+        served = replace(fixture, body=json.dumps(body).encode())
+        return self._response(served, extra=ratelimit_header)
 
     def _happy(self, route: _Route, ratelimit_header: dict[str, str], *, stream: bool) -> Any:
         """Serve the route's happy-path 200 (or its stream), carrying the given
