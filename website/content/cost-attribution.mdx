@@ -125,7 +125,8 @@ with donkey.attribution(business_group="risk-eu", cost_center="CC-4471", jurisdi
     await score(job)
 ```
 
-`donkey.run(...)` and `donkey.run_from_headers(...)` accept the same keywords.
+`donkey.run(...)`, `donkey.run_from_headers(...)` and `@donkey.governed(...)` accept the
+same keywords.
 Each value is recorded as a `donkey.cost.<name>` span attribute, merges per
 dimension over an enclosing block like the fixed tags, and goes out as a request
 header only with `send_cost_headers`.

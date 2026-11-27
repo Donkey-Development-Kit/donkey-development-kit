@@ -124,7 +124,7 @@ MEMBERS = [
     "Donkey.current_run [property]",
     "Donkey.flush_telemetry(timeout_s=2.0)",
     "Donkey.from_env(*, team=None, project=None, env=None, enduser_id=None, path=None, **overrides)",
-    "Donkey.governed(func=None, *, team=None, project=None, env=None, enduser_id=None, business_group=None, typed_refusals=True)",
+    "Donkey.governed(func=None, *, team=None, project=None, env=None, enduser_id=None, business_group=None, typed_refusals=True, **dimensions)",
     "Donkey.http_client(*, sync=False)",
     "Donkey.last_call [property]",
     "Donkey.llm [property]",

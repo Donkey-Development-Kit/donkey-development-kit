@@ -23,6 +23,7 @@ from donkey_kit import Donkey
 from donkey_kit.core import cost as cost_module
 from donkey_kit.core import telemetry
 from donkey_kit.core.config import DonkeyConfig
+from donkey_kit.core.correlation import current_cost_tags
 from donkey_kit.core.cost import (
     MAX_COST_DIMENSIONS,
     CostTags,
@@ -377,3 +378,48 @@ def test_cost_tags_refuse_a_malformed_dimension_name() -> None:
 )
 def test_the_header_name_is_the_prefix_plus_the_title_cased_name(name: str, header: str) -> None:
     assert dimension_header(name) == header
+
+
+# --- @donkey.governed(...) takes the same keywords (#1867) --------------------
+
+
+async def test_governed_sets_dimensions_for_an_async_callable() -> None:
+    async with Donkey(_cfg(send_cost_headers=True)) as donkey:
+        seen = _wire(donkey)
+
+        @donkey.governed(team="support", cost_center="CC-4471")
+        async def handle() -> None:
+            await donkey._http.post(_URL)
+
+        await handle()
+        await donkey._http.post(_URL)  # outside the decorated call
+    inside, outside = seen
+    assert inside.headers["x-anypoint-cost-cost-center"] == "CC-4471"
+    assert inside.headers["x-anypoint-cost-team"] == "support"
+    assert "x-anypoint-cost-cost-center" not in outside.headers
+
+
+def test_governed_sets_dimensions_for_a_sync_callable() -> None:
+    donkey = Donkey(_cfg())
+    seen_tags: list[CostTags | None] = []
+
+    @donkey.governed(cost_center="CC-1", jurisdiction="EU")
+    def handle() -> None:
+        seen_tags.append(current_cost_tags())
+
+    handle()
+    assert seen_tags[0] is not None
+    assert seen_tags[0].dimensions == (("cost_center", "CC-1"), ("jurisdiction", "EU"))
+
+
+def test_governed_refuses_an_undeclared_dimension_when_called() -> None:
+    donkey = Donkey(_cfg())
+
+    @donkey.governed(cost_centre="CC-1")
+    def handle() -> None:
+        raise AssertionError("the body must not run")
+
+    with pytest.raises(
+        ConfigError, match=r"donkey\.run\(\).*'cost_centre'.*did you mean 'cost_center'"
+    ):
+        handle()
