@@ -48,7 +48,7 @@ httpcore2==2.16.2
 httpx==0.28.1
 httpx-sse==0.4.3
 httpx2==2.16.2
-huggingface-hub==2.4.0
+huggingface-hub==2.5.0
 hyperframe==6.1.0
 idna==3.20
 import-linter==2.17
@@ -111,9 +111,9 @@ pydantic-core==2.41.5
 pydantic-settings==2.16.3
 pygments==2.21.0
 pyjwt==2.15.1
-pymupdf==2.1
-pymupdf-layout==2.1
-pymupdf4llm==2.1
+pymupdf==2.2
+pymupdf-layout==2.2
+pymupdf4llm==2.2
 pypdfium2==5.15.2
 pytest==9.2.0
 pytest-asyncio==1.5.0
@@ -148,7 +148,7 @@ tomli==2.0.2
 tomli-w==1.1.0
 tqdm==4.70.1
 truststore==0.10.5
-typer==0.29.2
+typer==0.29.3
 typing-extensions==4.16.0
 typing-inspection==0.4.5
 tzdata==2026.6
