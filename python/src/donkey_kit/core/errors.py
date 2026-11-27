@@ -984,14 +984,14 @@ def _match_upstream_failure(s: _Shape) -> DonkeyError | None:
 _REGISTERED_MATCHER: list[Callable[[_Shape], DonkeyError | None]] = []
 _JSONRPC_MATCHER: list[Callable[[_Shape], DonkeyError]] = []
 
-#: The OBO policy's CIBA pending/denied rules (#1320), installed by ``core/step_up``, whose
-#: types subclass this module's. ``core`` imports it, so the slot is always filled.
-_STEP_UP_MATCHERS: list[Callable[[_Shape], DonkeyError | None]] = []
+#: Rules for types in modules that subclass this one's, added as each is imported (``core`` imports
+#: both): the OBO CIBA answers (``core/step_up``, #1320) and a spent wallet (``core/wallet``, #315).
+_LATE_BOUND_MATCHERS: list[Callable[[_Shape], DonkeyError | None]] = []
 
 
 def _match_step_up(s: _Shape) -> DonkeyError | None:
-    """A CIBA step-up answer (#1320): a 401/403 keyed on its flat-string body ``error``."""
-    return next((e for m in _STEP_UP_MATCHERS if (e := m(s)) is not None), None)
+    """A late-bound rule: a CIBA step-up answer (#1320) or a spent model wallet (#315)."""
+    return next((e for m in _LATE_BOUND_MATCHERS if (e := m(s)) is not None), None)
 
 
 def _match_registered(s: _Shape) -> DonkeyError | None:

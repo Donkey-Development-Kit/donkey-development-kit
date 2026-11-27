@@ -83,6 +83,7 @@ if TYPE_CHECKING:
     from .core.tool_access import ToolNotInProfile
     from .core.toolspec import AgentSpec, ToolSpec, registered_agents, registered_tools
     from .core.transport import DonkeyAsyncClientView, DonkeyClientView
+    from .core.wallet import WalletExhausted
     from .donkey import Donkey, ToolsFacade
     from .integrations import typed_refusals
     from .llm.client import LLMClient
@@ -150,6 +151,7 @@ _LAZY = {
     "RequestRateLimitExceeded": ".core.errors",
     "RunScope": ".core.telemetry",
     "TokenBudgetExceeded": ".core.errors",
+    "WalletExhausted": ".core.wallet",
     "ToolLockDrift": ".tools.lockfile",
     "ToolNotInProfile": ".core.tool_access",
     "ToolSet": ".tools.session",
@@ -288,6 +290,7 @@ __all__ = [
     "UpstreamRequestError",
     "UpstreamWindow",
     "UserScope",
+    "WalletExhausted",
     "__version__",
     "classify",
     "jsonrpc_refusal",

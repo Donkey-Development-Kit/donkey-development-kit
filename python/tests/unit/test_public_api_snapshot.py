@@ -100,6 +100,7 @@ ROOT_ALL = [
     "UpstreamRequestError",
     "UpstreamWindow",
     "UserScope",
+    "WalletExhausted",
     "__version__",
     "classify",
     "jsonrpc_refusal",

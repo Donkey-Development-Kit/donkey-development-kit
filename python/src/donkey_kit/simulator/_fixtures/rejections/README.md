@@ -155,6 +155,15 @@ Cumulus Bank `trusted-agent-id-core-banking-agent` instance (20825039, OBO
 `retry-after` value is the capture's (the policy's 3s poll interval plus its 2s
 buffer), which is why `replay_headers()` keeps that header.
 
+A spent **model wallet** (#301, #315) is outside the ten rows as well:
+`reject.wallet-exhausted.{headers.txt,body.json}` (`429`, `retry-after: 86400`,
+`x-model-wallet-selected`, `text/plain` body `{"error":"token rate limit exceeded"}`,
+no `x-token-*` → `WalletExhausted`, a `TokenBudgetExceeded` subtype). **VERIFIED
+(LIVE), 2026-09-30**: the bytes are the #301 capture against `ddk-model-wallet`
+(instance 21189395), the same files as
+`tests/fixtures/anypoint/model_wallet/reject.wallet-exhausted.*`. The wire cannot say
+whether tokens or dollars ran out, so neither does the type.
+
 ## Which headers each `.headers.txt` records (#670)
 
 A live gateway response carries far more headers than any fixture here

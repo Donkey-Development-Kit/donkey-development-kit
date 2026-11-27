@@ -35,6 +35,7 @@ For what each model policy means for your code, policy by policy, see
 | Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) |
 | Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR). The CrowdStrike AIDR shape is read from the policy's source, not captured from a live gateway. The same header on a `503` is the policy failing closed (its moderation service was unreachable): an `UpstreamModelError` | `ContentSafetyBlocked` (sets `provider`, parses `categories`) |
 | Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) |
+| Model wallet exhausted | `429` | `x-model-wallet-selected` and `retry-after` (seconds), `text/plain` body `{"error":"token rate limit exceeded"}`, **no** `x-token-*` | `WalletExhausted` (`retry_after`, `wallet`) |
 | Request rate limit | `429` | body `{"error":"Too Many Requests"}`; `x-ratelimit-limit`/`-remaining`/`-reset` headers (ms), **no** `x-token-*`, **no** `retry-after` | `RequestRateLimitExceeded` (`retry_after` derived) |
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` |
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
@@ -233,6 +234,7 @@ DonkeyError                     # base of the whole tree
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
 │  ├─ GatewayApprovalDenied     # 403, error=access_denied — the user denied the CIBA step-up; also an ApprovalError
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
+│  │  └─ WalletExhausted        # 429, spent model wallet; .retry_after (seconds), .wallet; a TokenBudgetExceeded
 │  ├─ RequestRateLimitExceeded  # 429, rate-limiting policy; .retry_after (seconds); sibling of TokenBudgetExceeded
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
 │  ├─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR (policy source) 403 reject header; .provider, .categories
@@ -280,6 +282,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `GatewayApprovalDenied` | `403`, flat `error: "access_denied"` | **No** — a `PolicyViolation`, never retried; the gateway keeps answering with the denial until its cached decision expires. | Tell the user the action was not authorized. |
 | `GatewayAuthRequired` | Complete captured v0.3 `auth-required` task with status-message `authChallenge`, decoded by the outbound facade | **No automatic replay**; not a policy refusal or CIBA polling outcome. | Validate the challenge metadata and hand it to your application's OAuth flow. DDK does not acquire tokens or resend the task; completed OAuth is unverified. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
+| `WalletExhausted` | `429` with `x-model-wallet-selected` and **no** `x-token-*` | **No** — a `TokenBudgetExceeded`, never retried; the wallet's window decides when it can succeed. | Wait for `.retry_after` (seconds), or ask the wallet's owner to raise the limit. It does not say whether tokens or dollars ran out. |
 | `RequestRateLimitExceeded` | `429` with `x-ratelimit-limit` and `x-ratelimit-remaining` and **no** `x-token-limit` | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
 | `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR, whose shape is read from the policy's source and not captured live) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager (for Google Model Armor, the template's filters in Google Cloud; for CrowdStrike AIDR, the collector's AIDR policy in the Falcon console). |
@@ -393,6 +396,8 @@ a canonical default. For the refusals:
 - `GatewayApprovalDenied` → tell the user the action was not authorized.
 - `TokenBudgetExceeded` → wait for the window to reset (see `retry_after`) or
   request an increase.
+- `WalletExhausted` → wait for the wallet's window to reset (see `retry_after`) or
+  ask the wallet's owner to raise the limit.
 - `RequestRateLimitExceeded` → wait for the window to reset (see
   `retry_after`) or request an increase.
 - `PromptInjectionBlocked` → review and sanitise the untrusted input, or adjust

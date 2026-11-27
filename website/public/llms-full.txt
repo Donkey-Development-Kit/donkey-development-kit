@@ -4590,7 +4590,7 @@ and the retry rule and next step for every exception are in the
 | [Client ID enforcement](#client-id-enforcement) | Rejects a call without a valid consumer credential | `AuthError` | `donkey.simulate(AuthError)` |
 | [Token rate limiting](#token-rate-limiting) | Caps tokens per window | `TokenBudgetExceeded`; `donkey.budget` | `--scenario budget:…` |
 | [Request rate limiting](#request-rate-limiting) | Caps requests per window | `RequestRateLimitExceeded`; `donkey.budget.requests` | `--scenario request_limit:…` |
-| [Model wallet](#model-wallet) | Authenticates with a JWT and spends from a wallet budget | `TokenBudgetExceeded` when the wallet is exhausted | `donkey.simulate(TokenBudgetExceeded)` |
+| [Model wallet](#model-wallet) | Authenticates with a JWT and spends from a wallet budget | `WalletExhausted` when the wallet is exhausted | `donkey.simulate(WalletExhausted)` |
 | [PII detection](#pii-detection) | Refuses a prompt carrying personal data | `PIIDetected` | `--scenario pii_block:…` |
 | [Injection Protection](#injection-protection-and-regex-prompt-guard) | Refuses a prompt-injection attempt | `PromptInjectionBlocked` | `--scenario injection:…` |
 | [Regex Prompt Guard](#injection-protection-and-regex-prompt-guard) | Refuses a prompt matching configured patterns | `PromptInjectionBlocked` | `donkey.simulate(PromptInjectionBlocked)` |
@@ -4672,8 +4672,17 @@ platform. Configure the auth mode as described in
 Wallet state is not reported in-band: a `200` carries no limit or remaining
 value, so `donkey.budget` cannot show it and there is no warning before the
 wallet runs out. The first signal is the refusal, a `429` that DDK raises
-today as `TokenBudgetExceeded` with the gateway's `retry-after` as
-`.retry_after`. Handle it as you would a token-window refusal.
+as `WalletExhausted`, with the gateway's `retry-after` as `.retry_after` and the
+wallet that refused as `.wallet`. It is a subclass of `TokenBudgetExceeded`, so an
+existing `except TokenBudgetExceeded` handler or `donkey.on(TokenBudgetExceeded)`
+reaction still catches it, and like it, it is terminal and never retried.
+
+A wallet limit can be set in tokens or in dollars, and the refusal is identical
+either way, so `WalletExhausted` does not say which ran out, and DDK never works
+out cost locally to guess. The run's [cost rollup](https://docs.donkey-kit.dev/telemetry.md#what-a-run-cost)
+counts it under `WalletExhausted`, apart from a spent token window.
+
+Rehearse it with `donkey.simulate(WalletExhausted)`.
 
 ## PII detection
 
@@ -5279,6 +5288,7 @@ For what each model policy means for your code, policy by policy, see
 | Regex prompt guard | `403` | top-level `matched_patterns` list (flat `error`) | `PromptInjectionBlocked` (`policy="regex-prompt-guard"`) |
 | Content safety / guardrails | `403` | header `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR). The CrowdStrike AIDR shape is read from the policy's source, not captured from a live gateway. The same header on a `503` is the policy failing closed (its moderation service was unreachable): an `UpstreamModelError` | `ContentSafetyBlocked` (sets `provider`, parses `categories`) |
 | Token rate limit | `429` | **empty body**; `x-token-limit`/`-remaining`/`-reset` headers (ms) | `TokenBudgetExceeded` (`retry_after` derived) |
+| Model wallet exhausted | `429` | `x-model-wallet-selected` and `retry-after` (seconds), `text/plain` body `{"error":"token rate limit exceeded"}`, **no** `x-token-*` | `WalletExhausted` (`retry_after`, `wallet`) |
 | Request rate limit | `429` | body `{"error":"Too Many Requests"}`; `x-ratelimit-limit`/`-remaining`/`-reset` headers (ms), **no** `x-token-*`, **no** `retry-after` | `RequestRateLimitExceeded` (`retry_after` derived) |
 | Content moderation (undiscriminated) | `4xx` | falls through — no nested `error`, no injection/guard/safety discriminator | generic `PolicyViolation` |
 | Upstream provider 4xx | `4xx` | nested `error` object **with** `code`/`type`/`param` — in an OpenAI-style object envelope `{"error":{…}}` **or** a Gemini-style list envelope `[{"error":{…}}]` (`status`→`error_type`) | `UpstreamRequestError` |
@@ -5477,6 +5487,7 @@ DonkeyError                     # base of the whole tree
 │  ├─ AgentKilled               # 403, code=agent_killed — the Agent Kill Switch blocked this agent
 │  ├─ GatewayApprovalDenied     # 403, error=access_denied — the user denied the CIBA step-up; also an ApprovalError
 │  ├─ TokenBudgetExceeded       # 429; .retry_after (seconds)
+│  │  └─ WalletExhausted        # 429, spent model wallet; .retry_after (seconds), .wallet; a TokenBudgetExceeded
 │  ├─ RequestRateLimitExceeded  # 429, rate-limiting policy; .retry_after (seconds); sibling of TokenBudgetExceeded
 │  ├─ PromptInjectionBlocked    # x-injection-protection: blocked, or regex matched_patterns
 │  ├─ ContentSafetyBlocked      # Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR (policy source) 403 reject header; .provider, .categories
@@ -5524,6 +5535,7 @@ never burn an exhausted budget or replay a blocked prompt.
 | `GatewayApprovalDenied` | `403`, flat `error: "access_denied"` | **No** — a `PolicyViolation`, never retried; the gateway keeps answering with the denial until its cached decision expires. | Tell the user the action was not authorized. |
 | `GatewayAuthRequired` | Complete captured v0.3 `auth-required` task with status-message `authChallenge`, decoded by the outbound facade | **No automatic replay**; not a policy refusal or CIBA polling outcome. | Validate the challenge metadata and hand it to your application's OAuth flow. DDK does not acquire tokens or resend the task; completed OAuth is unverified. |
 | `TokenBudgetExceeded` | `429`, empty body, `x-token-*` headers | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
+| `WalletExhausted` | `429` with `x-model-wallet-selected` and **no** `x-token-*` | **No** — a `TokenBudgetExceeded`, never retried; the wallet's window decides when it can succeed. | Wait for `.retry_after` (seconds), or ask the wallet's owner to raise the limit. It does not say whether tokens or dollars ran out. |
 | `RequestRateLimitExceeded` | `429` with `x-ratelimit-limit` and `x-ratelimit-remaining` and **no** `x-token-limit` | **Not immediately** — never auto-retried; only worth retrying *after* the window resets. | Wait for `.retry_after` (seconds) / the reset, then retry — or request an increase in API Manager. |
 | `PromptInjectionBlocked` | header `x-injection-protection: blocked`, **or** a top-level `matched_patterns` list (regex prompt guard) | **No** — a `PolicyViolation`, never retried. | Review and sanitise the untrusted input, or adjust the policy's sensitivity / deny-list in API Manager. |
 | `ContentSafetyBlocked` | `403` + `x-llm-proxy-<vendor>-…-action: reject` (Azure Content Safety / Bedrock Guardrails / Google Model Armor / CrowdStrike AIDR, whose shape is read from the policy's source and not captured live) | **No** — a `PolicyViolation`, never retried. | Revise the flagged content (`.categories`), or adjust the policy's categories / severity thresholds in API Manager (for Google Model Armor, the template's filters in Google Cloud; for CrowdStrike AIDR, the collector's AIDR policy in the Falcon console). |
@@ -5637,6 +5649,8 @@ a canonical default. For the refusals:
 - `GatewayApprovalDenied` → tell the user the action was not authorized.
 - `TokenBudgetExceeded` → wait for the window to reset (see `retry_after`) or
   request an increase.
+- `WalletExhausted` → wait for the wallet's window to reset (see `retry_after`) or
+  ask the wallet's owner to raise the limit.
 - `RequestRateLimitExceeded` → wait for the window to reset (see
   `retry_after`) or request an increase.
 - `PromptInjectionBlocked` → review and sanitise the untrusted input, or adjust
@@ -8067,7 +8081,7 @@ keeps the qualified value.
 
 ```
 donkey.policy.decision      = allow | refuse
-donkey.policy.type          = pii_detected | token_budget | request_rate_limit | injection | agent_killed | approval_denied | content_safety | …
+donkey.policy.type          = pii_detected | token_budget | wallet_exhausted | request_rate_limit | injection | agent_killed | approval_denied | content_safety | …
 donkey.policy.provider      = google-model-armor  # who blocked it (provider-backed refusals only)
 donkey.policy.categories    = [rai_dangerous]     # why: the provider's flagged categories
 donkey.budget.remaining     = 18450
@@ -17559,6 +17573,7 @@ is raised.
 | `UngovernedMcpServer` | `DonkeyError` | A `ToolSet` binding was refused because a server in it is not governed. |
 | `UpstreamModelError` | `DonkeyError` | Provider-side failure (5xx). Retryable. |
 | `UpstreamRequestError` | `DonkeyError` | The upstream provider rejected the request (4xx), passed through the gateway verbatim (e.g. OpenAI `model_not_found`). This is a client-side mistake, NOT a gateway policy refusal and NOT a provider outage, so it is terminal (never retried) but distinct from `PolicyViolation`. |
+| `WalletExhausted` | `TokenBudgetExceeded` | A model wallet is spent: the gateway refused the call because the wallet that matched the caller has no budget left in its window. |
 
 ## Other exports
 

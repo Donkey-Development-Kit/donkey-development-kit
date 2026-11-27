@@ -63,6 +63,7 @@ _CONTRACT_STATUS = {
     "a2a-v1-rate-stream": 429,
     "a2a-v03-pii-send": 403,
     "a2a-v03-rate-send": 429,
+    "wallet-exhausted": 429,
 }
 
 

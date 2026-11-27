@@ -84,6 +84,7 @@ _REJECTION_SHAPES = frozenset(
     {
         "token-rate-limit",
         "request-rate-limit",
+        "wallet-exhausted",
         "pii-detected",
         "injection-protection",
         "regex-prompt-guard",

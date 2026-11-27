@@ -43,6 +43,7 @@ from ..core.errors import (
     classify,
 )
 from ..core.step_up import GatewayApprovalDenied, GatewayApprovalPending
+from ..core.wallet import WalletExhausted
 from .app import SIMULATOR_HEADER
 from .fixtures import Fixture, load, replay_headers
 
@@ -63,6 +64,7 @@ __all__ = ["resolve_fixture", "simulate"]
 _EXC_TO_SHAPE: dict[type[DonkeyError], str] = {
     TokenBudgetExceeded: "token-rate-limit",
     RequestRateLimitExceeded: "request-rate-limit",
+    WalletExhausted: "wallet-exhausted",
     PIIDetected: "pii-detected",
     PromptInjectionBlocked: "injection-protection",
     ContentSafetyBlocked: "content-safety",

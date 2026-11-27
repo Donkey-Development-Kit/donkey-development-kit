@@ -21,7 +21,7 @@ keeps the qualified value.
 
 ```
 donkey.policy.decision      = allow | refuse
-donkey.policy.type          = pii_detected | token_budget | request_rate_limit | injection | agent_killed | approval_denied | content_safety | …
+donkey.policy.type          = pii_detected | token_budget | wallet_exhausted | request_rate_limit | injection | agent_killed | approval_denied | content_safety | …
 donkey.policy.provider      = google-model-armor  # who blocked it (provider-backed refusals only)
 donkey.policy.categories    = [rai_dangerous]     # why: the provider's flagged categories
 donkey.budget.remaining     = 18450

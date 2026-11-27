@@ -37,6 +37,7 @@ from donkey_kit.core.errors import (
     classify,
 )
 from donkey_kit.core.step_up import GatewayApprovalDenied, GatewayApprovalPending
+from donkey_kit.core.wallet import WalletExhausted
 from donkey_kit.simulator import fixtures as fx
 from donkey_kit.simulator.app import SIMULATOR_HEADER
 
@@ -64,6 +65,7 @@ def _sentinel(status: int = 299) -> httpx.MockTransport:
 _ROUND_TRIP = [
     (TokenBudgetExceeded, "token-rate-limit"),
     (RequestRateLimitExceeded, "request-rate-limit"),
+    (WalletExhausted, "wallet-exhausted"),
     (PIIDetected, "pii-detected"),
     (PromptInjectionBlocked, "injection-protection"),
     (ContentSafetyBlocked, "content-safety"),

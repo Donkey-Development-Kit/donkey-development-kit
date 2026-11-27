@@ -43,6 +43,7 @@ from .jsonrpc_refusals import (
     valid_envelope,
 )
 from .step_up import GatewayApprovalDenied
+from .wallet import WalletExhausted
 
 __all__ = [
     "POLICY_SLUGS",
@@ -61,6 +62,7 @@ BodyValue: TypeAlias = str | int | bool | re.Pattern[str]
 # --- donkey.policy.type (#192, BG §1.6) -------------------------------------
 # Most-specific subclass first: a PIIDetected is also a PolicyViolation.
 POLICY_SLUGS: tuple[tuple[type[DonkeyError], str], ...] = (
+    (WalletExhausted, "wallet_exhausted"),
     (TokenBudgetExceeded, "token_budget"),
     (RequestRateLimitExceeded, "request_rate_limit"),
     (PIIDetected, "pii_detected"),

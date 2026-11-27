@@ -20,7 +20,7 @@ initiation failure (``502``, ``ciba_initiation_failed``, also in docs/verified-a
 no rule here: it is an :class:`~donkey_kit.core.errors.UpstreamModelError`, like any ``5xx``.
 
 ``errors`` cannot import this module, because these classes subclass its own. Importing this
-module installs the rules in ``errors``' step-up slot, ahead of the auth rule. The ``core``
+module installs the rules in ``errors``' late-bound slot, ahead of the auth rule. The ``core``
 package imports it, so every :func:`~donkey_kit.core.errors.classify` call sees them.
 """
 
@@ -203,4 +203,4 @@ def _match_denied(s: errors._Shape) -> DonkeyError | None:
     )
 
 
-errors._STEP_UP_MATCHERS[:] = [_match_pending, _match_denied]  # noqa: SLF001
+errors._LATE_BOUND_MATCHERS.extend([_match_pending, _match_denied])  # noqa: SLF001

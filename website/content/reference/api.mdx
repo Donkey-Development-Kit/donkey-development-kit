@@ -704,6 +704,7 @@ is raised.
 | `UngovernedMcpServer` | `DonkeyError` | A `ToolSet` binding was refused because a server in it is not governed. |
 | `UpstreamModelError` | `DonkeyError` | Provider-side failure (5xx). Retryable. |
 | `UpstreamRequestError` | `DonkeyError` | The upstream provider rejected the request (4xx), passed through the gateway verbatim (e.g. OpenAI `model_not_found`). This is a client-side mistake, NOT a gateway policy refusal and NOT a provider outage, so it is terminal (never retried) but distinct from `PolicyViolation`. |
+| `WalletExhausted` | `TokenBudgetExceeded` | A model wallet is spent: the gateway refused the call because the wallet that matched the caller has no budget left in its window. |
 
 ## Other exports
 

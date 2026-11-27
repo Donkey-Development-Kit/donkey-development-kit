@@ -24,7 +24,9 @@ from pathlib import Path
 import httpx
 
 from donkey_kit.core.budget import Budget
-from donkey_kit.core.errors import TokenBudgetExceeded, classify
+from donkey_kit.core.classifier import policy_type_slug
+from donkey_kit.core.errors import PolicyViolation, TokenBudgetExceeded, classify
+from donkey_kit.core.wallet import WalletExhausted
 from donkey_kit.simulator.fixtures import parse_headers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "anypoint" / "model_wallet"
@@ -183,20 +185,57 @@ def test_wallet_exhaustion_429_is_distinguishable_from_token_window_429() -> Non
     assert {"x-token-limit", "x-token-remaining", "x-token-reset"} <= set(window)
 
 
-def test_wallet_exhaustion_classifies_as_token_budget_exceeded_today() -> None:
-    """Characterises current behaviour for #315: the wallet 429 lands in the
-    generic 429 branch (TokenBudgetExceeded, retry_after from `retry-after`), and
-    `Budget.observe()` is a no-op because no budget-window header is present."""
+def test_wallet_exhaustion_classifies_as_wallet_exhausted() -> None:
+    """#315: the live wallet 429 is a typed WalletExhausted carrying the wallet id and
+    `retry-after`, still a TokenBudgetExceeded and a terminal PolicyViolation. The
+    classifier makes no claim about the unit, and `Budget.observe()` stays a no-op because
+    no budget-window header is present."""
     h = _headers("reject.wallet-exhausted.headers.txt")
     body = (FIXTURES / "reject.wallet-exhausted.body.json").read_bytes()
     resp = httpx.Response(429, headers=h, content=body)
     err = classify(resp)
+    assert type(err) is WalletExhausted
     assert isinstance(err, TokenBudgetExceeded)
+    assert isinstance(err, PolicyViolation)
+    assert err.wallet == "ddk-model-wallet"
     assert err.retry_after == 86400.0
 
     budget = Budget()
     budget.observe(resp)
     assert budget.observed_at is None
+
+
+def test_token_window_429_is_not_a_wallet_exhaustion() -> None:
+    """#315: the token-window 429 has the `x-token-*` trio and no wallet header, so it keeps
+    its own type."""
+    resp = httpx.Response(429, headers=_TOKEN_WINDOW_429)
+    err = classify(resp)
+    assert type(err) is TokenBudgetExceeded
+
+
+def test_wallet_header_with_a_token_window_trio_is_not_a_wallet_exhaustion() -> None:
+    """#315: the wallet header alone is not the signal. A 429 that also carries the `x-token-*`
+    trio is a window refusal, even when it names a wallet."""
+    resp = httpx.Response(429, headers={**_TOKEN_WINDOW_429, "x-model-wallet-selected": "w"})
+    assert type(classify(resp)) is TokenBudgetExceeded
+
+
+def test_wallet_header_on_a_non_429_is_not_a_wallet_exhaustion() -> None:
+    """#315: a 200 names the wallet too, and a wallet-routed 403 is not a spent wallet."""
+    resp = httpx.Response(403, headers={"x-model-wallet-selected": "w"})
+    assert not isinstance(classify(resp), WalletExhausted)
+
+
+def test_wallet_exhaustion_without_retry_after_has_none() -> None:
+    resp = httpx.Response(429, headers={"x-model-wallet-selected": "w"})
+    err = classify(resp)
+    assert type(err) is WalletExhausted
+    assert err.retry_after is None
+
+
+def test_wallet_exhaustion_has_its_own_policy_type_slug() -> None:
+    err = classify(httpx.Response(429, headers={"x-model-wallet-selected": "w"}))
+    assert policy_type_slug(err) == "wallet_exhausted"
 
 
 def test_wallet_is_enforced_by_mw_policies_with_no_threshold_setting() -> None:
