@@ -115,3 +115,15 @@ async def test_parse_span_carries_the_plain_paths_attributes(spans: Any) -> None
         keys[method] = set(dict(span.attributes))
         assert dict(span.attributes)["gen_ai.request.model"] == "gpt-4o"
     assert keys["parse"] == keys["create"]
+
+
+async def test_langchain_with_structured_output_returns_the_model_on_the_simulator() -> None:
+    # The LangChain listing's "Structured output" column rides on this path: the
+    # governed ChatOpenAI sends json_schema through the same transport as .parse().
+    pytest.importorskip("langchain_openai")
+    donkey = _donkey_on_simulator()
+    model = donkey.langgraph.chat_model("gpt-4o")
+    result = await model.with_structured_output(Ticket, method="json_schema").ainvoke(
+        "make a ticket"
+    )
+    assert isinstance(result, Ticket)
