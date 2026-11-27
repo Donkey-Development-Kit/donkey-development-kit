@@ -281,6 +281,7 @@ donkey.governed(
     enduser_id: str | None = None,
     business_group: str | None = None,
     typed_refusals: bool = True,
+    **dimensions: str | None,
 ) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]
 ```
 

@@ -1154,6 +1154,7 @@ class Donkey:
         enduser_id: str | None = None,
         business_group: str | None = None,
         typed_refusals: bool = True,
+        **dimensions: str | None,
     ) -> Callable[_P, _R]: ...
 
     @overload
@@ -1167,6 +1168,7 @@ class Donkey:
         enduser_id: str | None = None,
         business_group: str | None = None,
         typed_refusals: bool = True,
+        **dimensions: str | None,
     ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]: ...
 
     def governed(
@@ -1179,6 +1181,7 @@ class Donkey:
         enduser_id: str | None = None,
         business_group: str | None = None,
         typed_refusals: bool = True,
+        **dimensions: str | None,
     ) -> Callable[_P, _R] | Callable[[Callable[_P, _R]], Callable[_P, _R]]:
         """Wrap a callable so its body runs inside a ``donkey.run()`` scope (#200).
 
@@ -1199,12 +1202,26 @@ class Donkey:
         callable uses the plain ``with`` form. Usable bare (``@donkey.governed``)
         or parametrised (``@donkey.governed(team=...)``).
 
+        Other keywords set custom cost dimensions declared at construction
+        (``cost_dimensions=``, #316), exactly as on :meth:`run`::
+
+            @donkey.governed(team="support", cost_center="CC-4471")
+            async def handle_ticket(ticket): ...
+
+        An undeclared name raises :class:`~donkey_kit.core.errors.ConfigError`,
+        naming the typo, when the decorated function is called.
+
         There is deliberately **no** ``id=`` argument: each call opens its own
         run, and a fixed id pinned across every call would collapse unrelated runs
         into one correlation. When you need to pin a specific id, use
         ``donkey.run(id=...)`` directly. ``approval=`` / ``risk=`` live on
         :meth:`tool`, per tool (BG §2.3).
         """
+
+        # ``run()`` also has non-str keywords (``ledger_max_entries``), which a
+        # ``**dict[str, str | None]`` cannot be proven not to fill; the values are
+        # checked at run time by the declared-dimension guard.
+        custom: dict[str, Any] = dict(dimensions)
 
         def decorate(fn: Callable[_P, _R]) -> Callable[_P, _R]:
             if inspect.iscoroutinefunction(fn):
@@ -1221,6 +1238,7 @@ class Donkey:
                         enduser_id=enduser_id,
                         business_group=business_group,
                         typed_refusals=typed_refusals,
+                        **custom,
                     ):
                         return await coro_fn(*args, **kwargs)
 
@@ -1235,6 +1253,7 @@ class Donkey:
                     enduser_id=enduser_id,
                     business_group=business_group,
                     typed_refusals=typed_refusals,
+                    **custom,
                 ):
                     return fn(*args, **kwargs)
 
