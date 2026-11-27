@@ -28,6 +28,8 @@ COST_TEAM_HEADER = "X-Anypoint-Cost-Team"
 COST_PROJECT_HEADER = "X-Anypoint-Cost-Project"
 COST_ENV_HEADER = "X-Anypoint-Cost-Env"
 COST_ENDUSER_HEADER = "X-Anypoint-Cost-Enduser-Id"
+# A custom dimension (#316): this prefix plus its title-cased name (``Cost-Center``).
+COST_DIMENSION_HEADER_PREFIX = "X-Anypoint-Cost-"
 
 # The run correlation id (the gateway echoes it back on the response under the
 # same name) and the SDK's own per-call id (docs/verified-apis.md §3).

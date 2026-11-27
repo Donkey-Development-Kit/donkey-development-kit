@@ -26,7 +26,7 @@ from ..correlation import (
     new_call_id,
     request_correlation_id,
 )
-from ..cost import CostTags
+from ..cost import CostTags, dimension_header
 from ..endpoints import require_secure_url
 from ..errors import ConfigError
 from ..identity import check_user_token_endpoint, user_token_header
@@ -76,7 +76,7 @@ _COST_HEADER_SOURCES: tuple[tuple[str, str, str], ...] = (
 
 def cost_headers(cfg: DonkeyConfig, tags: CostTags) -> dict[str, str]:
     """The request headers for the SET dimensions of ``tags``
-    (docs/verified-apis.md §3, BG §1.7, #196).
+    (docs/verified-apis.md §3, BG §1.7, #196), custom dimensions included (#316).
 
     Each header NAME is the config override (``cost_*_header``) if set, else the
     default from ``core/_verify``. The LLM Gateway ingests no cost-tag header
@@ -91,6 +91,7 @@ def cost_headers(cfg: DonkeyConfig, tags: CostTags) -> dict[str, str]:
     for field, value in tags.items():
         name = override[field] or default[field]
         headers[name] = value
+    headers.update((dimension_header(name), value) for name, value in tags.dimensions)
     return headers
 
 

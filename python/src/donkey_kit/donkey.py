@@ -43,7 +43,7 @@ from .core.classifier import Classifier
 from .core.classifier import classify as _classify
 from .core.config import ConfigOverrides, DonkeyConfig
 from .core.correlation import AttributionScope, attribution_scope
-from .core.cost import CostTags
+from .core.cost import CostTags, DimensionGuard
 from .core.errors import ConfigError
 from .core.identity import UserScope
 from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
@@ -512,6 +512,10 @@ class Donkey:
         self._run_scorer: RunScorer | None = None
         self._tools = ToolsFacade(self._registry, self._cfg, self._llm_auth, self._approvals)
         self._adapter_cache: dict[str, Adapter] = {}
+        # The declared custom cost dimensions and their cardinality guard (#316).
+        self._dimensions = DimensionGuard(
+            self._cfg.cost_dimensions, self._cfg.high_cardinality_cost_dimensions
+        )
 
     @classmethod
     def from_env(
@@ -759,6 +763,7 @@ class Donkey:
         business_group: str | None = None,
         typed_refusals: bool = True,
         ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
+        **dimensions: str | None,
     ) -> RunScope:
         """Group one logical agent run under a shared correlation id (BG §1.7, #195).
 
@@ -793,7 +798,9 @@ class Donkey:
         the contextvar, so it reaches framework-spawned tasks and restores on exit.
         ``business_group=`` (#310) does the same for the business group: it
         replaces the configured one for every call in the block. To attribute
-        part of a run without starting a new one, use :meth:`attribution`.
+        part of a run without starting a new one, use :meth:`attribution`. Any
+        other keyword sets a custom cost dimension declared in ``cost_dimensions``
+        (#316), exactly as :meth:`attribution` does.
 
         **Typed refusals** (BG §1.2, #724): a governance refusal or a transport
         failure leaving the block is re-raised as its typed
@@ -810,7 +817,7 @@ class Donkey:
         ``scope.ledger``). ``ledger_max_entries`` caps the calls and refusals kept
         (default 1000 each); the totals keep counting past it.
         """
-        override = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
+        override = self._cost_override("donkey.run()", team, project, env, enduser_id, dimensions)
         return run_scope(
             id,
             override if not override.is_empty else None,
@@ -860,6 +867,7 @@ class Donkey:
         business_group: str | None = None,
         typed_refusals: bool = True,
         ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
+        **dimensions: str | None,
     ) -> RunScope:
         """Join the caller's run: :meth:`run`, with the id read from an inbound
         request's headers (#308).
@@ -893,7 +901,9 @@ class Donkey:
         from .core.inbound import correlation_id_from_headers
 
         inbound = correlation_id_from_headers(headers, self._cfg.correlation_header)
-        override = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
+        override = self._cost_override(
+            "donkey.run_from_headers()", team, project, env, enduser_id, dimensions
+        )
         return run_scope(
             inbound.correlation_id,
             override if not override.is_empty else None,
@@ -949,6 +959,7 @@ class Donkey:
         project: str | None = None,
         env: str | None = None,
         enduser_id: str | None = None,
+        **dimensions: str | None,
     ) -> AttributionScope:
         """Attribute every governed call in the block to a business group and
         cost tags, per request, without starting a run (#310).
@@ -986,11 +997,43 @@ class Donkey:
         (``connection_kwargs()``) captured the configured group when it was
         built and does not follow this scope. The header name is still an
         unverified placeholder (``docs/verified-apis.md`` §3, #21).
+
+        **Custom dimensions** (#316): any other keyword sets a cost dimension the
+        client declared once, at construction, and it shares this scope with the
+        business group::
+
+            donkey = Donkey.from_env(cost_dimensions=["cost_center", "legal_entity"])
+            with donkey.attribution(business_group="risk-eu", cost_center="CC-4471"):
+                ...
+
+        Each value is emitted as a ``donkey.cost.<name>`` span attribute, and as a
+        request header only with ``send_cost_headers``. A name that was not declared
+        raises :class:`~donkey_kit.core.errors.ConfigError` naming it, and so does a
+        dimension's 1001st distinct value in this client, unless the dimension is
+        listed in ``high_cardinality_cost_dimensions``.
+
+        Docs: https://docs.donkey-kit.dev/cost-attribution
         """
         return attribution_scope(
-            CostTags(team=team, project=project, env=env, enduser_id=enduser_id),
+            self._cost_override("donkey.attribution()", team, project, env, enduser_id, dimensions),
             business_group,
         )
+
+    def _cost_override(
+        self,
+        where: str,
+        team: str | None,
+        project: str | None,
+        env: str | None,
+        enduser_id: str | None,
+        dimensions: Mapping[str, str | None],
+    ) -> CostTags:
+        """The cost tags a scope binds: the fixed four plus the custom ``dimensions``,
+        each checked against the declared set and its cardinality ceiling (#316)."""
+        tags = CostTags(team=team, project=project, env=env, enduser_id=enduser_id)
+        if not dimensions:
+            return tags
+        return tags.merge(self._dimensions.tags(dimensions, where=where))
 
     def cache(
         self,

@@ -130,6 +130,8 @@ COST_TEAM_HEADER = _wire.COST_TEAM_HEADER
 COST_PROJECT_HEADER = _wire.COST_PROJECT_HEADER
 COST_ENV_HEADER = _wire.COST_ENV_HEADER
 COST_ENDUSER_HEADER = _wire.COST_ENDUSER_HEADER
+# Custom dimensions (#316) follow the same convention and the same verified negative.
+COST_DIMENSION_HEADER_PREFIX = _wire.COST_DIMENSION_HEADER_PREFIX
 
 # --- Correlation / call-id request headers (BG §1.1, #195) ------------------
 # VERIFIED (LIVE 2026-09-22, #522) against the deployed Omni Gateway proxy

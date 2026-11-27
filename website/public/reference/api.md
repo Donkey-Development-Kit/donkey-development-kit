@@ -177,6 +177,7 @@ donkey.run(
     business_group: str | None = None,
     typed_refusals: bool = True,
     ledger_max_entries: int = 1000,
+    **dimensions: str | None,
 ) -> RunScope
 ```
 
@@ -203,6 +204,7 @@ donkey.run_from_headers(
     business_group: str | None = None,
     typed_refusals: bool = True,
     ledger_max_entries: int = 1000,
+    **dimensions: str | None,
 ) -> RunScope
 ```
 
@@ -236,10 +238,13 @@ donkey.attribution(
     project: str | None = None,
     env: str | None = None,
     enduser_id: str | None = None,
+    **dimensions: str | None,
 ) -> AttributionScope
 ```
 
 Attribute every governed call in the block to a business group and cost tags, per request, without starting a run.
+
+Guide: [`/cost-attribution`](https://docs.donkey-kit.dev/cost-attribution.md)
 
 ### `donkey.cache()`
 
@@ -716,7 +721,7 @@ is raised.
 | `CacheScope` | class | A **dual sync/async** context manager that applies `CacheControls` to the governed calls made in its block. |
 | `Classifier` | class | `classify`: call it to map an error response to a typed `DonkeyError`; register a custom policy's refusal shape on it. |
 | `ConfigOverrides` | class | The public `DonkeyConfig` fields, each optional, as keyword arguments: what `DonkeyConfig.resolve`, `DonkeyConfig.with_overrides` and `Donkey.from_env` accept, so a misspelt field fails type checking. |
-| `CostTags` | class | The fixed four-dimension cost-attribution set. |
+| `CostTags` | class | The fixed four-dimension cost-attribution set, plus the values of any custom dimensions. |
 | `Donkey` | class | The SDK entry point: one governed handle on Agent Fabric. |
 | `DonkeyAsyncClientView` | class | A non-owning `httpx.AsyncClient` over a shared `DonkeyAsyncClient`. |
 | `DonkeyClientView` | class | The blocking twin of `DonkeyAsyncClientView`, over a shared `DonkeyClient`. Get one from `DonkeyClient.view`. |

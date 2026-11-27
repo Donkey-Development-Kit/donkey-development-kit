@@ -22,7 +22,7 @@ import contextlib
 import logging
 import os
 import warnings
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 from . import spanflush
@@ -436,6 +436,7 @@ def build_genai_attributes(
     cost_project: str | None = None,
     cost_env: str | None = None,
     cost_enduser_id: str | None = None,
+    cost_dimensions: Sequence[tuple[str, str]] = (),
     correlation_id: str | None = None,
     correlation_source: str | None = None,
     prompt: str | None = None,
@@ -499,14 +500,13 @@ def build_genai_attributes(
         attrs[DONKEY_POLICY_CATEGORIES] = policy_categories
     if budget_remaining is not None:
         attrs[DONKEY_BUDGET_REMAINING] = budget_remaining
-    if cost_team is not None:
-        attrs[DONKEY_COST_TEAM] = cost_team
-    if cost_project is not None:
-        attrs[DONKEY_COST_PROJECT] = cost_project
-    if cost_env is not None:
-        attrs[DONKEY_COST_ENV] = cost_env
-    if cost_enduser_id is not None:
-        attrs[DONKEY_COST_ENDUSER] = cost_enduser_id
+    fixed = (DONKEY_COST_TEAM, DONKEY_COST_PROJECT, DONKEY_COST_ENV, DONKEY_COST_ENDUSER)
+    values = (cost_team, cost_project, cost_env, cost_enduser_id)
+    # Custom dimensions (#316) share the namespace: donkey.cost.<declared name>.
+    custom = ((f"donkey.cost.{name}", value) for name, value in cost_dimensions)
+    for key, value in (*zip(fixed, values, strict=True), *custom):
+        if value is not None:
+            attrs[key] = value
     if correlation_id is not None:
         attrs[DONKEY_CORRELATION_ID] = correlation_id
     if correlation_source is not None:
