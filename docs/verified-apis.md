@@ -446,6 +446,14 @@ SDK controls the span end to end, cost attribution works in tracing regardless o
 the header question; a customer whose own gateway *does* read a cost header can
 point the SDK at it via the `cost_*_header` overrides.
 
+Custom cost dimensions (#316, declared with `cost_dimensions`) inherit the same
+finding without a separate probe: the negative is that the gateway reads **no**
+inbound cost-tag header at all, not that it rejects four particular names. So a
+custom dimension is span-first too (`donkey.cost.<name>`), and its
+`X-Anypoint-Cost-<Name>` header (`cost_center` → `X-Anypoint-Cost-Cost-Center`) is
+the same convention, sent only with `send_cost_headers`. "Emit as headers where the
+gateway accepts them" therefore means nowhere on the Anypoint LLM Gateway today.
+
 ## 4. Policy rejection response shapes (capture as fixtures, BG §1.5)
 
 These rejection shapes are LIVE-VERIFIED: four from the `openai-sdk` proxy

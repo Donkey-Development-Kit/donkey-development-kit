@@ -31,7 +31,7 @@ import os
 import secrets
 import sys
 import warnings
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Literal, TypedDict, cast
@@ -59,7 +59,14 @@ else:  # 3.10 has no stdlib tomllib; the [core] dep ``tomli`` backfills it.
 
 from . import _verify
 from ._verify import REGION_HOSTS
-from .cost import CostTags
+from .cost import (
+    COST_KEYS,
+    CostTags,
+    check_dimensions,
+    dimension_names,
+    dimension_names_problem,
+    resolve_cost_tags,
+)
 from .endpoints import STANDARD_CONTROL_PLANE_HOSTS, host_of, require_secure_url
 from .errors import ConfigError, ConfigWarning
 from .header_names import header_name_problem, key_header_problem, user_token_header_problem
@@ -127,6 +134,8 @@ class ConfigOverrides(TypedDict, total=False):
     cost_project_header: str | None
     cost_env_header: str | None
     cost_enduser_header: str | None
+    cost_dimensions: Sequence[str]
+    high_cardinality_cost_dimensions: Sequence[str]
     timeout_s: float
     max_retries: int
     registry_cache_ttl_s: int
@@ -332,6 +341,9 @@ class DonkeyConfig:
     cost_project_header: str | None = None
     cost_env_header: str | None = None
     cost_enduser_header: str | None = None
+    # Custom dimensions, declared once; values come per request (#316, cost.py).
+    cost_dimensions: Sequence[str] = ()
+    high_cardinality_cost_dimensions: Sequence[str] = ()
 
     # --- Behaviour ---
     timeout_s: float = 60.0
@@ -378,6 +390,9 @@ class DonkeyConfig:
         object.__setattr__(self, "_sources", loaded)
         self._check_values()
         self._check_header_names()
+        for key in ("cost_dimensions", "high_cardinality_cost_dimensions"):
+            object.__setattr__(self, key, tuple(getattr(self, key)))
+        check_dimensions(self.cost_dimensions, self.high_cardinality_cost_dimensions, self.cost)
 
     def _check_values(self) -> None:
         """Refuse out-of-range numbers, non-boolean switches and unknown choices,
@@ -485,14 +500,14 @@ class DonkeyConfig:
                 values[spec.name] = defaults[spec.name]
 
         toml_cost = table.get("cost")
-        for name, key, env in _COST_KEYS:
+        for name, key, env in COST_KEYS:
             if env in os.environ:
                 sources[f"cost.{name}"] = ConfigSource("env")
             elif isinstance(toml_cost, dict) and key in toml_cost:
                 sources[f"cost.{name}"] = file_sources[f"cost.{key}"]
             else:
                 sources[f"cost.{name}"] = ConfigSource("default")
-        cost = _resolve_cost_tags(toml_cost)
+        cost = resolve_cost_tags(toml_cost)
         if "cost" in given:
             override = given["cost"]
             if not isinstance(override, CostTags):
@@ -735,31 +750,6 @@ def _opt(v: object) -> str | None:
     return None if v is None else str(v)
 
 
-# The four cost dimensions: field name, [donkey.cost] key and the env var that
-# overrides each, in field order.
-_COST_KEYS: tuple[tuple[str, str, str], ...] = (
-    ("team", "team", "DONKEY_COST_TEAM"),
-    ("project", "project", "DONKEY_COST_PROJECT"),
-    ("env", "env", "DONKEY_COST_ENV"),
-    ("enduser_id", "enduser.id", "DONKEY_COST_ENDUSER_ID"),
-)
-
-
-def _resolve_cost_tags(toml_cost: object) -> CostTags:
-    """Resolve the cost tags along the fixed precedence: ``[donkey.cost]`` toml
-    table is the base (its keys validated against the fixed set — an unknown
-    dimension raises :class:`ConfigError`, never a silent drop, #196 AC #1), then
-    ``DONKEY_COST_*`` env vars override per dimension. Absent both → empty tags."""
-    if toml_cost is None:
-        base = CostTags()
-    elif isinstance(toml_cost, dict):
-        base = CostTags.from_mapping(toml_cost, source="[donkey.cost]")
-    else:
-        raise ConfigError("[donkey.cost] must be a table of cost-attribution tags.")
-    env_over = {name: os.environ[var] for name, _, var in _COST_KEYS if var in os.environ}
-    return base.merge(CostTags(**env_over)) if env_over else base
-
-
 def _as_int(v: object) -> int:
     if not isinstance(v, bool):
         try:
@@ -863,7 +853,7 @@ class _Field:
 
 
 # The field table (#720, #727): every DonkeyConfig field except ``cost``, which
-# is set per dimension instead (``_COST_KEYS``). resolve(), missing_fields(),
+# is set per dimension instead (``COST_KEYS``). resolve(), missing_fields(),
 # the value checks and the error messages all read it, and unit tests pin it
 # against the dataclass and the configuration docs.
 _FIELDS: tuple[_Field, ...] = (
@@ -891,6 +881,13 @@ _FIELDS: tuple[_Field, ...] = (
     _Field("cost_project_header", "DONKEY_COST_PROJECT_HEADER", _opt),
     _Field("cost_env_header", "DONKEY_COST_ENV_HEADER", _opt),
     _Field("cost_enduser_header", "DONKEY_COST_ENDUSER_HEADER", _opt),
+    _Field("cost_dimensions", "DONKEY_COST_DIMENSIONS", dimension_names, dimension_names_problem),
+    _Field(
+        "high_cardinality_cost_dimensions",
+        "DONKEY_HIGH_CARDINALITY_COST_DIMENSIONS",
+        dimension_names,
+        dimension_names_problem,
+    ),
     _Field("timeout_s", "DONKEY_TIMEOUT_S", _as_float, _positive_number),
     _Field("max_retries", "DONKEY_MAX_RETRIES", _as_int, _non_negative_int),
     _Field("registry_cache_ttl_s", "DONKEY_REGISTRY_CACHE_TTL_S", _as_int, _non_negative_int),

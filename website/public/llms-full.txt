@@ -8879,14 +8879,16 @@ overrides layer on top: `donkey.run(team=…, project=…, env=…, enduser_id=�
 wins **per field** for its block, and the rest fall back to the configured
 tags. The key set is **fixed**: an unknown dimension is a configuration error,
 never a silently dropped tag. Values are **validated** (fixed keys, bounded
-length), so nobody stuffs a JSON blob into a span attribute or header.
+length), so nobody stuffs a JSON blob into a span attribute or header. For
+dimensions beyond these four, declare them once (see
+[Custom dimensions](#custom-dimensions)).
 
 ## Where the tags go
 
 | Carrier | Names | When | Goes to |
 |---|---|---|---|
-| Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id` | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so CrewAI, which has only header injection, records none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
-| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Model requests to the LLM proxy only. See the note below. |
+| Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id`, and `donkey.cost.<name>` for each [custom dimension](#custom-dimensions) | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so CrewAI, which has only header injection, records none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
+| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`), and `X-Anypoint-Cost-` for each custom dimension (`cost_center` is sent as `X-Anypoint-Cost-Cost-Center`, not renamable) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Model requests to the LLM proxy only. See the note below. |
 
 Each header carries the tag's value unchanged (for example
 `X-Anypoint-Cost-Enduser-Id: user-42`). A tag that isn't set is sent under
@@ -8954,6 +8956,61 @@ on exit. The value is validated like a cost tag, and an invalid one raises
   they keep sending it. Adapters with transport injection send the scoped value.
   The header name, `X-Anypoint-Business-Group`, is still an unverified
   placeholder; see [Configuration](https://docs.donkey-kit.dev/reference/configuration/attribution.md#optional-attribution).
+
+## Custom dimensions
+
+Some organisations allocate spend by more than team, project and environment: a
+cost center, a legal entity, a jurisdiction. Declare those names once, when you
+build the client, and set their values per request in the same
+`donkey.attribution(...)` scope as the business group:
+
+```python
+donkey = Donkey.from_env(cost_dimensions=["cost_center", "legal_entity", "jurisdiction"])
+
+with donkey.attribution(business_group="risk-eu", cost_center="CC-4471", jurisdiction="EU"):
+    await score(job)
+```
+
+`donkey.run(...)` and `donkey.run_from_headers(...)` accept the same keywords.
+Each value is recorded as a `donkey.cost.<name>` span attribute, merges per
+dimension over an enclosing block like the fixed tags, and goes out as a request
+header only with `send_cost_headers`.
+
+The declared set is checked when the config is built:
+
+| Rule | Limit |
+|---|---|
+| Name | 1-32 lowercase letters, digits and underscores, starting with a letter. Not `team`, `project`, `env`, `enduser` or `enduser_id`. |
+| Count | At most 10 declared dimensions. |
+| Value | A non-empty string of at most 256 characters, with no control characters, like the fixed tags. |
+
+A name you didn't declare raises `ConfigError` where you passed it, and names it,
+so a typo never becomes a silently missing tag:
+
+```text
+ConfigError: Unknown cost dimension(s) in donkey.attribution(): 'cost_centre' (did you mean 'cost_center'?). Declared: cost_center, legal_entity, jurisdiction. Declare each custom dimension once, when building the client: Donkey.from_env(cost_dimensions=[...]).
+```
+
+Declare them in the environment or a config file instead of code with
+`DONKEY_COST_DIMENSIONS=cost_center,legal_entity` or
+`cost_dimensions = ["cost_center", "legal_entity"]` under `[donkey]` (see
+[Configuration](https://docs.donkey-kit.dev/reference/configuration/attribution.md#custom-cost-dimensions)).
+
+  **Keep custom dimensions low-cardinality.** Every distinct value is a new
+  series in any backend that groups spans or metrics by it. A dimension such as a
+  request ID or a case number, with a new value on every call, makes those
+  backends slow and expensive. So a client accepts at most **1000 distinct
+  values** per custom dimension; the next new value raises `ConfigError`, while
+  values it has already seen keep working. When a dimension really is
+  high-cardinality, opt it out by also listing it in
+  `high_cardinality_cost_dimensions`:
+
+  ```python
+  donkey = Donkey.from_env(
+      cost_dimensions=["cost_center", "case_id"],
+      high_cardinality_cost_dimensions=["case_id"],
+  )
+  ```
 
 ## The question this answers
 
@@ -15884,6 +15941,8 @@ This table is generated from the field table in `core/config.py`.
 | `DONKEY_COST_PROJECT_HEADER` | `cost_project_header` | `cost_project_header` | `X-Anypoint-Cost-Project` |
 | `DONKEY_COST_ENV_HEADER` | `cost_env_header` | `cost_env_header` | `X-Anypoint-Cost-Env` |
 | `DONKEY_COST_ENDUSER_HEADER` | `cost_enduser_header` | `cost_enduser_header` | `X-Anypoint-Cost-Enduser-Id` |
+| `DONKEY_COST_DIMENSIONS` | `cost_dimensions` | `cost_dimensions` | `()` |
+| `DONKEY_HIGH_CARDINALITY_COST_DIMENSIONS` | `high_cardinality_cost_dimensions` | `high_cardinality_cost_dimensions` | `()` |
 | `DONKEY_TIMEOUT_S` | `timeout_s` | `timeout_s` | `60.0` |
 | `DONKEY_MAX_RETRIES` | `max_retries` | `max_retries` | `3` |
 | `DONKEY_REGISTRY_CACHE_TTL_S` | `registry_cache_ttl_s` | `registry_cache_ttl_s` | `300` |
@@ -16616,6 +16675,22 @@ whatever receiver you send them to, within the
 
 In code, `Donkey.from_env(send_cost_headers=True)`.
 
+### Custom cost dimensions
+
+Dimensions beyond the fixed four are declared once, by name, and their values
+set per request with `donkey.attribution(cost_center=…)`. See
+[Custom dimensions](https://docs.donkey-kit.dev/cost-attribution.md#custom-dimensions) for the rules and the
+cardinality ceiling.
+
+| Env var | `DonkeyConfig` field | Default | Meaning |
+|---|---|---|---|
+| `DONKEY_COST_DIMENSIONS` | `cost_dimensions` | `()` | The custom dimension names, comma-separated in the environment and a list in code or a config file. At most 10. |
+| `DONKEY_HIGH_CARDINALITY_COST_DIMENSIONS` | `high_cardinality_cost_dimensions` | `()` | Declared dimensions exempt from the 1000-distinct-values ceiling. Each must also be in `cost_dimensions`. |
+
+Each custom dimension's header, sent only with `send_cost_headers`, is
+`X-Anypoint-Cost-` plus the title-cased name (`cost_center` →
+`X-Anypoint-Cost-Cost-Center`) and can't be renamed.
+
   With `send_cost_headers` on, the headers, including the end-user ID, go only
   on model requests to the LLM proxy, never to the Anypoint platform. Where the
   tags go is described in
@@ -16687,6 +16762,7 @@ request is sent. One error lists every bad field and where each was set:
 | `region` | `us`, `eu`, `ca` or `jp` |
 | `llm_proxy_auth` | `client-id`, `jwt` or `bearer` (any case in the environment or a config file) |
 | `on_model_substitution` | `off` or `raise` (any case in the environment or a config file) |
+| `cost_dimensions`, `high_cardinality_cost_dimensions` | At most 10 names of 1-32 lowercase letters, digits and underscores, each starting with a letter, none repeated and none a fixed dimension; every `high_cardinality_cost_dimensions` name must also be in `cost_dimensions` |
 
 A misspelt switch such as `DONKEY_TELEMETRY=flase` is an error, not `false`:
 
@@ -17052,6 +17128,7 @@ donkey.run(
     business_group: str | None = None,
     typed_refusals: bool = True,
     ledger_max_entries: int = 1000,
+    **dimensions: str | None,
 ) -> RunScope
 ```
 
@@ -17078,6 +17155,7 @@ donkey.run_from_headers(
     business_group: str | None = None,
     typed_refusals: bool = True,
     ledger_max_entries: int = 1000,
+    **dimensions: str | None,
 ) -> RunScope
 ```
 
@@ -17111,10 +17189,13 @@ donkey.attribution(
     project: str | None = None,
     env: str | None = None,
     enduser_id: str | None = None,
+    **dimensions: str | None,
 ) -> AttributionScope
 ```
 
 Attribute every governed call in the block to a business group and cost tags, per request, without starting a run.
+
+Guide: [`/cost-attribution`](https://docs.donkey-kit.dev/cost-attribution.md)
 
 ### `donkey.cache()`
 
@@ -17591,7 +17672,7 @@ is raised.
 | `CacheScope` | class | A **dual sync/async** context manager that applies `CacheControls` to the governed calls made in its block. |
 | `Classifier` | class | `classify`: call it to map an error response to a typed `DonkeyError`; register a custom policy's refusal shape on it. |
 | `ConfigOverrides` | class | The public `DonkeyConfig` fields, each optional, as keyword arguments: what `DonkeyConfig.resolve`, `DonkeyConfig.with_overrides` and `Donkey.from_env` accept, so a misspelt field fails type checking. |
-| `CostTags` | class | The fixed four-dimension cost-attribution set. |
+| `CostTags` | class | The fixed four-dimension cost-attribution set, plus the values of any custom dimensions. |
 | `Donkey` | class | The SDK entry point: one governed handle on Agent Fabric. |
 | `DonkeyAsyncClientView` | class | A non-owning `httpx.AsyncClient` over a shared `DonkeyAsyncClient`. |
 | `DonkeyClientView` | class | The blocking twin of `DonkeyAsyncClientView`, over a shared `DonkeyClient`. Get one from `DonkeyClient.view`. |

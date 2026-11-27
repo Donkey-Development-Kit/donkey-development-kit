@@ -1,5 +1,5 @@
 ---
-description: Per-call cost tags (team, project, env, enduser.id) on every model span, where they go on the wire and in the gateway's records, and how to attribute spend per request.
+description: Per-call cost tags (team, project, env, enduser.id, plus custom dimensions you declare) on every model span, where they go on the wire and in the gateway's records, and how to attribute spend per request.
 status: live
 ---
 
@@ -27,14 +27,16 @@ overrides layer on top: `donkey.run(team=…, project=…, env=…, enduser_id=�
 wins **per field** for its block, and the rest fall back to the configured
 tags. The key set is **fixed**: an unknown dimension is a configuration error,
 never a silently dropped tag. Values are **validated** (fixed keys, bounded
-length), so nobody stuffs a JSON blob into a span attribute or header.
+length), so nobody stuffs a JSON blob into a span attribute or header. For
+dimensions beyond these four, declare them once (see
+[Custom dimensions](#custom-dimensions)).
 
 ## Where the tags go
 
 | Carrier | Names | When | Goes to |
 |---|---|---|---|
-| Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id` | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so CrewAI, which has only header injection, records none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
-| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Model requests to the LLM proxy only. See the note below. |
+| Span attributes | `donkey.cost.team`, `donkey.cost.project`, `donkey.cost.env`, `donkey.cost.enduser.id`, and `donkey.cost.<name>` for each [custom dimension](#custom-dimensions) | Always, for each tag that is set, on every `donkey.llm.chat` span. Needs `telemetry` on (the default) and OpenTelemetry installed. The SDK's shared client opens the span, so CrewAI, which has only header injection, records none. | Your OpenTelemetry pipeline: the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, or any `TracerProvider` your process installed |
+| Request headers | `X-Anypoint-Cost-Team`, `X-Anypoint-Cost-Project`, `X-Anypoint-Cost-Env`, `X-Anypoint-Cost-Enduser-Id` (renamable with `cost_*_header`), and `X-Anypoint-Cost-<Name>` for each custom dimension (`cost_center` is sent as `X-Anypoint-Cost-Cost-Center`, not renamable) | Only with `send_cost_headers` / `DONKEY_SEND_COST_HEADERS=true`. Off by default. | Model requests to the LLM proxy only. See the note below. |
 
 Each header carries the tag's value unchanged (for example
 `X-Anypoint-Cost-Enduser-Id: user-42`). A tag that isn't set is sent under
@@ -107,6 +109,63 @@ on exit. The value is validated like a cost tag, and an invalid one raises
   they keep sending it. Adapters with transport injection send the scoped value.
   The header name, `X-Anypoint-Business-Group`, is still an unverified
   placeholder; see [Configuration](/reference/configuration/attribution#optional-attribution).
+</Callout>
+
+## Custom dimensions
+
+Some organisations allocate spend by more than team, project and environment: a
+cost center, a legal entity, a jurisdiction. Declare those names once, when you
+build the client, and set their values per request in the same
+`donkey.attribution(...)` scope as the business group:
+
+```python
+donkey = Donkey.from_env(cost_dimensions=["cost_center", "legal_entity", "jurisdiction"])
+
+with donkey.attribution(business_group="risk-eu", cost_center="CC-4471", jurisdiction="EU"):
+    await score(job)
+```
+
+`donkey.run(...)` and `donkey.run_from_headers(...)` accept the same keywords.
+Each value is recorded as a `donkey.cost.<name>` span attribute, merges per
+dimension over an enclosing block like the fixed tags, and goes out as a request
+header only with `send_cost_headers`.
+
+The declared set is checked when the config is built:
+
+| Rule | Limit |
+|---|---|
+| Name | 1-32 lowercase letters, digits and underscores, starting with a letter. Not `team`, `project`, `env`, `enduser` or `enduser_id`. |
+| Count | At most 10 declared dimensions. |
+| Value | A non-empty string of at most 256 characters, with no control characters, like the fixed tags. |
+
+A name you didn't declare raises `ConfigError` where you passed it, and names it,
+so a typo never becomes a silently missing tag:
+
+```text
+ConfigError: Unknown cost dimension(s) in donkey.attribution(): 'cost_centre' (did you mean 'cost_center'?). Declared: cost_center, legal_entity, jurisdiction. Declare each custom dimension once, when building the client: Donkey.from_env(cost_dimensions=[...]).
+```
+
+Declare them in the environment or a config file instead of code with
+`DONKEY_COST_DIMENSIONS=cost_center,legal_entity` or
+`cost_dimensions = ["cost_center", "legal_entity"]` under `[donkey]` (see
+[Configuration](/reference/configuration/attribution#custom-cost-dimensions)).
+
+<Callout type="warning">
+  **Keep custom dimensions low-cardinality.** Every distinct value is a new
+  series in any backend that groups spans or metrics by it. A dimension such as a
+  request ID or a case number, with a new value on every call, makes those
+  backends slow and expensive. So a client accepts at most **1000 distinct
+  values** per custom dimension; the next new value raises `ConfigError`, while
+  values it has already seen keep working. When a dimension really is
+  high-cardinality, opt it out by also listing it in
+  `high_cardinality_cost_dimensions`:
+
+  ```python
+  donkey = Donkey.from_env(
+      cost_dimensions=["cost_center", "case_id"],
+      high_cardinality_cost_dimensions=["case_id"],
+  )
+  ```
 </Callout>
 
 ## The question this answers

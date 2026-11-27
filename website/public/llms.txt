@@ -87,7 +87,7 @@
 
 - [OpenTelemetry spans](https://docs.donkey-kit.dev/telemetry.md): (status: live) OpenTelemetry GenAI spans for every governed call, in the dashboard you already run, and how DDK's own debug logging works.
 - [Correlation IDs](https://docs.donkey-kit.dev/correlation.md): (status: live) Per-run correlation IDs, carried on the wire, on every span and on every exception, and how they join gateway records across agent hops.
-- [Cost attribution](https://docs.donkey-kit.dev/cost-attribution.md): (status: live) Per-call cost tags (team, project, env, enduser.id) on every model span, where they go on the wire and in the gateway's records, and how to attribute spend per request.
+- [Cost attribution](https://docs.donkey-kit.dev/cost-attribution.md): (status: live) Per-call cost tags (team, project, env, enduser.id, plus custom dimensions you declare) on every model span, where they go on the wire and in the gateway's records, and how to attribute spend per request.
 
 ## Local simulator
 

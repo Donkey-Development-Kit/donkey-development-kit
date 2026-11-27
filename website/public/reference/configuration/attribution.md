@@ -128,6 +128,22 @@ whatever receiver you send them to, within the
 
 In code, `Donkey.from_env(send_cost_headers=True)`.
 
+### Custom cost dimensions
+
+Dimensions beyond the fixed four are declared once, by name, and their values
+set per request with `donkey.attribution(cost_center=…)`. See
+[Custom dimensions](https://docs.donkey-kit.dev/cost-attribution.md#custom-dimensions) for the rules and the
+cardinality ceiling.
+
+| Env var | `DonkeyConfig` field | Default | Meaning |
+|---|---|---|---|
+| `DONKEY_COST_DIMENSIONS` | `cost_dimensions` | `()` | The custom dimension names, comma-separated in the environment and a list in code or a config file. At most 10. |
+| `DONKEY_HIGH_CARDINALITY_COST_DIMENSIONS` | `high_cardinality_cost_dimensions` | `()` | Declared dimensions exempt from the 1000-distinct-values ceiling. Each must also be in `cost_dimensions`. |
+
+Each custom dimension's header, sent only with `send_cost_headers`, is
+`X-Anypoint-Cost-` plus the title-cased name (`cost_center` →
+`X-Anypoint-Cost-Cost-Center`) and can't be renamed.
+
   With `send_cost_headers` on, the headers, including the end-user ID, go only
   on model requests to the LLM proxy, never to the Anypoint platform. Where the
   tags go is described in
@@ -199,6 +215,7 @@ request is sent. One error lists every bad field and where each was set:
 | `region` | `us`, `eu`, `ca` or `jp` |
 | `llm_proxy_auth` | `client-id`, `jwt` or `bearer` (any case in the environment or a config file) |
 | `on_model_substitution` | `off` or `raise` (any case in the environment or a config file) |
+| `cost_dimensions`, `high_cardinality_cost_dimensions` | At most 10 names of 1-32 lowercase letters, digits and underscores, each starting with a letter, none repeated and none a fixed dimension; every `high_cardinality_cost_dimensions` name must also be in `cost_dimensions` |
 
 A misspelt switch such as `DONKEY_TELEMETRY=flase` is an error, not `false`:
 
