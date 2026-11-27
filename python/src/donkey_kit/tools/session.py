@@ -71,6 +71,7 @@ from ..core.errors import AuthError, ConfigError, ConfigWarning, DonkeyError
 from ..core.identity import Requester, capture_requester, current_user
 from ..core.reactions import Duration
 from ..core.refusals import translate
+from ..core.runledger import record_tool_call
 from ..core.step_up import wait_for_approval
 from ..core.tool_access import ToolNotInProfile
 from ..registry.models import McpServerHandle
@@ -1182,6 +1183,8 @@ def _refusing(
     async def call(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
         if not bound_for.matches_current_user():
             raise _wrong_user(tool, server, bound_for)
+        # Counted only once the call is sent: a refused or unauthorised call is not a tool call.
+        record_tool_call()
         try:
             return await invoke(*args, **kwargs)
         except Exception as exc:

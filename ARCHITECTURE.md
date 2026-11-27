@@ -167,7 +167,7 @@ Beside it:
   (`tests/unit/test_architecture.py`): httpx and the stdlib backfills at module
   level, plus the optional `opentelemetry` lazily.
 - **core is layered too:** `runtime` → `transport | approvals | inbound` → `budget | cache |
-  cachecontrol | identity | telemetry | toolspec` → `auth | correlation | spanflush` → `config | evaluation` →
+  cachecontrol | identity | telemetry | toolspec` → `auth | correlation | spanflush` → `config | runspan` →
   `classifier | cost | endpoints | header_names | reactions | refusals` →
    `tool_access` → `_policy_spec` → `jsonrpc_refusals` →
    `runledger | step_up | _tool_access` → `approval_types` → `errors` →
@@ -208,12 +208,13 @@ Beside it:
   Inside a LangGraph graph the gate pauses with `interrupt()` instead
   (#212): `donkey.py` passes the LangGraph adapter's hook into `gate(natives=...)`,
   so core still imports no framework.
-  `evaluation` holds the run-end score hook (#232, `BG §3.4`): a
-  `donkey.run()` block with a scorer registered through `donkey.evaluate(...)`
-  opens a `donkey.run` span, and on exit `correlation` hands the scorer the run
-  ledger and records its number as `donkey.evaluation.score`. `telemetry` sits
-  above `correlation`, so `donkey.py` passes `telemetry.tracer` into `run_scope`
-  rather than `evaluation` importing it.
+  `runspan` owns the `donkey.run` span every `donkey.run()` block opens (#317,
+  #232, `BG §3.4`). On exit `correlation` has it record the run ledger's rollup
+  (calls, tool calls, refusals by type, tokens, wall time, gateway spend when
+  reported) as `donkey.run.*` attributes. A scorer registered through
+  `donkey.evaluate(...)` is then handed the ledger and its number is recorded as
+  `donkey.evaluation.score`. `telemetry` sits above `correlation`, so `donkey.py`
+  passes `telemetry.tracer` into `run_scope` rather than `runspan` importing it.
   `inbound` binds the run for one inbound A2A task (#225): it adopts the
   caller's `X-Correlation-Id` or mints one, enters `run_scope`, and opens the
   `donkey.a2a.task` span. It takes headers as a plain mapping, so it imports no

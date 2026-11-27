@@ -8209,14 +8209,56 @@ DDK does not send `X-AGENT-ID` on MCP or A2A calls: its effect on
 No connection-graph or metric guarantee is made. Auth challenge fields, returned task/context IDs and raw refusal
 diagnostics are not recorded on the outbound span, even with content capture on.
 
+### What a run cost
+
+Every `donkey.run()` block opens a `donkey.run` span, and every model call in
+the block is a child of it. When the block exits, the span carries the run's
+rollup, read from the run ledger, so "what did this task cost" is one span
+rather than a sum over calls:
+
+| Attribute | Meaning |
+| --- | --- |
+| `donkey.run.model_calls` | Governed model calls, refused ones included |
+| `donkey.run.tool_calls` | Tool invocations the SDK saw (see below) |
+| `donkey.run.refusals` | Refusals the gateway returned |
+| `donkey.run.refusals.` | The same by typed error, e.g. `donkey.run.refusals.PIIDetected` |
+| `donkey.run.input_tokens`, `output_tokens`, `total_tokens` | Token totals across the run |
+| `donkey.run.cached_tokens`, `cache_write_tokens`, `reasoning_tokens` | Cache and reasoning token totals |
+| `donkey.run.duration_s` | Wall-clock seconds from entry to exit |
+| `donkey.run.spend` | What the gateway reported the run spent. Absent until it reports one |
+| `donkey.run.ledger_available` | `false` when the adapters in use can't feed the ledger |
+
+The same numbers are on the ledger: `donkey.current_run` inside the block, or
+`scope.ledger` after it (`call_count`, `usage`, `tool_calls`, `refusal_counts`,
+`duration_s`, `spend`).
+
+- **Zeros mean zero.** A run with no calls reports `0` for every count. When
+  the Donkey uses an adapter that bypasses the SDK's HTTP client, the ledger
+  can't see its calls, so the span sets `donkey.run.ledger_available = false`
+  and omits the counts instead of reporting zeros.
+- **Spend is never computed here.** DDK holds no price table. The gateway does
+  not yet report per-request spend, so `spend` is `None` and the attribute is
+  absent. Token totals are what you have today.
+- **Concurrent fan-out is exact.** Tasks started inside the block share the
+  run's ledger, so `asyncio.gather` over N calls counts N.
+- **Nested runs roll up to the innermost.** A `donkey.run(id=...)` inside
+  another run, with a different id, has its own ledger and span, a child of the
+  outer span. The outer run's totals exclude it. Re-entering the *same* id
+  (an approval resume) is the same run.
+- **Tool calls are counted where the SDK sees them:** per-tool MCP bindings and
+  approval-gated tools. A framework-owned whole-server MCP call, and a plain
+  `@donkey.tool` function, are not counted.
+- **No OpenTelemetry, no span.** The ledger still accumulates; only the span
+  attributes need OpenTelemetry installed.
+
 ### Score a run with your eval tool
 
 DDK doesn't score anything itself. `donkey.evaluate(on="run_end", with_=...)`
 registers a scorer that you own. When a `donkey.run()` block exits, DDK calls
 the scorer with the run's ledger (`donkey.current_run`'s type: the run id, its
 calls, refusals and token totals). The number it returns is recorded as
-`donkey.evaluation.score` on a `donkey.run` span, and every model call in the
-block is a child of that span.
+`donkey.evaluation.score` on the run's `donkey.run` span, beside the rollup
+above.
 
 ```python
 def resolved_without_refusal(run) -> float | None:
@@ -8231,12 +8273,11 @@ async with donkey.run(id=ticket.id):
 # The donkey.run span now carries donkey.evaluation.score.
 ```
 
-- **Opt-in.** A run opens a `donkey.run` span only when a scorer is
-  registered, so unscored runs cost nothing extra. `donkey.run_from_headers(...)`
-  blocks are scored too.
+- **Only the score is opt-in.** Every run has the span; registering a scorer
+  adds the score to it. `donkey.run_from_headers(...)` blocks are scored too.
 - **Scorer errors don't affect the run.** If the scorer raises, or returns
   something other than a number (`None`, a bool or a string), DDK logs a warning
-  on `donkey_kit.core.evaluation` and records no score. Your block's result is
+  on `donkey_kit.core.runspan` and records no score. Your block's result is
   unchanged.
 - **Runs inline at block exit.** The scorer is a plain function, called on the
   exiting task before the block returns. Keep it fast. If it calls a slow judge
@@ -8744,8 +8785,15 @@ ledger.usage.total_tokens                   # summed across them, cached and rea
 | `refusals` | A `RunRefusal` for each policy refusal (`PIIDetected`, `TokenBudgetExceeded`, …) the gateway returned on a call in the run, **even when a framework caught it**, and for any `ModelSubstituted` the SDK raised: its `kind`, `policy`, `status_code`, the three ids and, for PII, the entity types. Test it with `r.is_a(PIIDetected)` |
 | `usage` | A `RunUsage` with the run's `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens`, `cache_write_tokens` and `reasoning_tokens`, and `calls_with_usage` |
 | `call_count`, `refusal_count` | Totals for the whole run |
+| `tool_calls` | Tool invocations the SDK saw: per-tool MCP bindings and approval-gated tools. Not a framework-owned whole-server MCP call or a plain `@donkey.tool` function |
+| `refusal_counts` | Refusals by typed error name, e.g. `{"PIIDetected": 2}`. Counts past the cap |
+| `duration_s` | Wall-clock seconds from the block's entry to its exit, or to now while it runs |
+| `spend` | What the gateway reported the run spent, or `None`. The SDK never computes it |
 | `dropped` | Calls and refusals the cap dropped from `calls` and `refusals` |
 | `available`, `surface` | `False`, with the adapter names, when nothing used can feed the ledger |
+
+The same totals are recorded on the run's `donkey.run` span at block exit; see
+[What a run cost](https://docs.donkey-kit.dev/telemetry.md#what-a-run-cost).
 
 Each read returns a frozen snapshot, so read again for newer state. The ledger
 holds metadata only, never prompt or completion text. A refusal is recorded as a

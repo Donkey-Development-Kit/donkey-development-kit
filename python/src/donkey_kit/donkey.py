@@ -79,7 +79,7 @@ if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
 
     from .core.errors import DonkeyError, PolicyViolation
-    from .core.evaluation import RunScorer
+    from .core.runspan import RunScorer
     from .integrations._base import Adapter
     from .integrations.adk import ADKAdapter
     from .integrations.agent_framework import AgentFrameworkAdapter
@@ -835,7 +835,9 @@ class Donkey:
         on the run's ``donkey.run`` span. DDK does not score anything itself: plug in
         your eval tool's scorer (Langfuse, Phoenix, Braintrust, or your own).
 
-        Opt-in: a run opens its span only once a scorer is registered. A scorer that
+        The run span is opened for every run with OpenTelemetry installed, and carries
+        the run's cost rollup (#317); registering a scorer adds the score to it. Without
+        OpenTelemetry there is no span, so the scorer is not called. A scorer that
         raises is logged and the run's result is unchanged. Calling this again
         replaces the scorer; pass a composed function to run several.
 

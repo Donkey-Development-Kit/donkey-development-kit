@@ -44,6 +44,7 @@ from donkey_kit import ApprovalRequired, Donkey, DonkeyConfig, DonkeyError, PIID
 from donkey_kit._testing import http_clients, swap_transport
 from donkey_kit.core import telemetry
 from donkey_kit.core.refusals import translate
+from donkey_kit.core.runspan import SPAN_RUN
 
 _SCENARIO = "approval_round_trip"
 _APPROVAL_SPAN = "donkey.tool.approval"
@@ -239,7 +240,8 @@ async def test_an_approved_tool_resumes_and_is_still_judged_by_the_gateway(
 
         # The paused tool sent nothing: besides the pending approval, the only
         # spans are the model calls that chose the tool.
-        names = [s.name for s in exporter.get_finished_spans()]
+        # The run's own ``donkey.run`` span (#317) is not a send.
+        names = [s.name for s in exporter.get_finished_spans() if s.name != SPAN_RUN]
         assert names.count(_APPROVAL_SPAN) == 1
         assert len(names) - 1 == _TOOL_CHOICE_CALLS[surface]
         ((pending, pending_attrs),) = _approval_events(exporter)
@@ -320,7 +322,7 @@ async def test_a_strands_agent_pauses_with_its_own_interrupt(
         (approval,) = pending_approvals(paused)
 
         # The pause sent nothing: the only span is the pending approval.
-        assert {s.name for s in exporter.get_finished_spans()} == {_APPROVAL_SPAN}
+        assert {s.name for s in exporter.get_finished_spans()} - {SPAN_RUN} == {_APPROVAL_SPAN}
         ((pending, pending_attrs),) = _approval_events(exporter)
         assert pending == "donkey.approval.pending"
         assert pending_attrs["donkey.approval.risk"] == "financial"
@@ -409,7 +411,7 @@ async def test_an_adk_agent_pauses_with_its_own_tool_confirmation(
         (request,) = pending_approvals(paused)
 
         # The pause sent nothing: the only span is the pending approval.
-        assert {s.name for s in exporter.get_finished_spans()} == {_APPROVAL_SPAN}
+        assert {s.name for s in exporter.get_finished_spans()} - {SPAN_RUN} == {_APPROVAL_SPAN}
         ((pending, pending_attrs),) = _approval_events(exporter)
         assert pending == "donkey.approval.pending"
         assert pending_attrs["donkey.approval.risk"] == "financial"

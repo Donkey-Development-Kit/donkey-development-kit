@@ -14,6 +14,11 @@ its run's ledger, and a concurrent run never sees another's. A nested run binds
 its own ledger and the outer one is restored on exit. Appends take a lock, so a
 parallel fan-out on threads (under :func:`contextvars.copy_context`) is safe too.
 
+It is also the run's cost rollup (#317): tool calls, refusals by type and wall
+time sit beside the call count and token totals, and the run's ``donkey.run``
+span records them on exit. ``spend`` is the gateway's figure, ``None`` until it
+reports one (#315); the SDK never computes cost locally.
+
 Metadata only. A call is its :class:`~donkey_kit.core.lastcall.LastCall`
 record and a refusal is a :class:`RunRefusal`: the error's type, policy and
 ids, never the exception itself, whose ``.response`` body (and, for
@@ -28,9 +33,10 @@ counting past the cap, so a long run's cost stays exact.
 from __future__ import annotations
 
 import threading
+import time
 from collections import deque
 from contextvars import ContextVar, Token
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 
 from .errors import ConfigError, DonkeyError, PolicyViolation
 from .lastcall import LastCall
@@ -45,7 +51,9 @@ __all__ = [
     "current_run_ledger",
     "record_call",
     "record_refusal",
+    "record_tool_call",
     "record_usage",
+    "release_run_ledger",
 ]
 
 #: How many calls, and separately how many refusals, a ledger keeps by default.
@@ -174,6 +182,19 @@ class RunLedger:
     dropped: int = 0
     #: The adapter surface(s) that cannot feed the ledger, or ``None``.
     surface: str | None = None
+    #: Tool invocations the SDK saw in the run (#317): each call a per-tool MCP
+    #: binding made, and each approval-gated tool that ran. Not counted: a
+    #: framework-owned whole-server MCP call, and a plain ``@donkey.tool``
+    #: function, which the SDK returns unwrapped.
+    tool_calls: int = 0
+    #: Every refusal in the run by its typed error's class name, e.g.
+    #: ``{"PIIDetected": 2}``. Counts past the cap, as :attr:`refusal_count` does.
+    refusal_counts: dict[str, int] = field(default_factory=dict)
+    #: Wall-clock seconds from the block's entry to its exit, or to now while it runs.
+    duration_s: float = 0.0
+    #: What the gateway reported the run spent, or ``None``. The gateway does not
+    #: yet report per-request spend (#315), so the SDK never computes one.
+    spend: float | None = None
 
     @property
     def available(self) -> bool:
@@ -191,8 +212,13 @@ class _Ledger:
         "_refusals",
         "_call_count",
         "_refusal_count",
+        "_refusal_counts",
+        "_tool_calls",
         "_usage",
         "_dropped",
+        "_active",
+        "_started",
+        "_ended",
         "_lock",
     )
 
@@ -202,9 +228,31 @@ class _Ledger:
         self._refusals: deque[RunRefusal] = deque(maxlen=max_entries)
         self._call_count = 0
         self._refusal_count = 0
+        self._refusal_counts: dict[str, int] = {}
+        self._tool_calls = 0
         self._usage = RunUsage()
         self._dropped = 0
+        # Open entries: a same-id nested scope re-enters this ledger, so the run
+        # ends only when the last entry exits.
+        self._active = 0
+        self._started = time.monotonic()
+        self._ended: float | None = None
         self._lock = threading.Lock()
+
+    def enter(self) -> None:
+        with self._lock:
+            self._active += 1
+            self._ended = None
+
+    def exit(self) -> None:
+        with self._lock:
+            self._active -= 1
+            if self._active == 0:
+                self._ended = time.monotonic()
+
+    def add_tool_call(self) -> None:
+        with self._lock:
+            self._tool_calls += 1
 
     @property
     def run_id(self) -> str:
@@ -243,9 +291,12 @@ class _Ledger:
                 self._dropped += 1
             self._refusals.append(refusal)
             self._refusal_count += 1
+            kind = refusal.kind.__name__
+            self._refusal_counts[kind] = self._refusal_counts.get(kind, 0) + 1
 
     def snapshot(self, surface: str | None = None) -> RunLedger:
         with self._lock:
+            end = self._ended if self._ended is not None else time.monotonic()
             return RunLedger(
                 run_id=self._run_id,
                 calls=tuple(self._calls),
@@ -255,6 +306,9 @@ class _Ledger:
                 usage=self._usage,
                 dropped=self._dropped,
                 surface=surface,
+                tool_calls=self._tool_calls,
+                refusal_counts=dict(self._refusal_counts),
+                duration_s=end - self._started,
             )
 
 
@@ -286,7 +340,25 @@ def bind_run_ledger(run_id: str, max_entries: int) -> tuple[_Ledger, Token[_Ledg
     # #211) keeps the run's ledger, so the tool's calls land in the run.
     outer = _run_ledger.get()
     ledger = outer if outer is not None and outer.run_id == run_id else _Ledger(run_id, max_entries)
+    ledger.enter()
     return ledger, _run_ledger.set(ledger)
+
+
+def release_run_ledger() -> None:
+    """Mark the bound run's ledger as exited by one entry. Called by ``RunScope``
+    on exit, before it resets its context, so it reaches the ledger that entry
+    bound. The run's duration stops when the last entry exits."""
+    ledger = _run_ledger.get()
+    if ledger is not None:
+        ledger.exit()
+
+
+def record_tool_call() -> None:
+    """Count one tool invocation in the bound run's ledger (#317). A no-op outside
+    a run. Called by the MCP binding beside each call it makes."""
+    ledger = _run_ledger.get()
+    if ledger is not None:
+        ledger.add_tool_call()
 
 
 def record_call(record: LastCall) -> None:

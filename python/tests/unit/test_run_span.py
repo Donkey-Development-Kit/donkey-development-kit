@@ -1,5 +1,8 @@
 """The run-end evaluation hook attaches a caller's score to the run span (BG §3.4, #232).
 
+Every run's ``donkey.run`` span carries the cost rollup (#317, see
+``test_run_rollup.py``); a scorer adds ``donkey.evaluation.score`` to it.
+
 ``donkey.evaluate(on="run_end", with_=scorer)`` calls ``scorer`` with the run's
 ledger when a ``donkey.run()`` block exits and records the number it returns as
 ``donkey.evaluation.score`` on the run's ``donkey.run`` span. These tests run
@@ -28,8 +31,8 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 from donkey_kit import Donkey, DonkeyConfig
 from donkey_kit._testing import http_clients, swap_transport
 from donkey_kit.core import telemetry
-from donkey_kit.core.evaluation import DONKEY_EVALUATION_SCORE, SPAN_RUN
 from donkey_kit.core.runledger import RunLedger
+from donkey_kit.core.runspan import DONKEY_EVALUATION_SCORE, SPAN_RUN
 from donkey_kit.simulator import build_app
 
 _MESSAGES = [{"role": "user", "content": "hi"}]
@@ -108,7 +111,7 @@ async def test_a_scorer_that_raises_does_not_fail_the_run(
 
     donkey = _donkey_on_simulator()
     donkey.evaluate(on="run_end", with_=scorer)
-    with caplog.at_level(logging.WARNING, logger="donkey_kit.core.evaluation"):
+    with caplog.at_level(logging.WARNING, logger="donkey_kit.core.runspan"):
         async with donkey.run():
             await donkey.openai().chat.completions.create(model="gpt-4o", messages=_MESSAGES)
 
@@ -133,7 +136,7 @@ async def test_a_non_numeric_or_none_score_records_no_attribute(
 ) -> None:
     donkey = _donkey_on_simulator()
     donkey.evaluate(on="run_end", with_=lambda _run: returned)
-    with caplog.at_level(logging.WARNING, logger="donkey_kit.core.evaluation"):
+    with caplog.at_level(logging.WARNING, logger="donkey_kit.core.runspan"):
         async with donkey.run():
             await donkey.openai().chat.completions.create(model="gpt-4o", messages=_MESSAGES)
 
@@ -141,11 +144,14 @@ async def test_a_non_numeric_or_none_score_records_no_attribute(
     assert DONKEY_EVALUATION_SCORE not in run_span.attributes
 
 
-async def test_an_unscored_run_opens_no_run_span(spans: Any) -> None:
+async def test_an_unscored_run_has_its_rollup_span_but_no_score(spans: Any) -> None:
     donkey = _donkey_on_simulator()
     async with donkey.run():
         await donkey.openai().chat.completions.create(model="gpt-4o", messages=_MESSAGES)
-    assert _run_spans(spans) == []
+    (run_span,) = _run_spans(spans)
+    attributes = run_span.attributes or {}
+    assert DONKEY_EVALUATION_SCORE not in attributes
+    assert attributes["donkey.run.model_calls"] == 1
 
 
 async def test_the_scorer_applies_to_run_from_headers_too(spans: Any) -> None:

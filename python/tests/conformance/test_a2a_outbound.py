@@ -871,7 +871,8 @@ async def test_stream_exhaustion_and_span_lifetime(
                     assert isinstance(collected[0], sdk.StreamResponse)
                     assert not exporter.get_finished_spans()
                 assert current_correlation_id() == "parent-run"
-            spans = exporter.get_finished_spans()
+            # The run's own donkey.run span (#317) ends with the block, after the call.
+            spans = [s for s in exporter.get_finished_spans() if s.name != "donkey.run"]
             assert len(spans) == 1
             assert spans[0].name == "donkey.a2a.call"
             assert streams[0].closed
