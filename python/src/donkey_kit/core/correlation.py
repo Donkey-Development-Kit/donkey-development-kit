@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from ._scope_entry import pop_entry, push_entry
 from .cost import CostTags, validate_tag_value
+from .evaluation import begin_run_span, current_run_span, finish_run_span
 from .runledger import (
     DEFAULT_MAX_ENTRIES,
     RunLedger,
@@ -35,6 +36,7 @@ from .runledger import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from .evaluation import RunScorer, TracerFactory
     from .refusals import TypedRefusals
     from .runledger import _Ledger
 
@@ -200,6 +202,8 @@ class RunScope:
         "_surface",
         "_ledger",
         "_client",
+        "_scorer",
+        "_tracer",
     )
 
     def __init__(
@@ -212,9 +216,13 @@ class RunScope:
         ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
         surface: Callable[[], str | None] | None = None,
         client: object | None = None,
+        scorer: RunScorer | None = None,
+        tracer: TracerFactory | None = None,
     ) -> None:
         self._run_id = run_id
         self._client = client
+        self._scorer = scorer
+        self._tracer = tracer
         self._source = source
         self._refusals = refusals
         self._max_entries = checked_max_entries(ledger_max_entries)
@@ -239,6 +247,8 @@ class RunScope:
         tokens.append(ledger_token)
         if self._client is not None:
             tokens.append(_approvals_client.set(self._client))
+        if self._scorer is not None:
+            tokens.extend(begin_run_span(self._tracer))
         push_entry(self, tokens)
         return rid
 
@@ -252,6 +262,9 @@ class RunScope:
         return self._ledger.snapshot(self._surface() if self._surface is not None else None)
 
     def _unbind(self) -> None:
+        if self._scorer is not None:
+            # Score while this entry's run span and ledger are still bound.
+            finish_run_span(current_run_span(), self._scorer, self.ledger)
         pop_entry(self)
 
     def __enter__(self) -> str:
@@ -360,6 +373,8 @@ def run_scope(
     ledger_max_entries: int = DEFAULT_MAX_ENTRIES,
     surface: Callable[[], str | None] | None = None,
     client: object | None = None,
+    scorer: RunScorer | None = None,
+    tracer: TracerFactory | None = None,
 ) -> RunScope:
     """Build a :class:`RunScope` — the dual sync/async run correlation binding
     behind ``donkey.run(id=...)`` (BG §1.1, #195), optionally carrying per-run
@@ -368,9 +383,20 @@ def run_scope(
     came from (#308), with a run ledger of ``ledger_max_entries`` (#613).
     ``surface`` names the adapters that cannot feed the ledger, if any. ``client``
     is the approvals registry of the ``Donkey`` opening the run, bound for the
-    block so a gated tool called in it records its approval there (#1423)."""
+    block so a gated tool called in it records its approval there (#1423). A
+    ``scorer`` (#232) opens a run span, from the ``tracer`` factory, and records
+    its score there on exit."""
     return RunScope(
-        run_id, cost, refusals, business_group, source, ledger_max_entries, surface, client
+        run_id,
+        cost,
+        refusals,
+        business_group,
+        source,
+        ledger_max_entries,
+        surface,
+        client,
+        scorer,
+        tracer,
     )
 
 

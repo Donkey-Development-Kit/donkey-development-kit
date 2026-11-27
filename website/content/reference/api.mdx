@@ -188,6 +188,14 @@ donkey.run(
 
 Group one logical agent run under a shared correlation id.
 
+### `donkey.evaluate()`
+
+```python nocheck
+donkey.evaluate(*, on: Literal['run_end'], with_: RunScorer) -> None
+```
+
+Score every `donkey.run()` block at its end, on the run span.
+
 ### `donkey.run_from_headers()`
 
 ```python nocheck

@@ -50,7 +50,7 @@ from .core.lastcall import UNOBSERVED, LastCall, current_last_call, unavailable
 from .core.reactions import Duration, OnRefusal
 from .core.runledger import DEFAULT_MAX_ENTRIES, RunLedger, current_run_ledger
 from .core.runtime import Runtime
-from .core.telemetry import RunScope, run_scope
+from .core.telemetry import RunScope, run_scope, tracer
 from .core.toolspec import register_agent, register_tool, validate_service_id
 from .core.transport import (
     DonkeyAsyncClient,
@@ -79,6 +79,7 @@ if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
 
     from .core.errors import DonkeyError, PolicyViolation
+    from .core.evaluation import RunScorer
     from .integrations._base import Adapter
     from .integrations.adk import ADKAdapter
     from .integrations.agent_framework import AgentFrameworkAdapter
@@ -508,6 +509,7 @@ class Donkey:
         self._registry = ExchangeRegistry(self._cfg, self._control_http)
         self._a2a = A2AFacade(self._registry, self._cfg, self._http, self._llm_auth)
         self._approvals = Approvals()
+        self._run_scorer: RunScorer | None = None
         self._tools = ToolsFacade(self._registry, self._cfg, self._llm_auth, self._approvals)
         self._adapter_cache: dict[str, Adapter] = {}
 
@@ -817,7 +819,33 @@ class Donkey:
             ledger_max_entries=ledger_max_entries,
             surface=self._unobservable_surface,
             client=self._approvals,
+            scorer=self._run_scorer,
+            tracer=tracer,
         )
+
+    def evaluate(self, *, on: Literal["run_end"], with_: RunScorer) -> None:
+        """Score every ``donkey.run()`` block at its end, on the run span (BG §3.4, #232).
+
+        Provisional (ADR 0020): this is new surface, so its signature may change in a
+        minor release with a migration note.
+
+        ``with_`` is your function, called once per run with the run's ledger
+        (:class:`~donkey_kit.core.runledger.RunLedger`). It returns a number, or
+        ``None`` to record nothing; the number lands as ``donkey.evaluation.score``
+        on the run's ``donkey.run`` span. DDK does not score anything itself: plug in
+        your eval tool's scorer (Langfuse, Phoenix, Braintrust, or your own).
+
+        Opt-in: a run opens its span only once a scorer is registered. A scorer that
+        raises is logged and the run's result is unchanged. Calling this again
+        replaces the scorer; pass a composed function to run several.
+
+        ::
+
+            donkey.evaluate(on="run_end", with_=lambda run: 1.0 if run.refusals == 0 else 0.0)
+        """
+        if on != "run_end":
+            raise ValueError(f"evaluate(on=...) supports only 'run_end', not {on!r}")
+        self._run_scorer = with_
 
     def run_from_headers(
         self,
@@ -873,6 +901,8 @@ class Donkey:
             ledger_max_entries=ledger_max_entries,
             surface=self._unobservable_surface,
             client=self._approvals,
+            scorer=self._run_scorer,
+            tracer=tracer,
         )
 
     def correlation_headers(self) -> dict[str, str]:
