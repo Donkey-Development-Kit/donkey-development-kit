@@ -25,20 +25,21 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from ._scope_entry import pop_entry, push_entry
 from .cost import CostTags, validate_tag_value
-from .evaluation import begin_run_span, current_run_span, finish_run_span
 from .runledger import (
     DEFAULT_MAX_ENTRIES,
     RunLedger,
     bind_run_ledger,
     checked_max_entries,
+    release_run_ledger,
 )
+from .runspan import begin_run_span, current_run_span, finish_run_span
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from .evaluation import RunScorer, TracerFactory
     from .refusals import TypedRefusals
     from .runledger import _Ledger
+    from .runspan import RunScorer, TracerFactory
 
 __all__ = [
     "AttributionScope",
@@ -188,6 +189,11 @@ class RunScope:
     :attr:`ledger`. A scope that rebinds the enclosing run's own id shares that
     run's ledger.
 
+    With a tracer, the block also opens the run's ``donkey.run`` span and, on
+    exit, records the ledger's rollup on it (#317, :mod:`~donkey_kit.core.runspan`).
+    A nested run with a different id has its own ledger and span, so it rolls up
+    to its own scope and the outer run's rollup excludes it.
+
     ``donkey.run()`` also binds its client's approvals registry (#1423), so an
     approval-gated tool called in the block is resolved on that client.
     """
@@ -247,8 +253,7 @@ class RunScope:
         tokens.append(ledger_token)
         if self._client is not None:
             tokens.append(_approvals_client.set(self._client))
-        if self._scorer is not None:
-            tokens.extend(begin_run_span(self._tracer))
+        tokens.extend(begin_run_span(self._tracer))
         push_entry(self, tokens)
         return rid
 
@@ -262,9 +267,12 @@ class RunScope:
         return self._ledger.snapshot(self._surface() if self._surface is not None else None)
 
     def _unbind(self) -> None:
-        if self._scorer is not None:
-            # Score while this entry's run span and ledger are still bound.
-            finish_run_span(current_run_span(), self._scorer, self.ledger)
+        # Stop the run's clock first, so the rollup and any score see its final duration.
+        release_run_ledger()
+        span = current_run_span()
+        if span is not None:
+            # Roll up and score while this entry's run span and ledger are still bound.
+            finish_run_span(span, self._scorer, self.ledger)
         pop_entry(self)
 
     def __enter__(self) -> str:
@@ -383,9 +391,10 @@ def run_scope(
     came from (#308), with a run ledger of ``ledger_max_entries`` (#613).
     ``surface`` names the adapters that cannot feed the ledger, if any. ``client``
     is the approvals registry of the ``Donkey`` opening the run, bound for the
-    block so a gated tool called in it records its approval there (#1423). A
-    ``scorer`` (#232) opens a run span, from the ``tracer`` factory, and records
-    its score there on exit."""
+    block so a gated tool called in it records its approval there (#1423). The
+    run's ``donkey.run`` span (#317) is opened from the ``tracer`` factory, when
+    one resolves, and carries the run's rollup on exit; a ``scorer`` (#232) adds
+    its score there."""
     return RunScope(
         run_id,
         cost,

@@ -687,9 +687,10 @@ type = "layers"
 # GatewayApprovalDenied subclasses its ApprovalError, and approvals re-exports it.
 # inbound (the run an inbound A2A task binds, #225) sits there too: it binds
 # correlation and opens a telemetry span, and imports neither sibling.
-# evaluation (the run-end score hook, #232) sits beside config, under
-# correlation, which opens its run span: it reads the run ledger, and gets the
-# tracer handed in from the facade because telemetry sits above correlation. Two
+# runspan (every run's donkey.run span, its cost rollup and the run-end score
+# hook, #232, #317) sits beside config, under correlation, which opens the span:
+# runspan reads the run ledger, and gets the tracer handed in from the facade
+# because telemetry sits above correlation. Two
 # deviations from the order sketched in #729: lastcall sits BELOW errors, because a DonkeyError reads its request id
 # through lastcall.request_id; and _wire sits below _verify, because the
 # verification placeholders name wire headers. A sibling group with `|` is
@@ -709,7 +710,7 @@ layers = [
     "transport | approvals | inbound",
     "budget | cache | cachecontrol | identity | telemetry | toolspec",
     "auth | correlation | spanflush",
-    "config | evaluation",
+    "config | runspan",
     "classifier | cost | endpoints | header_names | reactions | refusals",
     "tool_access",
     "_policy_spec",

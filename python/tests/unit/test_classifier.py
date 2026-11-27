@@ -560,7 +560,7 @@ def test_the_span_records_the_slug_verbatim(monkeypatch: pytest.MonkeyPatch) -> 
     ):
         with donkey.run():
             _chat(donkey)
-    (span,) = exporter.get_finished_spans()
+    (span,) = (s for s in exporter.get_finished_spans() if s.name != "donkey.run")
     attrs = dict(span.attributes or {})
     assert attrs["donkey.policy.decision"] == "refuse"
     assert attrs["donkey.policy.type"] == "acme_salary_block"
