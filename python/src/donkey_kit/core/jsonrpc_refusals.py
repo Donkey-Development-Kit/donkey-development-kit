@@ -31,6 +31,7 @@ from .errors import (
     _Shape,
     _shape,
 )
+from .wallet import _match_wallet_exhausted
 
 __all__ = [
     "PROVIDER_VALUES",
@@ -356,7 +357,9 @@ def _match_http(s: _Shape) -> DonkeyError:
     if failure is not None:
         return failure
     if s.status == 429:
-        limited = _match_request_rate_limit(s) or _match_token_budget(s)
+        limited = (
+            _match_request_rate_limit(s) or _match_wallet_exhausted(s) or _match_token_budget(s)
+        )
         assert limited is not None
         return limited
     if _wire.WWW_AUTHENTICATE_HEADER in s.response.headers:

@@ -73,6 +73,10 @@ TOKEN_REMAINING_HEADER = "x-token-remaining"
 TOKEN_RESET_HEADER = "x-token-reset"
 RATELIMIT_HEADER = "x-llm-proxy-ratelimit"
 
+# Model wallet (docs/verified-apis.md §4, #301): the one response header a wallet adds. It names
+# the wallet that matched the caller and is present on a 200 and on the local exhaustion 429.
+WALLET_SELECTED_HEADER = "x-model-wallet-selected"
+
 # Request-rate-limit window (docs/verified-apis.md §4): the stock
 # ``rate-limiting`` policy's trio, sent only with ``exposeHeaders: true``. The
 # reset is milliseconds until the window ends. These unsuffixed names are the

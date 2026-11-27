@@ -676,7 +676,8 @@ type = "layers"
 # everything reports through errors. classifier (the classify() registry,
 # #210) sits beside cost and the rest, over _policy_spec (its match-spec
 # checks); it fills a hook slot in errors, so errors never imports it. step_up
-# (the CIBA step-up types, #1320) fills another and sits just above errors,
+# (the CIBA step-up types, #1320) fills another and sits just above errors, with wallet (the
+# spent-wallet refusal, #315), which fills the same slot,
 # beside _tool_access (the MCP tool-access type/rule, #312), which only subclasses
 # errors' PolicyViolation, and runledger (the run ledger, #613), which holds
 # lastcall records and errors' DonkeyErrors and is bound by correlation.
@@ -715,7 +716,7 @@ layers = [
     "tool_access",
     "_policy_spec",
     "jsonrpc_refusals",
-    "runledger | step_up | _tool_access",
+    "runledger | step_up | wallet | _tool_access",
     "approval_types",
     "errors",
     "_refusal_body | lastcall | masking",

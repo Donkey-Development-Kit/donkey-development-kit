@@ -38,6 +38,7 @@ from donkey_kit.core.errors import (
     UpstreamModelError,
     UpstreamRequestError,
 )
+from donkey_kit.core.wallet import WalletExhausted
 
 # --- the pinned semconv version + the literal keys (AC #1-#4) ---------------
 
@@ -211,6 +212,7 @@ def test_build_genai_attributes_omits_none_usage_details_keeps_zero() -> None:
 @pytest.mark.parametrize(
     ("error", "expected"),
     [
+        (WalletExhausted("x", remediation="r"), "wallet_exhausted"),
         (TokenBudgetExceeded("x", remediation="r"), "token_budget"),
         (RequestRateLimitExceeded("x", remediation="r"), "request_rate_limit"),
         (PIIDetected("x", remediation="r"), "pii_detected"),

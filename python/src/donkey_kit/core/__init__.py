@@ -64,6 +64,7 @@ from .transport import (
     build_sync_http_client,
     cost_headers,
 )
+from .wallet import WalletExhausted
 
 __all__ = [
     "AgentKilled",
@@ -120,6 +121,7 @@ __all__ = [
     "UpstreamRequestError",
     "UpstreamWindow",
     "UserScope",
+    "WalletExhausted",
     "attribution_headers",
     "build_http_client",
     "build_sync_http_client",

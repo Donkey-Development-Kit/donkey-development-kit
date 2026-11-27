@@ -30,7 +30,7 @@ and the retry rule and next step for every exception are in the
 | [Client ID enforcement](#client-id-enforcement) | Rejects a call without a valid consumer credential | `AuthError` | `donkey.simulate(AuthError)` |
 | [Token rate limiting](#token-rate-limiting) | Caps tokens per window | `TokenBudgetExceeded`; `donkey.budget` | `--scenario budget:…` |
 | [Request rate limiting](#request-rate-limiting) | Caps requests per window | `RequestRateLimitExceeded`; `donkey.budget.requests` | `--scenario request_limit:…` |
-| [Model wallet](#model-wallet) | Authenticates with a JWT and spends from a wallet budget | `TokenBudgetExceeded` when the wallet is exhausted | `donkey.simulate(TokenBudgetExceeded)` |
+| [Model wallet](#model-wallet) | Authenticates with a JWT and spends from a wallet budget | `WalletExhausted` when the wallet is exhausted | `donkey.simulate(WalletExhausted)` |
 | [PII detection](#pii-detection) | Refuses a prompt carrying personal data | `PIIDetected` | `--scenario pii_block:…` |
 | [Injection Protection](#injection-protection-and-regex-prompt-guard) | Refuses a prompt-injection attempt | `PromptInjectionBlocked` | `--scenario injection:…` |
 | [Regex Prompt Guard](#injection-protection-and-regex-prompt-guard) | Refuses a prompt matching configured patterns | `PromptInjectionBlocked` | `donkey.simulate(PromptInjectionBlocked)` |
@@ -112,8 +112,17 @@ platform. Configure the auth mode as described in
 Wallet state is not reported in-band: a `200` carries no limit or remaining
 value, so `donkey.budget` cannot show it and there is no warning before the
 wallet runs out. The first signal is the refusal, a `429` that DDK raises
-today as `TokenBudgetExceeded` with the gateway's `retry-after` as
-`.retry_after`. Handle it as you would a token-window refusal.
+as `WalletExhausted`, with the gateway's `retry-after` as `.retry_after` and the
+wallet that refused as `.wallet`. It is a subclass of `TokenBudgetExceeded`, so an
+existing `except TokenBudgetExceeded` handler or `donkey.on(TokenBudgetExceeded)`
+reaction still catches it, and like it, it is terminal and never retried.
+
+A wallet limit can be set in tokens or in dollars, and the refusal is identical
+either way, so `WalletExhausted` does not say which ran out, and DDK never works
+out cost locally to guess. The run's [cost rollup](https://docs.donkey-kit.dev/telemetry.md#what-a-run-cost)
+counts it under `WalletExhausted`, apart from a spent token window.
+
+Rehearse it with `donkey.simulate(WalletExhausted)`.
 
 ## PII detection
 

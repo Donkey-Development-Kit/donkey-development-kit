@@ -110,6 +110,7 @@ _KEEP_EXACT = frozenset(
         _wire.REQUEST_RESET_HEADER,
         _wire.WWW_AUTHENTICATE_HEADER,
         _wire.RETRY_AFTER_HEADER,
+        _wire.WALLET_SELECTED_HEADER,
         _wire.INJECTION_PROTECTION_HEADER,
         _wire.A2A_AZURE_GUARDRAIL_ACTION_HEADER,
         _wire.A2A_AZURE_GUARDRAIL_PHASE_HEADER,
@@ -190,6 +191,14 @@ SHAPES: dict[str, _Spec] = {
         "anypoint/request_rate_limit",
         "reject.request-rate-limit.headers.txt",
         "reject.request-rate-limit.body.json",
+        429,
+    ),
+    # A spent model wallet (docs/verified-apis.md §4, #301, #315): the local 429 with
+    # `retry-after` and `x-model-wallet-selected`, and no `x-token-*` headers.
+    "wallet-exhausted": _Spec(
+        "rejections",
+        "reject.wallet-exhausted.headers.txt",
+        "reject.wallet-exhausted.body.json",
         429,
     ),
     "pii-detected": _Spec(

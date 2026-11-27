@@ -170,7 +170,7 @@ Beside it:
   cachecontrol | identity | telemetry | toolspec` → `auth | correlation | spanflush` → `config | runspan` →
   `classifier | cost | endpoints | header_names | reactions | refusals` →
    `tool_access` → `_policy_spec` → `jsonrpc_refusals` →
-   `runledger | step_up | _tool_access` → `approval_types` → `errors` →
+   `runledger | step_up | wallet | _tool_access` → `approval_types` → `errors` →
   `_refusal_body | lastcall | masking` → `_verify` →
    `_wire | _response | _budget_headers | _window | _policy_sample | _scope_entry`.
   `lastcall` sits below `errors` because a `DonkeyError` reads its request id
@@ -234,7 +234,9 @@ Beside it:
   0012) over `_policy_spec`, its match-spec checks; it fills a hook slot in
   `errors`, so `errors` never imports it. `step_up` (#1320) holds the OAuth2
   OBO policy's CIBA step-up types, which subclass `errors`' own, and fills a
-  second hook slot there the same way, ahead of the auth rule. `tool_access`
+  second hook slot there the same way, ahead of the auth rule. `wallet` (#315)
+  holds the spent-model-wallet refusal, a `TokenBudgetExceeded` subtype, and
+  shares that slot, ahead of the generic token-budget rule. `tool_access`
    (#312) re-exports the MCP tool-access type from `_tool_access` and delegates
    to `jsonrpc_refusals`, the framework-free error walk (ADR 0021, #1385).
    `classifier` fills its registry hook; explicit `jsonrpc_code` entries use the

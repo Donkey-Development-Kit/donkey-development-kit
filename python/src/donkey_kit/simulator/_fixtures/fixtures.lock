@@ -76,5 +76,7 @@
   "rejections/reject.injection-protection.headers.txt": "sha256:55133db247de8813cd52d711ff6e1993fd80a57e62a86ad16a3b333c106691c7",
   "rejections/reject.regex-prompt-guard.body.json": "sha256:9bf2ca369b9250edbac362f3d74904d76d8c6e338c1c9ef53fe33b9848db7f23",
   "rejections/reject.regex-prompt-guard.headers.txt": "sha256:01c9848a2470e700602713dc0530656c4ff6be647b69441308b24e78ab3e11ae",
-  "rejections/reject.upstream-5xx.headers.txt": "sha256:0e284c1ab5e63c77a51ee3ba8386c4c5c4caadca5b55ac14d51b215251e89a79"
+  "rejections/reject.upstream-5xx.headers.txt": "sha256:0e284c1ab5e63c77a51ee3ba8386c4c5c4caadca5b55ac14d51b215251e89a79",
+  "rejections/reject.wallet-exhausted.body.json": "sha256:b401b1193b33d329d68306b88488f90722c38022ac73842a6cfc49f63eea7ab2",
+  "rejections/reject.wallet-exhausted.headers.txt": "sha256:e9e2b69a210e2d0a8094da458246be027d08e4790c95fd85461ac022694001a5"
 }

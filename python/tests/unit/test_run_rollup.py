@@ -42,6 +42,10 @@ def _handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(403, json={"error": {"type": "pii_detected", "message": "x"}})
     if '"budget"' in body:
         return httpx.Response(429)
+    if '"wallet"' in body:
+        return httpx.Response(
+            429, headers={"retry-after": "86400", "x-model-wallet-selected": "ddk-model-wallet"}
+        )
     return httpx.Response(200, json={"usage": _USAGE})
 
 
@@ -52,6 +56,22 @@ def _client() -> DonkeyAsyncClient:
 async def _call(client: DonkeyAsyncClient, prompt: str = "hi") -> int:
     resp = await client.post("https://proxy/chat", json={"model": "gpt-4o", "input": prompt})
     return resp.status_code
+
+
+@pytest.mark.asyncio
+async def test_a_spent_wallet_is_counted_apart_from_a_spent_token_window(
+    exporter: InMemorySpanExporter,
+) -> None:
+    """#315: the ledger keys refusals by class name, so a wallet refusal is its own bucket."""
+    scope = _scope()
+    async with _client() as client, scope:
+        await _call(client, "wallet")
+        await _call(client, "budget")
+
+    ledger = scope.ledger
+    assert ledger is not None
+    assert ledger.refusal_counts == {"WalletExhausted": 1, "TokenBudgetExceeded": 1}
+    assert ledger.refusal_count == 2
 
 
 @pytest.fixture
