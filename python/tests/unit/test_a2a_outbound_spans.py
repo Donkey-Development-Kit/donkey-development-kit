@@ -143,6 +143,39 @@ def test_cost_overrides_exclude_enduser_and_leave_scope_unchanged(spans: Any) ->
     }
 
 
+def test_custom_cost_dimensions_are_recorded_and_merge_per_name(spans: Any) -> None:
+    configured = CostTags(team="team", dimensions=(("cost_center", "CC-1"), ("jurisdiction", "EU")))
+    override = CostTags(dimensions=(("cost_center", "CC-2"), ("legal_entity", "ACME-UK")))
+    with run_scope("r1", cost=override):
+        with outbound_call(telemetry=True, cost=configured):
+            pass
+    (call,) = spans.get_finished_spans()
+    assert call.attributes == {
+        "donkey.correlation_id": "r1",
+        "donkey.cost.team": "team",
+        "donkey.cost.cost_center": "CC-2",  # the run's value wins per name
+        "donkey.cost.jurisdiction": "EU",
+        "donkey.cost.legal_entity": "ACME-UK",
+    }
+
+
+def test_dimensions_alone_are_recorded_from_the_enclosing_scope(spans: Any) -> None:
+    with run_scope("r1", cost=CostTags(dimensions=(("cost_center", "CC-9"),))):
+        with outbound_call(telemetry=True):
+            pass
+    (call,) = spans.get_finished_spans()
+    assert call.attributes["donkey.cost.cost_center"] == "CC-9"
+
+
+def test_no_custom_attribute_without_dimensions(spans: Any) -> None:
+    with outbound_call(telemetry=True, cost=CostTags(team="team")):
+        pass
+    (call,) = spans.get_finished_spans()
+    assert [key for key in call.attributes if key.startswith("donkey.cost.")] == [
+        "donkey.cost.team"
+    ]
+
+
 def test_w3c_tracestate_is_propagated_but_baggage_is_not(spans: Any) -> None:
     from opentelemetry import baggage, context
     from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator

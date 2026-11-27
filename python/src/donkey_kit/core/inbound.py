@@ -170,7 +170,8 @@ def outbound_call(
         telemetry: Whether to open the span and inject W3C trace context.
         capture_content: Opt in to quality explanation text, limited to 4096 characters.
         cost: Configured cost tags; current run overrides win per dimension.
-            Only team, project and environment are recorded, never end-user ids.
+            Team, project, environment and declared custom dimensions are
+            recorded, never end-user ids.
             This does not change the cost state bound by the enclosing run.
     """
     from .telemetry import _tracer
@@ -203,6 +204,10 @@ def outbound_call(
             ):
                 if value is not None:
                     attributes[key] = value
+            # Declared custom dimensions (#316) share the namespace, so one
+            # ``donkey.cost.<name>`` query covers model-call and A2A spans (#1868).
+            for name, value in tags.dimensions:
+                attributes[f"donkey.cost.{name}"] = value
         with tracer.start_as_current_span(
             SPAN_A2A_CALL,
             kind=SpanKind.CLIENT,
