@@ -170,6 +170,49 @@ DDK does not send `X-AGENT-ID` on MCP or A2A calls: its effect on
 No connection-graph or metric guarantee is made. Auth challenge fields, returned task/context IDs and raw refusal
 diagnostics are not recorded on the outbound span, even with content capture on.
 
+### Score a run with your eval tool
+
+DDK doesn't score anything itself. `donkey.evaluate(on="run_end", with_=...)`
+registers a scorer that you own. When a `donkey.run()` block exits, DDK calls
+the scorer with the run's ledger (`donkey.current_run`'s type: the run id, its
+calls, refusals and token totals). The number it returns is recorded as
+`donkey.evaluation.score` on a `donkey.run` span, and every model call in the
+block is a child of that span.
+
+```python
+def resolved_without_refusal(run) -> float | None:
+    if run.call_count == 0:
+        return None          # nothing to score: no attribute is recorded
+    return 0.0 if run.refusal_count else 1.0
+
+donkey.evaluate(on="run_end", with_=resolved_without_refusal)
+
+async with donkey.run(id=ticket.id):
+    await agent.ainvoke({"messages": [ticket.text]})
+# The donkey.run span now carries donkey.evaluation.score.
+```
+
+- **Opt-in.** A run opens a `donkey.run` span only when a scorer is
+  registered, so unscored runs cost nothing extra. `donkey.run_from_headers(...)`
+  blocks are scored too.
+- **Scorer errors don't affect the run.** If the scorer raises, or returns
+  something other than a number (`None`, a bool or a string), DDK logs a warning
+  on `donkey_kit.core.evaluation` and records no score. Your block's result is
+  unchanged.
+- **Runs inline at block exit.** The scorer is a plain function, called on the
+  exiting task before the block returns. Keep it fast. If it calls a slow judge
+  model or service, hand that work off and score from the result later.
+- **One scorer per client.** Calling `evaluate` again replaces the scorer.
+  Without OpenTelemetry installed there is no span to score, so the scorer isn't
+  called.
+
+The score travels with the rest of your OTLP export, so any backend that reads
+span attributes can filter or chart on it. To keep scores in an eval tool's own
+store, such as Langfuse, Phoenix or Braintrust, call that tool's SDK from inside
+the scorer and return the number for the trace. `donkey.evaluate` is
+**provisional**: its signature may change in a minor release, with a migration
+note.
+
 ### Zero-config export
 
 Set the standard OpenTelemetry endpoint env var and spans flow — there is **no
